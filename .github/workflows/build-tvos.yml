@@ -102,6 +102,14 @@ jobs:
             exit 1
           fi
 
+          ATS_ALLOW=$(/usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity:NSAllowsArbitraryLoads" "$APP_PATH/Info.plist")
+          BONJOUR_SVC=$(/usr/libexec/PlistBuddy -c "Print :NSBonjourServices:0" "$APP_PATH/Info.plist")
+          echo "Verified Info.plist: NSAllowsArbitraryLoads=${ATS_ALLOW}, NSBonjourServices[0]=${BONJOUR_SVC}"
+          if [ "$ATS_ALLOW" != "true" ] || [ "$BONJOUR_SVC" != "_mediaos._tcp" ]; then
+            echo "::error::Compiled Info.plist is missing ATS LAN HTTP or _mediaos._tcp Bonjour keys!"
+            exit 1
+          fi
+
           rm -rf dist Payload
           mkdir -p dist Payload
           cp -R "$APP_PATH" Payload/Luna.app

@@ -27,12 +27,11 @@ targets:
     sources:
       - path: Sources
       - path: Resources
-    info:
-      path: Config/Info.plist
     settings:
       base:
         PRODUCT_NAME: Luna
         PRODUCT_BUNDLE_IDENTIFIER: local.mediaos.luna
+        INFOPLIST_FILE: Config/Info.plist
         GENERATE_INFOPLIST_FILE: "NO"
         ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
