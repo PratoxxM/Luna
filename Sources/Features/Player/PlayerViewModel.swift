@@ -262,7 +262,6 @@ final class PlayerViewModel: ObservableObject {
         options.httpHeaders = client.streamHTTPHeaders()
         options.preferDualLayerDolbyVision = cfg.preferDualLayerDolbyVision
         options.dualLayerRoute = cfg.dualLayerRoute == "avPlayerOutput" ? .avPlayerOutput : .softwareHost
-        options.foldsDolbyVisionFEL = cfg.foldsDolbyVisionFEL
         options.dolbyVisionHandling = cfg.dolbyVisionHandling == "baseLayerOnly" ? .baseLayerOnly : .automatic
         options.matchContentEnabled = cfg.matchContentEnabled
         options.displayCriteriaOwner = .engine

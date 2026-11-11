@@ -38,7 +38,7 @@ public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable 
 public final class AppSessionStore: ObservableObject {
     @Published public private(set) var serverBaseURL: URL?
     @Published public private(set) var deviceToken: String?
-    @Published public let deviceID: String
+    public let deviceID: String
     @Published public var deviceName: String
     @Published public var roomName: String
     @Published public var hardwareProfile: String

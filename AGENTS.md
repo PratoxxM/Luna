@@ -36,6 +36,8 @@ gh run watch
 
 # Inspect compiler errors if a build fails
 gh run view --log-failed
+# If gh blocks ANSI escape sequences in large xcodebuild logs:
+gh api --allow-escape-sequences repos/PratoxxM/Luna/actions/jobs/<job-id>/logs | grep -C 4 "error:"
 
 # Verify the published unsigned IPA asset on the rolling 'latest' release
 gh release view latest --json assets,updatedAt
