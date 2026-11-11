@@ -1,0 +1,144 @@
+name: Build Luna tvOS Unsigned IPA
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "GitHub-hosted macOS runner label (default: xcode-27)"
+        required: false
+        default: "xcode-27"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+jobs:
+  build-tvos:
+    name: Build Luna-unsigned.ipa (tvOS Release)
+    runs-on: ${{ inputs.runner || 'xcode-27' }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select newest Xcode (26.2+ / 27) with tvOS 26+ SDK
+        run: |
+          set -euo pipefail
+          echo "Installed Xcode bundles:"
+          ls -d /Applications/Xcode*.app || true
+
+          SELECTED_XCODE=""
+          for candidate in $(ls -d /Applications/Xcode*.app | sort -V -r); do
+            if [ -x "$candidate/Contents/Developer/usr/bin/xcodebuild" ]; then
+              SDK_VER=$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version -sdk appletvos SDKVersion 2>/dev/null || echo "0")
+              MAJOR="${SDK_VER%%.*}"
+              echo "  -> $candidate : appletvos SDK $SDK_VER"
+              if [ "${MAJOR:-0}" -ge 26 ]; then
+                SELECTED_XCODE="$candidate"
+                break
+              fi
+            fi
+          done
+
+          if [ -z "$SELECTED_XCODE" ]; then
+            echo "::error::No Xcode installation with appletvos SDK >= 26.0 found on runner!"
+            exit 1
+          fi
+
+          echo "Selecting $SELECTED_XCODE"
+          sudo xcode-select -s "$SELECTED_XCODE"
+          xcodebuild -version
+          swift --version
+
+      - name: Ensure XcodeGen is installed
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Cache SwiftPM repositories & SourcePackages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            build/SourcePackages
+          key: spm-tvos-${{ runner.os }}-${{ hashFiles('Packages/AetherBridge/Package.swift', 'project.yml') }}
+          restore-keys: |
+            spm-tvos-${{ runner.os }}-
+
+      - name: Generate Luna.xcodeproj from project.yml
+        run: xcodegen generate
+
+      - name: Build unsigned Release app for tvOS device (arm64)
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project Luna.xcodeproj \
+            -scheme Luna \
+            -configuration Release \
+            -destination 'generic/platform=tvOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package Payload/Luna.app into Luna-unsigned.ipa
+        run: |
+          set -euo pipefail
+          APP_PATH="build/Build/Products/Release-appletvos/Luna.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::Expected $APP_PATH was not produced by xcodebuild"
+            exit 1
+          fi
+
+          rm -rf dist Payload
+          mkdir -p dist Payload
+          cp -R "$APP_PATH" Payload/Luna.app
+          ditto -c -k --sequesterRsrc --keepParent Payload dist/Luna-unsigned.ipa
+          rm -rf Payload
+
+          shasum -a 256 dist/Luna-unsigned.ipa > dist/Luna-unsigned.ipa.sha256
+          ls -lh dist/
+          cat dist/Luna-unsigned.ipa.sha256
+
+      - name: Upload workflow build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Luna-unsigned-ipa
+          path: |
+            dist/Luna-unsigned.ipa
+            dist/Luna-unsigned.ipa.sha256
+          retention-days: 30
+
+      - name: Publish Luna-unsigned.ipa to rolling GitHub Release 'latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+          BUILD_UTC="$(date -u '+%Y-%m-%d %H:%M UTC')"
+          NOTES="Automated tvOS unsigned build of **Luna** (\`${SHORT_SHA}\`, ${BUILD_UTC}). Ready for wireless signing & 7-day auto-renewal in **ATVLoadly**."
+
+          git tag -f latest HEAD
+          git push origin refs/tags/latest --force
+
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest dist/Luna-unsigned.ipa dist/Luna-unsigned.ipa.sha256 --clobber
+            gh release edit latest --title "Luna (Latest tvOS Build)" --notes "$NOTES" --latest
+          else
+            gh release create latest dist/Luna-unsigned.ipa dist/Luna-unsigned.ipa.sha256 \
+              --title "Luna (Latest tvOS Build)" \
+              --notes "$NOTES" \
+              --latest
+          fi

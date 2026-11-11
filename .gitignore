@@ -1,0 +1,19 @@
+# Generated Xcode projects & workspaces (project.yml is the single source of truth)
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+
+# Build & SwiftPM artifacts
+build/
+DerivedData/
+.build/
+.swiftpm/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# OS & editor clutter
+.DS_Store
+*.swp
+.env
+.env.*
