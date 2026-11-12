@@ -1,6 +1,6 @@
 # Luna for tvOS
 
-**Luna** is a native SwiftUI tvOS media player built on [AetherEngine](https://github.com/superuser404notfound/AetherEngine) (`7.62.1`) for the MediaOS `/api/tv/v1` Backend-for-Frontend (BFF).
+**Luna** (`v2.1.1`) is a native SwiftUI tvOS media player built on [AetherEngine](https://github.com/superuser404notfound/AetherEngine) (`7.62.1`) for the MediaOS `/api/tv/v1` native TV engine.
 
 ## Highlights
 
@@ -8,9 +8,17 @@
 - **Room & Hardware Profiles**:
   - `dv-fel-714` (*Kjellerstua*): Prioritizes 4K UHD BluRay Remuxes with Dolby Vision Profile 7 FEL / Profile 8 and renders TrueHD Atmos / DTS:X into a `7.1.4` spatial bed.
   - `hdr10-512` (*Stua*): Prioritizes 4K HDR10+ / HDR10 streams with `baseLayerOnly` DV handling and renders spatial audio into a `5.1.2` bed.
-- **Zero-Touch LAN Setup**: Discovers MediaOS automatically via Bonjour (`_mediaos._tcp`) and pairs using a 6-digit TV code approved in MediaOS Web.
-- **Pause-Safe Streaming**: 15-second playback & pause heartbeats maintain server-side VFS session locks, sync watch progress, pre-warm next episodes at 85%, and support instant source switching at the exact current timecode.
-- **Sideload-Ready Cloud Builds**: GitHub Actions generates `Luna.xcodeproj` via XcodeGen, builds an unsigned Release `Luna-unsigned.ipa`, and publishes it to the rolling `latest` GitHub Release for automatic wireless installation and 7-day certificate renewal via ATVLoadly.
+- **Hero-Free Evening Home & Instant Cold Boot**:
+  - `DiskSWRStore` renders cached `/api/tv/v1/home` shelves in `0 ms` on cold start while refreshing silently via `ETag` / `304 Not Modified`.
+  - Hero-free `HomeView` opens directly on *Fortsett å se* (1-click direct resume/next episode), *Kommende episoder* (with Norwegian air-date badges), *Filmsjangre* (sortable by popular, top-rated, newest, local, and unwatched), and household *Mitt bibliotek* (*Huskeliste*, *Favoritter*, and *Lokalt på NVMe/Arkiv*).
+- **OLED/HDR-Comfortable Custom Player Shell**:
+  - Zero-blink HDMI range/frame-rate handoff via `ResolvingCurtainView` locked to `hasFirstFrameReadyForDisplay`.
+  - Single HTTP 206 stream (`maximumSubtitleAdvanceSeconds = 0` / `maximumSubtitleOffsetSeconds = 0`) even when subtitles are active on 80 GB 4K Remuxes.
+  - Warm-white text subtitles and `.colorMultiply` HDR luminance dimming for PGS/DVB bitmap subtitles in `SubtitleOverlayView`, plus `SmartTrackRuleEngine` automatic Nordic/English audio & subtitle selection.
+  - 4-tab swipe-down `PlayerTopDrawerView` (*Lyd* `±50 ms`, *Undertekster*, *Kilder* seamless timecode switch, *Kapitler & info*), intro/credits skip & next-episode cards (`SeriesFlowOverlays`), and a 1 Hz leaf `NerdHUDView`.
+- **Zero-Touch LAN Setup & Sideload-Ready Cloud Builds**:
+  - Discovers MediaOS automatically via Bonjour (`_mediaos._tcp`) and pairs using a 6-digit TV code approved in MediaOS Web.
+  - GitHub Actions generates `Luna.xcodeproj` via XcodeGen, compiles an unsigned Release `Luna-unsigned.ipa`, and publishes it to the rolling `latest` GitHub Release for wireless installation and 7-day certificate renewal via ATVLoadly.
 
 ## Architecture
 
@@ -22,20 +30,25 @@ Luna/
 ├── Packages/AetherBridge/             # Local SPM bridge enabling all 5 AetherEngine traits
 ├── Resources/Assets.xcassets/         # tvOS App Icon & Top Shelf brand assets
 ├── Sources/
-│   ├── App/                           # App entry point, single AetherEngine host & TabView
+│   ├── App/                           # LunaApp (single @MainActor AetherEngine) & MainNavigationShell
 │   ├── Core/
-│   │   ├── Config/                    # Bundle-ID-agnostic UserDefaults & Keychain storage
+│   │   ├── Cache/                     # DiskSWRStore (0 ms /home JSON) & ArtworkPipeline (CGImage + BlurHash)
+│   │   ├── Config/                    # SideloadSafeStorage, ServerConfiguration & ComfortPreferences
 │   │   ├── Discovery/                 # NWBrowser Bonjour (_mediaos._tcp) discovery
-│   │   ├── Models/                    # Codable contracts for /api/tv/v1
-│   │   └── Networking/                # HTTP BFF client & WebSocket resolve stream
+│   │   ├── Models/                    # Codable contracts for /api/tv/v1 (Home, Detail, Playback, Chapters)
+│   │   └── Networking/                # MediaOSClient (shared URLSession + ETag) & PlaybackResolveSocket
+│   ├── DesignSystem/                  # LunaTheme, AmbientBackdropView & isolated-@FocusState Cards/
 │   └── Features/
 │       ├── Onboarding/                # 6-digit Device Flow pairing UI
-│       ├── Home/                      # Hero banner, server-driven shelves & genre chips
-│       ├── Detail/                    # Movies, seasons/episodes & source picker
-│       ├── Watchlist/                 # Household watchlist
-│       ├── Search/                    # Instant catalog & TMDB search
-│       ├── Settings/                  # Room/profile switcher & HDMI/trait diagnostics
-│       └── Player/                    # AetherPlayerSurface, subtitles & modal track/source sheets
+│       ├── Home/                      # Hero-free HomeView & ShelfRowView
+│       ├── Browse/                    # CatalogBrowseView (genre explorer + Filmer/Serier filters)
+│       ├── Library/                   # LibraryHubView (Huskeliste, Favoritter & Lokalt NVMe/Arkiv)
+│       ├── Detail/                    # MediaDetailView (silent prepare + 8 MiB prewarm) & SourcePickerSheetView
+│       ├── Search/                    # Instant FTS5 & TMDB SearchView
+│       ├── Settings/                  # Room/profile switcher, DV/audio overrides & cache controls
+│       └── Player/                    # PlayerContainerView, PlayerViewModel, PlayerEngineConfigurator,
+│                                      # ResolvingCurtainView, PlayerBottomBarView, PlayerTopDrawerView,
+│                                      # SubtitleOverlayView, SeriesFlowOverlays & NerdHUDView
 └── .github/workflows/build-tvos.yml   # Cloud build -> GitHub Release "latest" (Luna-unsigned.ipa)
 ```
 

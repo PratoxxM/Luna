@@ -21,7 +21,7 @@ public struct PlaybackResolveSocket: Sendable {
     public func events() -> AsyncThrowingStream<TvResolveSocketEvent, Error> {
         AsyncThrowingStream { continuation in
             guard let wsURL = Self.makeWebSocketURL(baseURL: baseURL, wsPath: wsPath) else {
-                continuation.finish(throwing: BFFError.invalidURL(wsPath))
+                continuation.finish(throwing: MediaOSError.invalidURL(wsPath))
                 return
             }
 

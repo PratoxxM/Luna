@@ -20,8 +20,6 @@ public enum MediaOSError: LocalizedError, Sendable {
     }
 }
 
-public typealias BFFError = MediaOSError
-
 private struct ServerErrorEnvelope: Decodable {
     let error: String?
 }
@@ -635,5 +633,3 @@ public struct MediaOSClient: Sendable {
         }
     }
 }
-
-public typealias BFFClient = MediaOSClient
