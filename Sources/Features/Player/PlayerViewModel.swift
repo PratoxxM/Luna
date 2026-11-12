@@ -5,44 +5,183 @@ import AetherBridge
 
 @MainActor
 final class PlayerViewModel: ObservableObject {
+    // Resolve & First-Frame Reveal State
     @Published var isResolving: Bool = true
+    @Published var resolveStageKey: String = "searching"
     @Published var resolveStageLabel: String = "Klargjør strøm…"
-    @Published var resolvePercent: Int = 10
+    @Published var resolvePercent: Int = 12
     @Published var resolveHeadline: String?
     @Published var fatalError: String?
 
+    @Published var hasFirstFrameReadyForDisplay: Bool = false
+    @Published var isAwaitingDisplaySwitch: Bool = false
+    @Published var startupProgress: StartupProgress?
+    @Published var firstFrameFallbackUnlocked: Bool = false
+
+    // Session, Sources, Detail & Next Episode
     @Published var activeSession: TvPlaybackSession?
+    @Published var itemDetail: TvItemDetail?
     @Published var alternatives: [TvCandidateInfo] = []
     @Published var isLoadingAlternatives: Bool = false
     @Published var isSwitchingSource: Bool = false
     @Published var nextEpisodePrewarmReady: Bool = false
+    @Published var lastVfsTelemetry: TvVfsTelemetry?
 
+    // Playback, Tracks & Chapters
     @Published var playbackPhase: PlaybackPhase = .idle
     @Published var durationSeconds: Double = 0
     @Published var videoFormat: VideoFormat = .sdr
     @Published var sourceDVProfile: Int?
+    @Published var dolbyVisionConversion: DolbyVisionConversion?
     @Published var videoRoute: VideoRoute = .none
     @Published var audioDelivery: AudioDelivery = .none
+    @Published var sourceVideoCodecName: String?
+    @Published var sourceVideoWidth: Int32 = 0
+    @Published var sourceVideoHeight: Int32 = 0
+    @Published var sourceVideoFrameRate: Double?
+    @Published var activeVideoDecoder: String?
+    @Published var activeAudioDecoder: String?
+
     @Published var audioTracks: [TrackInfo] = []
     @Published var activeAudioTrackIndex: Int?
+    @Published var audioDelaySeconds: Double = 0
+    @Published var audioEnhancement: AudioEnhancementMode = .reference
+
     @Published var subtitleTracks: [TrackInfo] = []
     @Published var activeSubtitleTrackIndex: Int?
     @Published var subtitleDelaySeconds: Double = 0
 
+    @Published var chapters: [PlaybackChapter] = []
+
+    // Tactile Coalesced Seeking HUD
+    @Published var coalescedSeekDelta: Double = 0
+    @Published var coalescedSeekPreviewTarget: Double?
+
     let engine: AetherEngine
+    let comfort: ComfortPreferences
 
     private var cancellables = Set<AnyCancellable>()
     private var resolveTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
+    private var firstFrameFallbackTask: Task<Void, Never>?
+    private var coalescedSeekTask: Task<Void, Never>?
+    private var detailLoadTask: Task<Void, Never>?
+    private var engineChapters: [ChapterInfo] = []
     private var registeredStreamToken: String?
-    private var activeClient: BFFClient?
+    private var activeClient: MediaOSClient?
+    private var userManuallySelectedSubtitle: Bool = false
+    private var didApplyInitialSmartRule: Bool = false
 
-    init(engine: AetherEngine) {
+    init(engine: AetherEngine, comfort: ComfortPreferences) {
         self.engine = engine
+        self.comfort = comfort
         bindEnginePublishers()
     }
 
-    func start(request: PlaybackLaunchRequest, client: BFFClient?) {
+    /// True only once the first decoded video frame is ready and HDMI range/frame-rate
+    /// switching has settled (or when an in-place source replacement is holding a still frame).
+    var isPictureReadyForReveal: Bool {
+        if fatalError != nil {
+            return false
+        }
+        if isSwitchingSource {
+            return true
+        }
+        if isResolving {
+            return false
+        }
+        if firstFrameFallbackUnlocked {
+            return true
+        }
+        return hasFirstFrameReadyForDisplay && !isAwaitingDisplaySwitch
+    }
+
+    var effectiveDurationSeconds: Double {
+        if durationSeconds > 0 {
+            return durationSeconds
+        }
+        return activeSession?.stream.declaredDurationSeconds ?? activeSession?.item.runtimeSeconds ?? 0
+    }
+
+    // MARK: - Live Format Badges
+
+    var videoFormatBadge: String {
+        switch videoFormat {
+        case .dolbyVision:
+            if sourceDVProfile == 7 {
+                if videoRoute == .software && dolbyVisionConversion == nil {
+                    return "DV P7 FEL"
+                }
+                return "DV P7"
+            }
+            if sourceDVProfile == 8 || dolbyVisionConversion == .profile7ToProfile81 {
+                return "DV P8"
+            }
+            if let p = sourceDVProfile {
+                return "DV P\(p)"
+            }
+            return "Dolby Vision"
+        case .hdr10Plus:
+            return "HDR10+"
+        case .hdr10:
+            return "HDR10"
+        case .hlg:
+            return "HLG"
+        case .sdr:
+            return sourceVideoHeight >= 2000 ? "4K SDR" : "SDR"
+        }
+    }
+
+    var audioFormatBadge: String {
+        if comfort.speakerLayoutOverride == .stereo {
+            return "Stereo 2.0"
+        }
+        let activeTrack = audioTracks.first(where: { $0.id == activeAudioTrackIndex })
+        let configuredLayout = effectiveSpeakerLayoutLabel
+        if let activeTrack {
+            if activeTrack.isAtmos {
+                return "\(configuredLayout) Atmos"
+            }
+            if activeTrack.isDTSX {
+                return "\(configuredLayout) DTS:X"
+            }
+            let codecUpper = activeTrack.codec.uppercased()
+            if codecUpper.contains("TRUEHD") {
+                return "TrueHD \(activeTrack.channelLayout ?? "7.1")"
+            }
+            if codecUpper.contains("DTS") || codecUpper.contains("DCA") {
+                return "\(activeTrack.profile ?? "DTS-HD") \(activeTrack.channelLayout ?? "")"
+                    .trimmingCharacters(in: .whitespaces)
+            }
+            if audioDelivery == .bridged {
+                return "LPCM \(activeTrack.channelLayout ?? "")".trimmingCharacters(in: .whitespaces)
+            }
+            return "\(codecUpper) \(activeTrack.channelLayout ?? "")".trimmingCharacters(in: .whitespaces)
+        }
+        return configuredLayout
+    }
+
+    var effectiveSpeakerLayoutLabel: String {
+        if comfort.speakerLayoutOverride != .auto {
+            return comfort.speakerLayoutOverride.rawValue
+        }
+        if let lay = activeSession?.aetherConfig.objectAudioRendering?.layout, !lay.isEmpty {
+            return lay
+        }
+        return activeSession?.hardwareProfile == "hdr10-512" ? "5.1.2" : "7.1.4"
+    }
+
+    var activeFormatBadges: [String] {
+        var list: [String] = [videoFormatBadge, audioFormatBadge]
+        if let tierLabel = activeSession?.selectedCandidate.sourceBadgeLabel {
+            list.append(tierLabel)
+        }
+        return list
+    }
+
+    // MARK: - Lifecycle & Commands
+
+    func start(request: PlaybackLaunchRequest, client: MediaOSClient?) {
         guard let client else {
             fatalError = "Mangler tilkobling til MediaOS."
             isResolving = false
@@ -65,7 +204,9 @@ final class PlayerViewModel: ObservableObject {
                 itemId: next.itemId,
                 title: next.title ?? String(format: "S%02dE%02d", next.season, next.episode),
                 seriesTitle: current.item.seriesTitle ?? current.item.title,
-                startPositionSeconds: 0
+                startPositionSeconds: 0,
+                backdropUrl: next.stillUrl ?? current.item.backdropUrl,
+                logoUrl: current.item.logoUrl
             )
             await runResolveAndLoad(request: req, client: client, isReplacement: true)
         }
@@ -84,9 +225,9 @@ final class PlayerViewModel: ObservableObject {
         guard let client = activeClient, let session = activeSession else { return }
         let currentPos = max(0, engine.currentTime)
         isSwitchingSource = true
-        isResolving = true
-        resolveStageLabel = "Bytter kilde på eksakt tidskode…"
-        resolvePercent = 65
+        resolveStageKey = "switching"
+        resolveStageLabel = "Bytter kilde sømløst på samme tidskode…"
+        resolvePercent = 70
 
         do {
             let updatedSession = try await client.switchCandidate(
@@ -94,6 +235,7 @@ final class PlayerViewModel: ObservableObject {
                 candidateId: candidateId,
                 positionSeconds: currentPos
             )
+            // Freeze current decoded frame via HeldStillPresenter so there is zero black blink
             engine.prepareForItemReplacement()
             try await mountSessionInEngine(
                 updatedSession,
@@ -101,18 +243,153 @@ final class PlayerViewModel: ObservableObject {
                 overrideStartPosition: updatedSession.stream.startPositionSeconds ?? currentPos
             )
             isSwitchingSource = false
-            isResolving = false
         } catch {
             isSwitchingSource = false
-            isResolving = false
             fatalError = "Kildebytte feilet: \(error.localizedDescription)"
         }
     }
 
+    // MARK: - Tactile Coalesced Seek & Chapter Seek
+
+    func coalesceRelativeSeek(delta: Double) {
+        guard !isResolving else { return }
+        let dur = effectiveDurationSeconds
+        let base = coalescedSeekPreviewTarget ?? max(0, engine.currentTime)
+        let accumulatedDelta = coalescedSeekDelta + delta
+        let rawTarget = max(0, base + delta)
+        let clampedTarget = dur > 1 ? min(dur - 0.5, rawTarget) : rawTarget
+
+        coalescedSeekDelta = accumulatedDelta
+        coalescedSeekPreviewTarget = clampedTarget
+
+        coalescedSeekTask?.cancel()
+        coalescedSeekTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            guard !Task.isCancelled, let self else { return }
+            let finalTarget = self.coalescedSeekPreviewTarget ?? max(0, self.engine.currentTime)
+            await self.engine.seek(to: finalTarget, exact: false)
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled else { return }
+            self.coalescedSeekDelta = 0
+            self.coalescedSeekPreviewTarget = nil
+        }
+    }
+
+    func seekToChapter(_ chapter: PlaybackChapter) {
+        Task { @MainActor in
+            await engine.seek(to: max(0, chapter.startSeconds), exact: true)
+        }
+    }
+
+    func activeChapter(at timeSeconds: Double) -> PlaybackChapter? {
+        guard !chapters.isEmpty, timeSeconds.isFinite else { return nil }
+        return chapters.first { timeSeconds >= $0.startSeconds && timeSeconds < $0.endSeconds }
+            ?? chapters.last { timeSeconds >= $0.startSeconds }
+    }
+
+    // MARK: - Audio & Subtitle Controls
+
+    func selectAudioTrack(_ index: Int) {
+        engine.selectAudioTrack(index: index)
+        activeAudioTrackIndex = index
+        if comfort.smartNordicSubtitleRule && !userManuallySelectedSubtitle {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                self?.applySmartSubtitleRule()
+            }
+        }
+    }
+
+    func adjustAudioDelay(by deltaSeconds: Double) {
+        let next = ((audioDelaySeconds + deltaSeconds) * 20).rounded() / 20
+        let clamped = next.clamped(to: -2.0...2.0)
+        engine.setAudioDelay(clamped)
+        audioDelaySeconds = engine.audioDelaySeconds
+    }
+
+    func resetAudioDelay() {
+        engine.setAudioDelay(0)
+        audioDelaySeconds = engine.audioDelaySeconds
+    }
+
+    func setAudioEnhancement(_ mode: AudioEnhancementMode) {
+        audioEnhancement = mode
+        engine.setAudioShaping(comfort.buildAudioShaping(enhancement: mode))
+    }
+
+    func selectSubtitleManually(_ index: Int) {
+        userManuallySelectedSubtitle = true
+        engine.selectSubtitleTrack(index: index)
+        activeSubtitleTrackIndex = index
+    }
+
+    func clearSubtitleManually() {
+        userManuallySelectedSubtitle = true
+        engine.clearSubtitle()
+        activeSubtitleTrackIndex = nil
+    }
+
     func adjustSubtitleDelay(by delta: Double) {
-        let updated = (subtitleDelaySeconds + delta).clamped(to: -10.0...10.0)
+        let rounded = ((subtitleDelaySeconds + delta) * 10).rounded() / 10
+        let updated = rounded.clamped(to: -10.0...10.0)
         engine.setSoftwareSubtitleDelay(updated)
         subtitleDelaySeconds = engine.softwareSubtitleDelaySeconds
+    }
+
+    func resetSubtitleDelay() {
+        engine.setSoftwareSubtitleDelay(0)
+        subtitleDelaySeconds = engine.softwareSubtitleDelaySeconds
+    }
+
+    func applySmartSubtitleRule() {
+        guard comfort.smartNordicSubtitleRule, !userManuallySelectedSubtitle else { return }
+        let activeAudio = audioTracks.first(where: { $0.id == activeAudioTrackIndex }) ?? audioTracks.first
+        let decision = SmartTrackRuleEngine.evaluate(activeAudio: activeAudio, subtitleTracks: subtitleTracks)
+        switch decision {
+        case .clearSubtitles:
+            if activeSubtitleTrackIndex != nil {
+                engine.clearSubtitle()
+            }
+        case .selectTrack(let trackID):
+            if activeSubtitleTrackIndex != trackID {
+                engine.selectSubtitleTrack(index: trackID)
+            }
+        case .keepCurrent:
+            break
+        }
+    }
+
+    func applyRuntimeOverrideReloadIfActive() {
+        guard activeSession != nil, !isResolving else { return }
+        engine.setAudioShaping(comfort.buildAudioShaping(enhancement: audioEnhancement))
+        let dlOverride = comfort.dualLayerOverride
+        let spkOverride = comfort.speakerLayoutOverride
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.engine.reloadAtCurrentPosition { opts in
+                switch dlOverride {
+                case .auto:
+                    break
+                case .forceOn:
+                    opts.preferDualLayerDolbyVision = true
+                    opts.dolbyVisionHandling = .automatic
+                case .forceOff:
+                    opts.preferDualLayerDolbyVision = false
+                    opts.dolbyVisionHandling = .baseLayerOnly
+                }
+
+                switch spkOverride {
+                case .auto:
+                    break
+                case .stereo:
+                    opts.objectAudioRendering = .off
+                case .l714:
+                    opts.objectAudioRendering = .render(.l714)
+                case .l512:
+                    opts.objectAudioRendering = .render(.l512)
+                }
+            }
+        }
     }
 
     func teardownAndStop() {
@@ -120,12 +397,18 @@ final class PlayerViewModel: ObservableObject {
         resolveTask = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil
+        firstFrameFallbackTask?.cancel()
+        firstFrameFallbackTask = nil
+        coalescedSeekTask?.cancel()
+        coalescedSeekTask = nil
+        detailLoadTask?.cancel()
+        detailLoadTask = nil
         UIApplication.shared.isIdleTimerDisabled = false
 
         let client = activeClient
         let session = activeSession
         let finalPos = max(0, engine.currentTime)
-        let finalDur = max(0, engine.duration)
+        let finalDur = max(0, effectiveDurationSeconds)
 
         if let tok = registeredStreamToken, tok.count >= 8 {
             EngineLog.unregisterSecret(tok)
@@ -148,12 +431,16 @@ final class PlayerViewModel: ObservableObject {
 
     // MARK: - Resolve & Engine Load Pipeline
 
-    private func runResolveAndLoad(request: PlaybackLaunchRequest, client: BFFClient, isReplacement: Bool) async {
+    private func runResolveAndLoad(request: PlaybackLaunchRequest, client: MediaOSClient, isReplacement: Bool) async {
         fatalError = nil
         isResolving = true
+        firstFrameFallbackUnlocked = false
         nextEpisodePrewarmReady = false
+        userManuallySelectedSubtitle = false
+        didApplyInitialSmartRule = false
+        resolveStageKey = "searching_indexers"
         resolveStageLabel = "Søker etter beste kilde for \(client.roomName)…"
-        resolvePercent = 15
+        resolvePercent = 16
         resolveHeadline = nil
         UIApplication.shared.isIdleTimerDisabled = true
 
@@ -173,11 +460,12 @@ final class PlayerViewModel: ObservableObject {
             } else if let wsPath = startRes.wsPath {
                 resolvedSession = try await awaitWebSocketResolution(wsPath: wsPath, client: client)
             } else {
-                throw BFFError.serverMessage(status, startRes.error ?? "Uventet svar ved klargjøring av strøm.")
+                throw MediaOSError.serverMessage(status, startRes.error ?? "Uventet svar ved klargjøring av strøm.")
             }
 
-            resolveStageLabel = "Starter avspilling…"
-            resolvePercent = 96
+            resolveStageKey = "awaiting_first_frame"
+            resolveStageLabel = "Tilpasser HDMI & starter avspilling…"
+            resolvePercent = 95
             if !isReplacement {
                 engine.ownsVideoNowPlayingSession = true
                 engine.ownsSoftwareNowPlaying = true
@@ -188,6 +476,8 @@ final class PlayerViewModel: ObservableObject {
                 overrideStartPosition: request.startPositionSeconds ?? resolvedSession.stream.startPositionSeconds
             )
             isResolving = false
+            armFirstFrameFallbackWatchdog()
+            loadItemDetailSilently(for: resolvedSession, client: client)
             startHeartbeatLoop()
         } catch {
             guard !Task.isCancelled else { return }
@@ -197,7 +487,40 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    private func awaitWebSocketResolution(wsPath: String, client: BFFClient) async throws -> TvPlaybackSession {
+    private func armFirstFrameFallbackWatchdog() {
+        firstFrameFallbackTask?.cancel()
+        firstFrameFallbackTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled, let self else { return }
+            if !self.hasFirstFrameReadyForDisplay {
+                self.firstFrameFallbackUnlocked = true
+            }
+        }
+    }
+
+    private func loadItemDetailSilently(for session: TvPlaybackSession, client: MediaOSClient) {
+        detailLoadTask?.cancel()
+        let itemCtx = session.item
+        let detailType = itemCtx.mediaType == "episode" ? "series" : itemCtx.mediaType
+        let lookupId: String
+        if let tmdb = itemCtx.ids.tmdb, tmdb > 0 {
+            lookupId = "\(detailType):tmdb:\(tmdb)"
+        } else {
+            lookupId = itemCtx.itemId
+        }
+        detailLoadTask = Task { @MainActor [weak self] in
+            if let detail = try? await client.fetchItemDetail(
+                mediaType: detailType,
+                itemId: lookupId,
+                seasonNumber: itemCtx.season
+            ) {
+                guard !Task.isCancelled else { return }
+                self?.itemDetail = detail
+            }
+        }
+    }
+
+    private func awaitWebSocketResolution(wsPath: String, client: MediaOSClient) async throws -> TvPlaybackSession {
         let socket = PlaybackResolveSocket(
             baseURL: client.baseURL,
             wsPath: wsPath,
@@ -206,6 +529,9 @@ final class PlayerViewModel: ObservableObject {
         )
 
         for try await event in socket.events() {
+            if let stage = event.stage, !stage.isEmpty {
+                resolveStageKey = stage
+            }
             if let pct = event.percent {
                 resolvePercent = pct
             }
@@ -220,19 +546,19 @@ final class PlayerViewModel: ObservableObject {
                 return readySession
             }
             if event.type == "resolve.failed" {
-                throw BFFError.serverMessage(502, event.error ?? "Kunne ikke klargjøre strøm.")
+                throw MediaOSError.serverMessage(502, event.error ?? "Kunne ikke klargjøre strøm.")
             }
         }
-        throw BFFError.serverMessage(504, "Mistet sanntidstilkoblingen under klargjøring av strøm.")
+        throw MediaOSError.serverMessage(504, "Mistet sanntidstilkoblingen under klargjøring av strøm.")
     }
 
     private func mountSessionInEngine(
         _ session: TvPlaybackSession,
-        client: BFFClient,
+        client: MediaOSClient,
         overrideStartPosition: Double?
     ) async throws {
         guard let streamURL = client.buildAbsoluteURL(session.stream.url) else {
-            throw BFFError.invalidURL(session.stream.url)
+            throw MediaOSError.invalidURL(session.stream.url)
         }
 
         if let prev = registeredStreamToken, prev.count >= 8 {
@@ -245,11 +571,19 @@ final class PlayerViewModel: ObservableObject {
 
         self.activeSession = session
         self.resolveHeadline = session.selectedCandidate.displayHeadline
+        self.engineChapters = []
+        rebuildMergedChapters()
 
         // AE#1015: Ensure forward subtitle prefetch stays disabled before loading
         engine.maximumSubtitleOffsetSeconds = 0
 
-        let options = Self.buildLoadOptions(session: session, client: client)
+        let options = Self.buildLoadOptions(
+            session: session,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: audioEnhancement,
+            audioDelaySeconds: audioDelaySeconds
+        )
         let startPos = overrideStartPosition ?? session.stream.startPositionSeconds ?? 0
         _ = try await engine.load(
             url: streamURL,
@@ -257,38 +591,72 @@ final class PlayerViewModel: ObservableObject {
             options: options
         )
         subtitleDelaySeconds = engine.softwareSubtitleDelaySeconds
+        audioDelaySeconds = engine.audioDelaySeconds
+        rebuildMergedChapters()
+
+        if comfort.smartNordicSubtitleRule && !didApplyInitialSmartRule {
+            didApplyInitialSmartRule = true
+            applySmartSubtitleRule()
+        }
     }
 
-    static func buildLoadOptions(session: TvPlaybackSession, client: BFFClient) -> LoadOptions {
+    static func buildLoadOptions(
+        session: TvPlaybackSession,
+        client: MediaOSClient,
+        comfort: ComfortPreferences,
+        audioEnhancement: AudioEnhancementMode,
+        audioDelaySeconds: Double
+    ) -> LoadOptions {
         let cfg = session.aetherConfig
         var options = LoadOptions()
 
         options.httpHeaders = client.streamHTTPHeaders()
-        options.preferDualLayerDolbyVision = cfg.preferDualLayerDolbyVision
+
+        switch comfort.dualLayerOverride {
+        case .auto:
+            options.preferDualLayerDolbyVision = cfg.preferDualLayerDolbyVision
+            options.dolbyVisionHandling = cfg.dolbyVisionHandling == "baseLayerOnly" ? .baseLayerOnly : .automatic
+        case .forceOn:
+            options.preferDualLayerDolbyVision = true
+            options.dolbyVisionHandling = .automatic
+        case .forceOff:
+            options.preferDualLayerDolbyVision = false
+            options.dolbyVisionHandling = .baseLayerOnly
+        }
+
         options.dualLayerRoute = cfg.dualLayerRoute == "avPlayerOutput" ? .avPlayerOutput : .softwareHost
-        options.dolbyVisionHandling = cfg.dolbyVisionHandling == "baseLayerOnly" ? .baseLayerOnly : .automatic
         options.matchContentEnabled = cfg.matchContentEnabled
         options.displayCriteriaOwner = .engine
         options.attemptsHDRMasterOnUnprovenPanel = cfg.attemptsHDRMasterOnUnprovenPanel
 
         // Let AetherEngine inspect HDMI capabilities directly via AVPlayer.availableHDRModes
-        // when displayCriteriaOwner == .engine so HDMI range/rate switching stays accurate.
         options.panelPresentsDolbyVision = false
         options.panelIsInHDRMode = false
 
         options.audioBridgeMode = cfg.audioBridgeMode == "lossless" ? .lossless : .surroundCompat
+        options.audioDelaySeconds = audioDelaySeconds
+        options.audioShaping = comfort.buildAudioShaping(enhancement: audioEnhancement)
 
-        if let obj = cfg.objectAudioRendering {
-            let layout = Self.mapSpeakerLayout(obj.layout)
-            switch obj.mode.lowercased() {
-            case "off":
-                options.objectAudioRendering = .off
-            case "apac":
-                options.objectAudioRendering = .apac(layout)
-            case "lpcm":
-                options.objectAudioRendering = .lpcm(layout)
-            default:
-                options.objectAudioRendering = .render(layout)
+        switch comfort.speakerLayoutOverride {
+        case .stereo:
+            options.objectAudioRendering = .off
+        case .l714:
+            options.objectAudioRendering = .render(.l714)
+        case .l512:
+            options.objectAudioRendering = .render(.l512)
+        case .auto:
+            if let obj = cfg.objectAudioRendering {
+                let layout = Self.mapSpeakerLayout(obj.layout)
+                switch obj.mode.lowercased() {
+                case "off":
+                    options.objectAudioRendering = .off
+                case "apac":
+                    options.objectAudioRendering = .apac(layout)
+                case "lpcm":
+                    options.objectAudioRendering = .lpcm(layout)
+                default:
+                    options.objectAudioRendering = .render(layout)
+                }
             }
         }
 
@@ -329,6 +697,15 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
+    private func rebuildMergedChapters() {
+        let probeCh = activeSession?.chapters ?? activeSession?.tracks?.chapters ?? []
+        chapters = PlaybackChapter.merge(
+            probeChapters: probeCh,
+            engineChapters: engineChapters,
+            mediaDuration: effectiveDurationSeconds
+        )
+    }
+
     // MARK: - 15s Pause-Safe VFS Heartbeat & Screensaver Guard
 
     private func startHeartbeatLoop() {
@@ -360,7 +737,7 @@ final class PlayerViewModel: ObservableObject {
         }
 
         let pos = max(0, engine.currentTime)
-        let dur = max(0, engine.duration > 0 ? engine.duration : (session.stream.declaredDurationSeconds ?? 0))
+        let dur = max(0, effectiveDurationSeconds)
 
         if let hb = try? await client.sendHeartbeat(
             sessionId: session.sessionId,
@@ -370,6 +747,9 @@ final class PlayerViewModel: ObservableObject {
         ) {
             if hb.nextEpisodePrewarmStarted == true {
                 nextEpisodePrewarmReady = true
+            }
+            if let vfs = hb.vfsTelemetry {
+                lastVfsTelemetry = vfs
             }
         }
     }
@@ -389,14 +769,52 @@ final class PlayerViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        engine.$duration.receive(on: RunLoop.main).assign(to: &$durationSeconds)
+        engine.$hasFirstFrameReadyForDisplay.receive(on: RunLoop.main).assign(to: &$hasFirstFrameReadyForDisplay)
+        engine.$isAwaitingDisplaySwitch.receive(on: RunLoop.main).assign(to: &$isAwaitingDisplaySwitch)
+        engine.$startupProgress.receive(on: RunLoop.main).assign(to: &$startupProgress)
+
+        engine.$duration
+            .receive(on: RunLoop.main)
+            .sink { [weak self] dur in
+                guard let self else { return }
+                self.durationSeconds = dur
+                self.rebuildMergedChapters()
+            }
+            .store(in: &cancellables)
+
+        engine.$mediaChapters
+            .receive(on: RunLoop.main)
+            .sink { [weak self] ch in
+                guard let self else { return }
+                self.engineChapters = ch
+                self.rebuildMergedChapters()
+            }
+            .store(in: &cancellables)
+
         engine.$videoFormat.receive(on: RunLoop.main).assign(to: &$videoFormat)
         engine.$sourceDVProfile.receive(on: RunLoop.main).assign(to: &$sourceDVProfile)
+        engine.$dolbyVisionConversion.receive(on: RunLoop.main).assign(to: &$dolbyVisionConversion)
         engine.$videoRoute.receive(on: RunLoop.main).assign(to: &$videoRoute)
         engine.$audioDelivery.receive(on: RunLoop.main).assign(to: &$audioDelivery)
+        engine.$sourceVideoCodecName.receive(on: RunLoop.main).assign(to: &$sourceVideoCodecName)
+        engine.$sourceVideoWidth.receive(on: RunLoop.main).assign(to: &$sourceVideoWidth)
+        engine.$sourceVideoHeight.receive(on: RunLoop.main).assign(to: &$sourceVideoHeight)
+        engine.$sourceVideoFrameRate.receive(on: RunLoop.main).assign(to: &$sourceVideoFrameRate)
+        engine.$activeVideoDecoder.receive(on: RunLoop.main).assign(to: &$activeVideoDecoder)
+        engine.$activeAudioDecoder.receive(on: RunLoop.main).assign(to: &$activeAudioDecoder)
+
         engine.$audioTracks.receive(on: RunLoop.main).assign(to: &$audioTracks)
         engine.$activeAudioTrackIndex.receive(on: RunLoop.main).assign(to: &$activeAudioTrackIndex)
-        engine.$subtitleTracks.receive(on: RunLoop.main).assign(to: &$subtitleTracks)
+        engine.$subtitleTracks
+            .receive(on: RunLoop.main)
+            .sink { [weak self] tracks in
+                guard let self else { return }
+                self.subtitleTracks = tracks
+                if self.comfort.smartNordicSubtitleRule && !self.userManuallySelectedSubtitle && !tracks.isEmpty {
+                    self.applySmartSubtitleRule()
+                }
+            }
+            .store(in: &cancellables)
         engine.$activeSubtitleTrackIndex.receive(on: RunLoop.main).assign(to: &$activeSubtitleTrackIndex)
     }
 

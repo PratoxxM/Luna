@@ -5,306 +5,336 @@ struct PlayerContainerView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
 
     let engine: AetherEngine
+    @ObservedObject var comfort: ComfortPreferences
     let initialRequest: PlaybackLaunchRequest
     let onDismiss: () -> Void
 
     @StateObject private var viewModel: PlayerViewModel
-    @State private var showControls: Bool = true
-    @State private var activeModal: PlayerSheetModal?
-    @State private var hideControlsTask: Task<Void, Never>?
+    @State private var showBottomBar: Bool = false
+    @State private var isTopDrawerOpen: Bool = false
+    @State private var selectedDrawerTab: PlayerTopDrawerTab = .subtitles
+    @State private var hasSeriesPrompt: Bool = false
+    @State private var seriesPromptDismissNonce: Int = 0
+    @State private var hideBottomBarTask: Task<Void, Never>?
+
+    @FocusState private var isCanvasFocused: Bool
 
     init(
         engine: AetherEngine,
+        comfort: ComfortPreferences,
         initialRequest: PlaybackLaunchRequest,
         onDismiss: @escaping () -> Void
     ) {
         self.engine = engine
+        self.comfort = comfort
         self.initialRequest = initialRequest
         self.onDismiss = onDismiss
-        _viewModel = StateObject(wrappedValue: PlayerViewModel(engine: engine))
+        _viewModel = StateObject(wrappedValue: PlayerViewModel(engine: engine, comfort: comfort))
+    }
+
+    private var shouldEnableCanvasAnchor: Bool {
+        viewModel.isPictureReadyForReveal &&
+            viewModel.fatalError == nil &&
+            !isTopDrawerOpen &&
+            viewModel.playbackPhase != .paused &&
+            !hasSeriesPrompt
     }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        let client = sessionStore.makeClient()
+        let roomBadge = "\(sessionStore.roomName) · \(sessionStore.activePreset.shortBadgeLabel)"
 
-            // 1. Hardware / Dual-Layer FEL Video Surface
+        ZStack {
+            LunaTheme.pureBlack.ignoresSafeArea()
+
+            // 0. Hardware / Dual-Layer FEL Video Surface (always mounted behind curtain)
             AetherPlayerSurface(engine: engine)
                 .ignoresSafeArea()
+                .zIndex(0)
 
-            // 2. Leaf-isolated Subtitle Overlay
-            SubtitleOverlayView(engine: engine)
+            // 1. Leaf-isolated HDR/OLED Subtitle Overlay
+            SubtitleOverlayView(engine: engine, comfort: comfort)
                 .ignoresSafeArea()
+                .zIndex(1)
 
-            // 3. Cold Resolve / VFS Mount Overlay
-            if viewModel.isResolving {
-                resolveProgressOverlay
-            } else if let err = viewModel.fatalError {
+            // 1.5 Tactile Siri Remote Focus Anchor (active only during clean playback)
+            if shouldEnableCanvasAnchor {
+                Button {
+                    if showBottomBar {
+                        hideBottomBarTask?.cancel()
+                        withAnimation(.easeOut(duration: 0.22)) {
+                            showBottomBar = false
+                        }
+                    } else {
+                        revealBottomBarTemporarily()
+                    }
+                } label: {
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focused($isCanvasFocused)
+                .onMoveCommand { direction in
+                    handleCanvasMoveCommand(direction)
+                }
+                .zIndex(1.5)
+            }
+
+            // 2. Opaque Resolving Curtain (locked until hasFirstFrameReadyForDisplay == true)
+            if !viewModel.isPictureReadyForReveal && viewModel.fatalError == nil {
+                ResolvingCurtainView(
+                    viewModel: viewModel,
+                    initialRequest: initialRequest,
+                    client: client,
+                    roomBadgeText: roomBadge,
+                    onCancel: closePlayer
+                )
+                .transition(.opacity)
+                .zIndex(2)
+            }
+
+            // 3. Optional 1 Hz Isolated Nerd-HUD (top-left)
+            if comfort.showNerdHUD && viewModel.isPictureReadyForReveal && !isTopDrawerOpen {
+                VStack {
+                    HStack {
+                        NerdHUDView(engine: engine, viewModel: viewModel)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, LunaTheme.horizontalGutter)
+                .padding(.top, 42)
+                .transition(.opacity)
+                .zIndex(3)
+            }
+
+            // 4. Series Continuity Overlays («Hopp over intro» & «Spill neste episode»)
+            if viewModel.isPictureReadyForReveal && !isTopDrawerOpen && viewModel.fatalError == nil {
+                SeriesFlowOverlays(
+                    viewModel: viewModel,
+                    comfort: comfort,
+                    client: client,
+                    isBottomBarVisible: showBottomBar || viewModel.playbackPhase == .paused,
+                    hasActivePrompt: $hasSeriesPrompt,
+                    dismissNonce: seriesPromptDismissNonce
+                )
+                .zIndex(4)
+            }
+
+            // 5. Minimalist Bottom Bar + Coalesced Tactile Seek Pill
+            if viewModel.isPictureReadyForReveal && !isTopDrawerOpen && viewModel.fatalError == nil {
+                if showBottomBar || viewModel.playbackPhase == .paused {
+                    PlayerBottomBarView(
+                        viewModel: viewModel,
+                        fallbackTitle: initialRequest.title,
+                        onOpenTopDrawer: { openTopDrawer() },
+                        onUserInteraction: { revealBottomBarTemporarily() }
+                    )
+                    .transition(.opacity)
+                    .zIndex(5)
+                }
+
+                if abs(viewModel.coalescedSeekDelta) >= 1 {
+                    coalescedSeekFeedbackPill
+                        .transition(.scale(scale: 0.92).combined(with: .opacity))
+                        .zIndex(5.5)
+                }
+            }
+
+            // 6. Swipe-Down 4-Tab Liquid Glass Top Drawer
+            if isTopDrawerOpen && viewModel.fatalError == nil {
+                PlayerTopDrawerView(
+                    viewModel: viewModel,
+                    comfort: comfort,
+                    client: client,
+                    selectedTab: $selectedDrawerTab,
+                    onClose: {
+                        withAnimation(.easeOut(duration: 0.22)) {
+                            isTopDrawerOpen = false
+                        }
+                        restoreCanvasFocusSoon()
+                    }
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(6)
+            }
+
+            // 7. Fatal Error Recovery Overlay
+            if let err = viewModel.fatalError {
                 fatalErrorOverlay(err)
-            } else if showControls {
-                transportOverlay
+                    .zIndex(7)
             }
         }
-        .sheet(item: $activeModal) { modal in
-            switch modal {
-            case .audio:
-                AudioTrackSheetView(viewModel: viewModel) { activeModal = nil }
-            case .subtitles:
-                SubtitleTrackSheetView(viewModel: viewModel) { activeModal = nil }
-            case .sources:
-                SourceSwitcherSheetView(viewModel: viewModel) { activeModal = nil }
-            case .diagnostics:
-                DiagnosticsSheetView(viewModel: viewModel)
+        .animation(.easeOut(duration: 0.28), value: viewModel.isPictureReadyForReveal)
+        .onChange(of: viewModel.isPictureReadyForReveal) { _, ready in
+            if ready {
+                revealBottomBarTemporarily()
+                restoreCanvasFocusSoon()
+            }
+        }
+        .onChange(of: shouldEnableCanvasAnchor) { _, enabled in
+            if enabled {
+                restoreCanvasFocusSoon()
             }
         }
         .onPlayPauseCommand {
             guard !viewModel.isResolving else { return }
+            if isTopDrawerOpen {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    isTopDrawerOpen = false
+                }
+            }
             engine.togglePlayPause()
-            revealControlsTemporarily()
-        }
-        .onMoveCommand { direction in
-            if !showControls {
-                revealControlsTemporarily()
-                return
-            }
-            revealControlsTemporarily()
-            switch direction {
-            case .left:
-                Task { await engine.seek(to: max(0, engine.currentTime - 15)) }
-            case .right:
-                Task { await engine.seek(to: engine.currentTime + 30) }
-            default:
-                break
-            }
+            revealBottomBarTemporarily()
         }
         .onExitCommand {
-            if showControls && !viewModel.isResolving && viewModel.playbackPhase == .playing {
-                showControls = false
+            if isTopDrawerOpen {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    isTopDrawerOpen = false
+                }
+                restoreCanvasFocusSoon()
+            } else if hasSeriesPrompt {
+                seriesPromptDismissNonce &+= 1
+                restoreCanvasFocusSoon()
+            } else if showBottomBar && viewModel.playbackPhase == .playing {
+                hideBottomBarTask?.cancel()
+                withAnimation(.easeOut(duration: 0.2)) {
+                    showBottomBar = false
+                }
             } else {
                 closePlayer()
             }
         }
         .onAppear {
-            viewModel.start(request: initialRequest, client: sessionStore.makeClient())
-            revealControlsTemporarily()
+            viewModel.start(request: initialRequest, client: client)
         }
         .onDisappear {
-            hideControlsTask?.cancel()
+            hideBottomBarTask?.cancel()
             viewModel.teardownAndStop()
         }
     }
 
-    private var resolveProgressOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.84).ignoresSafeArea()
+    // MARK: - Siri Remote Tactile Gestures
 
-            VStack(spacing: 24) {
-                ProgressView()
-                    .scaleEffect(1.4)
-
-                Text(initialRequest.seriesTitle ?? initialRequest.title)
-                    .font(.title.bold())
-
-                Text(viewModel.resolveStageLabel)
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-
-                if let headline = viewModel.resolveHeadline {
-                    Text(headline)
-                        .font(.callout.monospaced())
-                        .foregroundStyle(Color(red: 0.96, green: 0.77, blue: 0.42))
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.08), in: Capsule())
-                }
-
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.16))
-                        Capsule()
-                            .fill(Color(red: 0.96, green: 0.77, blue: 0.42))
-                            .frame(width: geo.size.width * CGFloat(Double(viewModel.resolvePercent) / 100.0))
-                    }
-                }
-                .frame(width: 520, height: 8)
-
-                Button("Avbryt") {
-                    closePlayer()
-                }
-                .padding(.top, 12)
-            }
-            .padding(60)
+    private func handleCanvasMoveCommand(_ direction: MoveCommandDirection) {
+        switch direction {
+        case .down:
+            openTopDrawer()
+        case .up:
+            revealBottomBarTemporarily()
+        case .left:
+            viewModel.coalesceRelativeSeek(delta: -10)
+            revealBottomBarTemporarily()
+        case .right:
+            viewModel.coalesceRelativeSeek(delta: 30)
+            revealBottomBarTemporarily()
+        @unknown default:
+            break
         }
     }
 
-    private func fatalErrorOverlay(_ message: String) -> some View {
-        ZStack {
-            Color.black.opacity(0.88).ignoresSafeArea()
-
-            VStack(spacing: 22) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 54))
-                    .foregroundStyle(.yellow)
-
-                Text("Avspilling feilet")
-                    .font(.title2.bold())
-
-                Text(message)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 820)
-
-                HStack(spacing: 24) {
-                    Button("Prøv igjen") {
-                        viewModel.start(request: initialRequest, client: sessionStore.makeClient())
-                    }
-
-                    if viewModel.activeSession != nil {
-                        Button("Velg annen kilde") {
-                            activeModal = .sources
-                        }
-                    }
-
-                    Button("Lukk") {
-                        closePlayer()
-                    }
-                }
-            }
-            .padding(60)
+    private func openTopDrawer(tab: PlayerTopDrawerTab? = nil) {
+        hideBottomBarTask?.cancel()
+        if let tab {
+            selectedDrawerTab = tab
+        }
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+            showBottomBar = false
+            isTopDrawerOpen = true
         }
     }
 
-    private var transportOverlay: some View {
-        VStack {
-            // Top bar
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    if let series = viewModel.activeSession?.item.seriesTitle {
-                        Text(series)
-                            .font(.callout.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(viewModel.activeSession?.item.title ?? initialRequest.title)
-                        .font(.title2.bold())
-                    if let headline = viewModel.resolveHeadline {
-                        Text(headline)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(Color(red: 0.96, green: 0.77, blue: 0.42))
-                    }
-                }
-
-                Spacer()
-
-                if let next = viewModel.activeSession?.nextEpisode, viewModel.nextEpisodePrewarmReady {
-                    Button {
-                        viewModel.playNextEpisode(next)
-                    } label: {
-                        Label(
-                            String(format: "Neste: S%02dE%02d", next.season, next.episode),
-                            systemImage: "forward.end.fill"
-                        )
-                    }
-                }
-            }
-            .padding(.horizontal, 64)
-            .padding(.top, 44)
-
-            Spacer()
-
-            // Bottom transport & modal sheet triggers (NEVER SwiftUI Menu on tvOS 26!)
-            VStack(spacing: 22) {
-                PlayerScrubberBarView(
-                    engine: engine,
-                    duration: viewModel.durationSeconds > 0
-                        ? viewModel.durationSeconds
-                        : (viewModel.activeSession?.stream.declaredDurationSeconds ?? 0)
-                )
-
-                HStack(spacing: 20) {
-                    Button {
-                        engine.togglePlayPause()
-                        revealControlsTemporarily()
-                    } label: {
-                        Label(
-                            viewModel.playbackPhase == .playing ? "Pause" : "Spill",
-                            systemImage: viewModel.playbackPhase == .playing ? "pause.fill" : "play.fill"
-                        )
-                    }
-
-                    Button {
-                        Task { await engine.seek(to: max(0, engine.currentTime - 15)) }
-                        revealControlsTemporarily()
-                    } label: {
-                        Label("-15s", systemImage: "gobackward.15")
-                    }
-
-                    Button {
-                        Task { await engine.seek(to: engine.currentTime + 30) }
-                        revealControlsTemporarily()
-                    } label: {
-                        Label("+30s", systemImage: "goforward.30")
-                    }
-
-                    Spacer()
-
-                    Button {
-                        activeModal = .audio
-                    } label: {
-                        Label("Lyd", systemImage: "waveform")
-                    }
-
-                    Button {
-                        activeModal = .subtitles
-                    } label: {
-                        Label("Tekst", systemImage: "captions.bubble")
-                    }
-
-                    Button {
-                        activeModal = .sources
-                    } label: {
-                        Label("Kilde", systemImage: "arrow.triangle.2.circlepath")
-                    }
-
-                    Button {
-                        activeModal = .diagnostics
-                    } label: {
-                        Label("Info", systemImage: "gauge.with.dots.needle.67percent")
-                    }
-
-                    Button {
-                        closePlayer()
-                    } label: {
-                        Label("Lukk", systemImage: "xmark")
-                    }
-                }
-            }
-            .padding(.horizontal, 64)
-            .padding(.bottom, 48)
-            .background(
-                LinearGradient(
-                    colors: [.clear, Color.black.opacity(0.86)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+    private func revealBottomBarTemporarily() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            showBottomBar = true
         }
-    }
-
-    private func revealControlsTemporarily() {
-        showControls = true
-        hideControlsTask?.cancel()
-        hideControlsTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 6_000_000_000)
+        hideBottomBarTask?.cancel()
+        hideBottomBarTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_500_000_000)
             guard !Task.isCancelled else { return }
-            if viewModel.playbackPhase == .playing && activeModal == nil {
-                showControls = false
+            if viewModel.playbackPhase == .playing && !isTopDrawerOpen {
+                withAnimation(.easeOut(duration: 0.28)) {
+                    showBottomBar = false
+                }
+            }
+        }
+    }
+
+    private func restoreCanvasFocusSoon() {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 60_000_000)
+            if shouldEnableCanvasAnchor {
+                isCanvasFocused = true
             }
         }
     }
 
     private func closePlayer() {
-        hideControlsTask?.cancel()
+        hideBottomBarTask?.cancel()
         onDismiss()
+    }
+
+    // MARK: - Coalesced Seek Pill & Fatal Error Overlay
+
+    private var coalescedSeekFeedbackPill: some View {
+        let secs = Int(viewModel.coalescedSeekDelta.rounded())
+        let isForward = secs >= 0
+        let sign = isForward ? "+" : ""
+
+        return HStack(spacing: 12) {
+            Image(systemName: isForward ? "goforward" : "gobackward")
+                .font(.title2.weight(.bold))
+                .foregroundStyle(LunaTheme.amber)
+            Text("\(sign)\(secs) s")
+                .font(.title2.monospacedDigit().weight(.bold))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 16)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.55), lineWidth: 1.5))
+        .shadow(color: .black.opacity(0.6), radius: 20, x: 0, y: 8)
+    }
+
+    private func fatalErrorOverlay(_ message: String) -> some View {
+        ZStack {
+            LunaTheme.pureBlack.opacity(0.92).ignoresSafeArea()
+
+            VStack(spacing: 24) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 52))
+                    .foregroundStyle(LunaTheme.amber)
+
+                Text("Avspilling kunne ikke starte")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.white)
+
+                Text(message)
+                    .font(.callout)
+                    .foregroundStyle(LunaTheme.muted)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 820)
+
+                HStack(spacing: 20) {
+                    LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise", prominence: .primaryAmber) {
+                        viewModel.start(request: initialRequest, client: sessionStore.makeClient())
+                    }
+
+                    if viewModel.activeSession != nil {
+                        LunaPillButton("Velg annen kilde", systemImage: "arrow.triangle.2.circlepath", prominence: .glassPill) {
+                            viewModel.fatalError = nil
+                            openTopDrawer(tab: .sources)
+                        }
+                    }
+
+                    LunaPillButton("Lukk", systemImage: "xmark", prominence: .subtleChip) {
+                        closePlayer()
+                    }
+                }
+                .padding(.top, 8)
+            }
+            .padding(60)
+        }
     }
 }

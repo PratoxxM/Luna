@@ -189,7 +189,7 @@ public struct MediaOSClient: Sendable {
 
     // MARK: - Device Flow Pairing
 
-    public func requestPairingCode(model: String, osVersion: String, appVersion: String = "2.0.0") async throws -> TvPairingRequestResponse {
+    public func requestPairingCode(model: String, osVersion: String, appVersion: String = "2.1.0") async throws -> TvPairingRequestResponse {
         struct Payload: Encodable {
             let deviceId: String
             let model: String

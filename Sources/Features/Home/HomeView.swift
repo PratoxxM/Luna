@@ -124,7 +124,9 @@ struct HomeView: View {
                         title: target.title,
                         seriesTitle: target.seriesTitle,
                         startPositionSeconds: target.startPositionSeconds,
-                        candidateId: picked.candidateId
+                        candidateId: picked.candidateId,
+                        backdropUrl: target.backdropUrl,
+                        logoUrl: target.logoUrl
                     )
                 },
                 onCancel: {
@@ -277,7 +279,9 @@ struct HomeView: View {
             itemId: resolved.itemId,
             title: resolved.title,
             seriesTitle: resolved.seriesTitle,
-            startPositionSeconds: resolved.startPos
+            startPositionSeconds: resolved.startPos,
+            backdropUrl: card.preferredLandscapePath,
+            logoUrl: card.logoUrl
         )
     }
 

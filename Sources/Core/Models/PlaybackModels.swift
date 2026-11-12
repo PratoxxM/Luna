@@ -34,24 +34,27 @@ public struct PlaybackLaunchRequest: Identifiable, Equatable, Sendable {
 }
 
 public struct TvDeviceOverrides: Codable, Equatable, Sendable {
-    public var preferDualLayerDV: Bool?
-    public var speakerLayout: String?
-    public var subtitleMaxLuminancePct: Int?
+    public var dualLayerOverride: String?
+    public var speakerLayoutOverride: String?
+    public var hdrSubtitlePreset: String?
+    public var subtitleFontScale: Double?
     public var autoPlayNextEpisode: Bool?
-    public var smartSubtitleLanguageRule: String?
+    public var smartNordicSubtitleRule: Bool?
 
     public init(
-        preferDualLayerDV: Bool? = nil,
-        speakerLayout: String? = nil,
-        subtitleMaxLuminancePct: Int? = nil,
+        dualLayerOverride: String? = nil,
+        speakerLayoutOverride: String? = nil,
+        hdrSubtitlePreset: String? = nil,
+        subtitleFontScale: Double? = nil,
         autoPlayNextEpisode: Bool? = nil,
-        smartSubtitleLanguageRule: String? = nil
+        smartNordicSubtitleRule: Bool? = nil
     ) {
-        self.preferDualLayerDV = preferDualLayerDV
-        self.speakerLayout = speakerLayout
-        self.subtitleMaxLuminancePct = subtitleMaxLuminancePct
+        self.dualLayerOverride = dualLayerOverride
+        self.speakerLayoutOverride = speakerLayoutOverride
+        self.hdrSubtitlePreset = hdrSubtitlePreset
+        self.subtitleFontScale = subtitleFontScale
         self.autoPlayNextEpisode = autoPlayNextEpisode
-        self.smartSubtitleLanguageRule = smartSubtitleLanguageRule
+        self.smartNordicSubtitleRule = smartNordicSubtitleRule
     }
 }
 
@@ -85,6 +88,11 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
     public let releaseTitle: String
     public let source: String
     public let tier: String?
+    public let resolution: String?
+    public let videoRangeType: String?
+    public let dvProfile: Int?
+    public let dvEnhancementLayer: String?
+    public let audioCodec: String?
     public let sizeBytes: Int64?
     public let tvScore: Int?
     public let isActive: Bool?
@@ -107,6 +115,29 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
         if normTier == "archive" { return "I Arkiv" }
         if normTier == "vfs" || source.lowercased() == "infinidysk" { return "InfiniDysk VFS" }
         return source.uppercased()
+    }
+
+    public var capabilityBadges: [String] {
+        var tags: [String] = [sourceBadgeLabel]
+        if let res = resolution, !res.isEmpty, res != "unknown" {
+            tags.append(res.uppercased())
+        }
+        if let dv = dvProfile {
+            if dv == 7, let layer = dvEnhancementLayer, !layer.isEmpty {
+                tags.append("DV P7 \(layer.uppercased())")
+            } else {
+                tags.append("DV P\(dv)")
+            }
+        } else if let range = videoRangeType, !range.isEmpty, range != "SDR" {
+            tags.append(range.replacingOccurrences(of: "HDR10Plus", with: "HDR10+"))
+        }
+        if let ac = audioCodec, !ac.isEmpty, ac != "unknown" {
+            tags.append(ac)
+        }
+        if let size = formattedSize {
+            tags.append(size)
+        }
+        return tags
     }
 }
 
@@ -135,11 +166,17 @@ public struct TvExternalSubtitle: Codable, Identifiable, Equatable, Sendable {
 public struct TvSessionTracks: Codable, Equatable, Sendable {
     public let probeConfidence: String?
     public let externalSubtitles: [TvExternalSubtitle]?
+    public let chapters: [TvProbeChapter]?
 }
 
 public struct TvObjectAudioConfig: Codable, Equatable, Sendable {
     public let mode: String
     public let layout: String?
+}
+
+public struct TvSubtitleStyleConfig: Codable, Equatable, Sendable {
+    public let preset: String?
+    public let fontScale: Double?
 }
 
 public struct TvAetherConfig: Codable, Equatable, Sendable {
@@ -156,6 +193,9 @@ public struct TvAetherConfig: Codable, Equatable, Sendable {
     public let audioBridgeMode: String
     public let preferredAudioLanguages: [String]?
     public let preferredSubtitleLanguages: [String]?
+    public let subtitleStyle: TvSubtitleStyleConfig?
+    public let autoPlayNextEpisode: Bool?
+    public let smartNordicSubtitleRule: Bool?
     public let skipsContainerAttachments: Bool?
     public let generatesBackgroundScrubPreviews: Bool?
     public let serveIFramePlaylist: Bool?
@@ -176,6 +216,7 @@ public struct TvPlaybackItemContext: Codable, Equatable, Sendable {
     public let runtimeSeconds: Double?
     public let posterUrl: String?
     public let backdropUrl: String?
+    public let logoUrl: String?
 }
 
 public struct TvNextEpisodeSummary: Codable, Equatable, Sendable {
@@ -183,6 +224,8 @@ public struct TvNextEpisodeSummary: Codable, Equatable, Sendable {
     public let season: Int
     public let episode: Int
     public let title: String?
+    public let stillUrl: String?
+    public let prewarmThresholdFraction: Double?
 }
 
 public struct TvPlaybackSession: Codable, Equatable, Sendable {
@@ -194,6 +237,7 @@ public struct TvPlaybackSession: Codable, Equatable, Sendable {
     public let selectedCandidate: TvCandidateInfo
     public let stream: TvStreamEndpoint
     public let tracks: TvSessionTracks?
+    public let chapters: [TvProbeChapter]?
     public let aetherConfig: TvAetherConfig
     public let heartbeatIntervalSeconds: Int?
     public let nextEpisode: TvNextEpisodeSummary?
@@ -230,13 +274,20 @@ public struct TvResolveSocketEvent: Codable, Equatable, Sendable {
     public let playbackSession: TvPlaybackSession?
 }
 
+public struct TvVfsTelemetry: Codable, Equatable, Sendable {
+    public let streamSource: String?
+    public let vfsMountFolder: String?
+}
+
 public struct TvHeartbeatResponse: Codable, Equatable, Sendable {
     public let ok: Bool
     public let sessionId: String
     public let state: String
+    public let watchCompleted: Bool?
     public let vfsLockActive: Bool
     public let leaseExpiresAt: String?
     public let nextEpisodePrewarmStarted: Bool?
+    public let vfsTelemetry: TvVfsTelemetry?
 }
 
 public struct TvAlternativesResponse: Codable, Equatable, Sendable {

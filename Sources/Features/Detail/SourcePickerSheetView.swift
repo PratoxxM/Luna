@@ -7,13 +7,17 @@ public struct SourcePickerContext: Identifiable, Equatable, Hashable, Sendable {
     public let seriesTitle: String?
     public let startPositionSeconds: Double?
     public let existingPrepareToken: String?
+    public let backdropUrl: String?
+    public let logoUrl: String?
 
     public init(
         itemId: String,
         title: String,
         seriesTitle: String? = nil,
         startPositionSeconds: Double? = nil,
-        existingPrepareToken: String? = nil
+        existingPrepareToken: String? = nil,
+        backdropUrl: String? = nil,
+        logoUrl: String? = nil
     ) {
         self.id = "\(itemId)#\(UUID().uuidString)"
         self.itemId = itemId
@@ -21,6 +25,8 @@ public struct SourcePickerContext: Identifiable, Equatable, Hashable, Sendable {
         self.seriesTitle = seriesTitle
         self.startPositionSeconds = startPositionSeconds
         self.existingPrepareToken = existingPrepareToken
+        self.backdropUrl = backdropUrl
+        self.logoUrl = logoUrl
     }
 }
 

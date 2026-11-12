@@ -15,6 +15,16 @@ public enum SideloadSafeStorage {
     public static let localProfileOverrideKey = "luna.v1.local_profile_override"
     public static let allowSelfSignedLanTLSKey = "luna.v1.allow_lan_tls"
 
+    // Comfort, HDR/OLED subtitle & playback preference keys (sideload-safe)
+    public static let hdrSubtitlePresetKey = "luna.v1.comfort.hdr_subtitle_preset"
+    public static let subtitleFontScaleKey = "luna.v1.comfort.subtitle_font_scale"
+    public static let subtitleBoxOpacityKey = "luna.v1.comfort.subtitle_box_opacity"
+    public static let dualLayerOverrideKey = "luna.v1.comfort.dual_layer_override"
+    public static let speakerLayoutOverrideKey = "luna.v1.comfort.speaker_layout_override"
+    public static let autoPlayNextEpisodeKey = "luna.v1.comfort.auto_play_next_episode"
+    public static let smartNordicSubtitleRuleKey = "luna.v1.comfort.smart_nordic_subtitle_rule"
+    public static let showNerdHUDKey = "luna.v1.comfort.show_nerd_hud"
+
     private static let keychainService = "luna.v1.credentials"
     private static let tokenAccount = "device_bearer_token"
 

@@ -52,6 +52,7 @@ public final class AppSessionStore: ObservableObject {
     @Published public var localProfileOverride: String?
     @Published public var deviceOverrides: TvDeviceOverrides? = nil
     @Published public private(set) var homeRefreshNonce: Int = 0
+    public let comfort: ComfortPreferences
 
     @Published public var allowSelfSignedLanTLS: Bool {
         didSet {
@@ -72,6 +73,7 @@ public final class AppSessionStore: ObservableObject {
     }
 
     private let defaults: UserDefaults
+    private var overrideSyncTask: Task<Void, Never>?
 
     public var isPaired: Bool {
         serverBaseURL != nil && !(deviceToken ?? "").isEmpty
@@ -90,6 +92,7 @@ public final class AppSessionStore: ObservableObject {
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.comfort = ComfortPreferences(defaults: defaults)
         self.deviceID = SideloadSafeStorage.ensurePersistentDeviceID(defaults: defaults)
 
         if let rawURL = defaults.string(forKey: SideloadSafeStorage.serverURLKey),
@@ -114,6 +117,20 @@ public final class AppSessionStore: ObservableObject {
         self.allowSelfSignedLanTLS = defaults.object(forKey: SideloadSafeStorage.allowSelfSignedLanTLSKey) as? Bool ?? true
 
         applyEngineTLSPolicy()
+
+        self.comfort.onSyncRequested = { [weak self] updatedOverrides in
+            self?.scheduleOverridesSync(updatedOverrides)
+        }
+    }
+
+    private func scheduleOverridesSync(_ overrides: TvDeviceOverrides) {
+        self.deviceOverrides = overrides
+        overrideSyncTask?.cancel()
+        overrideSyncTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled, let self, let client = self.makeClient() else { return }
+            try? await client.updateDeviceProfile(overrides: overrides)
+        }
     }
 
     public func notifyContentMutated() {
@@ -145,6 +162,7 @@ public final class AppSessionStore: ObservableObject {
         self.roomName = pairedDevice.roomName
         self.hardwareProfile = pairedDevice.hardwareProfile
         self.deviceOverrides = pairedDevice.overrides
+        self.comfort.adoptServerOverrides(pairedDevice.overrides)
         self.localProfileOverride = nil
 
         defaults.set(baseURL.absoluteString, forKey: SideloadSafeStorage.serverURLKey)
@@ -165,6 +183,7 @@ public final class AppSessionStore: ObservableObject {
             defaults.set(device.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
         }
         self.deviceOverrides = device.overrides
+        self.comfort.adoptServerOverrides(device.overrides)
         defaults.set(device.deviceName, forKey: SideloadSafeStorage.deviceNameKey)
     }
 

@@ -78,15 +78,18 @@ struct MainNavigationShell: View {
             .tint(LunaTheme.amber)
         }
         .environmentObject(ambientController)
+        .environmentObject(sessionStore.comfort)
         .fullScreenCover(item: $sessionStore.activePlaybackTarget) { launchRequest in
             PlayerContainerView(
                 engine: engine,
+                comfort: sessionStore.comfort,
                 initialRequest: launchRequest,
                 onDismiss: {
                     sessionStore.activePlaybackTarget = nil
                 }
             )
             .environmentObject(sessionStore)
+            .environmentObject(sessionStore.comfort)
         }
         .task {
             await refreshBootstrapProfile()

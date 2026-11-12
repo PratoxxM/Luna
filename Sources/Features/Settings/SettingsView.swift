@@ -3,6 +3,7 @@ import AetherBridge
 
 struct SettingsView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
+    @EnvironmentObject private var comfort: ComfortPreferences
 
     @State private var cacheBytes: Int64 = 0
     @State private var cacheClearedNotice: Bool = false
@@ -11,17 +12,17 @@ struct SettingsView: View {
         let caps = AetherEngine.displayCapabilities
 
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 36) {
+            VStack(alignment: .leading, spacing: 34) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Innstillinger")
                         .font(.largeTitle.weight(.bold))
                         .foregroundStyle(.white)
-                    Text("Romprofil, bilde-/lydkapabiliteter og lokal hurtigbuffer for Luna v2.0.")
+                    Text("Romprofil, OLED/HDR-komfort, smarte språkregler og systemstatus for Luna v2.1.")
                         .font(.callout)
                         .foregroundStyle(LunaTheme.muted)
                 }
 
-                // 1. Paired Room & Hardware Profile
+                // 1. Paired Room, Hardware Profile & Local AV Overrides
                 settingsPanel("Rom & Utstyrsprofil") {
                     ForEach(HardwareProfilePreset.allCases) { preset in
                         let isSelected = sessionStore.effectiveHardwareProfile == preset.rawValue
@@ -51,7 +52,11 @@ struct SettingsView: View {
                     }
 
                     if sessionStore.localProfileOverride != nil {
-                        LunaPillButton("Tilbakestill til rom fra MediaOS Web", systemImage: "arrow.uturn.backward", prominence: .subtleChip) {
+                        LunaPillButton(
+                            "Tilbakestill til rom fra MediaOS Web",
+                            systemImage: "arrow.uturn.backward",
+                            prominence: .subtleChip
+                        ) {
                             sessionStore.setRoomAndProfile(
                                 roomName: sessionStore.roomName,
                                 hardwareProfile: sessionStore.hardwareProfile,
@@ -59,9 +64,133 @@ struct SettingsView: View {
                             )
                         }
                     }
+
+                    Divider().overlay(LunaTheme.moonlight.opacity(0.12))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Dolby Vision Dual-Layer (P7 FEL)")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(LunaTheme.moonlight)
+
+                        HStack(spacing: 12) {
+                            ForEach(DualLayerOverrideMode.allCases) { mode in
+                                LunaPillButton(
+                                    mode.displayTitle,
+                                    isSelected: comfort.dualLayerOverride == mode,
+                                    prominence: comfort.dualLayerOverride == mode ? .glassPill : .subtleChip
+                                ) {
+                                    comfort.dualLayerOverride = mode
+                                }
+                            }
+                        }
+                    }
+                    .padding(.top, 4)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Høyttaleroppsett & Objektlyd")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(LunaTheme.moonlight)
+
+                        HStack(spacing: 12) {
+                            ForEach(SpeakerLayoutOverrideMode.allCases) { mode in
+                                LunaPillButton(
+                                    mode.displayTitle,
+                                    isSelected: comfort.speakerLayoutOverride == mode,
+                                    prominence: comfort.speakerLayoutOverride == mode ? .glassPill : .subtleChip
+                                ) {
+                                    comfort.speakerLayoutOverride = mode
+                                }
+                            }
+                        }
+                    }
+                    .padding(.top, 4)
                 }
 
-                // 2. Local Disk SWR & Artwork Cache
+                // 2. Comfort, HDR/OLED Subtitles & Smart Nordic Language Rules
+                settingsPanel("Komfort, Undertekster & Språklogikk") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("OLED / HDR undertekst-lysstyrke (gjelder både SRT/ASS og PGS)")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(LunaTheme.moonlight)
+
+                        HStack(spacing: 12) {
+                            ForEach(HDRSubtitlePreset.allCases) { preset in
+                                LunaPillButton(
+                                    preset.displayTitle,
+                                    isSelected: comfort.hdrSubtitlePreset == preset,
+                                    prominence: comfort.hdrSubtitlePreset == preset ? .glassPill : .subtleChip
+                                ) {
+                                    comfort.hdrSubtitlePreset = preset
+                                }
+                            }
+                        }
+
+                        Text(comfort.hdrSubtitlePreset.settingsDescription)
+                            .font(.caption)
+                            .foregroundStyle(LunaTheme.muted)
+                    }
+
+                    HStack(alignment: .top, spacing: 44) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Tekststørrelse")
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(LunaTheme.moonlight)
+
+                            HStack(spacing: 12) {
+                                ForEach(SubtitleFontSizePreset.allCases) { sz in
+                                    LunaPillButton(
+                                        sz.displayTitle,
+                                        isSelected: comfort.subtitleFontSize == sz,
+                                        prominence: comfort.subtitleFontSize == sz ? .glassPill : .subtleChip
+                                    ) {
+                                        comfort.subtitleFontSize = sz
+                                    }
+                                }
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Bakgrunnsboks bak tekst")
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(LunaTheme.moonlight)
+
+                            HStack(spacing: 12) {
+                                ForEach(SubtitleBoxOpacityPreset.allCases) { box in
+                                    LunaPillButton(
+                                        box.displayTitle,
+                                        isSelected: comfort.subtitleBoxOpacity == box,
+                                        prominence: comfort.subtitleBoxOpacity == box ? .glassPill : .subtleChip
+                                    ) {
+                                        comfort.subtitleBoxOpacity = box
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.top, 4)
+
+                    Divider().overlay(LunaTheme.moonlight.opacity(0.12))
+
+                    Toggle(
+                        "Smarte språkregler (norsk tale uten tekst · utenlandsk tale med norsk/engelsk tekst)",
+                        isOn: $comfort.smartNordicSubtitleRule
+                    )
+                    .padding(.vertical, 4)
+
+                    Toggle(
+                        "Spill neste episode automatisk (10 s nedtelling ved rulletekst)",
+                        isOn: $comfort.autoPlayNextEpisode
+                    )
+                    .padding(.vertical, 4)
+
+                    Toggle(
+                        "Vis sanntids «Nerde-HUD» i spilleren (kodek, DV-rute, objektlyd, HTTP 206 & VFS)",
+                        isOn: $comfort.showNerdHUD
+                    )
+                    .padding(.vertical, 4)
+                }
+
+                // 3. Local Disk SWR & Artwork Cache
                 settingsPanel("Hurtigbuffer på Apple TV") {
                     infoRow("Katalog- og bildehurtigbuffer", value: formattedCacheSize)
 
@@ -84,7 +213,7 @@ struct SettingsView: View {
                     }
                 }
 
-                // 3. HDMI & AetherEngine Diagnostics
+                // 4. HDMI & AetherEngine Diagnostics
                 settingsPanel("Avspillingsmotor & HDMI-kapabiliteter") {
                     infoRow("AetherEngine-versjon", value: AetherBridgeInfo.pinnedAetherEngineVersion)
                     infoRow("HDMI HDR-støtte", value: caps.supportsHDR ? "Ja" : "Nei")
@@ -108,7 +237,7 @@ struct SettingsView: View {
                     .padding(.top, 6)
                 }
 
-                // 4. Server & Pairing Management
+                // 5. Server & Pairing Management
                 settingsPanel("Tilkobling") {
                     infoRow("Enhetsnavn", value: sessionStore.deviceName)
                     infoRow("Aktivt rom", value: "\(sessionStore.roomName) (\(sessionStore.effectiveHardwareProfile))")
