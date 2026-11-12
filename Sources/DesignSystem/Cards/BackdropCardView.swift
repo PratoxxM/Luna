@@ -41,6 +41,8 @@ public struct BackdropCardView: View {
 
         Button(action: onPrimaryAction) {
             ZStack(alignment: .bottomLeading) {
+                LunaTheme.surface
+
                 CachedArtworkView(
                     url: artworkURL,
                     client: client,

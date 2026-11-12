@@ -37,6 +37,8 @@ public struct PosterCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             Button(action: onSelect) {
                 ZStack {
+                    LunaTheme.surface
+
                     CachedArtworkView(
                         url: posterURL,
                         client: client,

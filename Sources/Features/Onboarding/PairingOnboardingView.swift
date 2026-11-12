@@ -85,28 +85,14 @@ struct PairingOnboardingView: View {
                         .foregroundStyle(.secondary)
 
                     ForEach(bonjour.servers) { srv in
-                        Button {
+                        LunaPillButton(
+                            "\(srv.name) · \(srv.displayAddress)",
+                            systemImage: "server.rack",
+                            prominence: .primaryAmber
+                        ) {
+                            guard !isRequestingCode else { return }
                             startPairing(against: srv.baseURL)
-                        } label: {
-                            HStack(spacing: 20) {
-                                Image(systemName: "server.rack")
-                                    .font(.title2)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(srv.name)
-                                        .font(.title3.bold())
-                                    Text(srv.displayAddress)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text("Koble til")
-                                    .font(.callout.weight(.semibold))
-                            }
-                            .padding(.horizontal, 28)
-                            .padding(.vertical, 18)
-                            .frame(width: 760)
                         }
-                        .disabled(isRequestingCode)
                     }
                 }
             }
@@ -117,22 +103,22 @@ struct PairingOnboardingView: View {
                         .frame(width: 760)
 
                     HStack(spacing: 20) {
-                        Button("Start paring") {
+                        LunaPillButton("Start paring", systemImage: "link", prominence: .primaryAmber) {
+                            guard !isRequestingCode else { return }
                             guard let normalized = AppSessionStore.normalizeServerURL(manualURLInput) else {
                                 errorMessage = "Oppgi en gyldig http:// eller https:// adresse."
                                 return
                             }
                             startPairing(against: normalized)
                         }
-                        .disabled(isRequestingCode || manualURLInput.trimmingCharacters(in: .whitespaces).isEmpty)
 
-                        Button("Skjul manuell adresse") {
+                        LunaPillButton("Skjul manuell adresse", prominence: .subtleChip) {
                             showManualInput = false
                         }
                     }
                 }
             } else {
-                Button("Skriv inn serveradresse manuelt") {
+                LunaPillButton("Skriv inn serveradresse manuelt", systemImage: "keyboard", prominence: .subtleChip) {
                     showManualInput = true
                 }
             }
@@ -169,11 +155,11 @@ struct PairingOnboardingView: View {
             .multilineTextAlignment(.center)
 
             HStack(spacing: 24) {
-                Button("Ny kode") {
+                LunaPillButton("Ny kode", systemImage: "arrow.clockwise", prominence: .primaryAmber) {
                     startPairing(against: baseURL)
                 }
 
-                Button("Bytt server") {
+                LunaPillButton("Bytt server", systemImage: "network", prominence: .subtleChip) {
                     pollTask?.cancel()
                     self.pairingInfo = nil
                     self.selectedBaseURL = nil

@@ -22,9 +22,9 @@ public struct TvEpisodeCard: Codable, Identifiable, Equatable, Hashable, Sendabl
     public let airDateBadge: String?
     public let voteAverage: Double?
     public let runtimeSeconds: Double?
-    public let watched: Bool
+    public var watched: Bool
     public let availability: TvAvailabilityInfo?
-    public let progress: TvWatchProgress?
+    public var progress: TvWatchProgress?
 
     public var id: String { itemId }
 
@@ -76,9 +76,9 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
     public let blurHash: String?
     public let badges: [String]?
     public let nextAirDateBadge: String?
-    public let inWatchlist: Bool
-    public let isFavorite: Bool?
-    public let watched: Bool
+    public var inWatchlist: Bool
+    public var isFavorite: Bool?
+    public var watched: Bool
     public let availability: TvAvailabilityInfo?
     public let progress: TvWatchProgress?
     public let selectedSeason: Int?

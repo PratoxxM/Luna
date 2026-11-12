@@ -63,6 +63,7 @@ struct ShelfRowView: View {
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 18)
                 }
+                .scrollClipDisabled()
             } else if row.rowStyle == "upcoming_backdrop" {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 30) {
@@ -88,6 +89,7 @@ struct ShelfRowView: View {
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 18)
                 }
+                .scrollClipDisabled()
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 30) {
@@ -115,6 +117,15 @@ struct ShelfRowView: View {
                                 }
 
                                 Button {
+                                    onMarkWatched(card)
+                                } label: {
+                                    Label(
+                                        card.progress?.watched == true ? "Marker som usett" : "Marker som sett",
+                                        systemImage: card.progress?.watched == true ? "eye.slash" : "checkmark.circle"
+                                    )
+                                }
+
+                                Button {
                                     onToggleWatchlist(card)
                                 } label: {
                                     Label(
@@ -137,6 +148,7 @@ struct ShelfRowView: View {
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 18)
                 }
+                .scrollClipDisabled()
             }
         }
     }

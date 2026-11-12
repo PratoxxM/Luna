@@ -122,6 +122,7 @@ struct HomeView: View {
                 }
             )
             .environmentObject(sessionStore)
+            .preferredColorScheme(.dark)
         }
         .task(id: "\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)#\(sessionStore.homeRefreshNonce)") {
             syncDiskSnapshotIfRoomChanged()
@@ -253,6 +254,7 @@ struct HomeView: View {
             title: card.title,
             year: card.year
         )
+        sessionStore.notifyContentMutated()
         await revalidateHome(forceUnconditional: true)
     }
 
@@ -266,6 +268,7 @@ struct HomeView: View {
             title: card.title,
             year: card.year
         )
+        sessionStore.notifyContentMutated()
         await revalidateHome(forceUnconditional: true)
     }
 
@@ -284,16 +287,26 @@ struct HomeView: View {
                     season: s,
                     episode: e
                 )
+            } else {
+                try? await client.setWatched(
+                    watched: !(card.progress?.watched ?? false),
+                    mediaType: "series",
+                    ids: card.ids,
+                    title: card.title,
+                    year: card.year
+                )
             }
         } else {
+            let nextWatched = !(card.progress?.watched ?? false)
             try? await client.setWatched(
-                watched: true,
+                watched: nextWatched,
                 mediaType: "movie",
                 ids: card.ids,
                 title: card.title,
                 year: card.year
             )
         }
+        sessionStore.notifyContentMutated()
         await revalidateHome(forceUnconditional: true)
     }
 }

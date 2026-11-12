@@ -102,8 +102,9 @@ struct LibraryHubView: View {
                         mediaTypePills
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 10)
                 }
+                .scrollClipDisabled()
 
                 // Secondary filter bar for "Lokalt på NAS"
                 if activeSection == .local {
@@ -215,8 +216,9 @@ struct LibraryHubView: View {
                 }
             }
             .padding(.horizontal, LunaTheme.horizontalGutter)
-            .padding(.vertical, 4)
+            .padding(.vertical, 10)
         }
+        .scrollClipDisabled()
     }
 
     private func customShelvesSection(_ lists: [TvCustomListSummary]) -> some View {
@@ -239,8 +241,9 @@ struct LibraryHubView: View {
                     }
                 }
                 .padding(.horizontal, LunaTheme.horizontalGutter)
-                .padding(.vertical, 8)
+                .padding(.vertical, 10)
             }
+            .scrollClipDisabled()
         }
     }
 
@@ -284,6 +287,15 @@ struct LibraryHubView: View {
                             selectedCard = card
                         } label: {
                             Label("Åpne detaljer", systemImage: "info.circle")
+                        }
+
+                        Button {
+                            Task { await toggleWatched(card) }
+                        } label: {
+                            Label(
+                                card.progress?.watched == true ? "Marker som usett" : "Marker som sett",
+                                systemImage: card.progress?.watched == true ? "eye.slash" : "checkmark.circle"
+                            )
                         }
 
                         Button {
@@ -415,6 +427,20 @@ struct LibraryHubView: View {
         guard let client = sessionStore.makeClient() else { return }
         try? await client.setFavorite(
             favorite: !(card.isFavorite ?? false),
+            mediaType: card.mediaType,
+            ids: card.ids,
+            title: card.title,
+            year: card.year
+        )
+        sessionStore.notifyContentMutated()
+        await loadLibrary()
+    }
+
+    private func toggleWatched(_ card: TvMediaCard) async {
+        guard let client = sessionStore.makeClient() else { return }
+        let nextWatched = !(card.progress?.watched ?? false)
+        try? await client.setWatched(
+            watched: nextWatched,
             mediaType: card.mediaType,
             ids: card.ids,
             title: card.title,

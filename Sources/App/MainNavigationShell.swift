@@ -90,6 +90,7 @@ struct MainNavigationShell: View {
             )
             .environmentObject(sessionStore)
             .environmentObject(sessionStore.comfort)
+            .preferredColorScheme(.dark)
         }
         .task {
             await refreshBootstrapProfile()

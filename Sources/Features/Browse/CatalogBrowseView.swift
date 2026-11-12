@@ -99,8 +99,9 @@ struct CatalogBrowseView: View {
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 10)
                 }
+                .scrollClipDisabled()
 
                 // Genre strip
                 if !availableGenres.isEmpty {
@@ -135,8 +136,9 @@ struct CatalogBrowseView: View {
                             }
                         }
                         .padding(.horizontal, LunaTheme.horizontalGutter)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 10)
                     }
+                    .scrollClipDisabled()
                 }
 
                 // Content Grid
@@ -188,6 +190,15 @@ struct CatalogBrowseView: View {
                                     selectedCard = card
                                 } label: {
                                     Label("Åpne detaljer", systemImage: "info.circle")
+                                }
+
+                                Button {
+                                    Task { await toggleWatched(card) }
+                                } label: {
+                                    Label(
+                                        card.progress?.watched == true ? "Marker som usett" : "Marker som sett",
+                                        systemImage: card.progress?.watched == true ? "eye.slash" : "checkmark.circle"
+                                    )
                                 }
 
                                 Button {
@@ -312,6 +323,20 @@ struct CatalogBrowseView: View {
         guard let client = sessionStore.makeClient() else { return }
         try? await client.setFavorite(
             favorite: !(card.isFavorite ?? false),
+            mediaType: card.mediaType,
+            ids: card.ids,
+            title: card.title,
+            year: card.year
+        )
+        sessionStore.notifyContentMutated()
+        await loadFirstPage()
+    }
+
+    private func toggleWatched(_ card: TvMediaCard) async {
+        guard let client = sessionStore.makeClient() else { return }
+        let nextWatched = !(card.progress?.watched ?? false)
+        try? await client.setWatched(
+            watched: nextWatched,
             mediaType: card.mediaType,
             ids: card.ids,
             title: card.title,

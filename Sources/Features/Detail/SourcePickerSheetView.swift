@@ -237,7 +237,9 @@ private struct CandidateRowButton: View {
             .scaleEffect(isFocused ? 1.015 : 1.0)
             .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LunaChromelessButtonStyle())
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 18, style: .continuous))
         .focusEffectDisabled()
         .focused($isFocused)
     }

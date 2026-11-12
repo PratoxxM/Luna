@@ -74,7 +74,21 @@ public enum LunaTheme {
     }
 }
 
-// MARK: - Tactile Liquid-Glass Pill & Action Buttons
+// MARK: - Chromeless Focus-Safe tvOS Button Style & Pill Buttons
+
+/// Replaces `.buttonStyle(.plain)` across Luna.
+/// On tvOS (including tvOS 18–26+ Liquid Glass), SwiftUI's built-in `PlainButtonStyle`
+/// still injects a bright white rectangular platter behind focused labels even when
+/// `.focusEffectDisabled()` is set. A custom `ButtonStyle` renders strictly `configuration.label`.
+public struct LunaChromelessButtonStyle: ButtonStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
 
 public enum LunaButtonProminence: Sendable {
     case primaryAmber
@@ -89,8 +103,6 @@ public struct LunaPillButton: View {
     let isSelected: Bool
     let prominence: LunaButtonProminence
     let action: () -> Void
-
-    @FocusState private var isFocused: Bool
 
     public init(
         _ title: String,
@@ -110,44 +122,65 @@ public struct LunaPillButton: View {
 
     public var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                if let systemImage {
-                    Image(systemName: systemImage)
-                        .font(.callout.weight(.bold))
-                }
-                if !title.isEmpty {
-                    Text(title)
-                        .font(.callout.weight(.semibold))
-                        .lineLimit(1)
-                }
-                if let badgeText, !badgeText.isEmpty {
-                    Text(badgeText)
-                        .font(.caption2.weight(.bold).monospacedDigit())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(badgeBackground, in: Capsule())
-                }
-            }
-            .foregroundStyle(foregroundColor)
-            .padding(.horizontal, title.isEmpty ? 18 : 24)
-            .padding(.vertical, 13)
-            .background(backgroundView)
-            .overlay(
-                Capsule()
-                    .strokeBorder(borderColor, lineWidth: isFocused ? 2.2 : 1.0)
+            LunaPillLabel(
+                title: title,
+                systemImage: systemImage,
+                badgeText: badgeText,
+                isSelected: isSelected,
+                prominence: prominence
             )
-            .shadow(
-                color: isFocused ? LunaTheme.amber.opacity(0.38) : Color.black.opacity(0.28),
-                radius: isFocused ? 18 : 8,
-                x: 0,
-                y: isFocused ? 8 : 4
-            )
-            .scaleEffect(isFocused ? 1.05 : 1.0)
-            .animation(.spring(response: 0.22, dampingFraction: 0.78), value: isFocused)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LunaChromelessButtonStyle())
+        .contentShape(Capsule())
+        .contentShape(.focusEffect, Capsule())
         .focusEffectDisabled()
-        .focused($isFocused)
+    }
+}
+
+private struct LunaPillLabel: View {
+    @Environment(\.isFocused) private var isFocused
+
+    let title: String
+    let systemImage: String?
+    let badgeText: String?
+    let isSelected: Bool
+    let prominence: LunaButtonProminence
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.callout.weight(.bold))
+            }
+            if !title.isEmpty {
+                Text(title)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+            }
+            if let badgeText, !badgeText.isEmpty {
+                Text(badgeText)
+                    .font(.caption2.weight(.bold).monospacedDigit())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(badgeBackground, in: Capsule())
+            }
+        }
+        .foregroundStyle(foregroundColor)
+        .padding(.horizontal, title.isEmpty ? 18 : 24)
+        .padding(.vertical, 13)
+        .background(backgroundView)
+        .overlay(
+            Capsule()
+                .strokeBorder(borderColor, lineWidth: isFocused ? 2.2 : 1.0)
+        )
+        .shadow(
+            color: isFocused ? LunaTheme.amber.opacity(0.38) : Color.black.opacity(0.28),
+            radius: isFocused ? 18 : 8,
+            x: 0,
+            y: isFocused ? 8 : 4
+        )
+        .scaleEffect(isFocused ? 1.05 : 1.0)
+        .animation(.spring(response: 0.22, dampingFraction: 0.78), value: isFocused)
     }
 
     private var foregroundColor: Color {
@@ -180,17 +213,23 @@ public struct LunaPillButton: View {
                     )
                 )
         case .glassPill:
-            Capsule().fill(
-                isFocused
-                    ? LunaTheme.amber.opacity(0.26)
-                    : (isSelected ? LunaTheme.amber.opacity(0.16) : LunaTheme.surfaceRaised.opacity(0.88))
-            )
+            ZStack {
+                Capsule().fill(LunaTheme.surfaceRaised.opacity(0.95))
+                if isFocused {
+                    Capsule().fill(LunaTheme.amber.opacity(0.24))
+                } else if isSelected {
+                    Capsule().fill(LunaTheme.amber.opacity(0.16))
+                }
+            }
         case .subtleChip:
-            Capsule().fill(
-                isFocused
-                    ? LunaTheme.amber.opacity(0.24)
-                    : (isSelected ? LunaTheme.amber.opacity(0.16) : Color.white.opacity(0.07))
-            )
+            ZStack {
+                Capsule().fill(LunaTheme.surface.opacity(0.94))
+                if isFocused {
+                    Capsule().fill(LunaTheme.amber.opacity(0.22))
+                } else if isSelected {
+                    Capsule().fill(LunaTheme.amber.opacity(0.14))
+                }
+            }
         }
     }
 

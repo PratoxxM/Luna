@@ -161,23 +161,22 @@ struct SettingsView: View {
 
                     Divider().overlay(LunaTheme.moonlight.opacity(0.12))
 
-                    Toggle(
-                        "Smarte språkregler (norsk tale uten tekst · utenlandsk tale med norsk/engelsk tekst)",
-                        isOn: $comfort.smartNordicSubtitleRule
-                    )
-                    .padding(.vertical, 2)
+                    VStack(spacing: 10) {
+                        SettingsToggleRowButton(
+                            title: "Smarte språkregler (norsk tale uten tekst · utenlandsk tale med norsk/engelsk tekst)",
+                            isOn: $comfort.smartNordicSubtitleRule
+                        )
 
-                    Toggle(
-                        "Spill neste episode automatisk (10 s nedtelling ved rulletekst)",
-                        isOn: $comfort.autoPlayNextEpisode
-                    )
-                    .padding(.vertical, 2)
+                        SettingsToggleRowButton(
+                            title: "Spill neste episode automatisk (10 s nedtelling ved rulletekst)",
+                            isOn: $comfort.autoPlayNextEpisode
+                        )
 
-                    Toggle(
-                        "Vis sanntids teknisk status («Nerde-HUD») i spilleren",
-                        isOn: $comfort.showNerdHUD
-                    )
-                    .padding(.vertical, 2)
+                        SettingsToggleRowButton(
+                            title: "Vis sanntids teknisk status («Nerde-HUD») i spilleren",
+                            isOn: $comfort.showNerdHUD
+                        )
+                    }
                 }
 
                 // 3. System & Tilkobling
@@ -186,8 +185,10 @@ struct SettingsView: View {
                     infoRow("Aktivt rom", value: "\(sessionStore.roomName) (\(sessionStore.effectiveHardwareProfile))")
                     infoRow("Bilde- og kataloghurtigbuffer", value: formattedCacheSize)
 
-                    Toggle("Tillat selvsignert TLS-sertifikat på lokalnett", isOn: $sessionStore.allowSelfSignedLanTLS)
-                        .padding(.vertical, 4)
+                    SettingsToggleRowButton(
+                        title: "Tillat selvsignert TLS-sertifikat på lokalnett",
+                        isOn: $sessionStore.allowSelfSignedLanTLS
+                    )
 
                     HStack(spacing: 18) {
                         LunaPillButton("Tøm hurtigbuffer", systemImage: "trash", prominence: .subtleChip) {
@@ -231,7 +232,7 @@ struct SettingsView: View {
         if caps.supportsHDR10 { modes.append("HDR10") }
         if caps.supportsHLG { modes.append("HLG") }
         if modes.isEmpty { modes.append("SDR") }
-        return "Luna 2.2 · AetherEngine \(AetherBridgeInfo.pinnedAetherEngineVersion) · \(modes.joined(separator: " / "))"
+        return "Luna 2.2.1 · AetherEngine \(AetherBridgeInfo.pinnedAetherEngineVersion) · \(modes.joined(separator: " / "))"
     }
 
     private var formattedCacheSize: String {
@@ -325,7 +326,61 @@ private struct SettingsRoomRowButton: View {
             .scaleEffect(isFocused ? 1.01 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.82), value: isFocused)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LunaChromelessButtonStyle())
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .focusEffectDisabled()
+        .focused($isFocused)
+    }
+}
+
+private struct SettingsToggleRowButton: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            HStack(spacing: 18) {
+                Text(title)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(isFocused ? .white : LunaTheme.moonlight)
+                    .lineLimit(2)
+
+                Spacer(minLength: 16)
+
+                Text(isOn ? "På" : "Av")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(isOn ? LunaTheme.canvas : LunaTheme.muted)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(
+                        isOn ? LunaTheme.amber : Color.white.opacity(0.08),
+                        in: Capsule()
+                    )
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 13)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isFocused ? LunaTheme.amber.opacity(0.20) : Color.white.opacity(0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(
+                        isFocused ? LunaTheme.amber : Color.white.opacity(0.08),
+                        lineWidth: isFocused ? 2 : 1
+                    )
+            )
+            .scaleEffect(isFocused ? 1.01 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.82), value: isFocused)
+        }
+        .buttonStyle(LunaChromelessButtonStyle())
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 14, style: .continuous))
         .focusEffectDisabled()
         .focused($isFocused)
     }

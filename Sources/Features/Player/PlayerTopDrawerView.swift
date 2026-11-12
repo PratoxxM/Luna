@@ -282,8 +282,9 @@ struct PlayerTopDrawerView: View {
                                 }
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 6)
                     }
+                    .scrollClipDisabled()
                 }
             }
 
@@ -501,7 +502,9 @@ private struct DrawerTrackRowButton: View {
             .scaleEffect(isFocused ? 1.015 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isFocused)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LunaChromelessButtonStyle())
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 16, style: .continuous))
         .focusEffectDisabled()
         .focused($isFocused)
     }
@@ -550,7 +553,9 @@ private struct ChapterPillCardButton: View {
             .scaleEffect(isFocused ? 1.03 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isFocused)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LunaChromelessButtonStyle())
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 16, style: .continuous))
         .focusEffectDisabled()
         .focused($isFocused)
     }
