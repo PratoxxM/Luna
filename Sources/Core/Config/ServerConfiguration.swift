@@ -199,14 +199,40 @@ public final class AppSessionStore: ObservableObject {
         } else {
             self.localProfileOverride = nil
             defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
-        }
-
-        if let client = makeClient() {
-            Task {
-                try? await client.updateDeviceProfile(roomName: roomName, hardwareProfile: hardwareProfile)
+            if let client = makeClient() {
+                Task {
+                    try? await client.updateDeviceProfile(roomName: roomName, hardwareProfile: hardwareProfile)
+                }
             }
         }
         homeRefreshNonce &+= 1
+    }
+
+    public func restoreServerManagedRoomAndProfile() async {
+        self.localProfileOverride = nil
+        defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
+        if let client = makeClient() {
+            do {
+                let boot = try await client.fetchBootstrap()
+                syncFromBootstrap(boot.device)
+            } catch MediaOSError.unauthorized {
+                unpairDevice()
+                return
+            } catch {
+                // Keep cached server values until next bootstrap succeeds
+            }
+        }
+        homeRefreshNonce &+= 1
+    }
+
+    public nonisolated static func currentAppVersionString() -> String {
+        if let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+            let trimmed = ver.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return "2.2.2"
     }
 
     public func unpairDevice() {

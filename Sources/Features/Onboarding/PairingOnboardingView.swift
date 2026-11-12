@@ -185,30 +185,45 @@ struct PairingOnboardingView: View {
             do {
                 let info = try await client.requestPairingCode(
                     model: AppSessionStore.currentHardwareModelString(),
-                    osVersion: AppSessionStore.currentSystemVersionString()
+                    osVersion: AppSessionStore.currentSystemVersionString(),
+                    appVersion: AppSessionStore.currentAppVersionString()
                 )
                 self.pairingInfo = info
                 self.isRequestingCode = false
 
                 let interval = max(2, info.pollIntervalSeconds ?? 3)
+                var consecutivePollFailures = 0
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000_000)
                     guard !Task.isCancelled else { return }
 
-                    let (httpStatus, poll) = try await client.pollPairingCode(info.pairingCode)
-                    if poll.status == "approved",
-                       let token = poll.deviceToken,
-                       let pairedDevice = poll.device {
-                        sessionStore.completePairing(
-                            baseURL: baseURL,
-                            token: token,
-                            pairedDevice: pairedDevice
-                        )
-                        return
-                    }
-                    if httpStatus == 410 || poll.status == "expired" {
-                        self.errorMessage = "Paringskoden utløp. Trykk «Ny kode» for å prøve igjen."
-                        return
+                    do {
+                        let (httpStatus, poll) = try await client.pollPairingCode(info.pairingCode)
+                        consecutivePollFailures = 0
+                        if poll.status == "approved",
+                           let token = poll.deviceToken,
+                           let pairedDevice = poll.device {
+                            sessionStore.completePairing(
+                                baseURL: baseURL,
+                                token: token,
+                                pairedDevice: pairedDevice
+                            )
+                            return
+                        }
+                        if httpStatus == 410 || poll.status == "expired" {
+                            self.errorMessage = "Paringskoden utløp. Trykk «Ny kode» for å prøve igjen."
+                            return
+                        }
+                        if httpStatus == 400 || poll.status == "invalid" {
+                            self.pairingInfo = nil
+                            self.errorMessage = poll.error ?? "Ugyldig paringskode. Trykk «Ny kode» for å prøve igjen."
+                            return
+                        }
+                    } catch {
+                        consecutivePollFailures += 1
+                        if consecutivePollFailures >= 8, !Task.isCancelled {
+                            self.errorMessage = "Midlertidig nettverksbrudd mot MediaOS (\(error.localizedDescription)). Prøver fortsatt…"
+                        }
                     }
                 }
             } catch {

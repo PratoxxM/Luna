@@ -57,12 +57,17 @@ public struct PlaybackResolveSocket: Sendable {
                         @unknown default:
                             continue
                         }
-                        if let event = try? JSONDecoder().decode(TvResolveSocketEvent.self, from: data) {
-                            continuation.yield(event)
-                            if event.type == "resolve.ready" || event.type == "resolve.failed" {
-                                continuation.finish()
-                                return
-                            }
+                        let event: TvResolveSocketEvent
+                        do {
+                            event = try JSONDecoder().decode(TvResolveSocketEvent.self, from: data)
+                        } catch {
+                            continuation.finish(throwing: MediaOSError.decodingFailed(error.localizedDescription))
+                            return
+                        }
+                        continuation.yield(event)
+                        if event.type == "resolve.ready" || event.type == "resolve.failed" {
+                            continuation.finish()
+                            return
                         }
                     } catch {
                         if !Task.isCancelled {
@@ -82,11 +87,16 @@ public struct PlaybackResolveSocket: Sendable {
     }
 
     private static func makeWebSocketURL(baseURL: URL, wsPath: String) -> URL? {
-        var comps = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
-        let isSecure = comps?.scheme?.lowercased() == "https"
-        comps?.scheme = isSecure ? "wss" : "ws"
-        comps?.path = wsPath.hasPrefix("/") ? wsPath : "/\(wsPath)"
-        comps?.query = nil
-        return comps?.url
+        if wsPath.hasPrefix("ws://") || wsPath.hasPrefix("wss://") {
+            return URL(string: wsPath)
+        }
+        let cleanBase = baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let cleanRel = wsPath.hasPrefix("/") ? wsPath : "/\(wsPath)"
+        guard var comps = URLComponents(string: "\(cleanBase)\(cleanRel)") else {
+            return nil
+        }
+        let isSecure = comps.scheme?.lowercased() == "https"
+        comps.scheme = isSecure ? "wss" : "ws"
+        return comps.url
     }
 }

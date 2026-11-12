@@ -2,7 +2,7 @@
 
 ## 1. Purpose & Public-Repository Security Rules
 
-`Luna` (`v2.2.0`) is a public, standalone tvOS client powered by `AetherEngine` (`7.62.1`) and backed by the native MediaOS TV API (`/api/tv/v1` on `:8090` / `:8920`).
+`Luna` (`v2.2.2`) is a public, standalone tvOS client powered by `AetherEngine` (`7.62.1`) and backed by the native MediaOS TV API (`/api/tv/v1` on `:8090` / `:8920`).
 
 Because this repository is **public on GitHub**, these rules are hard invariants:
 
@@ -52,7 +52,7 @@ gh release view latest --json assets,updatedAt
 
 ## 6. tvOS 26 & AetherEngine Host Rules
 
-- Reuse a **single** `@MainActor` `AetherEngine` instance across the app lifetime (`LunaApp.swift`), setting `engine.maximumSubtitleAdvanceSeconds = 0` at initialization and `engine.maximumSubtitleOffsetSeconds = 0` before `engine.load(...)` so active subtitles never open a second parallel 4K HTTP stream.
+- Reuse a **single** `@MainActor` `AetherEngine` instance across the app lifetime (`LunaApp.swift`), setting `engine.maximumSubtitleOffsetSeconds = 0` at initialization and before `engine.load(...)` so active subtitles never open a second parallel 4K HTTP stream.
 - Call `engine.prepareForItemReplacement()` for back-to-back episode transitions and seamless timecode source switches (`HeldStillPresenter`), and `engine.stop(resetDisplayCriteria: true)` when dismissing the player.
 - Hold `ResolvingCurtainView` visible until `hasFirstFrameReadyForDisplay && !isAwaitingDisplaySwitch` (with a 5-second fallback watchdog) so HDMI range/frame-rate switches never flash black.
 - Observe `engine.clock` (`$currentTime`, `$sourceTime`) **only** in leaf scrubber (`PlayerBottomBarView`) and subtitle (`SubtitleOverlayView`) views, and `engine.diagnostics.$liveTelemetry` **only** in `NerdHUDView` (1 Hz), so high-frequency ticks never re-render the player hierarchy.

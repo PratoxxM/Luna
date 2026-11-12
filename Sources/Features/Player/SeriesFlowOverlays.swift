@@ -3,13 +3,23 @@ import AetherBridge
 
 /// Isolated 10 Hz leaf view for series continuity («Hopp over intro» & «Spill neste episode»).
 struct SeriesFlowOverlays: View {
+    private enum PromptFocusTarget: Hashable {
+        case skipIntro
+        case playNext
+        case watchCredits
+    }
+
     @ObservedObject var viewModel: PlayerViewModel
     @ObservedObject var comfort: ComfortPreferences
     let client: MediaOSClient?
     let isBottomBarVisible: Bool
     @Binding var hasActivePrompt: Bool
     let dismissNonce: Int
+    var onReturnFocusToCanvas: () -> Void = {}
+    var onOpenTopDrawer: () -> Void = {}
+    var onSeekRelative: (Double) -> Void = { _ in }
 
+    @FocusState private var focusedPromptControl: PromptFocusTarget?
     @State private var currentTime: Double = 0
     @State private var enteredIntroAtWallTime: Date?
     @State private var trackedIntroChapterID: String?
@@ -45,8 +55,12 @@ struct SeriesFlowOverlays: View {
             syncActivePromptFlag(intro: currentSkippableChapter, nextVisible: visible)
             if visible {
                 startCountdownIfEnabled()
+                focusedPromptControl = .playNext
             } else {
                 stopCountdown()
+                if focusedPromptControl == .playNext || focusedPromptControl == .watchCredits {
+                    focusedPromptControl = nil
+                }
             }
         }
         .onChange(of: activeIntro?.id) { _, newID in
@@ -55,6 +69,37 @@ struct SeriesFlowOverlays: View {
                 enteredIntroAtWallTime = Date()
             }
             syncActivePromptFlag(intro: activeIntro, nextVisible: showNextCard)
+            if newID != nil && !showNextCard {
+                focusedPromptControl = .skipIntro
+            } else if newID == nil && focusedPromptControl == .skipIntro {
+                focusedPromptControl = nil
+            }
+        }
+        .onMoveCommand { direction in
+            switch direction {
+            case .up:
+                focusedPromptControl = nil
+                onReturnFocusToCanvas()
+            case .down:
+                focusedPromptControl = nil
+                onOpenTopDrawer()
+            case .left:
+                if focusedPromptControl == .watchCredits {
+                    focusedPromptControl = .playNext
+                } else {
+                    focusedPromptControl = nil
+                    onSeekRelative(-10)
+                }
+            case .right:
+                if focusedPromptControl == .playNext {
+                    focusedPromptControl = .watchCredits
+                } else {
+                    focusedPromptControl = nil
+                    onSeekRelative(30)
+                }
+            @unknown default:
+                break
+            }
         }
         .onChange(of: dismissNonce) { _, _ in
             dismissCurrentPrompt()
@@ -64,11 +109,15 @@ struct SeriesFlowOverlays: View {
             dismissedIntroChapterIDs.removeAll()
             enteredIntroAtWallTime = nil
             trackedIntroChapterID = nil
+            focusedPromptControl = nil
         }
         .onDisappear {
             stopCountdown()
         }
         .onReceive(viewModel.engine.clock.$currentTime) { t in
+            let hasContinuityTargets = viewModel.activeSession?.nextEpisode != nil ||
+                viewModel.chapters.contains(where: { $0.kind == .intro || $0.kind == .recap || $0.kind == .credits })
+            guard hasContinuityTargets else { return }
             currentTime = t
             if let tracked = trackedIntroChapterID,
                let ch = viewModel.chapters.first(where: { $0.id == tracked }),
@@ -128,11 +177,14 @@ struct SeriesFlowOverlays: View {
         return LunaPillButton(label, systemImage: "forward.fill", prominence: .primaryAmber) {
             let target = max(chapter.startSeconds + 1.0, chapter.endSeconds - 0.15)
             dismissedIntroChapterIDs.insert(chapter.id)
+            focusedPromptControl = nil
             hasActivePrompt = false
+            onReturnFocusToCanvas()
             Task {
                 await viewModel.engine.seek(to: target, exact: true)
             }
         }
+        .focused($focusedPromptControl, equals: .skipIntro)
     }
 
     private func nextEpisodeCard(_ next: TvNextEpisodeSummary) -> some View {
@@ -182,13 +234,17 @@ struct SeriesFlowOverlays: View {
                 HStack(spacing: 12) {
                     LunaPillButton(playLabel, systemImage: "play.fill", prominence: .primaryAmber) {
                         stopCountdown()
+                        focusedPromptControl = nil
                         hasActivePrompt = false
                         viewModel.playNextEpisode(next)
                     }
+                    .focused($focusedPromptControl, equals: .playNext)
 
                     LunaPillButton("Se ferdig", prominence: .subtleChip) {
                         dismissCurrentPrompt()
+                        onReturnFocusToCanvas()
                     }
+                    .focused($focusedPromptControl, equals: .watchCredits)
                 }
             }
         }
@@ -209,6 +265,7 @@ struct SeriesFlowOverlays: View {
 
     private func dismissCurrentPrompt() {
         stopCountdown()
+        focusedPromptControl = nil
         if shouldShowNextEpisodeCard, let sid = viewModel.activeSession?.sessionId {
             dismissedNextForSessionID = sid
         } else if let intro = currentSkippableChapter {

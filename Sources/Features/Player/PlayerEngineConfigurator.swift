@@ -93,9 +93,11 @@ extension PlayerViewModel {
                     break
                 case .forceOn:
                     opts.preferDualLayerDolbyVision = true
+                    opts.foldsDolbyVisionFEL = true
                     opts.dolbyVisionHandling = .automatic
                 case .forceOff:
                     opts.preferDualLayerDolbyVision = false
+                    opts.foldsDolbyVisionFEL = false
                     opts.dolbyVisionHandling = .baseLayerOnly
                 }
 
@@ -128,19 +130,22 @@ extension PlayerViewModel {
         switch comfort.dualLayerOverride {
         case .auto:
             options.preferDualLayerDolbyVision = cfg.preferDualLayerDolbyVision
+            options.foldsDolbyVisionFEL = cfg.foldsDolbyVisionFEL ?? true
             options.dolbyVisionHandling = cfg.dolbyVisionHandling == "baseLayerOnly" ? .baseLayerOnly : .automatic
         case .forceOn:
             options.preferDualLayerDolbyVision = true
+            options.foldsDolbyVisionFEL = true
             options.dolbyVisionHandling = .automatic
         case .forceOff:
             options.preferDualLayerDolbyVision = false
+            options.foldsDolbyVisionFEL = false
             options.dolbyVisionHandling = .baseLayerOnly
         }
 
         options.dualLayerRoute = cfg.dualLayerRoute == "avPlayerOutput" ? .avPlayerOutput : .softwareHost
         options.matchContentEnabled = cfg.matchContentEnabled
         options.displayCriteriaOwner = .engine
-        options.attemptsHDRMasterOnUnprovenPanel = cfg.attemptsHDRMasterOnUnprovenPanel
+        options.attemptsHDRMasterOnUnprovenPanel = cfg.attemptsHDRMasterOnUnprovenPanel ?? false
 
         // Let AetherEngine inspect HDMI capabilities directly via AVPlayer.availableHDRModes
         options.panelPresentsDolbyVision = false

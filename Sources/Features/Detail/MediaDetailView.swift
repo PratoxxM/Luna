@@ -18,7 +18,9 @@ struct MediaDetailView: View {
 
     // Silent 450ms Pre-Resolve state
     @State private var preparedToken: String?
+    @State private var preparedSessionId: String?
     @State private var preparedForItemId: String?
+    @State private var prewarmedStreamToken: String?
     @State private var isPreResolvedReady: Bool = false
     @State private var preResolveTask: Task<Void, Never>?
 
@@ -92,6 +94,25 @@ struct MediaDetailView: View {
         .onDisappear {
             preResolveTask?.cancel()
             preResolveTask = nil
+            if sessionStore.activePlaybackTarget == nil {
+                if let tok = prewarmedStreamToken, tok.count >= 8 {
+                    EngineLog.unregisterSecret(tok)
+                    prewarmedStreamToken = nil
+                }
+                if let sid = preparedSessionId, let client = sessionStore.makeClient() {
+                    preparedSessionId = nil
+                    preparedToken = nil
+                    isPreResolvedReady = false
+                    Task.detached(priority: .utility) {
+                        _ = try? await client.sendHeartbeat(
+                            sessionId: sid,
+                            state: "stopped",
+                            positionSeconds: 0,
+                            durationSeconds: 0
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -421,10 +442,18 @@ struct MediaDetailView: View {
     /// 450ms debounced `POST /api/tv/v1/playback/prepare` + strict NVMe/VFS-only
     /// `AetherEngine.prewarm(byteBudget: 8 MiB)` (never spins up mechanical archive drives!).
     private func scheduleSilentPreResolve(for item: TvItemDetail) {
-        preResolveTask?.cancel()
         let target = primaryTargetInfo(item)
+        if preparedForItemId == target.itemId, let existingToken = preparedToken, !existingToken.isEmpty {
+            return
+        }
+        preResolveTask?.cancel()
         if preparedForItemId != target.itemId {
+            if let oldTok = prewarmedStreamToken, oldTok.count >= 8 {
+                EngineLog.unregisterSecret(oldTok)
+                prewarmedStreamToken = nil
+            }
             preparedToken = nil
+            preparedSessionId = nil
             isPreResolvedReady = false
         }
 
@@ -443,8 +472,17 @@ struct MediaDetailView: View {
 
             if let token = prep.prepareToken, !token.isEmpty {
                 self.preparedToken = token
+                self.preparedSessionId = prep.playbackSession?.sessionId
                 self.preparedForItemId = target.itemId
                 self.isPreResolvedReady = true
+            }
+
+            if let streamTok = prep.playbackSession?.streamToken, streamTok.count >= 8 {
+                if let oldTok = self.prewarmedStreamToken, oldTok.count >= 8, oldTok != streamTok {
+                    EngineLog.unregisterSecret(oldTok)
+                }
+                _ = EngineLog.registerSecret(streamTok)
+                self.prewarmedStreamToken = streamTok
             }
 
             // Strictly respect `canClientPrewarmBytes == true` so mechanical archive drives
@@ -454,6 +492,7 @@ struct MediaDetailView: View {
                let streamURL = client.buildAbsoluteURL(relStreamPath) {
                 let headers = client.streamHTTPHeaders()
                 Task.detached(priority: .utility) {
+                    guard !Task.isCancelled else { return }
                     if !AetherEngine.isPrewarmed(url: streamURL) {
                         _ = await AetherEngine.prewarm(
                             url: streamURL,

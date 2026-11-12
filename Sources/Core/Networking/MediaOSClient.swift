@@ -66,7 +66,33 @@ public final class MediaOSSessionPool: @unchecked Sendable {
     private init() {}
 
     public func session(for baseURL: URL, allowSelfSignedLanTLS: Bool) -> URLSession {
-        let key = "\(baseURL.scheme?.lowercased() ?? "http")://\(baseURL.host?.lowercased() ?? ""):\(baseURL.port ?? -1)|tls:\(allowSelfSignedLanTLS)"
+        makeOrReuseSession(
+            for: baseURL,
+            allowSelfSignedLanTLS: allowSelfSignedLanTLS,
+            lane: "api",
+            maxConnections: 8,
+            requestTimeout: 25
+        )
+    }
+
+    public func artworkSession(for baseURL: URL, allowSelfSignedLanTLS: Bool) -> URLSession {
+        makeOrReuseSession(
+            for: baseURL,
+            allowSelfSignedLanTLS: allowSelfSignedLanTLS,
+            lane: "artwork",
+            maxConnections: 6,
+            requestTimeout: 15
+        )
+    }
+
+    private func makeOrReuseSession(
+        for baseURL: URL,
+        allowSelfSignedLanTLS: Bool,
+        lane: String,
+        maxConnections: Int,
+        requestTimeout: TimeInterval
+    ) -> URLSession {
+        let key = "\(lane)|\(baseURL.scheme?.lowercased() ?? "http")://\(baseURL.host?.lowercased() ?? ""):\(baseURL.port ?? -1)|tls:\(allowSelfSignedLanTLS)"
         lock.lock()
         defer { lock.unlock() }
 
@@ -75,9 +101,9 @@ public final class MediaOSSessionPool: @unchecked Sendable {
         }
 
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 25
+        config.timeoutIntervalForRequest = requestTimeout
         config.timeoutIntervalForResource = 90
-        config.httpMaximumConnectionsPerHost = 8
+        config.httpMaximumConnectionsPerHost = maxConnections
         config.urlCache = nil
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
 
@@ -116,6 +142,7 @@ public struct MediaOSClient: Sendable {
     public let allowSelfSignedLanTLS: Bool
 
     private let session: URLSession
+    private let imageSession: URLSession
 
     public init(
         baseURL: URL,
@@ -132,6 +159,10 @@ public struct MediaOSClient: Sendable {
         self.hardwareProfile = hardwareProfile
         self.allowSelfSignedLanTLS = allowSelfSignedLanTLS
         self.session = MediaOSSessionPool.shared.session(
+            for: baseURL,
+            allowSelfSignedLanTLS: allowSelfSignedLanTLS
+        )
+        self.imageSession = MediaOSSessionPool.shared.artworkSession(
             for: baseURL,
             allowSelfSignedLanTLS: allowSelfSignedLanTLS
         )
@@ -157,10 +188,17 @@ public struct MediaOSClient: Sendable {
         return URL(string: "\(cleanBase)\(cleanRel)")
     }
 
+    private var asciiSafeRoomHeader: String {
+        if roomName.canBeConverted(to: .ascii) {
+            return roomName
+        }
+        return roomName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "AppleTV"
+    }
+
     public func streamHTTPHeaders() -> [String: String] {
         var headers: [String: String] = [
             "X-Device-Id": deviceID,
-            "X-Room-Name": roomName,
+            "X-Room-Name": asciiSafeRoomHeader,
             "X-Hardware-Profile": hardwareProfile,
         ]
         if let deviceToken, !deviceToken.isEmpty {
@@ -177,7 +215,7 @@ public struct MediaOSClient: Sendable {
         if let deviceToken, !deviceToken.isEmpty {
             req.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")
         }
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await imageSession.data(for: req)
         let http = resp as? HTTPURLResponse
         if let status = http?.statusCode, status >= 400 {
             throw MediaOSError.serverMessage(status, "Bildehenting feilet (HTTP \(status))")
@@ -187,7 +225,11 @@ public struct MediaOSClient: Sendable {
 
     // MARK: - Device Flow Pairing
 
-    public func requestPairingCode(model: String, osVersion: String, appVersion: String = "2.1.0") async throws -> TvPairingRequestResponse {
+    public func requestPairingCode(
+        model: String,
+        osVersion: String,
+        appVersion: String = AppSessionStore.currentAppVersionString()
+    ) async throws -> TvPairingRequestResponse {
         struct Payload: Encodable {
             let deviceId: String
             let model: String
@@ -234,18 +276,11 @@ public struct MediaOSClient: Sendable {
             let hardwareProfile: String?
             let overrides: TvDeviceOverrides?
         }
-        struct AckResponse: Decodable {
-            let ok: Bool
-        }
-        let _: AckResponse = try await sendJSON(
+        let _: TvMutationAckResponse = try await sendJSON(
             method: "PATCH",
             path: "/api/tv/v1/device/profile",
             body: BodyPayload(roomName: roomName, hardwareProfile: hardwareProfile, overrides: overrides)
         )
-    }
-
-    public func fetchHome() async throws -> TvHomeResponse {
-        try await sendJSON(method: "GET", path: "/api/tv/v1/home")
     }
 
     public func fetchHomeConditional(ifNoneMatch: String?) async throws -> HomeConditionalResult {
@@ -331,14 +366,19 @@ public struct MediaOSClient: Sendable {
     public func fetchRow(pathOrRowId: String, offset: Int = 0, limit: Int = 24, sort: String? = nil) async throws -> TvRowPageResponse {
         var path: String
         if pathOrRowId.hasPrefix("/api/tv/v1/") {
-            let joiner = pathOrRowId.contains("?") ? "&" : "?"
-            path = "\(pathOrRowId)\(joiner)offset=\(offset)&limit=\(limit)"
+            if pathOrRowId.contains("offset=") {
+                path = pathOrRowId
+            } else {
+                let joiner = pathOrRowId.contains("?") ? "&" : "?"
+                path = "\(pathOrRowId)\(joiner)offset=\(offset)&limit=\(limit)"
+            }
         } else {
             let encoded = pathOrRowId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? pathOrRowId
             path = "/api/tv/v1/rows/\(encoded)?offset=\(offset)&limit=\(limit)"
         }
         if let sort, !sort.isEmpty, !path.contains("sort=") {
-            path += "&sort=\(sort)"
+            let joiner = path.contains("?") ? "&" : "?"
+            path += "\(joiner)sort=\(sort)"
         }
         return try await sendJSON(method: "GET", path: path)
     }
@@ -367,15 +407,6 @@ public struct MediaOSClient: Sendable {
         ]
         let path = buildQueryPath("/api/tv/v1/search", queryItems: items)
         return try await sendJSON(method: "GET", path: path)
-    }
-
-    public func search(query: String) async throws -> [TvMediaCard] {
-        try await searchFull(query: query).items
-    }
-
-    public func fetchWatchlist() async throws -> [TvMediaCard] {
-        let res: TvWatchlistResponse = try await sendJSON(method: "GET", path: "/api/tv/v1/watchlist")
-        return res.items
     }
 
     public func setWatchlist(listed: Bool, mediaType: String, ids: TvMediaIds, title: String, year: Int?) async throws {
@@ -522,6 +553,11 @@ public struct MediaOSClient: Sendable {
         return (status, decoded)
     }
 
+    public func fetchResolveSnapshot(resolveId: String) async throws -> TvResolveSocketEvent {
+        let encoded = resolveId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? resolveId
+        return try await sendJSON(method: "GET", path: "/api/tv/v1/playback/resolve/\(encoded)")
+    }
+
     public func sendHeartbeat(
         sessionId: String,
         state: String,
@@ -581,7 +617,7 @@ public struct MediaOSClient: Sendable {
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue(deviceID, forHTTPHeaderField: "X-Device-Id")
-        req.setValue(roomName, forHTTPHeaderField: "X-Room-Name")
+        req.setValue(asciiSafeRoomHeader, forHTTPHeaderField: "X-Room-Name")
         req.setValue(hardwareProfile, forHTTPHeaderField: "X-Hardware-Profile")
         if includeAuth, let deviceToken, !deviceToken.isEmpty {
             req.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")

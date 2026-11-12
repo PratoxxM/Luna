@@ -43,11 +43,9 @@ struct SettingsView: View {
                             systemImage: "arrow.uturn.backward",
                             prominence: .subtleChip
                         ) {
-                            sessionStore.setRoomAndProfile(
-                                roomName: sessionStore.roomName,
-                                hardwareProfile: sessionStore.hardwareProfile,
-                                persistAsLocalOverride: false
-                            )
+                            Task {
+                                await sessionStore.restoreServerManagedRoomAndProfile()
+                            }
                         }
                     }
 
@@ -232,7 +230,8 @@ struct SettingsView: View {
         if caps.supportsHDR10 { modes.append("HDR10") }
         if caps.supportsHLG { modes.append("HLG") }
         if modes.isEmpty { modes.append("SDR") }
-        return "Luna 2.2.1 · AetherEngine \(AetherBridgeInfo.pinnedAetherEngineVersion) · \(modes.joined(separator: " / "))"
+        let appVer = AppSessionStore.currentAppVersionString()
+        return "Luna \(appVer) · AetherEngine \(AetherBridgeInfo.pinnedAetherEngineVersion) · \(modes.joined(separator: " / "))"
     }
 
     private var formattedCacheSize: String {

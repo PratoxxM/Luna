@@ -20,18 +20,7 @@ struct HomeView: View {
         "popular-series"
     ]
 
-    init(initialRoomName: String = "Kjellerstua", initialHardwareProfile: String = "dv-fel-714") {
-        if let cached = DiskSWRStore.loadHomeSynchronously(
-            roomName: initialRoomName,
-            hardwareProfile: initialHardwareProfile
-        ) {
-            _homePayload = State(initialValue: cached.payload)
-            _cachedEtag = State(initialValue: cached.etag)
-        } else {
-            _homePayload = State(initialValue: nil)
-            _cachedEtag = State(initialValue: nil)
-        }
-    }
+    init() {}
 
     private var visibleRows: [TvShelfRow] {
         (homePayload?.rows ?? []).filter { row in
@@ -125,27 +114,29 @@ struct HomeView: View {
             .preferredColorScheme(.dark)
         }
         .task(id: "\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)#\(sessionStore.homeRefreshNonce)") {
-            syncDiskSnapshotIfRoomChanged()
+            await syncDiskSnapshotIfRoomChanged()
             await revalidateHome(forceUnconditional: false)
         }
     }
 
-    private func syncDiskSnapshotIfRoomChanged() {
+    private func syncDiskSnapshotIfRoomChanged() async {
+        let targetRoom = sessionStore.roomName
+        let targetProfile = sessionStore.effectiveHardwareProfile
         guard let current = homePayload else {
-            if let snap = DiskSWRStore.loadHomeSynchronously(
-                roomName: sessionStore.roomName,
-                hardwareProfile: sessionStore.effectiveHardwareProfile
-            ) {
+            if let snap = await DiskSWRStore.loadHomeAsync(
+                roomName: targetRoom,
+                hardwareProfile: targetProfile
+            ), !Task.isCancelled {
                 homePayload = snap.payload
                 cachedEtag = snap.etag
             }
             return
         }
-        if current.roomName != sessionStore.roomName || current.hardwareProfile != sessionStore.effectiveHardwareProfile {
-            if let snap = DiskSWRStore.loadHomeSynchronously(
-                roomName: sessionStore.roomName,
-                hardwareProfile: sessionStore.effectiveHardwareProfile
-            ) {
+        if current.roomName != targetRoom || current.hardwareProfile != targetProfile {
+            if let snap = await DiskSWRStore.loadHomeAsync(
+                roomName: targetRoom,
+                hardwareProfile: targetProfile
+            ), !Task.isCancelled {
                 homePayload = snap.payload
                 cachedEtag = snap.etag
             } else {

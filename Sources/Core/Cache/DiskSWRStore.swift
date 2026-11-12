@@ -61,6 +61,12 @@ public enum DiskSWRStore {
         )
     }
 
+    public static func loadHomeAsync(roomName: String, hardwareProfile: String) async -> CachedHomeSnapshot? {
+        await Task.detached(priority: .userInitiated) {
+            loadHomeSynchronously(roomName: roomName, hardwareProfile: hardwareProfile)
+        }.value
+    }
+
     public static func saveHomeInBackground(
         rawPayloadData: Data,
         etag: String?,

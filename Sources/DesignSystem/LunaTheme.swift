@@ -267,6 +267,7 @@ public struct CachedArtworkView: View {
     let contentMode: ContentMode
 
     @State private var loadedCGImage: CGImage?
+    @State private var decodedBlurCGImage: CGImage?
 
     public init(
         url: URL?,
@@ -290,6 +291,7 @@ public struct CachedArtworkView: View {
         } else {
             _loadedCGImage = State(initialValue: nil)
         }
+        _decodedBlurCGImage = State(initialValue: BlurHashDecoder.cachedImage(blurHash, width: 32, height: 24))
     }
 
     public var body: some View {
@@ -306,6 +308,11 @@ public struct CachedArtworkView: View {
         .task(id: url) {
             guard let url else {
                 loadedCGImage = nil
+                if decodedBlurCGImage == nil, contentMode != .fit, blurHash != nil {
+                    if let blurImg = await BlurHashDecoder.decodeAsync(blurHash, width: 32, height: 24), !Task.isCancelled {
+                        decodedBlurCGImage = blurImg
+                    }
+                }
                 return
             }
             if let hit = ArtworkPipeline.shared.memoryCachedImage(for: url, maxPixelSize: maxPixelSize) {
@@ -313,6 +320,11 @@ public struct CachedArtworkView: View {
                     loadedCGImage = hit
                 }
                 return
+            }
+            if decodedBlurCGImage == nil, contentMode != .fit, blurHash != nil {
+                if let blurImg = await BlurHashDecoder.decodeAsync(blurHash, width: 32, height: 24), !Task.isCancelled {
+                    decodedBlurCGImage = blurImg
+                }
             }
             let fetched = await ArtworkPipeline.shared.loadImage(
                 url: url,
@@ -342,7 +354,7 @@ public struct CachedArtworkView: View {
     private var placeholderLayer: some View {
         if contentMode == .fit {
             Color.clear
-        } else if let blurCG = BlurHashDecoder.decode(blurHash, width: 32, height: 24) {
+        } else if let blurCG = decodedBlurCGImage ?? BlurHashDecoder.cachedImage(blurHash, width: 32, height: 24) {
             Image(decorative: blurCG, scale: 1.0, orientation: .up)
                 .resizable()
                 .aspectRatio(contentMode: .fill)

@@ -36,8 +36,7 @@ struct PlayerContainerView: View {
     private var shouldEnableCanvasAnchor: Bool {
         viewModel.isPictureReadyForReveal &&
             viewModel.fatalError == nil &&
-            !isTopDrawerOpen &&
-            !hasSeriesPrompt
+            !isTopDrawerOpen
     }
 
     var body: some View {
@@ -159,7 +158,19 @@ struct PlayerContainerView: View {
                     client: client,
                     isBottomBarVisible: showBottomBar || viewModel.playbackPhase == .paused,
                     hasActivePrompt: $hasSeriesPrompt,
-                    dismissNonce: seriesPromptDismissNonce
+                    dismissNonce: seriesPromptDismissNonce,
+                    onReturnFocusToCanvas: {
+                        revealBottomBarTemporarily()
+                        restoreCanvasFocusSoon()
+                    },
+                    onOpenTopDrawer: {
+                        openTopDrawer()
+                    },
+                    onSeekRelative: { delta in
+                        viewModel.coalesceRelativeSeek(delta: delta)
+                        revealBottomBarTemporarily()
+                        restoreCanvasFocusSoon()
+                    }
                 )
                 .zIndex(4)
             }

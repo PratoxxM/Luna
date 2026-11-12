@@ -21,14 +21,13 @@ struct MainNavigationShell: View {
         let client = sessionStore.makeClient()
 
         ZStack {
-            AmbientBackdropView(controller: ambientController, client: client)
+            if sessionStore.activePlaybackTarget == nil {
+                AmbientBackdropView(controller: ambientController, client: client)
+            }
 
             TabView(selection: $selectedTab) {
                 NavigationStack {
-                    HomeView(
-                        initialRoomName: sessionStore.roomName,
-                        initialHardwareProfile: sessionStore.effectiveHardwareProfile
-                    )
+                    HomeView()
                 }
                 .tabItem {
                     Label("Hjem", systemImage: "sparkles.tv")

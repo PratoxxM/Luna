@@ -27,39 +27,41 @@ public enum SideloadSafeStorage {
 
     private static let keychainService = "luna.v1.credentials"
     private static let tokenAccount = "device_bearer_token"
+    private static let fallbackPrefix = "luna.v1.keychain_fallback."
 
     public static func ensurePersistentDeviceID(defaults: UserDefaults = .standard) -> String {
         if let existing = defaults.string(forKey: deviceIDKey), !existing.isEmpty {
             return existing
         }
-        if let keychainID = readKeychainString(account: "device_id"), !keychainID.isEmpty {
+        if let keychainID = readKeychainString(account: "device_id", defaults: defaults), !keychainID.isEmpty {
             defaults.set(keychainID, forKey: deviceIDKey)
             return keychainID
         }
         let generated = "luna-\(UUID().uuidString.lowercased())"
         defaults.set(generated, forKey: deviceIDKey)
-        writeKeychainString(generated, account: "device_id")
+        writeKeychainString(generated, account: "device_id", defaults: defaults)
         return generated
     }
 
-    public static func loadDeviceToken() -> String? {
-        readKeychainString(account: tokenAccount)
+    public static func loadDeviceToken(defaults: UserDefaults = .standard) -> String? {
+        readKeychainString(account: tokenAccount, defaults: defaults)
     }
 
-    public static func saveDeviceToken(_ token: String) {
-        writeKeychainString(token, account: tokenAccount)
+    public static func saveDeviceToken(_ token: String, defaults: UserDefaults = .standard) {
+        writeKeychainString(token, account: tokenAccount, defaults: defaults)
     }
 
-    public static func deleteDeviceToken() {
+    public static func deleteDeviceToken(defaults: UserDefaults = .standard) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: tokenAccount,
         ]
         SecItemDelete(query as CFDictionary)
+        defaults.removeObject(forKey: "\(fallbackPrefix)\(tokenAccount)")
     }
 
-    private static func readKeychainString(account: String) -> String? {
+    private static func readKeychainString(account: String, defaults: UserDefaults) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -69,16 +71,19 @@ public enum SideloadSafeStorage {
         ]
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let text = String(data: data, encoding: .utf8),
-              !text.isEmpty else {
-            return nil
+        if status == errSecSuccess,
+           let data = result as? Data,
+           let text = String(data: data, encoding: .utf8),
+           !text.isEmpty {
+            return text
         }
-        return text
+        if let fallback = defaults.string(forKey: "\(fallbackPrefix)\(account)"), !fallback.isEmpty {
+            return fallback
+        }
+        return nil
     }
 
-    private static func writeKeychainString(_ value: String, account: String) {
+    private static func writeKeychainString(_ value: String, account: String, defaults: UserDefaults) {
         let encoded = Data(value.utf8)
         let baseQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -90,6 +95,12 @@ public enum SideloadSafeStorage {
         var insert = baseQuery
         insert[kSecValueData as String] = encoded
         insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(insert as CFDictionary, nil)
+        let status = SecItemAdd(insert as CFDictionary, nil)
+        if status == errSecSuccess {
+            defaults.removeObject(forKey: "\(fallbackPrefix)\(account)")
+        } else {
+            // Preserve pairing across sideload profiles if securityd rejects Keychain write (e.g. -34018)
+            defaults.set(value, forKey: "\(fallbackPrefix)\(account)")
+        }
     }
 }

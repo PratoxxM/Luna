@@ -18,8 +18,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'push' }}
+  group: build-tvos-release
+  cancel-in-progress: false
 
 jobs:
   build-tvos:
@@ -63,7 +63,7 @@ jobs:
       - name: Ensure XcodeGen is installed
         run: |
           if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
+            HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install xcodegen
           fi
           xcodegen --version
 
@@ -73,7 +73,7 @@ jobs:
           path: |
             ~/Library/Caches/org.swift.swiftpm
             build/SourcePackages
-          key: spm-tvos-${{ runner.os }}-${{ hashFiles('Packages/AetherBridge/Package.swift', 'project.yml') }}
+          key: spm-tvos-${{ runner.os }}-${{ hashFiles('Packages/AetherBridge/Package.swift') }}
           restore-keys: |
             spm-tvos-${{ runner.os }}-
 
@@ -130,6 +130,7 @@ jobs:
           retention-days: 30
 
       - name: Publish Luna-unsigned.ipa to rolling GitHub Release 'latest'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

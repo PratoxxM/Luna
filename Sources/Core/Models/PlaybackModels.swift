@@ -182,13 +182,13 @@ public struct TvSubtitleStyleConfig: Codable, Equatable, Sendable {
 public struct TvAetherConfig: Codable, Equatable, Sendable {
     public let preferDualLayerDolbyVision: Bool
     public let dualLayerRoute: String?
-    public let foldsDolbyVisionFEL: Bool
+    public let foldsDolbyVisionFEL: Bool?
     public let dolbyVisionHandling: String
     public let panelPresentsDolbyVision: Bool?
     public let panelIsInHDRMode: Bool?
     public let matchContentEnabled: Bool
     public let displayCriteriaOwner: String?
-    public let attemptsHDRMasterOnUnprovenPanel: Bool
+    public let attemptsHDRMasterOnUnprovenPanel: Bool?
     public let objectAudioRendering: TvObjectAudioConfig?
     public let audioBridgeMode: String
     public let preferredAudioLanguages: [String]?
@@ -279,6 +279,12 @@ public struct TvVfsTelemetry: Codable, Equatable, Sendable {
     public let vfsMountFolder: String?
 }
 
+public struct TvPendingCommand: Codable, Equatable, Sendable {
+    public let type: String
+    public let switchedAt: String?
+    public let playbackSession: TvPlaybackSession?
+}
+
 public struct TvHeartbeatResponse: Codable, Equatable, Sendable {
     public let ok: Bool
     public let sessionId: String
@@ -287,6 +293,7 @@ public struct TvHeartbeatResponse: Codable, Equatable, Sendable {
     public let vfsLockActive: Bool
     public let leaseExpiresAt: String?
     public let nextEpisodePrewarmStarted: Bool?
+    public let pendingCommand: TvPendingCommand?
     public let vfsTelemetry: TvVfsTelemetry?
 }
 

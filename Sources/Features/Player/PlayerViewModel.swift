@@ -19,9 +19,8 @@ final class PlayerViewModel: ObservableObject {
     @Published var startupProgress: StartupProgress?
     @Published var firstFrameFallbackUnlocked: Bool = false
 
-    // Session, Sources, Detail & Next Episode
+    // Session, Sources & Next Episode
     @Published var activeSession: TvPlaybackSession?
-    @Published var itemDetail: TvItemDetail?
     @Published var alternatives: [TvCandidateInfo] = []
     @Published var isLoadingAlternatives: Bool = false
     @Published var isSwitchingSource: Bool = false
@@ -75,7 +74,7 @@ final class PlayerViewModel: ObservableObject {
     private var heartbeatTask: Task<Void, Never>?
     private var firstFrameFallbackTask: Task<Void, Never>?
     private var coalescedSeekTask: Task<Void, Never>?
-    private var detailLoadTask: Task<Void, Never>?
+    private var smartRuleTask: Task<Void, Never>?
     private var engineChapters: [ChapterInfo] = []
     private var registeredStreamToken: String?
     private var activeClient: MediaOSClient?
@@ -131,6 +130,8 @@ final class PlayerViewModel: ObservableObject {
     func playNextEpisode(_ next: TvNextEpisodeSummary) {
         guard let client = activeClient, let current = activeSession else { return }
         resolveTask?.cancel()
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
         resolveTask = Task { @MainActor in
             await sendHeartbeatOnce(overrideState: "stopped")
             engine.prepareForItemReplacement()
@@ -180,6 +181,9 @@ final class PlayerViewModel: ObservableObject {
             isSwitchingSource = false
         } catch {
             isSwitchingSource = false
+            heartbeatTask?.cancel()
+            heartbeatTask = nil
+            UIApplication.shared.isIdleTimerDisabled = false
             fatalError = "Kildebytte feilet: \(error.localizedDescription)"
         }
     }
@@ -228,8 +232,10 @@ final class PlayerViewModel: ObservableObject {
         engine.selectAudioTrack(index: index)
         activeAudioTrackIndex = index
         if comfort.smartNordicSubtitleRule && !userManuallySelectedSubtitle {
-            Task { @MainActor [weak self] in
+            smartRuleTask?.cancel()
+            smartRuleTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 120_000_000)
+                guard !Task.isCancelled else { return }
                 self?.applySmartSubtitleRule()
             }
         }
@@ -303,8 +309,8 @@ final class PlayerViewModel: ObservableObject {
         firstFrameFallbackTask = nil
         coalescedSeekTask?.cancel()
         coalescedSeekTask = nil
-        detailLoadTask?.cancel()
-        detailLoadTask = nil
+        smartRuleTask?.cancel()
+        smartRuleTask = nil
         resetScrubStateOnSessionChange()
         UIApplication.shared.isIdleTimerDisabled = false
 
@@ -313,12 +319,12 @@ final class PlayerViewModel: ObservableObject {
         let finalPos = max(0, engine.currentTime)
         let finalDur = max(0, effectiveDurationSeconds)
 
+        engine.stop(resetDisplayCriteria: true)
+
         if let tok = registeredStreamToken, tok.count >= 8 {
             EngineLog.unregisterSecret(tok)
             registeredStreamToken = nil
         }
-
-        engine.stop(resetDisplayCriteria: true)
 
         if let client, let session {
             Task.detached {
@@ -362,7 +368,11 @@ final class PlayerViewModel: ObservableObject {
             if status == 200, let immediate = startRes.playbackSession {
                 resolvedSession = immediate
             } else if let wsPath = startRes.wsPath {
-                resolvedSession = try await awaitWebSocketResolution(wsPath: wsPath, client: client)
+                resolvedSession = try await awaitWebSocketResolution(
+                    wsPath: wsPath,
+                    resolveId: startRes.resolveId,
+                    client: client
+                )
             } else {
                 throw MediaOSError.serverMessage(status, startRes.error ?? "Uventet svar ved klargjøring av strøm.")
             }
@@ -381,7 +391,6 @@ final class PlayerViewModel: ObservableObject {
             )
             isResolving = false
             armFirstFrameFallbackWatchdog()
-            loadItemDetailSilently(for: resolvedSession, client: client)
             startHeartbeatLoop()
         } catch {
             guard !Task.isCancelled else { return }
@@ -402,29 +411,26 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    private func loadItemDetailSilently(for session: TvPlaybackSession, client: MediaOSClient) {
-        detailLoadTask?.cancel()
-        let itemCtx = session.item
-        let detailType = itemCtx.mediaType == "episode" ? "series" : itemCtx.mediaType
-        let lookupId: String
-        if let tmdb = itemCtx.ids.tmdb, tmdb > 0 {
-            lookupId = "\(detailType):tmdb:\(tmdb)"
-        } else {
-            lookupId = itemCtx.itemId
+    private func applyResolveProgressEvent(_ event: TvResolveSocketEvent) {
+        if let stage = event.stage, !stage.isEmpty {
+            resolveStageKey = stage
         }
-        detailLoadTask = Task { @MainActor [weak self] in
-            if let detail = try? await client.fetchItemDetail(
-                mediaType: detailType,
-                itemId: lookupId,
-                seasonNumber: itemCtx.season
-            ) {
-                guard !Task.isCancelled else { return }
-                self?.itemDetail = detail
-            }
+        if let pct = event.percent {
+            resolvePercent = pct
+        }
+        if let headline = event.winnerHeadline, !headline.isEmpty {
+            resolveHeadline = headline
+        }
+        if let msg = event.message, !msg.isEmpty {
+            resolveStageLabel = msg
         }
     }
 
-    private func awaitWebSocketResolution(wsPath: String, client: MediaOSClient) async throws -> TvPlaybackSession {
+    private func awaitWebSocketResolution(
+        wsPath: String,
+        resolveId: String,
+        client: MediaOSClient
+    ) async throws -> TvPlaybackSession {
         let socket = PlaybackResolveSocket(
             baseURL: client.baseURL,
             wsPath: wsPath,
@@ -432,28 +438,50 @@ final class PlayerViewModel: ObservableObject {
             allowSelfSignedLanTLS: client.allowSelfSignedLanTLS
         )
 
-        for try await event in socket.events() {
-            if let stage = event.stage, !stage.isEmpty {
-                resolveStageKey = stage
+        do {
+            for try await event in socket.events() {
+                applyResolveProgressEvent(event)
+                if event.type == "resolve.ready", let readySession = event.playbackSession {
+                    return readySession
+                }
+                if event.type == "resolve.failed" {
+                    throw MediaOSError.serverMessage(502, event.error ?? "Kunne ikke klargjøre strøm.")
+                }
             }
-            if let pct = event.percent {
-                resolvePercent = pct
+        } catch let err as MediaOSError {
+            if case .serverMessage(502, _) = err {
+                throw err
             }
-            if let headline = event.winnerHeadline, !headline.isEmpty {
-                resolveHeadline = headline
+            if case .decodingFailed = err {
+                throw err
             }
-            if let msg = event.message, !msg.isEmpty {
-                resolveStageLabel = msg
-            }
+        } catch {
+            // Fall through to HTTP snapshot polling if WebSocket upgrade/stream drops
+        }
 
-            if event.type == "resolve.ready", let readySession = event.playbackSession {
+        return try await pollHttpResolutionFallback(resolveId: resolveId, client: client)
+    }
+
+    private func pollHttpResolutionFallback(
+        resolveId: String,
+        client: MediaOSClient
+    ) async throws -> TvPlaybackSession {
+        let maxAttempts = 60
+        for attempt in 0..<maxAttempts {
+            try Task.checkCancellation()
+            if attempt > 0 {
+                try await Task.sleep(nanoseconds: 750_000_000)
+            }
+            let snap = try await client.fetchResolveSnapshot(resolveId: resolveId)
+            applyResolveProgressEvent(snap)
+            if snap.type == "resolve.ready", let readySession = snap.playbackSession {
                 return readySession
             }
-            if event.type == "resolve.failed" {
-                throw MediaOSError.serverMessage(502, event.error ?? "Kunne ikke klargjøre strøm.")
+            if snap.type == "resolve.failed" {
+                throw MediaOSError.serverMessage(502, snap.error ?? "Kunne ikke klargjøre strøm.")
             }
         }
-        throw MediaOSError.serverMessage(504, "Mistet sanntidstilkoblingen under klargjøring av strøm.")
+        throw MediaOSError.serverMessage(504, "Tidsavbrudd under klargjøring av strøm.")
     }
 
     private func mountSessionInEngine(
@@ -465,9 +493,7 @@ final class PlayerViewModel: ObservableObject {
             throw MediaOSError.invalidURL(session.stream.url)
         }
 
-        if let prev = registeredStreamToken, prev.count >= 8 {
-            EngineLog.unregisterSecret(prev)
-        }
+        let previousToken = registeredStreamToken
         if session.streamToken.count >= 8 {
             _ = EngineLog.registerSecret(session.streamToken)
             registeredStreamToken = session.streamToken
@@ -489,11 +515,21 @@ final class PlayerViewModel: ObservableObject {
             audioDelaySeconds: audioDelaySeconds
         )
         let startPos = overrideStartPosition ?? session.stream.startPositionSeconds ?? 0
-        _ = try await engine.load(
-            url: streamURL,
-            startPosition: startPos > 0.5 ? startPos : nil,
-            options: options
-        )
+        do {
+            _ = try await engine.load(
+                url: streamURL,
+                startPosition: startPos > 0.5 ? startPos : nil,
+                options: options
+            )
+            if let prev = previousToken, prev.count >= 8, prev != session.streamToken {
+                EngineLog.unregisterSecret(prev)
+            }
+        } catch {
+            if let prev = previousToken, prev.count >= 8, prev != session.streamToken {
+                EngineLog.unregisterSecret(prev)
+            }
+            throw error
+        }
         subtitleDelaySeconds = engine.softwareSubtitleDelaySeconds
         audioDelaySeconds = engine.audioDelaySeconds
         rebuildMergedChapters()
@@ -558,6 +594,40 @@ final class PlayerViewModel: ObservableObject {
             if let vfs = hb.vfsTelemetry {
                 lastVfsTelemetry = vfs
             }
+            if overrideState == nil,
+               let cmd = hb.pendingCommand,
+               cmd.type == "reload_switched_stream",
+               let switchedSession = cmd.playbackSession {
+                await applyServerSwitchedSession(switchedSession, client: client, fallbackPosition: pos)
+            }
+        }
+    }
+
+    private func applyServerSwitchedSession(
+        _ switchedSession: TvPlaybackSession,
+        client: MediaOSClient,
+        fallbackPosition: Double
+    ) async {
+        guard !isSwitchingSource, !isResolving else { return }
+        resetScrubStateOnSessionChange()
+        isSwitchingSource = true
+        resolveStageKey = "switching"
+        resolveStageLabel = "Bytter kilde valgt fra MediaOS Web…"
+        resolvePercent = 75
+        do {
+            engine.prepareForItemReplacement()
+            try await mountSessionInEngine(
+                switchedSession,
+                client: client,
+                overrideStartPosition: switchedSession.stream.startPositionSeconds ?? fallbackPosition
+            )
+            isSwitchingSource = false
+        } catch {
+            isSwitchingSource = false
+            heartbeatTask?.cancel()
+            heartbeatTask = nil
+            UIApplication.shared.isIdleTimerDisabled = false
+            fatalError = "Kildebytte fra Web feilet: \(error.localizedDescription)"
         }
     }
 
@@ -568,7 +638,19 @@ final class PlayerViewModel: ObservableObject {
                 guard let self else { return }
                 self.playbackPhase = phase
                 self.updateIdleTimer(for: phase)
-                if phase == .paused || phase == .ended {
+                if case .error(let errMsg) = phase {
+                    self.heartbeatTask?.cancel()
+                    self.heartbeatTask = nil
+                    self.isResolving = false
+                    self.isSwitchingSource = false
+                    if self.fatalError == nil {
+                        let cleaned = errMsg.trimmingCharacters(in: .whitespacesAndNewlines)
+                        self.fatalError = cleaned.isEmpty ? "Avspillingsfeil i strømmen." : cleaned
+                    }
+                    Task { @MainActor [weak self] in
+                        await self?.sendHeartbeatOnce(overrideState: "stopped")
+                    }
+                } else if phase == .paused || phase == .ended {
                     Task { @MainActor [weak self] in
                         await self?.sendHeartbeatOnce(overrideState: phase == .ended ? "stopped" : "paused")
                     }

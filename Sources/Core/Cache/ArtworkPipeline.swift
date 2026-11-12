@@ -49,6 +49,27 @@ public enum BlurHashDecoder {
         return map
     }()
 
+    public static func cachedImage(_ blurHash: String?, width: Int = 32, height: Int = 24) -> CGImage? {
+        guard let raw = blurHash?.trimmingCharacters(in: .whitespacesAndNewlines),
+              raw.count >= 6 else {
+            return nil
+        }
+        return cache.image(forKey: "\(raw)#\(width)x\(height)")
+    }
+
+    public static func decodeAsync(_ blurHash: String?, width: Int = 32, height: Int = 24, punch: Float = 1.0) async -> CGImage? {
+        if let hit = cachedImage(blurHash, width: width, height: height) {
+            return hit
+        }
+        guard let raw = blurHash?.trimmingCharacters(in: .whitespacesAndNewlines),
+              raw.count >= 6 else {
+            return nil
+        }
+        return await Task.detached(priority: .utility) {
+            decode(raw, width: width, height: height, punch: punch)
+        }.value
+    }
+
     public static func decode(_ blurHash: String?, width: Int = 32, height: Int = 24, punch: Float = 1.0) -> CGImage? {
         guard let raw = blurHash?.trimmingCharacters(in: .whitespacesAndNewlines),
               raw.count >= 6 else {
@@ -189,7 +210,17 @@ public actor ArtworkPipeline {
     public static let shared = ArtworkPipeline()
 
     private nonisolated let ramCache = ThreadSafeImageMemoryCache(totalCostLimit: 96 * 1024 * 1024)
+    private nonisolated let publicURLSession: URLSession = {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 15
+        cfg.timeoutIntervalForResource = 45
+        cfg.httpMaximumConnectionsPerHost = 6
+        cfg.urlCache = nil
+        cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: cfg)
+    }()
     private var inflightTasks: [String: Task<CGImage?, Never>] = [:]
+    private var inflightWaiters: [String: Set<UUID>] = [:]
     private var writesSinceLastTrim: Int = 0
 
     private static nonisolated var imageCacheDirectoryURL: URL {
@@ -225,42 +256,62 @@ public actor ArtworkPipeline {
             return memHit
         }
 
+        let waiterID = UUID()
+        inflightWaiters[key, default: []].insert(waiterID)
+
+        let task: Task<CGImage?, Never>
         if let existing = inflightTasks[key] {
-            return await existing.value
-        }
+            task = existing
+        } else {
+            let diskFileURL = Self.diskFileURL(for: url)
+            let ramCacheRef = self.ramCache
+            let fallbackSession = self.publicURLSession
 
-        let diskFileURL = Self.diskFileURL(for: url)
-        let ramCacheRef = self.ramCache
+            let created = Task.detached(priority: .userInitiated) { () -> CGImage? in
+                guard !Task.isCancelled else { return nil }
+                let fm = FileManager.default
+                if let diskData = try? Data(contentsOf: diskFileURL),
+                   let decoded = Self.downsampleAndDecode(data: diskData, maxPixelSize: maxPixelSize) {
+                    ramCacheRef.insert(decoded, forKey: key)
+                    return decoded
+                }
+                guard !Task.isCancelled else { return nil }
 
-        let task = Task.detached(priority: .userInitiated) { () -> CGImage? in
-            let fm = FileManager.default
-            if let diskData = try? Data(contentsOf: diskFileURL),
-               let decoded = Self.downsampleAndDecode(data: diskData, maxPixelSize: maxPixelSize) {
+                let fetchedData: Data?
+                if let client {
+                    fetchedData = (try? await client.fetchRawImageData(from: url))?.0
+                } else {
+                    fetchedData = (try? await fallbackSession.data(from: url))?.0
+                }
+                guard !Task.isCancelled else { return nil }
+
+                guard let data = fetchedData, !data.isEmpty,
+                      let decoded = Self.downsampleAndDecode(data: data, maxPixelSize: maxPixelSize) else {
+                    return nil
+                }
+
                 ramCacheRef.insert(decoded, forKey: key)
+                try? fm.createDirectory(at: Self.imageCacheDirectoryURL, withIntermediateDirectories: true)
+                try? data.write(to: diskFileURL, options: .atomic)
                 return decoded
             }
-
-            let fetchedData: Data?
-            if let client {
-                fetchedData = (try? await client.fetchRawImageData(from: url))?.0
-            } else {
-                fetchedData = (try? await URLSession.shared.data(from: url))?.0
-            }
-
-            guard let data = fetchedData, !data.isEmpty,
-                  let decoded = Self.downsampleAndDecode(data: data, maxPixelSize: maxPixelSize) else {
-                return nil
-            }
-
-            ramCacheRef.insert(decoded, forKey: key)
-            try? fm.createDirectory(at: Self.imageCacheDirectoryURL, withIntermediateDirectories: true)
-            try? data.write(to: diskFileURL, options: .atomic)
-            return decoded
+            inflightTasks[key] = created
+            task = created
         }
 
-        inflightTasks[key] = task
-        let result = await task.value
-        inflightTasks.removeValue(forKey: key)
+        let result = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            Task {
+                await self.removeWaiter(waiterID, forKey: key)
+            }
+        }
+
+        removeWaiter(waiterID, forKey: key)
+        if inflightWaiters[key]?.isEmpty ?? true {
+            inflightTasks.removeValue(forKey: key)
+            inflightWaiters.removeValue(forKey: key)
+        }
 
         if result != nil {
             writesSinceLastTrim += 1
@@ -272,6 +323,19 @@ public actor ArtworkPipeline {
             }
         }
         return result
+    }
+
+    private func removeWaiter(_ waiterID: UUID, forKey key: String) {
+        guard var set = inflightWaiters[key] else { return }
+        set.remove(waiterID)
+        if set.isEmpty {
+            inflightWaiters.removeValue(forKey: key)
+            if let running = inflightTasks.removeValue(forKey: key) {
+                running.cancel()
+            }
+        } else {
+            inflightWaiters[key] = set
+        }
     }
 
     public func trimDiskCacheIfNeeded(maxBytes: Int64 = 115 * 1024 * 1024) {
