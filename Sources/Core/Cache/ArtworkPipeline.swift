@@ -272,6 +272,14 @@ public actor ArtworkPipeline {
                 let fm = FileManager.default
                 if let diskData = try? Data(contentsOf: diskFileURL),
                    let decoded = Self.downsampleAndDecode(data: diskData, maxPixelSize: maxPixelSize) {
+                    if let attrs = try? fm.attributesOfItem(atPath: diskFileURL.path),
+                       let mtime = attrs[.modificationDate] as? Date {
+                        if Date().timeIntervalSince(mtime) > 3600 {
+                            try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: diskFileURL.path)
+                        }
+                    } else {
+                        try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: diskFileURL.path)
+                    }
                     ramCacheRef.insert(decoded, forKey: key)
                     return decoded
                 }

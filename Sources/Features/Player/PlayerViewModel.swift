@@ -80,6 +80,7 @@ final class PlayerViewModel: ObservableObject {
     private var activeClient: MediaOSClient?
     private var userManuallySelectedSubtitle: Bool = false
     private var didApplyInitialSmartRule: Bool = false
+    private var didTeardown: Bool = false
 
     init(engine: AetherEngine, comfort: ComfortPreferences) {
         self.engine = engine
@@ -115,6 +116,7 @@ final class PlayerViewModel: ObservableObject {
     // MARK: - Lifecycle & Commands
 
     func start(request: PlaybackLaunchRequest, client: MediaOSClient?) {
+        didTeardown = false
         guard let client else {
             fatalError = "Mangler tilkobling til MediaOS."
             isResolving = false
@@ -300,7 +302,9 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    func teardownAndStop() {
+    func teardownAndStop(onComplete: (@MainActor @Sendable () -> Void)? = nil) {
+        guard !didTeardown else { return }
+        didTeardown = true
         resolveTask?.cancel()
         resolveTask = nil
         heartbeatTask?.cancel()
@@ -334,7 +338,12 @@ final class PlayerViewModel: ObservableObject {
                     positionSeconds: finalPos,
                     durationSeconds: finalDur
                 )
+                if let onComplete {
+                    await onComplete()
+                }
             }
+        } else {
+            onComplete?()
         }
     }
 

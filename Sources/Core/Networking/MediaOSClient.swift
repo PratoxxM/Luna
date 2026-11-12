@@ -85,6 +85,16 @@ public final class MediaOSSessionPool: @unchecked Sendable {
         )
     }
 
+    public func webSocketSession(for baseURL: URL, allowSelfSignedLanTLS: Bool) -> URLSession {
+        makeOrReuseSession(
+            for: baseURL,
+            allowSelfSignedLanTLS: allowSelfSignedLanTLS,
+            lane: "ws",
+            maxConnections: 4,
+            requestTimeout: 30
+        )
+    }
+
     private func makeOrReuseSession(
         for baseURL: URL,
         allowSelfSignedLanTLS: Bool,
@@ -140,6 +150,8 @@ public struct MediaOSClient: Sendable {
     public let roomName: String
     public let hardwareProfile: String
     public let allowSelfSignedLanTLS: Bool
+    public let appVersion: String
+    public let osVersion: String
 
     private let session: URLSession
     private let imageSession: URLSession
@@ -150,7 +162,9 @@ public struct MediaOSClient: Sendable {
         deviceToken: String?,
         roomName: String,
         hardwareProfile: String,
-        allowSelfSignedLanTLS: Bool
+        allowSelfSignedLanTLS: Bool,
+        appVersion: String = AppSessionStore.currentAppVersionString(),
+        osVersion: String = ""
     ) {
         self.baseURL = baseURL
         self.deviceID = deviceID
@@ -158,6 +172,8 @@ public struct MediaOSClient: Sendable {
         self.roomName = roomName
         self.hardwareProfile = hardwareProfile
         self.allowSelfSignedLanTLS = allowSelfSignedLanTLS
+        self.appVersion = appVersion
+        self.osVersion = osVersion
         self.session = MediaOSSessionPool.shared.session(
             for: baseURL,
             allowSelfSignedLanTLS: allowSelfSignedLanTLS
@@ -200,7 +216,11 @@ public struct MediaOSClient: Sendable {
             "X-Device-Id": deviceID,
             "X-Room-Name": asciiSafeRoomHeader,
             "X-Hardware-Profile": hardwareProfile,
+            "X-Luna-Version": appVersion,
         ]
+        if !osVersion.isEmpty {
+            headers["X-tvOS-Version"] = osVersion
+        }
         if let deviceToken, !deviceToken.isEmpty {
             headers["Authorization"] = "Bearer \(deviceToken)"
         }
@@ -619,6 +639,10 @@ public struct MediaOSClient: Sendable {
         req.setValue(deviceID, forHTTPHeaderField: "X-Device-Id")
         req.setValue(asciiSafeRoomHeader, forHTTPHeaderField: "X-Room-Name")
         req.setValue(hardwareProfile, forHTTPHeaderField: "X-Hardware-Profile")
+        req.setValue(appVersion, forHTTPHeaderField: "X-Luna-Version")
+        if !osVersion.isEmpty {
+            req.setValue(osVersion, forHTTPHeaderField: "X-tvOS-Version")
+        }
         if includeAuth, let deviceToken, !deviceToken.isEmpty {
             req.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")
         }

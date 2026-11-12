@@ -20,7 +20,14 @@ struct HomeView: View {
         "popular-series"
     ]
 
-    init() {}
+    init(initialRoomName: String = "Stua", initialHardwareProfile: String = "hdr10-512") {
+        let snap = DiskSWRStore.loadHomeSynchronously(
+            roomName: initialRoomName,
+            hardwareProfile: initialHardwareProfile
+        )
+        _homePayload = State(initialValue: snap?.payload)
+        _cachedEtag = State(initialValue: snap?.etag)
+    }
 
     private var visibleRows: [TvShelfRow] {
         (homePayload?.rows ?? []).filter { row in

@@ -38,6 +38,7 @@ public struct TvDeviceOverrides: Codable, Equatable, Sendable {
     public var speakerLayoutOverride: String?
     public var hdrSubtitlePreset: String?
     public var subtitleFontScale: Double?
+    public var subtitleBoxOpacity: Double?
     public var autoPlayNextEpisode: Bool?
     public var smartNordicSubtitleRule: Bool?
 
@@ -46,6 +47,7 @@ public struct TvDeviceOverrides: Codable, Equatable, Sendable {
         speakerLayoutOverride: String? = nil,
         hdrSubtitlePreset: String? = nil,
         subtitleFontScale: Double? = nil,
+        subtitleBoxOpacity: Double? = nil,
         autoPlayNextEpisode: Bool? = nil,
         smartNordicSubtitleRule: Bool? = nil
     ) {
@@ -53,6 +55,7 @@ public struct TvDeviceOverrides: Codable, Equatable, Sendable {
         self.speakerLayoutOverride = speakerLayoutOverride
         self.hdrSubtitlePreset = hdrSubtitlePreset
         self.subtitleFontScale = subtitleFontScale
+        self.subtitleBoxOpacity = subtitleBoxOpacity
         self.autoPlayNextEpisode = autoPlayNextEpisode
         self.smartNordicSubtitleRule = smartNordicSubtitleRule
     }
@@ -177,6 +180,7 @@ public struct TvObjectAudioConfig: Codable, Equatable, Sendable {
 public struct TvSubtitleStyleConfig: Codable, Equatable, Sendable {
     public let preset: String?
     public let fontScale: Double?
+    public let boxOpacity: Double?
 }
 
 public struct TvAetherConfig: Codable, Equatable, Sendable {

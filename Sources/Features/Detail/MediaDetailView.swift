@@ -40,7 +40,9 @@ struct MediaDetailView: View {
                         seasonsAndEpisodesSection(detail: detail, seasons: seasons, client: client)
                     }
 
-                    if let cast = detail.cast, !cast.isEmpty {
+                    if let members = detail.castMembers, !members.isEmpty {
+                        castMembersSection(members, client: client)
+                    } else if let cast = detail.cast, !cast.isEmpty {
                         castSection(cast)
                     }
                 } else if isLoading {
@@ -88,7 +90,7 @@ struct MediaDetailView: View {
             .environmentObject(sessionStore)
             .preferredColorScheme(.dark)
         }
-        .task(id: "\(mediaType)#\(itemId)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)") {
+        .task(id: "\(mediaType)#\(itemId)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)#\(sessionStore.homeRefreshNonce)") {
             await loadDetail()
         }
         .onDisappear {
@@ -347,6 +349,45 @@ struct MediaDetailView: View {
         }
     }
 
+    private func castMembersSection(_ members: [TvCastMember], client: MediaOSClient?) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Medvirkende")
+                .font(.headline.weight(.bold))
+                .foregroundStyle(LunaTheme.moonlight)
+                .padding(.horizontal, LunaTheme.horizontalGutter)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 18) {
+                    ForEach(members.prefix(12)) { member in
+                        VStack(alignment: .leading, spacing: 6) {
+                            CachedArtworkView(
+                                url: client?.resolveArtworkURL(member.profileUrl),
+                                client: client,
+                                maxPixelSize: 180,
+                                placeholderSymbol: "person.fill",
+                                contentMode: .fill
+                            )
+                            .frame(width: 96, height: 120)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            Text(member.name)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                            if let character = member.character, !character.isEmpty {
+                                Text(character)
+                                    .font(.caption2)
+                                    .foregroundStyle(LunaTheme.muted)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .frame(width: 108, alignment: .leading)
+                    }
+                }
+                .padding(.horizontal, LunaTheme.horizontalGutter)
+            }
+        }
+    }
+
     private func castSection(_ castNames: [String]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Medvirkende")
@@ -452,6 +493,11 @@ struct MediaDetailView: View {
                 EngineLog.unregisterSecret(oldTok)
                 prewarmedStreamToken = nil
             }
+            if let oldSid = preparedSessionId, let client = sessionStore.makeClient() {
+                Task.detached(priority: .utility) {
+                    _ = try? await client.sendHeartbeat(sessionId: oldSid, state: "stopped", positionSeconds: 0, durationSeconds: 0)
+                }
+            }
             preparedToken = nil
             preparedSessionId = nil
             isPreResolvedReady = false
@@ -466,7 +512,15 @@ struct MediaDetailView: View {
                 title: target.title,
                 seriesTitle: target.seriesTitle,
                 startPositionSeconds: target.startPos
-            ), !Task.isCancelled else {
+            ) else {
+                return
+            }
+            if Task.isCancelled {
+                if let orphanSid = prep.playbackSession?.sessionId {
+                    Task.detached(priority: .utility) {
+                        _ = try? await client.sendHeartbeat(sessionId: orphanSid, state: "stopped", positionSeconds: 0, durationSeconds: 0)
+                    }
+                }
                 return
             }
 

@@ -62,15 +62,7 @@ public final class AppSessionStore: ObservableObject {
         }
     }
 
-    @Published public var activePlaybackTarget: PlaybackLaunchRequest? = nil {
-        didSet {
-            // Trigger silent SWR refresh when returning from the video player so
-            // «Fortsett å se» reflects latest watch progress immediately.
-            if oldValue != nil && activePlaybackTarget == nil {
-                homeRefreshNonce &+= 1
-            }
-        }
-    }
+    @Published public var activePlaybackTarget: PlaybackLaunchRequest? = nil
 
     private let defaults: UserDefaults
     private var overrideSyncTask: Task<Void, Never>?
@@ -145,7 +137,9 @@ public final class AppSessionStore: ObservableObject {
             deviceToken: deviceToken,
             roomName: roomName,
             hardwareProfile: effectiveHardwareProfile,
-            allowSelfSignedLanTLS: allowSelfSignedLanTLS
+            allowSelfSignedLanTLS: allowSelfSignedLanTLS,
+            appVersion: Self.currentAppVersionString(),
+            osVersion: Self.currentSystemVersionString()
         )
     }
 
@@ -232,7 +226,7 @@ public final class AppSessionStore: ObservableObject {
                 return trimmed
             }
         }
-        return "2.2.2"
+        return "2.2.3"
     }
 
     public func unpairDevice() {

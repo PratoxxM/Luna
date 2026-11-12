@@ -44,9 +44,12 @@ public struct AmbientBackdropView: View {
     @ObservedObject var controller: AmbientBackdropController
     let client: MediaOSClient?
 
+    @State private var decodedBlurImage: CGImage?
+
     public init(controller: AmbientBackdropController, client: MediaOSClient?) {
         self.controller = controller
         self.client = client
+        _decodedBlurImage = State(initialValue: BlurHashDecoder.cachedImage(controller.blurHash, width: 32, height: 18))
     }
 
     public var body: some View {
@@ -55,21 +58,14 @@ public struct AmbientBackdropView: View {
         ZStack {
             LunaTheme.canvas
 
-            if let url = controller.backdropURL {
-                CachedArtworkView(
-                    url: url,
-                    client: client,
-                    maxPixelSize: 640,
-                    blurHash: controller.blurHash,
-                    dominantColor: controller.dominantHex,
-                    placeholderSymbol: "sparkles.tv",
-                    contentMode: .fill
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .blur(radius: 76)
-                .opacity(0.17)
-                .id(url)
-                .transition(.opacity)
+            if let cgImage = decodedBlurImage ?? BlurHashDecoder.cachedImage(controller.blurHash, width: 32, height: 18) {
+                Image(decorative: cgImage, scale: 1.0)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .opacity(0.22)
+                    .transition(.opacity)
             }
 
             RadialGradient(
@@ -95,5 +91,17 @@ public struct AmbientBackdropView: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
+        .task(id: controller.blurHash) {
+            if let hit = BlurHashDecoder.cachedImage(controller.blurHash, width: 32, height: 18) {
+                decodedBlurImage = hit
+                return
+            }
+            let decoded = await BlurHashDecoder.decodeAsync(controller.blurHash, width: 32, height: 18)
+            if !Task.isCancelled {
+                withAnimation(.easeOut(duration: 0.35)) {
+                    decodedBlurImage = decoded
+                }
+            }
+        }
     }
 }

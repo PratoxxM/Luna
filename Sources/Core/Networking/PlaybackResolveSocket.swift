@@ -25,12 +25,10 @@ public struct PlaybackResolveSocket: Sendable {
                 return
             }
 
-            let config = URLSessionConfiguration.ephemeral
-            let delegate = LanURLSessionDelegate(
-                trustedHost: baseURL.host,
-                allowSelfSignedTLS: allowSelfSignedLanTLS
+            let urlSession = MediaOSSessionPool.shared.webSocketSession(
+                for: baseURL,
+                allowSelfSignedLanTLS: allowSelfSignedLanTLS
             )
-            let urlSession = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
 
             var request = URLRequest(url: wsURL)
             for (k, v) in headers {
@@ -43,7 +41,6 @@ public struct PlaybackResolveSocket: Sendable {
             let readerTask = Task {
                 defer {
                     wsTask.cancel(with: .goingAway, reason: nil)
-                    urlSession.invalidateAndCancel()
                 }
                 while !Task.isCancelled {
                     do {
@@ -81,7 +78,6 @@ public struct PlaybackResolveSocket: Sendable {
             continuation.onTermination = { _ in
                 readerTask.cancel()
                 wsTask.cancel(with: .goingAway, reason: nil)
-                urlSession.invalidateAndCancel()
             }
         }
     }

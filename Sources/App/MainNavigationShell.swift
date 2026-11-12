@@ -27,7 +27,10 @@ struct MainNavigationShell: View {
 
             TabView(selection: $selectedTab) {
                 NavigationStack {
-                    HomeView()
+                    HomeView(
+                        initialRoomName: sessionStore.roomName,
+                        initialHardwareProfile: sessionStore.effectiveHardwareProfile
+                    )
                 }
                 .tabItem {
                     Label("Hjem", systemImage: "sparkles.tv")

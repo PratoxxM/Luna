@@ -118,6 +118,12 @@ public enum SubtitleBoxOpacityPreset: String, CaseIterable, Identifiable, Sendab
         case .cinema60: return 0.60
         }
     }
+
+    public static func fromAlpha(_ alpha: Double) -> SubtitleBoxOpacityPreset {
+        if alpha <= 0.1 { return .none }
+        if alpha >= 0.5 { return .cinema60 }
+        return .subtle35
+    }
 }
 
 public enum DualLayerOverrideMode: String, CaseIterable, Identifiable, Sendable {
@@ -197,6 +203,7 @@ public final class ComfortPreferences: ObservableObject {
     @Published public var subtitleBoxOpacity: SubtitleBoxOpacityPreset {
         didSet {
             defaults.set(subtitleBoxOpacity.rawValue, forKey: SideloadSafeStorage.subtitleBoxOpacityKey)
+            notifyChanged()
         }
     }
 
@@ -272,6 +279,7 @@ public final class ComfortPreferences: ObservableObject {
             speakerLayoutOverride: speakerLayoutOverride.rawValue,
             hdrSubtitlePreset: hdrSubtitlePreset.rawValue,
             subtitleFontScale: subtitleFontSize.scaleFactor,
+            subtitleBoxOpacity: subtitleBoxOpacity.alpha,
             autoPlayNextEpisode: autoPlayNextEpisode,
             smartNordicSubtitleRule: smartNordicSubtitleRule
         )
@@ -287,6 +295,9 @@ public final class ComfortPreferences: ObservableObject {
         }
         if let s = ov.subtitleFontScale {
             subtitleFontSize = SubtitleFontSizePreset.fromScale(s)
+        }
+        if let boxAlpha = ov.subtitleBoxOpacity {
+            subtitleBoxOpacity = SubtitleBoxOpacityPreset.fromAlpha(boxAlpha)
         }
         if let dl = ov.dualLayerOverride, let parsed = DualLayerOverrideMode(rawValue: dl) {
             dualLayerOverride = parsed

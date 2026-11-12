@@ -270,7 +270,10 @@ struct PlayerContainerView: View {
         }
         .onDisappear {
             hideBottomBarTask?.cancel()
-            viewModel.teardownAndStop()
+            let store = sessionStore
+            viewModel.teardownAndStop {
+                store.notifyContentMutated()
+            }
         }
     }
 
@@ -314,6 +317,10 @@ struct PlayerContainerView: View {
 
     private func closePlayer() {
         hideBottomBarTask?.cancel()
+        let store = sessionStore
+        viewModel.teardownAndStop {
+            store.notifyContentMutated()
+        }
         onDismiss()
     }
 

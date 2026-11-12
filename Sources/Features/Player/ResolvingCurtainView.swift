@@ -137,6 +137,9 @@ struct ResolvingCurtainView: View {
 
     private var statusLineText: String {
         if !viewModel.isResolving {
+            if !viewModel.hasFirstFrameReadyForDisplay {
+                return "Klargjør første bilde…"
+            }
             if viewModel.isAwaitingDisplaySwitch {
                 return "Tilpasser skjermens HDR og bildefrekvens…"
             }

@@ -2,7 +2,7 @@
 
 ## 1. Purpose & Public-Repository Security Rules
 
-`Luna` (`v2.2.2`) is a public, standalone tvOS client powered by `AetherEngine` (`7.62.1`) and backed by the native MediaOS TV API (`/api/tv/v1` on `:8090` / `:8920`).
+`Luna` (`v2.2.3`) is a public, standalone tvOS client powered by `AetherEngine` (`7.65.0`) and backed by the native MediaOS TV API (`/api/tv/v1` on `:8090` / `:8920`).
 
 Because this repository is **public on GitHub**, these rules are hard invariants:
 
@@ -29,7 +29,7 @@ Development happens on Linux/Windows without a local macOS SDK:
 
 1. **Ignore local SDK diagnostics**: Any local LSP/compiler errors complaining about missing `SwiftUI`, `UIKit`, `AVFoundation`, `Network`, `tvOS` SDKs, or `AetherEngine` binaries on Linux/Windows are expected and **must be ignored**.
 2. **`project.yml` is the single source of truth**: Never hand-edit or commit `Luna.xcodeproj` or `*.xcworkspace`. XcodeGen generates `Luna.xcodeproj` fresh inside GitHub Actions on every build.
-3. **SPM Traits via `Packages/AetherBridge`**: XcodeGen does not serialize SwiftPM `traits:` on remote packages, and `xcodebuild` has no CLI flag for package traits. All `AetherEngine` version pinning (`exact: "7.62.1"`) and optional traits (`TrueHDObjectAudio`, `DTSXObjectAudio`, `DualLayerDolbyVision`, `DolbyVisionFelCurves`, `DolbyVisionStillReshaping`) MUST stay in `Packages/AetherBridge/Package.swift`.
+3. **SPM Traits via `Packages/AetherBridge`**: XcodeGen does not serialize SwiftPM `traits:` on remote packages, and `xcodebuild` has no CLI flag for package traits. All `AetherEngine` version pinning (`exact: "7.65.0"`) and optional traits (`TrueHDObjectAudio`, `DTSXObjectAudio`, `DualLayerDolbyVision`, `DolbyVisionFelCurves`, `DolbyVisionStillReshaping`) MUST stay in `Packages/AetherBridge/Package.swift`.
 
 ## 5. Cloud Build & Verification Workflow (`gh` CLI)
 

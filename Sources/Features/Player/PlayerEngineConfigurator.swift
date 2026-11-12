@@ -78,42 +78,7 @@ extension PlayerViewModel {
         return list
     }
 
-    // MARK: - Runtime Override Reload & AetherEngine LoadOptions
-
-    func applyRuntimeOverrideReloadIfActive() {
-        guard activeSession != nil, !isResolving else { return }
-        engine.setAudioShaping(comfort.buildAudioShaping(enhancement: audioEnhancement))
-        let dlOverride = comfort.dualLayerOverride
-        let spkOverride = comfort.speakerLayoutOverride
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            _ = try? await self.engine.reloadAtCurrentPosition { opts in
-                switch dlOverride {
-                case .auto:
-                    break
-                case .forceOn:
-                    opts.preferDualLayerDolbyVision = true
-                    opts.foldsDolbyVisionFEL = true
-                    opts.dolbyVisionHandling = .automatic
-                case .forceOff:
-                    opts.preferDualLayerDolbyVision = false
-                    opts.foldsDolbyVisionFEL = false
-                    opts.dolbyVisionHandling = .baseLayerOnly
-                }
-
-                switch spkOverride {
-                case .auto:
-                    break
-                case .stereo:
-                    opts.objectAudioRendering = .off
-                case .l714:
-                    opts.objectAudioRendering = .render(.l714)
-                case .l512:
-                    opts.objectAudioRendering = .render(.l512)
-                }
-            }
-        }
-    }
+    // MARK: - AetherEngine LoadOptions
 
     static func buildLoadOptions(
         session: TvPlaybackSession,
