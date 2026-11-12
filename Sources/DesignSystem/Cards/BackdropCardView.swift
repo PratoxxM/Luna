@@ -44,7 +44,7 @@ public struct BackdropCardView: View {
                 CachedArtworkView(
                     url: artworkURL,
                     client: client,
-                    maxPixelSize: 960,
+                    maxPixelSize: 1280,
                     blurHash: card.blurHash,
                     dominantColor: card.dominantColor,
                     placeholderSymbol: variant == .upcomingEpisode ? "calendar.badge.clock" : "play.tv",
@@ -55,58 +55,32 @@ public struct BackdropCardView: View {
 
                 LinearGradient(
                     colors: [
-                        Color.black.opacity(0.08),
-                        Color.black.opacity(0.42),
-                        Color.black.opacity(0.90)
+                        Color.black.opacity(0.04),
+                        Color.black.opacity(0.36),
+                        Color.black.opacity(0.88)
                     ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
 
-                // Top-left & Top-right pills
-                VStack {
-                    HStack(spacing: 8) {
-                        if variant == .upcomingEpisode {
-                            HStack(spacing: 6) {
-                                Image(systemName: "calendar")
-                                    .font(.caption2.weight(.bold))
-                                Text(card.airDateBadge ?? fallbackUpcomingBadge)
-                                    .font(.caption2.weight(.bold))
-                            }
-                            .foregroundStyle(LunaTheme.canvas)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(LunaTheme.amber, in: Capsule())
-                        } else if variant == .continueWatching {
-                            HStack(spacing: 6) {
-                                Image(systemName: "play.fill")
-                                    .font(.caption2.weight(.bold))
-                                Text(continuePillLabel)
-                                    .font(.caption2.weight(.bold))
-                            }
-                            .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.amber)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 5)
-                            .background(
-                                isFocused ? LunaTheme.amber : Color.black.opacity(0.68),
-                                in: Capsule()
-                            )
+                // Top-left air-date pill strictly for upcoming episodes
+                if variant == .upcomingEpisode {
+                    VStack {
+                        HStack(spacing: 6) {
+                            Image(systemName: "calendar")
+                                .font(.caption2.weight(.bold))
+                            Text(card.airDateBadge ?? fallbackUpcomingBadge)
+                                .font(.caption2.weight(.bold))
                         }
+                        .foregroundStyle(LunaTheme.canvas)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(LunaTheme.amber, in: Capsule())
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
 
                         Spacer()
-
-                        if let badge = topRightBadge {
-                            Text(badge)
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .foregroundStyle(LunaTheme.moonlight)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(Color.black.opacity(0.68), in: Capsule())
-                        }
                     }
-                    .padding(16)
-
-                    Spacer()
                 }
 
                 // Bottom title, episode context & progress bar
@@ -153,37 +127,11 @@ public struct BackdropCardView: View {
         }
     }
 
-    private var continuePillLabel: String {
-        if let mode = card.directPlayTarget?.mode, mode == "next_episode" {
-            if let code = card.episodeCode {
-                return "Neste · \(code)"
-            }
-            return "Neste episode"
-        }
-        if let pos = card.progress?.positionSeconds, pos > 30 {
-            return "Fortsett"
-        }
-        if let code = card.episodeCode {
-            return "Spill \(code)"
-        }
-        return "Spill av"
-    }
-
     private var fallbackUpcomingBadge: String {
         if let code = card.episodeCode, let air = card.airDate {
             return "\(air) · \(code)"
         }
         return card.airDate ?? "Kommende episode"
-    }
-
-    private var topRightBadge: String? {
-        if let first = card.badges?.first, !first.isEmpty {
-            return first
-        }
-        if let avail = card.availability, avail.isLocalNvme {
-            return "På NVMe"
-        }
-        return nil
     }
 
     private var subtitleLine: String {

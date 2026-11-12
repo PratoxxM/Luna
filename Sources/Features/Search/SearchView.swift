@@ -18,21 +18,10 @@ struct SearchView: View {
         let client = sessionStore.makeClient()
 
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 28) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Søk")
-                        .font(.largeTitle.weight(.bold))
-                        .foregroundStyle(.white)
-
-                    Text("Lynraskt søk på tvers av lokalt NAS-bibliotek og TMDB.")
-                        .font(.callout)
-                        .foregroundStyle(LunaTheme.muted)
-                }
-                .padding(.horizontal, LunaTheme.horizontalGutter)
-                .padding(.top, 26)
-
+            VStack(alignment: .leading, spacing: 22) {
                 TextField("Søk etter film, serie eller originaltittel…", text: $query)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.top, 18)
 
                 if !results.isEmpty {
                     HStack(spacing: 12) {

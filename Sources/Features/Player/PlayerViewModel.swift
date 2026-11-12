@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 import UIKit
 import Combine
 import AetherBridge
@@ -53,12 +54,21 @@ final class PlayerViewModel: ObservableObject {
 
     @Published var chapters: [PlaybackChapter] = []
 
-    // Tactile Coalesced Seeking HUD
+    // Tactile Coalesced Seeking & Continuous Siri Remote Touch Scrubbing
     @Published var coalescedSeekDelta: Double = 0
     @Published var coalescedSeekPreviewTarget: Double?
+    @Published var isScrubbing: Bool = false
+    @Published var scrubTargetSeconds: Double = 0
+    @Published var scrubOriginSeconds: Double = 0
+    @Published var scrubPreviewImage: CGImage?
 
     let engine: AetherEngine
     let comfort: ComfortPreferences
+
+    var wasPlayingBeforeScrub: Bool = false
+    var pendingScrubPreviewTarget: Double?
+    var scrubPreviewLoopTask: Task<Void, Never>?
+    weak var compositorPreviewView: AetherScrubPreviewView?
 
     private var cancellables = Set<AnyCancellable>()
     private var resolveTask: Task<Void, Never>?
@@ -147,6 +157,7 @@ final class PlayerViewModel: ObservableObject {
 
     func switchSource(to candidateId: String) async {
         guard let client = activeClient, let session = activeSession else { return }
+        resetScrubStateOnSessionChange()
         let currentPos = max(0, engine.currentTime)
         isSwitchingSource = true
         resolveStageKey = "switching"
@@ -294,6 +305,7 @@ final class PlayerViewModel: ObservableObject {
         coalescedSeekTask = nil
         detailLoadTask?.cancel()
         detailLoadTask = nil
+        resetScrubStateOnSessionChange()
         UIApplication.shared.isIdleTimerDisabled = false
 
         let client = activeClient
@@ -323,6 +335,7 @@ final class PlayerViewModel: ObservableObject {
     // MARK: - Resolve & Engine Load Pipeline
 
     private func runResolveAndLoad(request: PlaybackLaunchRequest, client: MediaOSClient, isReplacement: Bool) async {
+        resetScrubStateOnSessionChange()
         fatalError = nil
         isResolving = true
         firstFrameFallbackUnlocked = false
@@ -617,7 +630,7 @@ final class PlayerViewModel: ObservableObject {
         case .playing, .loading, .seeking, .rebuffering, .stalled:
             UIApplication.shared.isIdleTimerDisabled = true
         case .paused, .idle, .ended, .error:
-            UIApplication.shared.isIdleTimerDisabled = isResolving
+            UIApplication.shared.isIdleTimerDisabled = isResolving || isScrubbing
         }
     }
 }

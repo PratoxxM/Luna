@@ -154,41 +154,11 @@ struct MediaDetailView: View {
                         .frame(maxWidth: 980, alignment: .leading)
                 }
 
-                // Metadata & Format Badges
+                // Clean single-line metadata + optional local/upcoming pill
                 HStack(spacing: 14) {
-                    if let year = item.year {
-                        Text(String(year))
-                            .fontWeight(.semibold)
-                    }
-                    if let vote = item.voteAverage, vote > 0 {
-                        Text(String(format: "★ %.1f", vote))
-                            .foregroundStyle(LunaTheme.amber)
-                            .fontWeight(.semibold)
-                    }
-                    if let runtime = item.formattedRuntime {
-                        Text(runtime)
-                    }
-                    if let genres = item.genres, !genres.isEmpty {
-                        Text(genres.prefix(3).joined(separator: " · "))
-                    }
-
-                    if let avail = item.availability {
-                        Text(avail.householdBadgeLabel)
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(avail.isLocalNvme ? LunaTheme.emerald : LunaTheme.moonlight)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 5)
-                            .background(Color.white.opacity(0.10), in: Capsule())
-                    }
-
-                    ForEach((item.badges ?? []).prefix(3), id: \.self) { badge in
-                        Text(badge)
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(LunaTheme.amber)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 5)
-                            .background(LunaTheme.amber.opacity(0.15), in: Capsule())
-                    }
+                    Text(detailMetadataLine(item))
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(LunaTheme.moonlight.opacity(0.88))
 
                     if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
                         HStack(spacing: 5) {
@@ -200,10 +170,15 @@ struct MediaDetailView: View {
                         .padding(.horizontal, 11)
                         .padding(.vertical, 5)
                         .background(LunaTheme.amber, in: Capsule())
+                    } else if let avail = item.availability, avail.isLocalNvme || avail.isLocalArchive {
+                        Text(avail.householdBadgeLabel)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(avail.isLocalNvme ? LunaTheme.emerald : LunaTheme.moonlight)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 5)
+                            .background(Color.white.opacity(0.10), in: Capsule())
                     }
                 }
-                .font(.callout)
-                .foregroundStyle(LunaTheme.moonlight.opacity(0.88))
 
                 // Overview
                 if let overview = item.preferredOverview {
@@ -215,7 +190,7 @@ struct MediaDetailView: View {
                 }
 
                 // Streamlined Action Bar: Focus lands directly on Primary Play!
-                HStack(spacing: 18) {
+                HStack(spacing: 16) {
                     PrimaryPlayButton(
                         title: primaryPlayLabel(item),
                         isWarmReady: isPreResolvedReady
@@ -223,17 +198,6 @@ struct MediaDetailView: View {
                         launchPrimaryPlayback(item)
                     }
                     .prefersDefaultFocus(true, in: detailFocusNamespace)
-
-                    LunaPillButton("Bytt kilde", systemImage: "arrow.triangle.2.circlepath") {
-                        let target = primaryTargetInfo(item)
-                        sourcePickerContext = SourcePickerContext(
-                            itemId: target.itemId,
-                            title: target.title,
-                            seriesTitle: target.seriesTitle,
-                            startPositionSeconds: target.startPos,
-                            existingPrepareToken: preparedForItemId == target.itemId ? preparedToken : nil
-                        )
-                    }
 
                     LunaPillButton(
                         item.inWatchlist ? "I huskeliste" : "Huskeliste",
@@ -244,19 +208,33 @@ struct MediaDetailView: View {
                     }
 
                     LunaPillButton(
-                        "",
-                        systemImage: item.favoriteFlag ? "star.fill" : "star",
-                        isSelected: item.favoriteFlag
-                    ) {
-                        Task { await toggleFavorite(item) }
-                    }
-
-                    LunaPillButton(
-                        item.watched ? "Sett" : "",
+                        "Sett",
                         systemImage: item.watched ? "checkmark.circle.fill" : "circle",
                         isSelected: item.watched
                     ) {
                         Task { await toggleWatched(item) }
+                    }
+
+                    LunaPillButton("Bytt kilde", systemImage: "arrow.triangle.2.circlepath") {
+                        let target = primaryTargetInfo(item)
+                        sourcePickerContext = SourcePickerContext(
+                            itemId: target.itemId,
+                            title: target.title,
+                            seriesTitle: target.seriesTitle,
+                            startPositionSeconds: target.startPos,
+                            existingPrepareToken: preparedForItemId == target.itemId ? preparedToken : nil,
+                            backdropUrl: item.backdropUrl ?? item.cardBackdropUrl,
+                            logoUrl: item.logoUrl
+                        )
+                    }
+
+                    LunaPillButton(
+                        "",
+                        systemImage: item.favoriteFlag ? "star.fill" : "star",
+                        isSelected: item.favoriteFlag,
+                        prominence: .subtleChip
+                    ) {
+                        Task { await toggleFavorite(item) }
                     }
                 }
                 .padding(.top, 6)
@@ -369,6 +347,23 @@ struct MediaDetailView: View {
     }
 
     // MARK: - Playback Target & Silent 450ms Pre-Resolve
+
+    private func detailMetadataLine(_ item: TvItemDetail) -> String {
+        var parts: [String] = []
+        if let year = item.year {
+            parts.append(String(year))
+        }
+        if let runtime = item.formattedRuntime, !runtime.isEmpty {
+            parts.append(runtime)
+        }
+        if let vote = item.voteAverage, vote > 0 {
+            parts.append(String(format: "★ %.1f", vote))
+        }
+        if let genres = item.genres, !genres.isEmpty {
+            parts.append(genres.prefix(3).joined(separator: ", "))
+        }
+        return parts.joined(separator: " · ")
+    }
 
     private func primaryPlayLabel(_ item: TvItemDetail) -> String {
         if item.mediaType == "series" {
@@ -626,6 +621,7 @@ private struct PrimaryPlayButton: View {
             .animation(.spring(response: 0.22, dampingFraction: 0.78), value: focused)
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .focused($isFocused)
     }
 }
@@ -652,7 +648,7 @@ private struct EpisodeCardView: View {
                     CachedArtworkView(
                         url: stillURL,
                         client: client,
-                        maxPixelSize: 840,
+                        maxPixelSize: 1280,
                         placeholderSymbol: upcoming ? "calendar" : "play.tv",
                         contentMode: .fill
                     )
@@ -675,13 +671,6 @@ private struct EpisodeCardView: View {
                                     .padding(.horizontal, 11)
                                     .padding(.vertical, 5)
                                     .background(LunaTheme.amber, in: Capsule())
-                            } else if let avail = episode.availability, avail.isLocalNvme {
-                                Text("På NVMe")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(LunaTheme.emerald)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
-                                    .background(Color.black.opacity(0.72), in: Capsule())
                             }
 
                             Spacer()

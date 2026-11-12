@@ -10,6 +10,8 @@ public enum LunaTheme {
     public static let surface = Color(red: 14.0 / 255.0, green: 19.0 / 255.0, blue: 29.0 / 255.0)
     /// Slightly lighter elevated surface (`#161E2E`).
     public static let surfaceRaised = Color(red: 22.0 / 255.0, green: 30.0 / 255.0, blue: 46.0 / 255.0)
+    /// Dark HDR/Dolby Vision-safe cinema glass (`#0C0F17` @ 90%) — avoids tvOS `.ultraThinMaterial` 203-nit HDR washout.
+    public static let cinemaGlass = Color(red: 12.0 / 255.0, green: 15.0 / 255.0, blue: 23.0 / 255.0).opacity(0.90)
 
     /// Warm amber accent (`#F5C46B`) — primary focus glow, progress bars, favorite stars.
     public static let amber = Color(red: 245.0 / 255.0, green: 196.0 / 255.0, blue: 107.0 / 255.0)
@@ -144,6 +146,7 @@ public struct LunaPillButton: View {
             .animation(.spring(response: 0.22, dampingFraction: 0.78), value: isFocused)
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .focused($isFocused)
     }
 
@@ -177,14 +180,11 @@ public struct LunaPillButton: View {
                     )
                 )
         case .glassPill:
-            ZStack {
-                Capsule().fill(.ultraThinMaterial)
-                Capsule().fill(
-                    isFocused
-                        ? LunaTheme.amber.opacity(0.24)
-                        : (isSelected ? LunaTheme.amber.opacity(0.15) : LunaTheme.surface.opacity(0.55))
-                )
-            }
+            Capsule().fill(
+                isFocused
+                    ? LunaTheme.amber.opacity(0.26)
+                    : (isSelected ? LunaTheme.amber.opacity(0.16) : LunaTheme.surfaceRaised.opacity(0.88))
+            )
         case .subtleChip:
             Capsule().fill(
                 isFocused

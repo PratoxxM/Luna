@@ -56,19 +56,12 @@ struct CatalogBrowseView: View {
         let client = sessionStore.makeClient()
 
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 28) {
-                // Header
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(headerTitle)
-                        .font(.largeTitle.weight(.bold))
-                        .foregroundStyle(.white)
-
-                    Text("Velg rekkefølge, sjanger eller begrens til innhold som allerede ligger på NAS-en.")
-                        .font(.callout)
-                        .foregroundStyle(LunaTheme.muted)
-                }
-                .padding(.horizontal, LunaTheme.horizontalGutter)
-                .padding(.top, 26)
+            VStack(alignment: .leading, spacing: 20) {
+                Text(headerTitle)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.top, 14)
 
                 // Sort & quick filter bar
                 ScrollView(.horizontal, showsIndicators: false) {

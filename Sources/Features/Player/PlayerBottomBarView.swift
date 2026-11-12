@@ -2,14 +2,12 @@ import SwiftUI
 import CoreGraphics
 import AetherBridge
 
-/// Minimalist Nordic cinema OSD revealed on light touch/click and auto-hidden after 4.5s.
-/// Clock-driven elements are isolated in leaf views so 10 Hz ticks never invalidate
-/// surrounding buttons or video layers.
+/// Minimalist evening-cinema transport overlay.
+/// Contains zero focusable buttons so `SiriRemoteTouchSurface` retains uninterrupted
+/// touch-scrubbing and clickpad control across playing, paused, and scrubbing states.
 struct PlayerBottomBarView: View {
     @ObservedObject var viewModel: PlayerViewModel
     let fallbackTitle: String
-    let onOpenTopDrawer: () -> Void
-    let onUserInteraction: () -> Void
 
     private var isPaused: Bool {
         viewModel.playbackPhase == .paused
@@ -19,41 +17,28 @@ struct PlayerBottomBarView: View {
         let duration = viewModel.effectiveDurationSeconds
 
         VStack(spacing: 0) {
-            // Top-right «Ferdig kl. HH:MM» pill
-            HStack(alignment: .center) {
-                if viewModel.isSwitchingSource {
-                    HStack(spacing: 10) {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        Text("Bytter kilde sømløst…")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(LunaTheme.amber)
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 9)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.45), lineWidth: 1))
+            if viewModel.isSwitchingSource {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Bytter kilde…")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(LunaTheme.amber)
                 }
-
-                Spacer()
-
-                if duration > 30 {
-                    EndsAtClockPillLeafView(
-                        engine: viewModel.engine,
-                        duration: duration,
-                        isPaused: isPaused
-                    )
-                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 9)
+                .background(LunaTheme.cinemaGlass, in: Capsule())
+                .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.45), lineWidth: 1))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, LunaTheme.horizontalGutter)
+                .padding(.top, 42)
             }
-            .padding(.horizontal, LunaTheme.horizontalGutter)
-            .padding(.top, 42)
 
             Spacer()
 
-            // Bottom Liquid-Glass Transport & Chapter Timeline
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .bottom, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .lastTextBaseline, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 4) {
                         if let seriesLine = seriesContextLine {
                             Text(seriesLine)
                                 .font(.callout.weight(.semibold))
@@ -61,12 +46,18 @@ struct PlayerBottomBarView: View {
                         }
 
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            if isPaused && !viewModel.isScrubbing {
+                                Image(systemName: "pause.fill")
+                                    .font(.callout.weight(.bold))
+                                    .foregroundStyle(LunaTheme.amber)
+                            }
+
                             Text(viewModel.activeSession?.item.title ?? fallbackTitle)
                                 .font(.title2.weight(.bold))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
 
-                            if !viewModel.chapters.isEmpty {
+                            if !viewModel.chapters.isEmpty && !viewModel.isScrubbing {
                                 ActiveChapterLabelLeafView(
                                     engine: viewModel.engine,
                                     chapters: viewModel.chapters
@@ -77,32 +68,28 @@ struct PlayerBottomBarView: View {
 
                     Spacer()
 
-                    // Live AV Format & Tier Badges
-                    HStack(spacing: 10) {
-                        ForEach(viewModel.activeFormatBadges, id: \.self) { badge in
-                            formatBadgePill(badge)
-                        }
-                    }
+                    EndsAtAndFormatLeafView(
+                        engine: viewModel.engine,
+                        duration: duration,
+                        formatSummary: compactFormatSummary
+                    )
                 }
 
                 TimelineScrubberLeafView(
+                    viewModel: viewModel,
                     engine: viewModel.engine,
                     duration: duration,
-                    chapters: viewModel.chapters,
-                    previewTargetOverride: viewModel.coalescedSeekPreviewTarget,
-                    isPaused: isPaused,
-                    onOpenTopDrawer: onOpenTopDrawer,
-                    onUserInteraction: onUserInteraction
+                    isPaused: isPaused
                 )
             }
             .padding(.horizontal, LunaTheme.horizontalGutter)
-            .padding(.top, 36)
-            .padding(.bottom, 46)
+            .padding(.top, 56)
+            .padding(.bottom, 44)
             .background(
                 LinearGradient(
                     colors: [
                         Color.clear,
-                        Color.black.opacity(0.68),
+                        Color.black.opacity(0.62),
                         Color.black.opacity(0.92),
                     ],
                     startPoint: .top,
@@ -110,6 +97,7 @@ struct PlayerBottomBarView: View {
                 )
             )
         }
+        .allowsHitTesting(false)
     }
 
     private var seriesContextLine: String? {
@@ -123,34 +111,22 @@ struct PlayerBottomBarView: View {
         return nil
     }
 
-    private func formatBadgePill(_ text: String) -> some View {
-        let isHighlight = text.contains("DV") || text.contains("HDR") || text.contains("Atmos") || text.contains("DTS:X")
-        let isNvme = text.contains("NVMe")
-
-        return Text(text)
-            .font(.caption.weight(.bold).monospacedDigit())
-            .foregroundStyle(isNvme ? LunaTheme.emerald : (isHighlight ? LunaTheme.amber : LunaTheme.moonlight))
-            .padding(.horizontal, 13)
-            .padding(.vertical, 6)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(
-                Capsule()
-                    .strokeBorder(
-                        isNvme
-                            ? LunaTheme.emerald.opacity(0.45)
-                            : (isHighlight ? LunaTheme.amber.opacity(0.45) : LunaTheme.moonlight.opacity(0.18)),
-                        lineWidth: 1
-                    )
-            )
+    private var compactFormatSummary: String {
+        let video = viewModel.videoFormatBadge
+        let audio = viewModel.audioFormatBadge
+        if audio.isEmpty {
+            return video
+        }
+        return "\(video) · \(audio)"
     }
 }
 
-// MARK: - Isolated Leaf Views (10 Hz Clock Contained)
+// MARK: - Isolated Clock Leaf Views (10 Hz Contained)
 
-private struct EndsAtClockPillLeafView: View {
+private struct EndsAtAndFormatLeafView: View {
     let engine: AetherEngine
     let duration: Double
-    let isPaused: Bool
+    let formatSummary: String
 
     @State private var currentTime: Double = 0
 
@@ -162,26 +138,18 @@ private struct EndsAtClockPillLeafView: View {
     }()
 
     var body: some View {
-        let remaining = max(0, duration - currentTime)
-        let finishDate = Date().addingTimeInterval(remaining)
-        let clockStr = Self.formatter.string(from: finishDate)
+        let text: String = {
+            guard duration > 30 else { return formatSummary }
+            let remaining = max(0, duration - currentTime)
+            let finishClock = Self.formatter.string(from: Date().addingTimeInterval(remaining))
+            return "Ferdig \(finishClock) · \(formatSummary)"
+        }()
 
-        HStack(spacing: 8) {
-            Image(systemName: isPaused ? "pause.circle.fill" : "clock")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(isPaused ? LunaTheme.amber : LunaTheme.moonlight.opacity(0.8))
-            Text("Ferdig kl. \(clockStr)")
-                .font(.callout.weight(.semibold).monospacedDigit())
-                .foregroundStyle(LunaTheme.moonlight)
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 9)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(
-            Capsule()
-                .strokeBorder(LunaTheme.moonlight.opacity(0.16), lineWidth: 1)
-        )
-        .onReceive(engine.clock.$currentTime) { currentTime = $0 }
+        Text(text)
+            .font(.callout.weight(.medium).monospacedDigit())
+            .foregroundStyle(LunaTheme.muted)
+            .lineLimit(1)
+            .onReceive(engine.clock.$currentTime) { currentTime = $0 }
     }
 }
 
@@ -207,41 +175,42 @@ private struct ActiveChapterLabelLeafView: View {
 }
 
 struct TimelineScrubberLeafView: View {
+    @ObservedObject var viewModel: PlayerViewModel
     let engine: AetherEngine
     let duration: Double
-    let chapters: [PlaybackChapter]
-    let previewTargetOverride: Double?
     let isPaused: Bool
-    let onOpenTopDrawer: () -> Void
-    let onUserInteraction: () -> Void
 
     @State private var currentTime: Double = 0
     @State private var bufferedTime: Double = 0
-    @State private var scrubCursorTime: Double?
-    @State private var scrubThumbnailImage: CGImage?
-    @State private var thumbnailTask: Task<Void, Never>?
 
     var body: some View {
         let effectiveDuration = max(duration, currentTime, 1)
-        let displayTime = scrubCursorTime ?? previewTargetOverride ?? currentTime
+        let isScrubbing = viewModel.isScrubbing
+        let displayTime: Double = {
+            if isScrubbing {
+                return viewModel.scrubTargetSeconds
+            }
+            if let seekOverride = viewModel.coalescedSeekPreviewTarget {
+                return seekOverride
+            }
+            return currentTime
+        }()
+        let isExpanded = isScrubbing || isPaused || viewModel.coalescedSeekPreviewTarget != nil
+        let barHeight: CGFloat = isExpanded ? 10 : 6
         let progressRatio = min(1.0, max(0.0, displayTime / effectiveDuration))
         let bufferRatio = min(1.0, max(0.0, bufferedTime / effectiveDuration))
 
         VStack(alignment: .leading, spacing: 12) {
-            // Optional pause scrub preview thumbnail & chapter card
-            if isPaused, let cursor = scrubCursorTime {
-                pauseScrubPreviewCard(at: cursor, duration: effectiveDuration)
-            }
-
-            // Timeline bar with chapter tick marks
             GeometryReader { geo in
-                let totalWidth = geo.size.width
+                let totalWidth = max(1, geo.size.width)
+                let playheadX = totalWidth * CGFloat(progressRatio)
+
                 ZStack(alignment: .leading) {
                     Capsule()
                         .fill(Color.white.opacity(0.16))
 
                     Capsule()
-                        .fill(Color.white.opacity(0.32))
+                        .fill(Color.white.opacity(0.30))
                         .frame(width: totalWidth * CGFloat(bufferRatio))
 
                     Capsule()
@@ -254,41 +223,64 @@ struct TimelineScrubberLeafView: View {
                         )
                         .frame(width: totalWidth * CGFloat(progressRatio))
 
-                    // Chapter tick markers
-                    ForEach(chapters) { ch in
+                    // Subtle chapter tick marks
+                    ForEach(viewModel.chapters) { ch in
                         if ch.startSeconds > 2 && ch.startSeconds < effectiveDuration - 2 {
                             let xPos = totalWidth * CGFloat(ch.startSeconds / effectiveDuration)
                             Rectangle()
-                                .fill(Color.black.opacity(0.78))
-                                .frame(width: 2.5, height: isPaused ? 12 : 8)
+                                .fill(Color.black.opacity(0.76))
+                                .frame(width: 2.5, height: barHeight)
                                 .offset(x: xPos)
                         }
                     }
 
-                    // Playhead dot when paused or scrubbing
-                    if isPaused || previewTargetOverride != nil {
+                    if isExpanded {
                         Circle()
                             .fill(.white)
                             .frame(width: 18, height: 18)
-                            .shadow(color: LunaTheme.amber.opacity(0.75), radius: 8)
-                            .offset(x: max(0, min(totalWidth - 18, totalWidth * CGFloat(progressRatio) - 9)))
+                            .shadow(color: LunaTheme.amber.opacity(0.82), radius: isScrubbing ? 12 : 7)
+                            .offset(x: max(0, min(totalWidth - 18, playheadX - 9)))
+                    }
+                }
+                .frame(height: barHeight)
+                .overlay(alignment: .bottomLeading) {
+                    if isScrubbing {
+                        let chapterTitle = viewModel.activeChapter(at: displayTime)?.title
+                        let bubble = ScrubPreviewBubbleView(
+                            targetSeconds: displayTime,
+                            originSeconds: viewModel.scrubOriginSeconds,
+                            chapterTitle: chapterTitle,
+                            previewImage: viewModel.scrubPreviewImage,
+                            drawsInCompositorView: engine.scrubPreviewDrawsInView,
+                            onMountCompositorView: { compView in
+                                viewModel.attachCompositorPreviewView(compView)
+                            }
+                        )
+                        let bubbleWidth = bubble.preferredWidth
+                        let clampedOriginX = min(
+                            max(0, playheadX - bubbleWidth / 2.0),
+                            max(0, totalWidth - bubbleWidth)
+                        )
+                        bubble
+                            .offset(x: clampedOriginX, y: -22)
+                            .transition(.opacity)
                     }
                 }
             }
-            .frame(height: isPaused ? 12 : 8)
+            .frame(height: barHeight)
+            .animation(.easeOut(duration: 0.16), value: isExpanded)
 
-            // Timestamps & contextual controls
             HStack(alignment: .center) {
                 Text(Self.formatSeconds(displayTime))
                     .font(.callout.monospacedDigit().weight(.medium))
-                    .foregroundStyle(LunaTheme.moonlight)
+                    .foregroundStyle(isScrubbing ? LunaTheme.amber : LunaTheme.moonlight)
 
                 Spacer()
 
-                if !isPaused {
-                    Text("Klikk ◀ -10s / +30s ▶ · Sveip ned for Lyd, Tekst, Kilder & Kapitler")
+                if isScrubbing {
+                    Text("Klikk for å spille herfra · Menu avbryter")
                         .font(.caption)
-                        .foregroundStyle(LunaTheme.muted.opacity(0.82))
+                        .foregroundStyle(LunaTheme.muted)
                 }
 
                 Spacer()
@@ -297,136 +289,9 @@ struct TimelineScrubberLeafView: View {
                     .font(.callout.monospacedDigit().weight(.medium))
                     .foregroundStyle(LunaTheme.muted)
             }
-
-            // Pause-mode interactive chapter & scrub strip
-            if isPaused {
-                HStack(spacing: 16) {
-                    LunaPillButton(
-                        "",
-                        systemImage: "play.fill",
-                        prominence: .primaryAmber
-                    ) {
-                        onUserInteraction()
-                        if let target = scrubCursorTime {
-                            scrubCursorTime = nil
-                            scrubThumbnailImage = nil
-                            Task {
-                                await engine.seek(to: target, exact: true)
-                                engine.play()
-                            }
-                        } else {
-                            engine.play()
-                        }
-                    }
-
-                    LunaPillButton("-10s", systemImage: "gobackward.10", prominence: .subtleChip) {
-                        stepScrub(by: -10, duration: effectiveDuration)
-                    }
-
-                    LunaPillButton("+30s", systemImage: "goforward.30", prominence: .subtleChip) {
-                        stepScrub(by: 30, duration: effectiveDuration)
-                    }
-
-                    if !chapters.isEmpty {
-                        LunaPillButton("Forrige kapittel", systemImage: "backward.end.fill", prominence: .subtleChip) {
-                            jumpChapter(direction: -1, duration: effectiveDuration)
-                        }
-
-                        LunaPillButton("Neste kapittel", systemImage: "forward.end.fill", prominence: .subtleChip) {
-                            jumpChapter(direction: 1, duration: effectiveDuration)
-                        }
-                    }
-
-                    Spacer()
-
-                    LunaPillButton("Lyd, Tekst & Kilder", systemImage: "slider.horizontal.3", prominence: .glassPill) {
-                        onUserInteraction()
-                        onOpenTopDrawer()
-                    }
-                }
-                .padding(.top, 4)
-            }
-        }
-        .onChange(of: isPaused) { _, paused in
-            if !paused {
-                thumbnailTask?.cancel()
-                scrubCursorTime = nil
-                scrubThumbnailImage = nil
-            }
         }
         .onReceive(engine.clock.$currentTime) { currentTime = $0 }
         .onReceive(engine.clock.$bufferedPosition) { bufferedTime = $0 }
-    }
-
-    private func pauseScrubPreviewCard(at target: Double, duration: Double) -> some View {
-        let matchedChapter = chapters.first { target >= $0.startSeconds && target < $0.endSeconds }
-        return HStack(spacing: 16) {
-            if let cg = scrubThumbnailImage {
-                Image(decorative: cg, scale: 1.0)
-                    .resizable()
-                    .aspectRatio(16.0 / 9.0, contentMode: .fill)
-                    .frame(width: 210, height: 118)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(LunaTheme.amber.opacity(0.5), lineWidth: 1.5)
-                    )
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(Self.formatSeconds(target))
-                    .font(.title3.monospacedDigit().weight(.bold))
-                    .foregroundStyle(LunaTheme.amber)
-                if let ch = matchedChapter {
-                    Text(ch.title)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(.white)
-                }
-                Text("Trykk ▶ for å spille herfra")
-                    .font(.caption)
-                    .foregroundStyle(LunaTheme.muted)
-            }
-        }
-        .padding(14)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(LunaTheme.amber.opacity(0.35), lineWidth: 1)
-        )
-    }
-
-    private func stepScrub(by delta: Double, duration: Double) {
-        onUserInteraction()
-        let base = scrubCursorTime ?? currentTime
-        let next = min(max(0, base + delta), max(0, duration - 0.5))
-        scrubCursorTime = next
-        requestScrubPreviewThumbnail(at: next)
-    }
-
-    private func jumpChapter(direction: Int, duration: Double) {
-        onUserInteraction()
-        let anchor = scrubCursorTime ?? currentTime
-        let targetChapter: PlaybackChapter?
-        if direction > 0 {
-            targetChapter = chapters.first { $0.startSeconds > anchor + 1.5 }
-        } else {
-            targetChapter = chapters.last { $0.startSeconds < anchor - 3.0 } ?? chapters.first
-        }
-        guard let ch = targetChapter else { return }
-        scrubCursorTime = min(max(0, ch.startSeconds), duration)
-        requestScrubPreviewThumbnail(at: ch.startSeconds)
-    }
-
-    private func requestScrubPreviewThumbnail(at seconds: Double) {
-        thumbnailTask?.cancel()
-        thumbnailTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 140_000_000)
-            guard !Task.isCancelled else { return }
-            if let cg = await engine.scrubThumbnail(atSeconds: seconds, maxWidth: 384) {
-                guard !Task.isCancelled else { return }
-                scrubThumbnailImage = cg
-            }
-        }
     }
 
     static func formatSeconds(_ seconds: Double) -> String {

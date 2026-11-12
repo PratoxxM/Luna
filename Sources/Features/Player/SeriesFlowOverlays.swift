@@ -193,7 +193,7 @@ struct SeriesFlowOverlays: View {
             }
         }
         .padding(18)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(LunaTheme.cinemaGlass, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(LunaTheme.amber.opacity(0.42), lineWidth: 1.5)

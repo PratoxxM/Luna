@@ -9,11 +9,16 @@ struct HomeView: View {
     @State private var errorMessage: String?
 
     @State private var selectedCard: TvMediaCard?
-    @State private var selectedGenreChip: TvGenreChip?
-    @State private var selectedRowBrowse: TvShelfRow?
     @State private var sourcePickerContext: SourcePickerContext?
 
     @Namespace private var homeFocusNamespace
+
+    private static let canonicalHomeRowIDs: Set<String> = [
+        "medialogg-continue",
+        "upcoming-episodes",
+        "popular-movies",
+        "popular-series"
+    ]
 
     init(initialRoomName: String = "Kjellerstua", initialHardwareProfile: String = "dv-fel-714") {
         if let cached = DiskSWRStore.loadHomeSynchronously(
@@ -30,7 +35,7 @@ struct HomeView: View {
 
     private var visibleRows: [TvShelfRow] {
         (homePayload?.rows ?? []).filter { row in
-            !row.items.isEmpty || !(row.genres ?? []).isEmpty
+            Self.canonicalHomeRowIDs.contains(row.rowId) && !row.items.isEmpty
         }
     }
 
@@ -38,13 +43,11 @@ struct HomeView: View {
         let client = sessionStore.makeClient()
 
         ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 40) {
-                topStatusStrip
-
+            LazyVStack(alignment: .leading, spacing: 38) {
                 if visibleRows.isEmpty && isInitialColdFetch {
                     HStack(spacing: 16) {
                         ProgressView()
-                        Text("Klargjør kveldskino for \(sessionStore.roomName)…")
+                        Text("Henter innhold…")
                             .font(.title3)
                             .foregroundStyle(LunaTheme.moonlight)
                     }
@@ -87,31 +90,16 @@ struct HomeView: View {
                         },
                         onMarkWatched: { card in
                             Task { await markWatched(for: card) }
-                        },
-                        onSelectGenre: { chip in
-                            selectedGenreChip = chip
-                        },
-                        onOpenFullRow: { shelf in
-                            selectedRowBrowse = shelf
                         }
                     )
                 }
             }
-            .padding(.top, 18)
+            .padding(.top, 22)
             .padding(.bottom, 84)
         }
         .focusScope(homeFocusNamespace)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
-        }
-        .navigationDestination(item: $selectedGenreChip) { chip in
-            CatalogBrowseView(mediaType: chip.inferredMediaType, initialGenre: chip)
-        }
-        .navigationDestination(item: $selectedRowBrowse) { shelf in
-            CustomRowBrowseView(
-                title: shelf.title,
-                pathOrRowId: shelf.nextPath ?? shelf.rowId
-            )
         }
         .sheet(item: $sourcePickerContext) { ctx in
             SourcePickerSheetView(
@@ -139,36 +127,6 @@ struct HomeView: View {
             syncDiskSnapshotIfRoomChanged()
             await revalidateHome(forceUnconditional: false)
         }
-    }
-
-    private var topStatusStrip: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "moon.stars.fill")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(LunaTheme.amber)
-                Text("Luna")
-                    .font(.callout.weight(.bold))
-                    .foregroundStyle(.white)
-            }
-
-            Text("·")
-                .foregroundStyle(LunaTheme.muted)
-
-            Text(sessionStore.roomName)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(LunaTheme.moonlight)
-
-            Text(sessionStore.activePreset.shortBadgeLabel)
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(LunaTheme.amber)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(LunaTheme.amber.opacity(0.14), in: Capsule())
-
-            Spacer()
-        }
-        .padding(.horizontal, LunaTheme.horizontalGutter)
     }
 
     private func syncDiskSnapshotIfRoomChanged() {

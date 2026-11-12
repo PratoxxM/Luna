@@ -40,7 +40,7 @@ public struct PosterCardView: View {
                     CachedArtworkView(
                         url: posterURL,
                         client: client,
-                        maxPixelSize: 540,
+                        maxPixelSize: 640,
                         blurHash: card.blurHash,
                         dominantColor: card.dominantColor,
                         placeholderSymbol: card.mediaType == "series" ? "tv" : "film",
@@ -49,7 +49,6 @@ public struct PosterCardView: View {
                     .frame(width: width, height: height)
                     .clipped()
 
-                    // Top badges
                     VStack {
                         HStack(alignment: .top, spacing: 6) {
                             if card.isFavorite == true {
@@ -68,15 +67,15 @@ public struct PosterCardView: View {
 
                             Spacer(minLength: 4)
 
-                            if let topBadge = preferredBadgeText {
-                                Text(topBadge)
+                            if let storageBadge = storageBadgeLabel {
+                                Text(storageBadge)
                                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                                    .foregroundStyle(topBadgeForeground)
+                                    .foregroundStyle(storageBadgeForeground)
                                     .padding(.horizontal, 9)
                                     .padding(.vertical, 4)
                                     .background(Color.black.opacity(0.72), in: Capsule())
                                     .overlay(
-                                        Capsule().strokeBorder(topBadgeForeground.opacity(0.35), lineWidth: 0.8)
+                                        Capsule().strokeBorder(storageBadgeForeground.opacity(0.35), lineWidth: 0.8)
                                     )
                             }
                         }
@@ -112,7 +111,7 @@ public struct PosterCardView: View {
                     .lineLimit(1)
                     .frame(width: width, alignment: .leading)
 
-                Text(card.compactMetaLine)
+                Text(subtitleText)
                     .font(.caption2)
                     .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.muted)
                     .lineLimit(1)
@@ -130,25 +129,26 @@ public struct PosterCardView: View {
         }
     }
 
-    private var preferredBadgeText: String? {
-        if showStorageBadge, let avail = card.availability {
+    private var subtitleText: String {
+        if let year = card.year {
+            return String(year)
+        }
+        return card.compactMetaLine
+    }
+
+    private var storageBadgeLabel: String? {
+        guard showStorageBadge, let avail = card.availability else {
+            return nil
+        }
+        if avail.isLocalNvme || avail.isLocalArchive || avail.isLocalVfs {
             return avail.householdBadgeLabel
-        }
-        if let badge = card.badges?.first, !badge.isEmpty {
-            return badge
-        }
-        if let avail = card.availability, avail.isLocalNvme {
-            return "NVMe"
         }
         return nil
     }
 
-    private var topBadgeForeground: Color {
-        if let avail = card.availability, avail.isLocalNvme && showStorageBadge {
+    private var storageBadgeForeground: Color {
+        if let avail = card.availability, avail.isLocalNvme {
             return LunaTheme.emerald
-        }
-        if let badge = card.badges?.first, badge.contains("DV") || badge.contains("FEL") {
-            return LunaTheme.amber
         }
         return LunaTheme.moonlight
     }

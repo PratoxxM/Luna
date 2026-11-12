@@ -12,50 +12,15 @@ struct ShelfRowView: View {
     let onToggleWatchlist: (TvMediaCard) -> Void
     let onToggleFavorite: (TvMediaCard) -> Void
     let onMarkWatched: (TvMediaCard) -> Void
-    let onSelectGenre: (TvGenreChip) -> Void
-    let onOpenFullRow: (TvShelfRow) -> Void
-
-    private var showsStorageBadge: Bool {
-        row.rowId.contains("local") || row.rowId.contains("watchlist")
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .firstTextBaseline, spacing: 16) {
-                Text(row.title)
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
+        VStack(alignment: .leading, spacing: 16) {
+            Text(row.title)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, LunaTheme.horizontalGutter)
 
-                if row.rowStyle == "upcoming_backdrop" {
-                    Text("Neste episoder")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(LunaTheme.amber)
-                }
-
-                Spacer()
-
-                if row.hasMore == true, row.rowStyle != "genre_chips" {
-                    LunaPillButton("Se alle", systemImage: "arrow.right", prominence: .subtleChip) {
-                        onOpenFullRow(row)
-                    }
-                }
-            }
-            .padding(.horizontal, LunaTheme.horizontalGutter)
-
-            if row.rowStyle == "genre_chips", let genres = row.genres, !genres.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 24) {
-                        ForEach(Array(genres.enumerated()), id: \.element.id) { idx, chip in
-                            GenreTileView(chip: chip) {
-                                onSelectGenre(chip)
-                            }
-                            .prefersDefaultFocus(isFirstRow && idx == 0, in: focusNamespace)
-                        }
-                    }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 14)
-                }
-            } else if row.rowStyle == "continue_backdrop" {
+            if row.rowStyle == "continue_backdrop" {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 32) {
                         ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
@@ -131,7 +96,7 @@ struct ShelfRowView: View {
                                 card: card,
                                 client: client,
                                 width: 248,
-                                showStorageBadge: showsStorageBadge
+                                showStorageBadge: false
                             ) {
                                 onSelectCard(card)
                             }

@@ -18,6 +18,7 @@ struct PlayerContainerView: View {
     @State private var hideBottomBarTask: Task<Void, Never>?
 
     @FocusState private var isCanvasFocused: Bool
+    @Namespace private var playerFocusNamespace
 
     init(
         engine: AetherEngine,
@@ -36,13 +37,11 @@ struct PlayerContainerView: View {
         viewModel.isPictureReadyForReveal &&
             viewModel.fatalError == nil &&
             !isTopDrawerOpen &&
-            viewModel.playbackPhase != .paused &&
             !hasSeriesPrompt
     }
 
     var body: some View {
         let client = sessionStore.makeClient()
-        let roomBadge = "\(sessionStore.roomName) · \(sessionStore.activePreset.shortBadgeLabel)"
 
         ZStack {
             LunaTheme.pureBlack.ignoresSafeArea()
@@ -57,27 +56,72 @@ struct PlayerContainerView: View {
                 .ignoresSafeArea()
                 .zIndex(1)
 
-            // 1.5 Tactile Siri Remote Focus Anchor (active only during clean playback)
+            // 1.5 Invisible UIKit Siri Remote Touch & Click Surface (`focusEffect = nil`)
             if shouldEnableCanvasAnchor {
-                Button {
-                    if showBottomBar {
-                        hideBottomBarTask?.cancel()
-                        withAnimation(.easeOut(duration: 0.22)) {
-                            showBottomBar = false
+                SiriRemoteTouchSurface(
+                    onLightTouch: {
+                        if !viewModel.isScrubbing {
+                            revealBottomBarTemporarily()
                         }
-                    } else {
-                        revealBottomBarTemporarily()
+                    },
+                    onScrubBegan: {
+                        hideBottomBarTask?.cancel()
+                        withAnimation(.easeOut(duration: 0.16)) {
+                            showBottomBar = true
+                        }
+                        viewModel.beginTouchScrub()
+                    },
+                    onScrubChanged: { deltaPoints, velocityPointsPerSec in
+                        viewModel.updateTouchScrub(
+                            deltaPoints: deltaPoints,
+                            velocityPointsPerSec: velocityPointsPerSec
+                        )
+                    },
+                    onScrubTouchLifted: {
+                        // Keep scrub session parked so multi-swipe across a long movie works effortlessly
+                    },
+                    onSelectClick: {
+                        if viewModel.isScrubbing {
+                            viewModel.commitTouchScrub()
+                            revealBottomBarTemporarily()
+                        } else {
+                            engine.togglePlayPause()
+                            revealBottomBarTemporarily()
+                        }
+                    },
+                    onLeftClick: {
+                        if viewModel.isScrubbing {
+                            viewModel.stepTouchScrub(by: -10)
+                        } else {
+                            viewModel.coalesceRelativeSeek(delta: -10)
+                            revealBottomBarTemporarily()
+                        }
+                    },
+                    onRightClick: {
+                        if viewModel.isScrubbing {
+                            viewModel.stepTouchScrub(by: 10)
+                        } else {
+                            viewModel.coalesceRelativeSeek(delta: 30)
+                            revealBottomBarTemporarily()
+                        }
+                    },
+                    onUpClick: {
+                        if !viewModel.isScrubbing {
+                            revealBottomBarTemporarily()
+                        }
+                    },
+                    onDownClick: {
+                        if viewModel.isScrubbing {
+                            viewModel.cancelTouchScrub()
+                        }
+                        openTopDrawer()
                     }
-                } label: {
-                    Color.clear
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
+                .focusEffectDisabled()
                 .focused($isCanvasFocused)
-                .onMoveCommand { direction in
-                    handleCanvasMoveCommand(direction)
-                }
+                .prefersDefaultFocus(true, in: playerFocusNamespace)
                 .zIndex(1.5)
             }
 
@@ -86,9 +130,7 @@ struct PlayerContainerView: View {
                 ResolvingCurtainView(
                     viewModel: viewModel,
                     initialRequest: initialRequest,
-                    client: client,
-                    roomBadgeText: roomBadge,
-                    onCancel: closePlayer
+                    client: client
                 )
                 .transition(.opacity)
                 .zIndex(2)
@@ -110,7 +152,7 @@ struct PlayerContainerView: View {
             }
 
             // 4. Series Continuity Overlays («Hopp over intro» & «Spill neste episode»)
-            if viewModel.isPictureReadyForReveal && !isTopDrawerOpen && viewModel.fatalError == nil {
+            if viewModel.isPictureReadyForReveal && !isTopDrawerOpen && !viewModel.isScrubbing && viewModel.fatalError == nil {
                 SeriesFlowOverlays(
                     viewModel: viewModel,
                     comfort: comfort,
@@ -124,30 +166,27 @@ struct PlayerContainerView: View {
 
             // 5. Minimalist Bottom Bar + Coalesced Tactile Seek Pill
             if viewModel.isPictureReadyForReveal && !isTopDrawerOpen && viewModel.fatalError == nil {
-                if showBottomBar || viewModel.playbackPhase == .paused {
+                if showBottomBar || viewModel.playbackPhase == .paused || viewModel.isScrubbing {
                     PlayerBottomBarView(
                         viewModel: viewModel,
-                        fallbackTitle: initialRequest.title,
-                        onOpenTopDrawer: { openTopDrawer() },
-                        onUserInteraction: { revealBottomBarTemporarily() }
+                        fallbackTitle: initialRequest.title
                     )
                     .transition(.opacity)
                     .zIndex(5)
                 }
 
-                if abs(viewModel.coalescedSeekDelta) >= 1 {
+                if abs(viewModel.coalescedSeekDelta) >= 1 && !viewModel.isScrubbing {
                     coalescedSeekFeedbackPill
                         .transition(.scale(scale: 0.92).combined(with: .opacity))
                         .zIndex(5.5)
                 }
             }
 
-            // 6. Swipe-Down 4-Tab Liquid Glass Top Drawer
+            // 6. Swipe-Down 3-Tab Dark Cinema Glass Top Drawer
             if isTopDrawerOpen && viewModel.fatalError == nil {
                 PlayerTopDrawerView(
                     viewModel: viewModel,
                     comfort: comfort,
-                    client: client,
                     selectedTab: $selectedDrawerTab,
                     onClose: {
                         withAnimation(.easeOut(duration: 0.22)) {
@@ -166,6 +205,7 @@ struct PlayerContainerView: View {
                     .zIndex(7)
             }
         }
+        .focusScope(playerFocusNamespace)
         .animation(.easeOut(duration: 0.28), value: viewModel.isPictureReadyForReveal)
         .onChange(of: viewModel.isPictureReadyForReveal) { _, ready in
             if ready {
@@ -184,8 +224,13 @@ struct PlayerContainerView: View {
                 withAnimation(.easeOut(duration: 0.2)) {
                     isTopDrawerOpen = false
                 }
+                restoreCanvasFocusSoon()
             }
-            engine.togglePlayPause()
+            if viewModel.isScrubbing {
+                viewModel.commitTouchScrub()
+            } else {
+                engine.togglePlayPause()
+            }
             revealBottomBarTemporarily()
         }
         .onExitCommand {
@@ -194,6 +239,9 @@ struct PlayerContainerView: View {
                     isTopDrawerOpen = false
                 }
                 restoreCanvasFocusSoon()
+            } else if viewModel.isScrubbing {
+                viewModel.cancelTouchScrub()
+                revealBottomBarTemporarily()
             } else if hasSeriesPrompt {
                 seriesPromptDismissNonce &+= 1
                 restoreCanvasFocusSoon()
@@ -215,31 +263,14 @@ struct PlayerContainerView: View {
         }
     }
 
-    // MARK: - Siri Remote Tactile Gestures
-
-    private func handleCanvasMoveCommand(_ direction: MoveCommandDirection) {
-        switch direction {
-        case .down:
-            openTopDrawer()
-        case .up:
-            revealBottomBarTemporarily()
-        case .left:
-            viewModel.coalesceRelativeSeek(delta: -10)
-            revealBottomBarTemporarily()
-        case .right:
-            viewModel.coalesceRelativeSeek(delta: 30)
-            revealBottomBarTemporarily()
-        @unknown default:
-            break
-        }
-    }
+    // MARK: - Focus & OSD Timing
 
     private func openTopDrawer(tab: PlayerTopDrawerTab? = nil) {
         hideBottomBarTask?.cancel()
         if let tab {
             selectedDrawerTab = tab
         }
-        withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+        withAnimation(.spring(response: 0.26, dampingFraction: 0.85)) {
             showBottomBar = false
             isTopDrawerOpen = true
         }
@@ -251,9 +282,9 @@ struct PlayerContainerView: View {
         }
         hideBottomBarTask?.cancel()
         hideBottomBarTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 4_500_000_000)
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
             guard !Task.isCancelled else { return }
-            if viewModel.playbackPhase == .playing && !isTopDrawerOpen {
+            if viewModel.playbackPhase == .playing && !viewModel.isScrubbing && !isTopDrawerOpen {
                 withAnimation(.easeOut(duration: 0.28)) {
                     showBottomBar = false
                 }
@@ -292,9 +323,10 @@ struct PlayerContainerView: View {
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 16)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(LunaTheme.cinemaGlass, in: Capsule())
         .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.55), lineWidth: 1.5))
-        .shadow(color: .black.opacity(0.6), radius: 20, x: 0, y: 8)
+        .shadow(color: .black.opacity(0.65), radius: 20, x: 0, y: 8)
+        .allowsHitTesting(false)
     }
 
     private func fatalErrorOverlay(_ message: String) -> some View {
@@ -324,7 +356,7 @@ struct PlayerContainerView: View {
                     if viewModel.activeSession != nil {
                         LunaPillButton("Velg annen kilde", systemImage: "arrow.triangle.2.circlepath", prominence: .glassPill) {
                             viewModel.fatalError = nil
-                            openTopDrawer(tab: .sources)
+                            openTopDrawer(tab: .sourcesAndChapters)
                         }
                     }
 

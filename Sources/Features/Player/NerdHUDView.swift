@@ -35,8 +35,7 @@ struct NerdHUDView: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
         .frame(width: 500, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(LunaTheme.cinemaGlass, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(LunaTheme.moonlight.opacity(0.16), lineWidth: 1)

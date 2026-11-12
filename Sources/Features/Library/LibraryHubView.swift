@@ -57,19 +57,12 @@ struct LibraryHubView: View {
         let counts = libraryPayload?.counts
 
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 30) {
-                // Header
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Mitt bibliotek")
-                        .font(.largeTitle.weight(.bold))
-                        .foregroundStyle(.white)
-
-                    Text("Samlet oversikt over huskeliste, lagrede favoritter og alt som ligger lokalt på NVMe og Arkiv.")
-                        .font(.callout)
-                        .foregroundStyle(LunaTheme.muted)
-                }
-                .padding(.horizontal, LunaTheme.horizontalGutter)
-                .padding(.top, 26)
+            VStack(alignment: .leading, spacing: 22) {
+                Text("Mitt bibliotek")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.top, 14)
 
                 // Primary 3-section switcher
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -282,7 +275,7 @@ struct LibraryHubView: View {
                         card: card,
                         client: client,
                         width: 244,
-                        showStorageBadge: true
+                        showStorageBadge: activeSection == .local
                     ) {
                         selectedCard = card
                     }

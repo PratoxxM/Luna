@@ -2,7 +2,7 @@
 
 ## 1. Purpose & Public-Repository Security Rules
 
-`Luna` (`v2.1.1`) is a public, standalone tvOS client powered by `AetherEngine` (`7.62.1`) and backed by the native MediaOS TV API (`/api/tv/v1` on `:8090` / `:8920`).
+`Luna` (`v2.2.0`) is a public, standalone tvOS client powered by `AetherEngine` (`7.62.1`) and backed by the native MediaOS TV API (`/api/tv/v1` on `:8090` / `:8920`).
 
 Because this repository is **public on GitHub**, these rules are hard invariants:
 
@@ -56,5 +56,5 @@ gh release view latest --json assets,updatedAt
 - Call `engine.prepareForItemReplacement()` for back-to-back episode transitions and seamless timecode source switches (`HeldStillPresenter`), and `engine.stop(resetDisplayCriteria: true)` when dismissing the player.
 - Hold `ResolvingCurtainView` visible until `hasFirstFrameReadyForDisplay && !isAwaitingDisplaySwitch` (with a 5-second fallback watchdog) so HDMI range/frame-rate switches never flash black.
 - Observe `engine.clock` (`$currentTime`, `$sourceTime`) **only** in leaf scrubber (`PlayerBottomBarView`) and subtitle (`SubtitleOverlayView`) views, and `engine.diagnostics.$liveTelemetry` **only** in `NerdHUDView` (1 Hz), so high-frequency ticks never re-render the player hierarchy.
-- **Never** use SwiftUI `Menu` inside tvOS 26 player overlays (causes focus flicker on `objectWillChange`). Always use the focus-isolated 4-tab `PlayerTopDrawerView` or focusable modal sheets (`SourcePickerSheetView`).
+- **Never** use SwiftUI `Menu` inside tvOS 26 player overlays (causes focus flicker on `objectWillChange`) or an unfocused/halo-enabled full-screen SwiftUI `Button` above `AetherPlayerSurface` (causes tvOS Liquid Glass focus rectangle washout). Always use `SiriRemoteTouchSurface` (`focusEffect = nil` + `.focusEffectDisabled()`), the focus-isolated 3-tab `PlayerTopDrawerView`, or focusable modal sheets (`SourcePickerSheetView`).
 - Explicitly manage `UIApplication.shared.isIdleTimerDisabled` while playing/loading/rebuffering/resolving so tvOS never starts the screensaver on `.softwareHost` (Dolby Vision Profile 7 FEL / AV1).

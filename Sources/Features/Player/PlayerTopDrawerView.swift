@@ -2,69 +2,62 @@ import SwiftUI
 import AetherBridge
 
 enum PlayerTopDrawerTab: String, CaseIterable, Identifiable, Sendable {
-    case audio
     case subtitles
-    case sources
-    case chaptersAndInfo
+    case audio
+    case sourcesAndChapters
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .audio: return "Lyd"
         case .subtitles: return "Undertekster"
-        case .sources: return "Kilder"
-        case .chaptersAndInfo: return "Kapitler & info"
+        case .audio: return "Lyd"
+        case .sourcesAndChapters: return "Kilde & Kapitler"
         }
     }
 
     var icon: String {
         switch self {
-        case .audio: return "waveform"
         case .subtitles: return "captions.bubble"
-        case .sources: return "arrow.triangle.2.circlepath"
-        case .chaptersAndInfo: return "list.bullet.film"
+        case .audio: return "waveform"
+        case .sourcesAndChapters: return "list.bullet.film"
         }
     }
 }
 
-/// Swipe-down Liquid Glass top drawer rendered over live playing video.
-/// Built exclusively with native tvOS buttons (never SwiftUI `Menu`) so Focus Engine
-/// stays responsive at 60/120 fps.
+/// Compact 3-tab top drawer rendered in dark HDR-safe cinema glass when swiping down.
+/// Built exclusively with focus-safe custom buttons (`.focusEffectDisabled()`, never SwiftUI `Menu`).
 struct PlayerTopDrawerView: View {
     @ObservedObject var viewModel: PlayerViewModel
     @ObservedObject var comfort: ComfortPreferences
-    let client: MediaOSClient?
     @Binding var selectedTab: PlayerTopDrawerTab
     let onClose: () -> Void
 
-    @FocusState private var defaultTabFocused: Bool
+    @FocusState private var focusedTab: PlayerTopDrawerTab?
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 24) {
-                // Header tab bar
+            VStack(alignment: .leading, spacing: 22) {
                 HStack(spacing: 14) {
                     ForEach(PlayerTopDrawerTab.allCases) { tab in
-                        let isFirst = (tab == selectedTab)
                         LunaPillButton(
                             tab.title,
                             systemImage: tab.icon,
                             isSelected: selectedTab == tab,
                             prominence: selectedTab == tab ? .primaryAmber : .subtleChip
                         ) {
-                            withAnimation(.easeOut(duration: 0.18)) {
+                            withAnimation(.easeOut(duration: 0.16)) {
                                 selectedTab = tab
                             }
                         }
-                        .focused($defaultTabFocused, equals: isFirst)
+                        .focused($focusedTab, equals: tab)
                     }
 
                     Spacer()
 
                     LunaPillButton(
-                        comfort.showNerdHUD ? "Nerde-HUD: På" : "Nerde-HUD",
-                        systemImage: "gauge.with.dots.needle.67percent",
+                        "",
+                        systemImage: comfort.showNerdHUD ? "info.circle.fill" : "info.circle",
                         isSelected: comfort.showNerdHUD,
                         prominence: .subtleChip
                     ) {
@@ -77,139 +70,51 @@ struct PlayerTopDrawerView: View {
                 }
 
                 Divider()
-                    .overlay(LunaTheme.moonlight.opacity(0.14))
+                    .overlay(LunaTheme.moonlight.opacity(0.12))
 
-                // Active tab content
                 Group {
                     switch selectedTab {
-                    case .audio:
-                        audioTabContent
                     case .subtitles:
                         subtitlesTabContent
-                    case .sources:
-                        sourcesTabContent
-                    case .chaptersAndInfo:
-                        chaptersAndInfoTabContent
+                    case .audio:
+                        audioTabContent
+                    case .sourcesAndChapters:
+                        sourcesAndChaptersTabContent
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .padding(.horizontal, LunaTheme.horizontalGutter)
-            .padding(.top, 42)
-            .padding(.bottom, 34)
+            .padding(.top, 38)
+            .padding(.bottom, 30)
             .background(
-                ZStack {
-                    Rectangle().fill(.ultraThinMaterial)
-                    LinearGradient(
-                        colors: [
-                            LunaTheme.canvas.opacity(0.92),
-                            LunaTheme.surface.opacity(0.88),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
+                LinearGradient(
+                    colors: [
+                        Color(red: 9.0 / 255.0, green: 12.0 / 255.0, blue: 19.0 / 255.0).opacity(0.96),
+                        Color(red: 13.0 / 255.0, green: 17.0 / 255.0, blue: 26.0 / 255.0).opacity(0.94),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
             )
             .overlay(alignment: .bottom) {
                 Rectangle()
                     .fill(LunaTheme.amber.opacity(0.28))
                     .frame(height: 1)
             }
-            .shadow(color: .black.opacity(0.65), radius: 28, x: 0, y: 14)
+            .shadow(color: .black.opacity(0.72), radius: 28, x: 0, y: 14)
 
             Spacer()
         }
         .onAppear {
-            defaultTabFocused = true
+            focusedTab = selectedTab
         }
     }
 
-    // MARK: - Tab 1: Lyd
-
-    private var audioTabContent: some View {
-        HStack(alignment: .top, spacing: 40) {
-            // Left: Audio tracks
-            VStack(alignment: .leading, spacing: 12) {
-                sectionHeader("Lydspor")
-
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 10) {
-                        if viewModel.audioTracks.isEmpty {
-                            Text("Ingen separate lydspor rapportert av strømmen.")
-                                .font(.callout)
-                                .foregroundStyle(LunaTheme.muted)
-                        } else {
-                            ForEach(viewModel.audioTracks) { track in
-                                let isSelected = (viewModel.activeAudioTrackIndex == track.id)
-                                DrawerTrackRowButton(
-                                    title: formatAudioTitle(track),
-                                    subtitle: formatAudioSubtitle(track),
-                                    badges: audioTrackBadges(track),
-                                    isSelected: isSelected
-                                ) {
-                                    viewModel.selectAudioTrack(track.id)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                .frame(maxHeight: 300)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            // Right: Audio sync (±50ms), Shaping & Object Audio status
-            VStack(alignment: .leading, spacing: 20) {
-                VStack(alignment: .leading, spacing: 10) {
-                    let ms = Int((viewModel.audioDelaySeconds * 1000).rounded())
-                    sectionHeader(String(format: "Lydsynkronisering (%+d ms)", ms))
-
-                    HStack(spacing: 12) {
-                        LunaPillButton("-50 ms", systemImage: "minus", prominence: .subtleChip) {
-                            viewModel.adjustAudioDelay(by: -0.05)
-                        }
-                        LunaPillButton("0 ms", prominence: ms == 0 ? .glassPill : .subtleChip) {
-                            viewModel.resetAudioDelay()
-                        }
-                        LunaPillButton("+50 ms", systemImage: "plus", prominence: .subtleChip) {
-                            viewModel.adjustAudioDelay(by: 0.05)
-                        }
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    sectionHeader("Klang & Nattmodus")
-
-                    HStack(spacing: 12) {
-                        ForEach(AudioEnhancementMode.allCases) { mode in
-                            LunaPillButton(
-                                mode.displayTitle,
-                                isSelected: viewModel.audioEnhancement == mode,
-                                prominence: viewModel.audioEnhancement == mode ? .glassPill : .subtleChip
-                            ) {
-                                viewModel.setAudioEnhancement(mode)
-                            }
-                        }
-                    }
-                    Text(viewModel.audioEnhancement.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(LunaTheme.muted)
-                }
-
-                ObjectAudioStatusLeafView(
-                    engine: viewModel.engine,
-                    fallbackBadge: viewModel.audioFormatBadge
-                )
-            }
-            .frame(width: 640, alignment: .leading)
-        }
-    }
-
-    // MARK: - Tab 2: Undertekster (inkl. HDR/OLED-lysdemping)
+    // MARK: - Tab 1: Undertekster
 
     private var subtitlesTabContent: some View {
         HStack(alignment: .top, spacing: 40) {
-            // Left: Subtitle track picker
             VStack(alignment: .leading, spacing: 12) {
                 sectionHeader("Undertekstspor")
 
@@ -238,19 +143,22 @@ struct PlayerTopDrawerView: View {
                     }
                     .padding(.vertical, 4)
                 }
-                .frame(maxHeight: 320)
+                .frame(maxHeight: 280)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Right: Sync (±0.1s), OLED/HDR luminance dimming, Font Size & Box
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 10) {
-                    sectionHeader(String(format: "Tekstsynkronisering (%+.1f s)", viewModel.subtitleDelaySeconds))
+                    sectionHeader(String(format: "Tekstsynk (%+.1f s)", viewModel.subtitleDelaySeconds))
                     HStack(spacing: 12) {
                         LunaPillButton("-0.1 s", systemImage: "minus", prominence: .subtleChip) {
                             viewModel.adjustSubtitleDelay(by: -0.1)
                         }
-                        LunaPillButton("0.0 s", prominence: abs(viewModel.subtitleDelaySeconds) < 0.01 ? .glassPill : .subtleChip) {
+                        LunaPillButton(
+                            "0.0 s",
+                            isSelected: abs(viewModel.subtitleDelaySeconds) < 0.01,
+                            prominence: abs(viewModel.subtitleDelaySeconds) < 0.01 ? .glassPill : .subtleChip
+                        ) {
                             viewModel.resetSubtitleDelay()
                         }
                         LunaPillButton("+0.1 s", systemImage: "plus", prominence: .subtleChip) {
@@ -260,130 +168,113 @@ struct PlayerTopDrawerView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
-                    sectionHeader("OLED / HDR-komfortlys (gjelder tekst & PGS)")
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(HDRSubtitlePreset.allCases) { preset in
-                                LunaPillButton(
-                                    preset.displayTitle,
-                                    isSelected: comfort.hdrSubtitlePreset == preset,
-                                    prominence: comfort.hdrSubtitlePreset == preset ? .glassPill : .subtleChip
-                                ) {
-                                    comfort.hdrSubtitlePreset = preset
-                                }
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-
-                HStack(alignment: .top, spacing: 28) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        sectionHeader("Størrelse")
-                        HStack(spacing: 10) {
-                            ForEach(SubtitleFontSizePreset.allCases) { sz in
-                                LunaPillButton(
-                                    sz.displayTitle,
-                                    isSelected: comfort.subtitleFontSize == sz,
-                                    prominence: comfort.subtitleFontSize == sz ? .glassPill : .subtleChip
-                                ) {
-                                    comfort.subtitleFontSize = sz
-                                }
-                            }
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        sectionHeader("Bakgrunnsboks")
-                        HStack(spacing: 10) {
-                            ForEach(SubtitleBoxOpacityPreset.allCases) { box in
-                                LunaPillButton(
-                                    box.displayTitle,
-                                    isSelected: comfort.subtitleBoxOpacity == box,
-                                    prominence: comfort.subtitleBoxOpacity == box ? .glassPill : .subtleChip
-                                ) {
-                                    comfort.subtitleBoxOpacity = box
-                                }
+                    sectionHeader("Kveldslys i HDR / Dolby Vision")
+                    HStack(spacing: 10) {
+                        ForEach(HDRSubtitlePreset.allCases) { preset in
+                            LunaPillButton(
+                                preset.displayTitle,
+                                isSelected: comfort.hdrSubtitlePreset == preset,
+                                prominence: comfort.hdrSubtitlePreset == preset ? .glassPill : .subtleChip
+                            ) {
+                                comfort.hdrSubtitlePreset = preset
                             }
                         }
                     }
                 }
             }
-            .frame(width: 760, alignment: .leading)
+            .frame(width: 680, alignment: .leading)
         }
     }
 
-    // MARK: - Tab 3: Kilder (Sømløst tidskodebytte)
+    // MARK: - Tab 2: Lyd
 
-    private var sourcesTabContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                sectionHeader("Tilgjengelige kilder (bytter sømløst uten å miste tidskode)")
-                Spacer()
-                if let room = viewModel.activeSession?.roomName {
-                    Text("Rangert for \(room)")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(LunaTheme.amber)
-                }
-            }
+    private var audioTabContent: some View {
+        HStack(alignment: .top, spacing: 40) {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader("Lydspor")
 
-            if viewModel.isLoadingAlternatives {
-                HStack(spacing: 14) {
-                    ProgressView()
-                    Text("Henter rangerte lokale og Usenet VFS-kilder…")
-                        .font(.callout)
-                        .foregroundStyle(LunaTheme.muted)
-                }
-                .padding(.vertical, 28)
-            } else if viewModel.alternatives.isEmpty {
-                Text("Fant ingen alternative kilder for denne tittelen.")
-                    .font(.callout)
-                    .foregroundStyle(LunaTheme.muted)
-                    .padding(.vertical, 24)
-            } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 10) {
-                        ForEach(viewModel.alternatives) { cand in
-                            let isCurrent = cand.isActive == true ||
-                                cand.candidateId == viewModel.activeSession?.selectedCandidate.candidateId
-                            DrawerTrackRowButton(
-                                title: cand.displayHeadline,
-                                subtitle: cand.releaseTitle,
-                                badges: cand.capabilityBadges,
-                                isSelected: isCurrent
-                            ) {
-                                guard !isCurrent else {
-                                    onClose()
-                                    return
-                                }
-                                onClose()
-                                Task {
-                                    await viewModel.switchSource(to: cand.candidateId)
+                        if viewModel.audioTracks.isEmpty {
+                            Text("Ingen separate lydspor rapportert av strømmen.")
+                                .font(.callout)
+                                .foregroundStyle(LunaTheme.muted)
+                        } else {
+                            ForEach(viewModel.audioTracks) { track in
+                                let isSelected = (viewModel.activeAudioTrackIndex == track.id)
+                                DrawerTrackRowButton(
+                                    title: formatAudioTitle(track),
+                                    subtitle: formatAudioSubtitle(track),
+                                    badges: audioTrackBadges(track),
+                                    isSelected: isSelected
+                                ) {
+                                    viewModel.selectAudioTrack(track.id)
                                 }
                             }
                         }
                     }
                     .padding(.vertical, 4)
                 }
-                .frame(maxHeight: 300)
+                .frame(maxHeight: 280)
             }
-        }
-        .task {
-            if viewModel.alternatives.isEmpty {
-                await viewModel.loadAlternatives()
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 10) {
+                    let ms = Int((viewModel.audioDelaySeconds * 1000).rounded())
+                    sectionHeader(String(format: "Lydsynk (%+d ms)", ms))
+
+                    HStack(spacing: 12) {
+                        LunaPillButton("-50 ms", systemImage: "minus", prominence: .subtleChip) {
+                            viewModel.adjustAudioDelay(by: -0.05)
+                        }
+                        LunaPillButton(
+                            "0 ms",
+                            isSelected: ms == 0,
+                            prominence: ms == 0 ? .glassPill : .subtleChip
+                        ) {
+                            viewModel.resetAudioDelay()
+                        }
+                        LunaPillButton("+50 ms", systemImage: "plus", prominence: .subtleChip) {
+                            viewModel.adjustAudioDelay(by: 0.05)
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    sectionHeader("Klang & Nattmodus")
+
+                    HStack(spacing: 12) {
+                        ForEach(AudioEnhancementMode.allCases) { mode in
+                            LunaPillButton(
+                                mode.displayTitle,
+                                isSelected: viewModel.audioEnhancement == mode,
+                                prominence: viewModel.audioEnhancement == mode ? .glassPill : .subtleChip
+                            ) {
+                                viewModel.setAudioEnhancement(mode)
+                            }
+                        }
+                    }
+                }
+
+                ObjectAudioStatusLeafView(
+                    engine: viewModel.engine,
+                    fallbackBadge: viewModel.audioFormatBadge
+                )
             }
+            .frame(width: 640, alignment: .leading)
         }
     }
 
-    // MARK: - Tab 4: Kapitler & info
+    // MARK: - Tab 3: Kilde & Kapitler
 
-    private var chaptersAndInfoTabContent: some View {
-        VStack(alignment: .leading, spacing: 22) {
+    private var sourcesAndChaptersTabContent: some View {
+        VStack(alignment: .leading, spacing: 20) {
             if !viewModel.chapters.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     sectionHeader("Kapitler (\(viewModel.chapters.count))")
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 16) {
+                        HStack(spacing: 14) {
                             ForEach(viewModel.chapters) { ch in
                                 ChapterPillCardButton(chapter: ch) {
                                     viewModel.seekToChapter(ch)
@@ -391,74 +282,67 @@ struct PlayerTopDrawerView: View {
                                 }
                             }
                         }
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 4)
                     }
                 }
             }
 
-            HStack(alignment: .top, spacing: 36) {
-                VStack(alignment: .leading, spacing: 8) {
-                    sectionHeader("Om tittelen")
-                    let synopsis = viewModel.itemDetail?.overviewNo
-                        ?? viewModel.itemDetail?.overview
-                        ?? viewModel.itemDetail?.overviewEn
-                        ?? "Ingen beskrivelse tilgjengelig."
-                    Text(synopsis)
-                        .font(.callout)
-                        .foregroundStyle(LunaTheme.moonlight.opacity(0.9))
-                        .lineLimit(4)
-                        .frame(maxWidth: 780, alignment: .leading)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    sectionHeader("Avspillingskilde (sømløst bytte på samme tidskode)")
+                    Spacer()
+                    if let room = viewModel.activeSession?.roomName {
+                        Text(room)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(LunaTheme.amber)
+                    }
                 }
 
-                if let cast = viewModel.itemDetail?.castMembers, !cast.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        sectionHeader("I rollene")
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 16) {
-                                ForEach(cast.prefix(8)) { member in
-                                    HStack(spacing: 10) {
-                                        if let raw = member.profileUrl, let url = client?.buildAbsoluteURL(raw) {
-                                            CachedArtworkView(
-                                                url: url,
-                                                client: client,
-                                                maxPixelSize: 160,
-                                                placeholderSymbol: "person.fill",
-                                                contentMode: .fill
-                                            )
-                                            .frame(width: 48, height: 48)
-                                            .clipShape(Circle())
-                                        } else {
-                                            Circle()
-                                                .fill(LunaTheme.surfaceRaised)
-                                                .frame(width: 48, height: 48)
-                                                .overlay(
-                                                    Image(systemName: "person.fill")
-                                                        .font(.caption)
-                                                        .foregroundStyle(LunaTheme.muted)
-                                                )
-                                        }
-
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(member.name)
-                                                .font(.caption.weight(.semibold))
-                                                .foregroundStyle(.white)
-                                                .lineLimit(1)
-                                            if let role = member.character, !role.isEmpty {
-                                                Text(role)
-                                                    .font(.caption2)
-                                                    .foregroundStyle(LunaTheme.muted)
-                                                    .lineLimit(1)
-                                            }
-                                        }
+                if viewModel.isLoadingAlternatives {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        Text("Henter tilgjengelige kilder…")
+                            .font(.callout)
+                            .foregroundStyle(LunaTheme.muted)
+                    }
+                    .padding(.vertical, 18)
+                } else if viewModel.alternatives.isEmpty {
+                    Text("Ingen alternative kilder funnet.")
+                        .font(.callout)
+                        .foregroundStyle(LunaTheme.muted)
+                        .padding(.vertical, 14)
+                } else {
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: 10) {
+                            ForEach(viewModel.alternatives) { cand in
+                                let isCurrent = cand.isActive == true ||
+                                    cand.candidateId == viewModel.activeSession?.selectedCandidate.candidateId
+                                DrawerTrackRowButton(
+                                    title: cand.displayHeadline,
+                                    subtitle: cand.releaseTitle,
+                                    badges: cand.capabilityBadges,
+                                    isSelected: isCurrent
+                                ) {
+                                    guard !isCurrent else {
+                                        onClose()
+                                        return
                                     }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(Color.white.opacity(0.06), in: Capsule())
+                                    onClose()
+                                    Task {
+                                        await viewModel.switchSource(to: cand.candidateId)
+                                    }
                                 }
                             }
                         }
+                        .padding(.vertical, 4)
                     }
+                    .frame(maxHeight: viewModel.chapters.isEmpty ? 280 : 200)
                 }
+            }
+        }
+        .task {
+            if viewModel.alternatives.isEmpty {
+                await viewModel.loadAlternatives()
             }
         }
     }
@@ -525,7 +409,7 @@ struct PlayerTopDrawerView: View {
         var b: [String] = []
         let c = track.codec.lowercased()
         if track.isExternal {
-            b.append("NVMe .srt")
+            b.append("Ekstern .srt")
         } else if c.contains("pgs") {
             b.append("PGS")
         } else if c.contains("ass") || c.contains("ssa") {
@@ -555,7 +439,7 @@ struct PlayerTopDrawerView: View {
     }
 }
 
-// MARK: - Focus-Safe Row & Chapter Cards
+// MARK: - Focus-Safe Row & Chapter Cards (`.focusEffectDisabled()`)
 
 private struct DrawerTrackRowButton: View {
     let title: String
@@ -590,7 +474,7 @@ private struct DrawerTrackRowButton: View {
                     ForEach(badges, id: \.self) { badge in
                         Text(badge)
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(badge.contains("NVMe") ? LunaTheme.emerald : LunaTheme.amber)
+                            .foregroundStyle(LunaTheme.amber)
                             .padding(.horizontal, 9)
                             .padding(.vertical, 4)
                             .background(Color.white.opacity(0.08), in: Capsule())
@@ -614,10 +498,11 @@ private struct DrawerTrackRowButton: View {
                         lineWidth: isFocused ? 2 : 1
                     )
             )
-            .scaleEffect(isFocused ? 1.02 : 1.0)
+            .scaleEffect(isFocused ? 1.015 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isFocused)
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .focused($isFocused)
     }
 }
@@ -653,7 +538,7 @@ private struct ChapterPillCardButton: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
-            .frame(minWidth: 210, alignment: .leading)
+            .frame(minWidth: 204, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(isFocused ? LunaTheme.amber.opacity(0.24) : Color.white.opacity(0.06))
@@ -662,10 +547,11 @@ private struct ChapterPillCardButton: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(isFocused ? LunaTheme.amber : Color.white.opacity(0.12), lineWidth: isFocused ? 2 : 1)
             )
-            .scaleEffect(isFocused ? 1.04 : 1.0)
+            .scaleEffect(isFocused ? 1.03 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isFocused)
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .focused($isFocused)
     }
 }
@@ -681,7 +567,7 @@ private struct ObjectAudioStatusLeafView: View {
             Image(systemName: "dot.radiowaves.left.and.right")
                 .foregroundStyle(telemetry?.objectAudio != nil ? LunaTheme.emerald : LunaTheme.amber)
             if let obj = telemetry?.objectAudio {
-                Text("Objektlyd aktiv · \(obj.layout.rawValue) · \(obj.activeObjects) aktive objekter (\(obj.elevatedObjects) i høyden)")
+                Text("Objektlyd · \(obj.layout.rawValue) · \(obj.activeObjects) objekter")
                     .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(LunaTheme.moonlight)
             } else {

@@ -1,6 +1,6 @@
 # Luna for tvOS
 
-**Luna** (`v2.1.1`) is a native SwiftUI tvOS media player built on [AetherEngine](https://github.com/superuser404notfound/AetherEngine) (`7.62.1`) for the MediaOS `/api/tv/v1` native TV engine.
+**Luna** (`v2.2.0`) is a native SwiftUI tvOS media player built on [AetherEngine](https://github.com/superuser404notfound/AetherEngine) (`7.62.1`) for the MediaOS `/api/tv/v1` native TV engine.
 
 ## Highlights
 
@@ -8,14 +8,15 @@
 - **Room & Hardware Profiles**:
   - `dv-fel-714` (*Kjellerstua*): Prioritizes 4K UHD BluRay Remuxes with Dolby Vision Profile 7 FEL / Profile 8 and renders TrueHD Atmos / DTS:X into a `7.1.4` spatial bed.
   - `hdr10-512` (*Stua*): Prioritizes 4K HDR10+ / HDR10 streams with `baseLayerOnly` DV handling and renders spatial audio into a `5.1.2` bed.
-- **Hero-Free Evening Home & Instant Cold Boot**:
+- **4-Row Evening Home & Instant Cold Boot**:
   - `DiskSWRStore` renders cached `/api/tv/v1/home` shelves in `0 ms` on cold start while refreshing silently via `ETag` / `304 Not Modified`.
-  - Hero-free `HomeView` opens directly on *Fortsett å se* (1-click direct resume/next episode), *Kommende episoder* (with Norwegian air-date badges), *Filmsjangre* (sortable by popular, top-rated, newest, local, and unwatched), and household *Mitt bibliotek* (*Huskeliste*, *Favoritter*, and *Lokalt på NVMe/Arkiv*).
-- **OLED/HDR-Comfortable Custom Player Shell**:
-  - Zero-blink HDMI range/frame-rate handoff via `ResolvingCurtainView` locked to `hasFirstFrameReadyForDisplay`.
+  - Streamlined 4-row `HomeView` opens directly on *Fortsett å se* (1-click direct resume/next episode), *Kommende episoder* (with Norwegian air-date badges), *Populære filmer*, and *Populære serier*, while genre browsing and *Mitt bibliotek* (*Ønsker å se*, *Favoritter*, and *Lokalt på NAS*) live cleanly in top tabs.
+- **OLED/HDR-Comfortable Custom Player Shell & Siri Remote Touch Scrubbing**:
+  - Invisible UIKit `SiriRemoteTouchSurface` (`focusEffect = nil` + `.focusEffectDisabled()`) with velocity-aware continuous horizontal thumb scrubbing, multi-swipe parking, and live `16:9` `ScrubPreviewBubbleView` stills (`scrubThumbnail` + `AetherScrubPreviewView` for DV P5 / AV1).
+  - Zero-blink HDMI range/frame-rate handoff via `ResolvingCurtainView` locked to `hasFirstFrameReadyForDisplay`, rendered in dark HDR-safe cinema glass (`LunaTheme.cinemaGlass`).
   - Single HTTP 206 stream (`maximumSubtitleAdvanceSeconds = 0` / `maximumSubtitleOffsetSeconds = 0`) even when subtitles are active on 80 GB 4K Remuxes.
   - Warm-white text subtitles and `.colorMultiply` HDR luminance dimming for PGS/DVB bitmap subtitles in `SubtitleOverlayView`, plus `SmartTrackRuleEngine` automatic Nordic/English audio & subtitle selection.
-  - 4-tab swipe-down `PlayerTopDrawerView` (*Lyd* `±50 ms`, *Undertekster*, *Kilder* seamless timecode switch, *Kapitler & info*), intro/credits skip & next-episode cards (`SeriesFlowOverlays`), and a 1 Hz leaf `NerdHUDView`.
+  - Compact 3-tab swipe-down `PlayerTopDrawerView` (*Undertekster*, *Lyd* `±50 ms`, *Kilde & Kapitler* seamless timecode switch), intro/credits skip & next-episode cards (`SeriesFlowOverlays`), and a 1 Hz leaf `NerdHUDView`.
 - **Zero-Touch LAN Setup & Sideload-Ready Cloud Builds**:
   - Discovers MediaOS automatically via Bonjour (`_mediaos._tcp`) and pairs using a 6-digit TV code approved in MediaOS Web.
   - GitHub Actions generates `Luna.xcodeproj` via XcodeGen, compiles an unsigned Release `Luna-unsigned.ipa`, and publishes it to the rolling `latest` GitHub Release for wireless installation and 7-day certificate renewal via ATVLoadly.
@@ -47,6 +48,7 @@ Luna/
 │       ├── Search/                    # Instant FTS5 & TMDB SearchView
 │       ├── Settings/                  # Room/profile switcher, DV/audio overrides & cache controls
 │       └── Player/                    # PlayerContainerView, PlayerViewModel, PlayerEngineConfigurator,
+│                                      # SiriRemoteTouchSurface, ScrubPreviewBubbleView,
 │                                      # ResolvingCurtainView, PlayerBottomBarView, PlayerTopDrawerView,
 │                                      # SubtitleOverlayView, SeriesFlowOverlays & NerdHUDView
 └── .github/workflows/build-tvos.yml   # Cloud build -> GitHub Release "latest" (Luna-unsigned.ipa)

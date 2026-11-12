@@ -238,6 +238,7 @@ private struct CandidateRowButton: View {
             .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .focused($isFocused)
     }
 }
