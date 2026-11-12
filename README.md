@@ -12,7 +12,7 @@
   - `DiskSWRStore` renders cached `/api/tv/v1/home` shelves in `0 ms` on cold start while refreshing silently via `ETag` / `304 Not Modified`.
   - Streamlined 4-row `HomeView` opens directly on *Fortsett å se* (1-click direct resume/next episode), *Kommende episoder* (with Norwegian air-date badges), *Populære filmer*, and *Populære serier*, while genre browsing and *Mitt bibliotek* (*Ønsker å se*, *Favoritter*, and *Lokalt på NAS*) live cleanly in top tabs.
 - **OLED/HDR-Comfortable Custom Player Shell & Siri Remote Touch Scrubbing**:
-  - Invisible UIKit `SiriRemoteTouchSurface` (`focusEffect = nil` + `.focusEffectDisabled()`) with velocity-aware continuous horizontal thumb scrubbing, multi-swipe parking, and live `16:9` `ScrubPreviewBubbleView` stills (`scrubThumbnail` + `AetherScrubPreviewView` for DV P5 / AV1).
+  - Invisible UIKit `SiriRemoteTouchSurface` (`UIView` + `.focusEffectDisabled()`) with velocity-aware continuous horizontal thumb scrubbing, multi-swipe parking, and live `16:9` `ScrubPreviewBubbleView` stills (`scrubThumbnail` + `AetherScrubPreviewView` for DV P5 / AV1).
   - Zero-blink HDMI range/frame-rate handoff via `ResolvingCurtainView` locked to `hasFirstFrameReadyForDisplay`, rendered in dark HDR-safe cinema glass (`LunaTheme.cinemaGlass`).
   - Single HTTP 206 stream (`maximumSubtitleAdvanceSeconds = 0` / `maximumSubtitleOffsetSeconds = 0`) even when subtitles are active on 80 GB 4K Remuxes.
   - Warm-white text subtitles and `.colorMultiply` HDR luminance dimming for PGS/DVB bitmap subtitles in `SubtitleOverlayView`, plus `SmartTrackRuleEngine` automatic Nordic/English audio & subtitle selection.

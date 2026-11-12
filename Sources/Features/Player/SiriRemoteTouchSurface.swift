@@ -4,8 +4,9 @@ import UIKit
 /// Invisible UIKit focus & touch capture surface for tvOS playback (`zIndex: 1.5`).
 ///
 /// Why UIKit instead of a SwiftUI `Button`:
-/// - Overrides `focusEffect = nil` on `UIView` (combined with `.focusEffectDisabled()` in SwiftUI)
-///   so tvOS 18 / tvOS 26 Liquid Glass **never** draws a bright white focus rectangle over the video.
+/// - Plain `UIView` (`canBecomeFocused = true`, `backgroundColor = .clear`) paired with
+///   `.focusEffectDisabled()` in SwiftUI draws **zero** tvOS system halo or Liquid Glass
+///   focus rectangle over `AetherPlayerSurface`.
 /// - Captures continuous `UITouch.TouchType.indirect` thumb movement on the Siri Remote clickpad
 ///   for smooth 60/120 Hz velocity-aware timeline scrubbing, light-touch OSD wake, vertical swipe-down
 ///   for the top drawer, and crisp physical ring/center clicks.
@@ -83,11 +84,6 @@ final class TouchCaptureUIView: UIView {
 
     override var canBecomeFirstResponder: Bool {
         true
-    }
-
-    /// Explicitly disables every tvOS system halo / Liquid Glass focus plate on the video canvas.
-    override var focusEffect: UIFocusEffect? {
-        nil
     }
 
     private func configureSurface() {
