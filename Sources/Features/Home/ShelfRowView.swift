@@ -1,190 +1,178 @@
 import SwiftUI
 
-struct MediaArtworkImage: View {
-    let url: URL?
-    let placeholderSymbol: String
-
-    var body: some View {
-        AsyncImage(url: url) { phase in
-            switch phase {
-            case .success(let image):
-                image
-                    .resizable()
-                    .scaledToFill()
-            case .failure:
-                placeholder
-            case .empty:
-                placeholder
-            @unknown default:
-                placeholder
-            }
-        }
-    }
-
-    private var placeholder: some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.14, green: 0.15, blue: 0.20),
-                    Color(red: 0.08, green: 0.09, blue: 0.13),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            Image(systemName: placeholderSymbol)
-                .font(.title)
-                .foregroundStyle(.white.opacity(0.35))
-        }
-    }
-}
-
 struct ShelfRowView: View {
     let row: TvShelfRow
-    let client: BFFClient?
+    let isFirstRow: Bool
+    let focusNamespace: Namespace.ID
+    let client: MediaOSClient?
+
     let onSelectCard: (TvMediaCard) -> Void
     let onPlayContinueCard: (TvMediaCard) -> Void
+    let onPickSourceForCard: (TvMediaCard) -> Void
+    let onToggleWatchlist: (TvMediaCard) -> Void
+    let onToggleFavorite: (TvMediaCard) -> Void
+    let onMarkWatched: (TvMediaCard) -> Void
     let onSelectGenre: (TvGenreChip) -> Void
+    let onOpenFullRow: (TvShelfRow) -> Void
+
+    private var showsStorageBadge: Bool {
+        row.rowId.contains("local") || row.rowId.contains("watchlist")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(row.title)
-                .font(.title3.weight(.bold))
-                .padding(.horizontal, 64)
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                Text(row.title)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+
+                if row.rowStyle == "upcoming_backdrop" {
+                    Text("Neste episoder")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(LunaTheme.amber)
+                }
+
+                Spacer()
+
+                if row.hasMore == true, row.rowStyle != "genre_chips" {
+                    LunaPillButton("Se alle", systemImage: "arrow.right", prominence: .subtleChip) {
+                        onOpenFullRow(row)
+                    }
+                }
+            }
+            .padding(.horizontal, LunaTheme.horizontalGutter)
 
             if row.rowStyle == "genre_chips", let genres = row.genres, !genres.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 22) {
-                        ForEach(genres) { chip in
-                            Button {
+                    LazyHStack(spacing: 24) {
+                        ForEach(Array(genres.enumerated()), id: \.element.id) { idx, chip in
+                            GenreTileView(chip: chip) {
                                 onSelectGenre(chip)
-                            } label: {
-                                Text(chip.label)
-                                    .font(.headline)
-                                    .padding(.horizontal, 30)
-                                    .padding(.vertical, 16)
                             }
+                            .prefersDefaultFocus(isFirstRow && idx == 0, in: focusNamespace)
                         }
                     }
-                    .padding(.horizontal, 64)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.vertical, 14)
                 }
             } else if row.rowStyle == "continue_backdrop" {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 32) {
-                        ForEach(row.items) { card in
-                            Button {
+                        ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
+                            BackdropCardView(
+                                card: card,
+                                client: client,
+                                variant: .continueWatching,
+                                width: 468
+                            ) {
                                 onPlayContinueCard(card)
-                            } label: {
-                                continueCardView(card)
                             }
-                            .buttonStyle(.card)
+                            .prefersDefaultFocus(isFirstRow && idx == 0, in: focusNamespace)
                             .contextMenu {
-                                Button("Åpne detaljer") {
+                                Button {
+                                    onPlayContinueCard(card)
+                                } label: {
+                                    Label("Spill av nå", systemImage: "play.fill")
+                                }
+
+                                Button {
                                     onSelectCard(card)
+                                } label: {
+                                    Label("Åpne detaljer", systemImage: "info.circle")
+                                }
+
+                                Button {
+                                    onPickSourceForCard(card)
+                                } label: {
+                                    Label("Bytt kilde…", systemImage: "arrow.triangle.2.circlepath")
+                                }
+
+                                Button {
+                                    onMarkWatched(card)
+                                } label: {
+                                    Label("Marker som sett", systemImage: "checkmark.circle")
                                 }
                             }
                         }
                     }
-                    .padding(.horizontal, 64)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.vertical, 18)
+                }
+            } else if row.rowStyle == "upcoming_backdrop" {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 30) {
+                        ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
+                            BackdropCardView(
+                                card: card,
+                                client: client,
+                                variant: .upcomingEpisode,
+                                width: 440
+                            ) {
+                                onSelectCard(card)
+                            }
+                            .prefersDefaultFocus(isFirstRow && idx == 0, in: focusNamespace)
+                            .contextMenu {
+                                Button {
+                                    onSelectCard(card)
+                                } label: {
+                                    Label("Åpne serie og sesonger", systemImage: "tv")
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 18)
                 }
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 30) {
-                        ForEach(row.items) { card in
-                            Button {
+                        ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
+                            PosterCardView(
+                                card: card,
+                                client: client,
+                                width: 248,
+                                showStorageBadge: showsStorageBadge
+                            ) {
                                 onSelectCard(card)
-                            } label: {
-                                posterCardView(card)
                             }
-                            .buttonStyle(.card)
+                            .prefersDefaultFocus(isFirstRow && idx == 0, in: focusNamespace)
+                            .contextMenu {
+                                Button {
+                                    onPlayContinueCard(card)
+                                } label: {
+                                    Label("Spill av", systemImage: "play.fill")
+                                }
+
+                                Button {
+                                    onSelectCard(card)
+                                } label: {
+                                    Label("Åpne detaljer", systemImage: "info.circle")
+                                }
+
+                                Button {
+                                    onToggleWatchlist(card)
+                                } label: {
+                                    Label(
+                                        card.inWatchlist == true ? "Fjern fra huskeliste" : "Legg til i huskeliste",
+                                        systemImage: card.inWatchlist == true ? "bookmark.slash" : "bookmark"
+                                    )
+                                }
+
+                                Button {
+                                    onToggleFavorite(card)
+                                } label: {
+                                    Label(
+                                        card.isFavorite == true ? "Fjern favoritt" : "Marker som favoritt",
+                                        systemImage: card.isFavorite == true ? "star.slash" : "star.fill"
+                                    )
+                                }
+                            }
                         }
                     }
-                    .padding(.horizontal, 64)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 18)
                 }
             }
-        }
-    }
-
-    private func continueCardView(_ card: TvMediaCard) -> some View {
-        let imgURL = client?.resolveArtworkURL(card.backdropUrl ?? card.posterUrl)
-        let pct = min(100.0, max(0.0, card.progress?.percent ?? 0))
-
-        return VStack(alignment: .leading, spacing: 10) {
-            ZStack(alignment: .bottomLeading) {
-                MediaArtworkImage(url: imgURL, placeholderSymbol: "play.tv")
-                    .frame(width: 440, height: 248)
-                    .clipped()
-
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.82)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "play.fill")
-                            .font(.caption.bold())
-                        Text(card.title)
-                            .font(.headline)
-                            .lineLimit(1)
-                    }
-                    Text(card.formattedSubtitle)
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.8))
-
-                    if pct > 0 {
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Color.white.opacity(0.24))
-                                Capsule()
-                                    .fill(Color(red: 0.96, green: 0.77, blue: 0.42))
-                                    .frame(width: geo.size.width * CGFloat(pct / 100.0))
-                            }
-                        }
-                        .frame(height: 6)
-                    }
-                }
-                .padding(18)
-            }
-            .frame(width: 440, height: 248)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
-    }
-
-    private func posterCardView(_ card: TvMediaCard) -> some View {
-        let imgURL = client?.resolveArtworkURL(card.posterUrl ?? card.backdropUrl)
-
-        return VStack(alignment: .leading, spacing: 10) {
-            ZStack(alignment: .topTrailing) {
-                MediaArtworkImage(url: imgURL, placeholderSymbol: "film")
-                    .frame(width: 240, height: 360)
-                    .clipped()
-
-                if let badge = card.badges?.first {
-                    Text(badge)
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .padding(10)
-                }
-            }
-            .frame(width: 240, height: 360)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-            Text(card.title)
-                .font(.callout.weight(.semibold))
-                .lineLimit(1)
-                .frame(width: 240, alignment: .leading)
-
-            Text(card.formattedSubtitle)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(width: 240, alignment: .leading)
         }
     }
 }

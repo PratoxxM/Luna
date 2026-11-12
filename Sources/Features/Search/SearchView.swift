@@ -5,62 +5,80 @@ struct SearchView: View {
 
     @State private var query: String = ""
     @State private var results: [TvMediaCard] = []
+    @State private var localCount: Int = 0
     @State private var isSearching: Bool = false
     @State private var selectedCard: TvMediaCard?
     @State private var searchTask: Task<Void, Never>?
 
     private let columns = [
-        GridItem(.adaptive(minimum: 240, maximum: 280), spacing: 34)
+        GridItem(.adaptive(minimum: 236, maximum: 272), spacing: 34)
     ]
 
     var body: some View {
         let client = sessionStore.makeClient()
 
-        ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
-                Text("Søk")
-                    .font(.largeTitle.bold())
-                    .padding(.horizontal, 64)
-                    .padding(.top, 36)
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Søk")
+                        .font(.largeTitle.weight(.bold))
+                        .foregroundStyle(.white)
 
-                TextField("Søk etter film eller serie…", text: $query)
-                    .padding(.horizontal, 64)
+                    Text("Lynraskt søk på tvers av lokalt NAS-bibliotek og TMDB.")
+                        .font(.callout)
+                        .foregroundStyle(LunaTheme.muted)
+                }
+                .padding(.horizontal, LunaTheme.horizontalGutter)
+                .padding(.top, 26)
 
-                if isSearching {
-                    ProgressView()
-                        .padding(.horizontal, 64)
-                } else if !query.trimmingCharacters(in: .whitespaces).isEmpty && results.isEmpty {
+                TextField("Søk etter film, serie eller originaltittel…", text: $query)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+
+                if !results.isEmpty {
+                    HStack(spacing: 12) {
+                        if localCount > 0 {
+                            Text("\(localCount) i lokalt bibliotek")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(LunaTheme.emerald)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 5)
+                                .background(LunaTheme.emerald.opacity(0.14), in: Capsule())
+                        }
+                        Text("\(results.count) treff totalt")
+                            .font(.caption)
+                            .foregroundStyle(LunaTheme.muted)
+                    }
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                }
+
+                if isSearching && results.isEmpty {
+                    HStack(spacing: 14) {
+                        ProgressView()
+                        Text("Søker…")
+                            .foregroundStyle(LunaTheme.moonlight)
+                    }
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                } else if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSearching && results.isEmpty {
                     Text("Ingen treff for «\(query)».")
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 64)
+                        .font(.title3)
+                        .foregroundStyle(LunaTheme.muted)
+                        .padding(.horizontal, LunaTheme.horizontalGutter)
+                        .padding(.top, 20)
                 } else {
-                    LazyVGrid(columns: columns, spacing: 40) {
+                    LazyVGrid(columns: columns, spacing: 42) {
                         ForEach(results) { card in
-                            Button {
+                            PosterCardView(
+                                card: card,
+                                client: client,
+                                width: 244,
+                                showStorageBadge: true
+                            ) {
                                 selectedCard = card
-                            } label: {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    MediaArtworkImage(
-                                        url: client?.resolveArtworkURL(card.posterUrl ?? card.backdropUrl),
-                                        placeholderSymbol: "magnifyingglass"
-                                    )
-                                    .frame(width: 240, height: 360)
-                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-                                    Text(card.title)
-                                        .font(.callout.weight(.semibold))
-                                        .lineLimit(1)
-                                    Text(card.formattedSubtitle)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
                             }
-                            .buttonStyle(.card)
                         }
                     }
-                    .padding(.horizontal, 64)
-                    .padding(.bottom, 64)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.bottom, 72)
                 }
             }
         }
@@ -72,14 +90,18 @@ struct SearchView: View {
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed.count >= 2 else {
                 results = []
+                localCount = 0
                 isSearching = false
                 return
             }
             searchTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 320_000_000)
+                try? await Task.sleep(nanoseconds: 180_000_000)
                 guard !Task.isCancelled, let client = sessionStore.makeClient() else { return }
                 isSearching = true
-                results = (try? await client.search(query: trimmed)) ?? []
+                if let res = try? await client.searchFull(query: trimmed, limit: 30), !Task.isCancelled {
+                    results = res.items
+                    localCount = res.localCount ?? 0
+                }
                 isSearching = false
             }
         }

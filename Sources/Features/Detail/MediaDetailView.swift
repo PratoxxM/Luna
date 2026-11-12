@@ -1,7 +1,9 @@
 import SwiftUI
+import AetherBridge
 
 struct MediaDetailView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
+    @EnvironmentObject private var ambient: AmbientBackdropController
 
     let mediaType: String
     let itemId: String
@@ -14,256 +16,492 @@ struct MediaDetailView: View {
     @State private var isLoadingEpisodes: Bool = false
     @State private var errorMessage: String?
 
+    // Silent 450ms Pre-Resolve state
+    @State private var preparedToken: String?
+    @State private var preparedForItemId: String?
+    @State private var isPreResolvedReady: Bool = false
+    @State private var preResolveTask: Task<Void, Never>?
+
+    @State private var sourcePickerContext: SourcePickerContext?
+
+    @Namespace private var detailFocusNamespace
+
     var body: some View {
         let client = sessionStore.makeClient()
 
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 38) {
+            VStack(alignment: .leading, spacing: 40) {
                 if let detail {
-                    headerSection(detail, client: client)
+                    heroHeaderSection(detail, client: client)
 
                     if detail.mediaType == "series", let seasons = detail.seasons, !seasons.isEmpty {
-                        seasonsSection(detail: detail, seasons: seasons, client: client)
+                        seasonsAndEpisodesSection(detail: detail, seasons: seasons, client: client)
+                    }
+
+                    if let cast = detail.cast, !cast.isEmpty {
+                        castSection(cast)
                     }
                 } else if isLoading {
                     HStack(spacing: 16) {
                         ProgressView()
-                        Text("Laster \(initialTitle)…")
+                        Text("Henter detaljer for \(initialTitle)…")
                             .font(.title3)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LunaTheme.moonlight)
                     }
                     .padding(80)
                 } else if let errorMessage {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(errorMessage)
-                            .foregroundStyle(.red)
-                        Button("Prøv igjen") {
+                            .foregroundStyle(LunaTheme.amber)
+                        LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                             Task { await loadDetail() }
                         }
                     }
-                    .padding(64)
+                    .padding(LunaTheme.horizontalGutter)
                 }
             }
-            .padding(.bottom, 80)
+            .padding(.bottom, 84)
         }
-        .task {
+        .focusScope(detailFocusNamespace)
+        .sheet(item: $sourcePickerContext) { ctx in
+            SourcePickerSheetView(
+                context: ctx,
+                onSelectCandidate: { picked in
+                    let target = ctx
+                    sourcePickerContext = nil
+                    sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
+                        itemId: target.itemId,
+                        title: target.title,
+                        seriesTitle: target.seriesTitle,
+                        startPositionSeconds: target.startPositionSeconds,
+                        candidateId: picked.candidateId,
+                        backdropUrl: detail?.backdropUrl,
+                        logoUrl: detail?.logoUrl
+                    )
+                },
+                onCancel: {
+                    sourcePickerContext = nil
+                }
+            )
+            .environmentObject(sessionStore)
+        }
+        .task(id: "\(mediaType)#\(itemId)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)") {
             await loadDetail()
+        }
+        .onDisappear {
+            preResolveTask?.cancel()
+            preResolveTask = nil
         }
     }
 
-    private func headerSection(_ item: TvItemDetail, client: BFFClient?) -> some View {
-        let bgURL = client?.resolveArtworkURL(item.backdropUrl ?? item.posterUrl)
+    // MARK: - Header & Streamlined CTA Bar
+
+    private func heroHeaderSection(_ item: TvItemDetail, client: MediaOSClient?) -> some View {
+        let bgURL = client?.resolveArtworkURL(item.backdropUrl ?? item.cardBackdropUrl ?? item.posterUrl)
+        let logoURL = client?.resolveArtworkURL(item.logoUrl)
 
         return ZStack(alignment: .bottomLeading) {
-            MediaArtworkImage(url: bgURL, placeholderSymbol: "film.stack")
-                .frame(maxWidth: .infinity)
-                .frame(height: 580)
-                .clipped()
+            CachedArtworkView(
+                url: bgURL,
+                client: client,
+                maxPixelSize: 1920,
+                blurHash: item.blurHash,
+                dominantColor: item.dominantColor,
+                placeholderSymbol: "film.stack",
+                contentMode: .fill
+            )
+            .frame(maxWidth: .infinity)
+            .frame(height: 610)
+            .clipped()
 
             LinearGradient(
-                colors: [.clear, .black.opacity(0.65), .black.opacity(0.95)],
+                colors: [
+                    LunaTheme.canvas.opacity(0.05),
+                    LunaTheme.canvas.opacity(0.62),
+                    LunaTheme.canvas.opacity(0.97),
+                    LunaTheme.canvas
+                ],
                 startPoint: .top,
                 endPoint: .bottom
             )
 
-            VStack(alignment: .leading, spacing: 18) {
+            LinearGradient(
+                colors: [
+                    LunaTheme.canvas.opacity(0.82),
+                    LunaTheme.canvas.opacity(0.32),
+                    .clear
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+
+            VStack(alignment: .leading, spacing: 20) {
+                // ClearLogo or clean typography title
+                if let logoURL {
+                    CachedArtworkView(
+                        url: logoURL,
+                        client: client,
+                        maxPixelSize: 800,
+                        placeholderSymbol: "sparkles.tv",
+                        contentMode: .fit
+                    )
+                    .frame(maxWidth: 520, maxHeight: 118, alignment: .bottomLeading)
+                } else {
+                    Text(item.title)
+                        .font(.system(size: 52, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .frame(maxWidth: 980, alignment: .leading)
+                }
+
+                // Metadata & Format Badges
                 HStack(spacing: 14) {
                     if let year = item.year {
                         Text(String(year))
+                            .fontWeight(.semibold)
                     }
                     if let vote = item.voteAverage, vote > 0 {
                         Text(String(format: "★ %.1f", vote))
+                            .foregroundStyle(LunaTheme.amber)
+                            .fontWeight(.semibold)
+                    }
+                    if let runtime = item.formattedRuntime {
+                        Text(runtime)
                     }
                     if let genres = item.genres, !genres.isEmpty {
                         Text(genres.prefix(3).joined(separator: " · "))
                     }
-                    if let tier = item.availability?.tier {
-                        Text(tier.uppercased())
-                            .font(.caption.bold())
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Color.white.opacity(0.16), in: Capsule())
+
+                    if let avail = item.availability {
+                        Text(avail.householdBadgeLabel)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(avail.isLocalNvme ? LunaTheme.emerald : LunaTheme.moonlight)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 5)
+                            .background(Color.white.opacity(0.10), in: Capsule())
+                    }
+
+                    ForEach((item.badges ?? []).prefix(3), id: \.self) { badge in
+                        Text(badge)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(LunaTheme.amber)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 5)
+                            .background(LunaTheme.amber.opacity(0.15), in: Capsule())
+                    }
+
+                    if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
+                        HStack(spacing: 5) {
+                            Image(systemName: "calendar")
+                            Text("Kommer: \(upcomingBadge)")
+                        }
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(LunaTheme.canvas)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .background(LunaTheme.amber, in: Capsule())
                     }
                 }
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(LunaTheme.moonlight.opacity(0.88))
 
-                Text(item.title)
-                    .font(.system(size: 50, weight: .bold, design: .rounded))
-
-                if let overview = item.overview, !overview.isEmpty {
+                // Overview
+                if let overview = item.preferredOverview {
                     Text(overview)
                         .font(.callout)
-                        .foregroundStyle(.white.opacity(0.86))
-                        .lineLimit(4)
+                        .foregroundStyle(LunaTheme.moonlight.opacity(0.88))
+                        .lineLimit(3)
                         .frame(maxWidth: 1020, alignment: .leading)
                 }
 
-                HStack(spacing: 20) {
-                    Button {
-                        startPrimaryPlayback(item)
-                    } label: {
-                        Label(primaryPlayLabel(item), systemImage: "play.fill")
-                            .font(.headline)
+                // Streamlined Action Bar: Focus lands directly on Primary Play!
+                HStack(spacing: 18) {
+                    PrimaryPlayButton(
+                        title: primaryPlayLabel(item),
+                        isWarmReady: isPreResolvedReady
+                    ) {
+                        launchPrimaryPlayback(item)
                     }
+                    .prefersDefaultFocus(true, in: detailFocusNamespace)
 
-                    Button {
-                        Task { await toggleWatchlist(item) }
-                    } label: {
-                        Label(
-                            item.inWatchlist ? "I huskeliste" : "Huskeliste",
-                            systemImage: item.inWatchlist ? "bookmark.fill" : "bookmark"
+                    LunaPillButton("Bytt kilde", systemImage: "arrow.triangle.2.circlepath") {
+                        let target = primaryTargetInfo(item)
+                        sourcePickerContext = SourcePickerContext(
+                            itemId: target.itemId,
+                            title: target.title,
+                            seriesTitle: target.seriesTitle,
+                            startPositionSeconds: target.startPos,
+                            existingPrepareToken: preparedForItemId == target.itemId ? preparedToken : nil
                         )
                     }
 
-                    if item.mediaType == "movie" {
-                        Button {
-                            Task { await toggleWatched(item) }
-                        } label: {
-                            Label(
-                                item.watched ? "Sett" : "Marker sett",
-                                systemImage: item.watched ? "checkmark.circle.fill" : "circle"
-                            )
-                        }
+                    LunaPillButton(
+                        item.inWatchlist ? "I huskeliste" : "Huskeliste",
+                        systemImage: item.inWatchlist ? "bookmark.fill" : "bookmark",
+                        isSelected: item.inWatchlist
+                    ) {
+                        Task { await toggleWatchlist(item) }
+                    }
+
+                    LunaPillButton(
+                        "",
+                        systemImage: item.favoriteFlag ? "star.fill" : "star",
+                        isSelected: item.favoriteFlag
+                    ) {
+                        Task { await toggleFavorite(item) }
+                    }
+
+                    LunaPillButton(
+                        item.watched ? "Sett" : "",
+                        systemImage: item.watched ? "checkmark.circle.fill" : "circle",
+                        isSelected: item.watched
+                    ) {
+                        Task { await toggleWatched(item) }
                     }
                 }
-                .padding(.top, 8)
+                .padding(.top, 6)
             }
-            .padding(.horizontal, 64)
-            .padding(.bottom, 40)
+            .padding(.horizontal, LunaTheme.horizontalGutter)
+            .padding(.bottom, 34)
         }
     }
 
-    private func seasonsSection(detail: TvItemDetail, seasons: [TvSeasonSummary], client: BFFClient?) -> some View {
+    // MARK: - Seasons & 16:9 Episodes
+
+    private func seasonsAndEpisodesSection(
+        detail: TvItemDetail,
+        seasons: [TvSeasonSummary],
+        client: MediaOSClient?
+    ) -> some View {
         VStack(alignment: .leading, spacing: 24) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
+                HStack(spacing: 14) {
                     ForEach(seasons) { season in
-                        Button {
+                        let selected = selectedSeasonNumber == season.seasonNumber
+                        LunaPillButton(
+                            season.name,
+                            badgeText: season.episodeCount > 0 ? String(season.episodeCount) : nil,
+                            isSelected: selected,
+                            prominence: .subtleChip
+                        ) {
+                            guard selectedSeasonNumber != season.seasonNumber else { return }
                             selectedSeasonNumber = season.seasonNumber
                             Task { await loadSeasonEpisodes(detail: detail, seasonNumber: season.seasonNumber) }
-                        } label: {
-                            Text(season.name)
-                                .font(.callout.weight(selectedSeasonNumber == season.seasonNumber ? .bold : .regular))
-                                .padding(.horizontal, 22)
-                                .padding(.vertical, 12)
                         }
                     }
                 }
-                .padding(.horizontal, 64)
+                .padding(.horizontal, LunaTheme.horizontalGutter)
+                .padding(.vertical, 6)
             }
 
             if isLoadingEpisodes {
-                ProgressView()
-                    .padding(.horizontal, 64)
+                HStack(spacing: 14) {
+                    ProgressView()
+                    Text("Henter episoder…")
+                        .font(.callout)
+                        .foregroundStyle(LunaTheme.muted)
+                }
+                .padding(.horizontal, LunaTheme.horizontalGutter)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 28) {
                         ForEach(episodes) { ep in
-                            Button {
-                                sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
-                                    itemId: ep.itemId,
-                                    title: ep.title,
-                                    seriesTitle: detail.title,
-                                    startPositionSeconds: ep.progress?.positionSeconds
-                                )
-                            } label: {
-                                episodeCard(ep, client: client)
-                            }
-                            .buttonStyle(.card)
+                            EpisodeCardView(
+                                episode: ep,
+                                client: client,
+                                onPlay: {
+                                    guard ep.isUpcoming != true else { return }
+                                    let usePrep = (preparedForItemId == ep.itemId) ? preparedToken : nil
+                                    sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
+                                        itemId: ep.itemId,
+                                        title: ep.title,
+                                        seriesTitle: detail.title,
+                                        startPositionSeconds: ep.progress?.positionSeconds,
+                                        prepareToken: usePrep,
+                                        backdropUrl: ep.stillUrl ?? detail.backdropUrl,
+                                        logoUrl: detail.logoUrl
+                                    )
+                                },
+                                onPickSource: {
+                                    guard ep.isUpcoming != true else { return }
+                                    sourcePickerContext = SourcePickerContext(
+                                        itemId: ep.itemId,
+                                        title: ep.title,
+                                        seriesTitle: detail.title,
+                                        startPositionSeconds: ep.progress?.positionSeconds,
+                                        existingPrepareToken: preparedForItemId == ep.itemId ? preparedToken : nil
+                                    )
+                                },
+                                onToggleWatched: {
+                                    Task { await toggleEpisodeWatched(detail: detail, episode: ep) }
+                                }
+                            )
                         }
                     }
-                    .padding(.horizontal, 64)
-                    .padding(.vertical, 16)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.vertical, 18)
                 }
             }
         }
     }
 
-    private func episodeCard(_ ep: TvEpisodeCard, client: BFFClient?) -> some View {
-        let stillURL = client?.resolveArtworkURL(ep.stillUrl)
+    private func castSection(_ castNames: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Medvirkende")
+                .font(.headline.weight(.bold))
+                .foregroundStyle(LunaTheme.moonlight)
+                .padding(.horizontal, LunaTheme.horizontalGutter)
 
-        return VStack(alignment: .leading, spacing: 10) {
-            ZStack(alignment: .topTrailing) {
-                MediaArtworkImage(url: stillURL, placeholderSymbol: "tv")
-                    .frame(width: 380, height: 214)
-                    .clipped()
-
-                if ep.watched {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .padding(10)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(castNames.prefix(12), id: \.self) { actor in
+                        Text(actor)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(LunaTheme.moonlight.opacity(0.85))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 9)
+                            .background(LunaTheme.surfaceRaised.opacity(0.8), in: Capsule())
+                    }
                 }
-            }
-            .frame(width: 380, height: 214)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-            Text("\(ep.codeLabel) · \(ep.title)")
-                .font(.callout.weight(.semibold))
-                .lineLimit(1)
-                .frame(width: 380, alignment: .leading)
-
-            if let overview = ep.overview, !overview.isEmpty {
-                Text(overview)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .frame(width: 380, alignment: .leading)
+                .padding(.horizontal, LunaTheme.horizontalGutter)
             }
         }
     }
+
+    // MARK: - Playback Target & Silent 450ms Pre-Resolve
 
     private func primaryPlayLabel(_ item: TvItemDetail) -> String {
-        if item.mediaType == "series", let next = item.nextUp {
-            return String(format: "Spill S%02dE%02d", next.season, next.episode)
+        if item.mediaType == "series" {
+            if let next = item.nextUp {
+                if let pos = item.progress?.positionSeconds, pos > 30,
+                   item.progress?.season == next.season,
+                   item.progress?.episode == next.episode {
+                    return String(format: "Fortsett S%02dE%02d", next.season, next.episode)
+                }
+                return String(format: "Spill S%02dE%02d", next.season, next.episode)
+            }
+            return "Spill S01E01"
         }
         if let pos = item.progress?.positionSeconds, pos > 30 {
-            return "Fortsett avspilling"
+            return "Fortsett"
         }
         return "Spill av"
     }
 
-    private func startPrimaryPlayback(_ item: TvItemDetail) {
+    private func primaryTargetInfo(_ item: TvItemDetail) -> (itemId: String, title: String, seriesTitle: String?, startPos: Double?) {
         if item.mediaType == "series" {
             let s = item.nextUp?.season ?? selectedSeasonNumber
-            let e = item.nextUp?.episode ?? episodes.first?.episodeNumber ?? 1
+            let playable = episodes.filter { $0.isUpcoming != true }
+            let e = item.nextUp?.episode ?? playable.first?.episodeNumber ?? 1
             let epId: String
             if let tmdb = item.ids.tmdb {
                 epId = "episode:tmdb:\(tmdb):s\(s):e\(e)"
             } else {
                 epId = item.itemId
             }
-            sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
-                itemId: epId,
-                title: item.title,
-                seriesTitle: item.title,
-                startPositionSeconds: item.progress?.positionSeconds
-            )
-        } else {
-            sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
-                itemId: item.itemId,
-                title: item.title,
-                seriesTitle: nil,
-                startPositionSeconds: item.progress?.positionSeconds
-            )
+            let matchingEp = episodes.first { $0.seasonNumber == s && $0.episodeNumber == e }
+            let startPos = matchingEp?.progress?.positionSeconds ?? item.progress?.positionSeconds
+            return (epId, matchingEp?.title ?? item.title, item.title, startPos)
+        }
+        return (item.itemId, item.title, nil, item.progress?.positionSeconds)
+    }
+
+    private func launchPrimaryPlayback(_ item: TvItemDetail) {
+        let target = primaryTargetInfo(item)
+        let matchingToken = (preparedForItemId == target.itemId) ? preparedToken : nil
+        sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
+            itemId: target.itemId,
+            title: target.title,
+            seriesTitle: target.seriesTitle,
+            startPositionSeconds: target.startPos,
+            prepareToken: matchingToken,
+            backdropUrl: item.backdropUrl ?? item.cardBackdropUrl,
+            logoUrl: item.logoUrl
+        )
+    }
+
+    /// 450ms debounced `POST /api/tv/v1/playback/prepare` + strict NVMe/VFS-only
+    /// `AetherEngine.prewarm(byteBudget: 8 MiB)` (never spins up mechanical archive drives!).
+    private func scheduleSilentPreResolve(for item: TvItemDetail) {
+        preResolveTask?.cancel()
+        let target = primaryTargetInfo(item)
+        if preparedForItemId != target.itemId {
+            preparedToken = nil
+            isPreResolvedReady = false
+        }
+
+        preResolveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled, let client = sessionStore.makeClient() else { return }
+
+            guard let prep = try? await client.preparePlayback(
+                itemId: target.itemId,
+                title: target.title,
+                seriesTitle: target.seriesTitle,
+                startPositionSeconds: target.startPos
+            ), !Task.isCancelled else {
+                return
+            }
+
+            if let token = prep.prepareToken, !token.isEmpty {
+                self.preparedToken = token
+                self.preparedForItemId = target.itemId
+                self.isPreResolvedReady = true
+            }
+
+            // Strictly respect `canClientPrewarmBytes == true` so mechanical archive drives
+            // are NEVER spun up merely by opening a detail page!
+            if prep.canClientPrewarmBytes == true,
+               let relStreamPath = prep.playbackSession?.stream.url,
+               let streamURL = client.buildAbsoluteURL(relStreamPath) {
+                let headers = client.streamHTTPHeaders()
+                Task.detached(priority: .utility) {
+                    if !AetherEngine.isPrewarmed(url: streamURL) {
+                        _ = await AetherEngine.prewarm(
+                            url: streamURL,
+                            httpHeaders: headers,
+                            byteBudget: 8 * 1024 * 1024
+                        )
+                    }
+                }
+            }
         }
     }
 
+    // MARK: - Data Loading & Mutations
+
     private func loadDetail() async {
         guard let client = sessionStore.makeClient() else { return }
-        isLoading = true
+        if detail == nil {
+            isLoading = true
+        }
         errorMessage = nil
+
         do {
             let loaded = try await client.fetchItemDetail(mediaType: mediaType, itemId: itemId)
             detail = loaded
+            ambient.setImmediate(
+                dominantColor: loaded.dominantColor,
+                backdropURL: client.resolveArtworkURL(loaded.backdropUrl ?? loaded.cardBackdropUrl ?? loaded.posterUrl),
+                blurHash: loaded.blurHash
+            )
+
             if loaded.mediaType == "series" {
-                let defaultSeason = loaded.nextUp?.season
+                let defaultSeason = loaded.selectedSeason
+                    ?? loaded.nextUp?.season
                     ?? loaded.seasons?.first(where: { $0.seasonNumber > 0 })?.seasonNumber
-                    ?? loaded.seasons?.first?.seasonNumber
                     ?? 1
                 selectedSeasonNumber = defaultSeason
-                await loadSeasonEpisodes(detail: loaded, seasonNumber: defaultSeason)
+                if let inlineEpisodes = loaded.episodes, !inlineEpisodes.isEmpty {
+                    episodes = inlineEpisodes
+                } else {
+                    await loadSeasonEpisodes(detail: loaded, seasonNumber: defaultSeason)
+                }
             }
+
+            scheduleSilentPreResolve(for: loaded)
+        } catch MediaOSError.unauthorized {
+            sessionStore.unpairDevice()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -289,6 +527,20 @@ struct MediaDetailView: View {
             title: item.title,
             year: item.year
         )
+        sessionStore.notifyContentMutated()
+        await loadDetail()
+    }
+
+    private func toggleFavorite(_ item: TvItemDetail) async {
+        guard let client = sessionStore.makeClient() else { return }
+        try? await client.setFavorite(
+            favorite: !item.favoriteFlag,
+            mediaType: item.mediaType,
+            ids: item.ids,
+            title: item.title,
+            year: item.year
+        )
+        sessionStore.notifyContentMutated()
         await loadDetail()
     }
 
@@ -301,6 +553,211 @@ struct MediaDetailView: View {
             title: item.title,
             year: item.year
         )
+        sessionStore.notifyContentMutated()
         await loadDetail()
+    }
+
+    private func toggleEpisodeWatched(detail: TvItemDetail, episode: TvEpisodeCard) async {
+        guard let client = sessionStore.makeClient() else { return }
+        try? await client.setWatched(
+            watched: !episode.watched,
+            mediaType: "episode",
+            ids: detail.ids,
+            title: detail.title,
+            year: detail.year,
+            season: episode.seasonNumber,
+            episode: episode.episodeNumber
+        )
+        sessionStore.notifyContentMutated()
+        await loadDetail()
+    }
+}
+
+// MARK: - Dedicated Primary Play CTA Button
+
+private struct PrimaryPlayButton: View {
+    let title: String
+    let isWarmReady: Bool
+    let action: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        let focused = isFocused
+
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: "play.fill")
+                    .font(.headline.weight(.black))
+                Text(title)
+                    .font(.headline.weight(.bold))
+                if isWarmReady {
+                    Circle()
+                        .fill(LunaTheme.canvas.opacity(0.65))
+                        .frame(width: 7, height: 7)
+                }
+            }
+            .foregroundStyle(LunaTheme.canvas)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 15)
+            .background(
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: focused
+                                ? [Color.white, LunaTheme.amber]
+                                : [LunaTheme.amber, LunaTheme.amberDeep],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.white.opacity(focused ? 0.95 : 0.35), lineWidth: focused ? 2.5 : 1.0)
+            )
+            .shadow(
+                color: LunaTheme.amber.opacity(focused ? 0.55 : 0.22),
+                radius: focused ? 22 : 10,
+                x: 0,
+                y: focused ? 8 : 4
+            )
+            .scaleEffect(focused ? 1.06 : 1.0)
+            .animation(.spring(response: 0.22, dampingFraction: 0.78), value: focused)
+        }
+        .buttonStyle(.plain)
+        .focused($isFocused)
+    }
+}
+
+// MARK: - 16:9 Episode Card (`420x236`)
+
+private struct EpisodeCardView: View {
+    let episode: TvEpisodeCard
+    let client: MediaOSClient?
+    let onPlay: () -> Void
+    let onPickSource: () -> Void
+    let onToggleWatched: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        let stillURL = client?.resolveArtworkURL(episode.stillUrl)
+        let pct = min(100.0, max(0.0, episode.progress?.percent ?? 0))
+        let upcoming = episode.isUpcoming == true
+
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: onPlay) {
+                ZStack {
+                    CachedArtworkView(
+                        url: stillURL,
+                        client: client,
+                        maxPixelSize: 840,
+                        placeholderSymbol: upcoming ? "calendar" : "play.tv",
+                        contentMode: .fill
+                    )
+                    .frame(width: 420, height: 236)
+                    .clipped()
+                    .opacity(upcoming ? 0.65 : 1.0)
+
+                    LinearGradient(
+                        colors: [.clear, Color.black.opacity(0.75)],
+                        startPoint: .center,
+                        endPoint: .bottom
+                    )
+
+                    VStack {
+                        HStack {
+                            if upcoming {
+                                Text(episode.airDateBadge ?? "Kommer")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(LunaTheme.canvas)
+                                    .padding(.horizontal, 11)
+                                    .padding(.vertical, 5)
+                                    .background(LunaTheme.amber, in: Capsule())
+                            } else if let avail = episode.availability, avail.isLocalNvme {
+                                Text("På NVMe")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(LunaTheme.emerald)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(Color.black.opacity(0.72), in: Capsule())
+                            }
+
+                            Spacer()
+
+                            if episode.watched {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.callout.weight(.bold))
+                                    .foregroundStyle(LunaTheme.emerald)
+                                    .padding(6)
+                                    .background(Color.black.opacity(0.65), in: Circle())
+                            }
+                        }
+                        .padding(12)
+
+                        Spacer()
+
+                        if pct > 1 && !upcoming {
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color.white.opacity(0.24))
+                                    Capsule()
+                                        .fill(LunaTheme.amber)
+                                        .frame(width: geo.size.width * CGFloat(pct / 100.0))
+                                }
+                            }
+                            .frame(height: 5)
+                            .padding(.horizontal, 14)
+                            .padding(.bottom, 10)
+                        }
+                    }
+                }
+                .frame(width: 420, height: 236)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
+            .buttonStyle(.card)
+            .focused($isFocused)
+            .contextMenu {
+                if !upcoming {
+                    Button(action: onPlay) {
+                        Label("Spill episode", systemImage: "play.fill")
+                    }
+                    Button(action: onPickSource) {
+                        Label("Bytt kilde…", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                Button(action: onToggleWatched) {
+                    Label(
+                        episode.watched ? "Marker som usett" : "Marker som sett",
+                        systemImage: episode.watched ? "circle" : "checkmark.circle"
+                    )
+                }
+            }
+
+            HStack(spacing: 8) {
+                Text("\(episode.codeLabel) · \(episode.title)")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(isFocused ? .white : LunaTheme.moonlight)
+                    .lineLimit(1)
+
+                Spacer(minLength: 4)
+
+                if let runtime = episode.formattedRuntime {
+                    Text(runtime)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(LunaTheme.muted)
+                }
+            }
+            .frame(width: 420)
+
+            if let overview = episode.overview, !overview.isEmpty {
+                Text(overview)
+                    .font(.caption2)
+                    .foregroundStyle(LunaTheme.muted)
+                    .lineLimit(2)
+                    .frame(width: 420, alignment: .leading)
+            }
+        }
     }
 }

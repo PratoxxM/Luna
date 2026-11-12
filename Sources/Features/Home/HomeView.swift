@@ -4,274 +4,334 @@ struct HomeView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
 
     @State private var homePayload: TvHomeResponse?
-    @State private var isLoading: Bool = false
+    @State private var cachedEtag: String?
+    @State private var isInitialColdFetch: Bool = false
     @State private var errorMessage: String?
+
     @State private var selectedCard: TvMediaCard?
-    @State private var selectedGenre: TvGenreChip?
+    @State private var selectedGenreChip: TvGenreChip?
+    @State private var selectedRowBrowse: TvShelfRow?
+    @State private var sourcePickerContext: SourcePickerContext?
+
+    @Namespace private var homeFocusNamespace
+
+    init(initialRoomName: String = "Kjellerstua", initialHardwareProfile: String = "dv-fel-714") {
+        if let cached = DiskSWRStore.loadHomeSynchronously(
+            roomName: initialRoomName,
+            hardwareProfile: initialHardwareProfile
+        ) {
+            _homePayload = State(initialValue: cached.payload)
+            _cachedEtag = State(initialValue: cached.etag)
+        } else {
+            _homePayload = State(initialValue: nil)
+            _cachedEtag = State(initialValue: nil)
+        }
+    }
+
+    private var visibleRows: [TvShelfRow] {
+        (homePayload?.rows ?? []).filter { row in
+            !row.items.isEmpty || !(row.genres ?? []).isEmpty
+        }
+    }
 
     var body: some View {
         let client = sessionStore.makeClient()
 
         ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 42) {
-                if let hero = homePayload?.hero {
-                    heroHeader(hero, client: client)
-                } else if isLoading {
+            LazyVStack(alignment: .leading, spacing: 40) {
+                topStatusStrip
+
+                if visibleRows.isEmpty && isInitialColdFetch {
                     HStack(spacing: 16) {
                         ProgressView()
-                        Text("Laster Hjem for \(sessionStore.roomName)…")
+                        Text("Klargjør kveldskino for \(sessionStore.roomName)…")
                             .font(.title3)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(LunaTheme.moonlight)
                     }
-                    .padding(80)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.vertical, 64)
                 }
 
-                if let errorMessage {
-                    VStack(alignment: .leading, spacing: 14) {
+                if let errorMessage, visibleRows.isEmpty {
+                    VStack(alignment: .leading, spacing: 16) {
                         Text(errorMessage)
                             .font(.callout)
-                            .foregroundStyle(.red)
-                        Button("Prøv igjen") {
-                            Task { await loadHome() }
+                            .foregroundStyle(LunaTheme.amber)
+                        LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
+                            Task { await revalidateHome(forceUnconditional: true) }
                         }
                     }
-                    .padding(.horizontal, 64)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
                 }
 
-                if let rows = homePayload?.rows {
-                    ForEach(rows) { row in
-                        if !row.items.isEmpty || !(row.genres ?? []).isEmpty {
-                            ShelfRowView(
-                                row: row,
-                                client: client,
-                                onSelectCard: { card in
-                                    selectedCard = card
-                                },
-                                onPlayContinueCard: { card in
-                                    launchCardPlayback(card)
-                                },
-                                onSelectGenre: { chip in
-                                    selectedGenre = chip
-                                }
-                            )
+                ForEach(Array(visibleRows.enumerated()), id: \.element.id) { rowIndex, row in
+                    ShelfRowView(
+                        row: row,
+                        isFirstRow: rowIndex == 0,
+                        focusNamespace: homeFocusNamespace,
+                        client: client,
+                        onSelectCard: { card in
+                            selectedCard = card
+                        },
+                        onPlayContinueCard: { card in
+                            launchDirectPlayback(for: card)
+                        },
+                        onPickSourceForCard: { card in
+                            openSourcePicker(for: card)
+                        },
+                        onToggleWatchlist: { card in
+                            Task { await toggleWatchlist(for: card) }
+                        },
+                        onToggleFavorite: { card in
+                            Task { await toggleFavorite(for: card) }
+                        },
+                        onMarkWatched: { card in
+                            Task { await markWatched(for: card) }
+                        },
+                        onSelectGenre: { chip in
+                            selectedGenreChip = chip
+                        },
+                        onOpenFullRow: { shelf in
+                            selectedRowBrowse = shelf
                         }
-                    }
+                    )
                 }
             }
-            .padding(.bottom, 80)
+            .padding(.top, 18)
+            .padding(.bottom, 84)
         }
+        .focusScope(homeFocusNamespace)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
-        .sheet(item: $selectedGenre) { chip in
-            GenreBrowseSheet(chip: chip) { picked in
-                selectedGenre = nil
-                selectedCard = picked
-            }
+        .navigationDestination(item: $selectedGenreChip) { chip in
+            CatalogBrowseView(mediaType: chip.inferredMediaType, initialGenre: chip)
+        }
+        .navigationDestination(item: $selectedRowBrowse) { shelf in
+            CustomRowBrowseView(
+                title: shelf.title,
+                pathOrRowId: shelf.nextPath ?? shelf.rowId
+            )
+        }
+        .sheet(item: $sourcePickerContext) { ctx in
+            SourcePickerSheetView(
+                context: ctx,
+                onSelectCandidate: { picked in
+                    let target = ctx
+                    sourcePickerContext = nil
+                    sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
+                        itemId: target.itemId,
+                        title: target.title,
+                        seriesTitle: target.seriesTitle,
+                        startPositionSeconds: target.startPositionSeconds,
+                        candidateId: picked.candidateId
+                    )
+                },
+                onCancel: {
+                    sourcePickerContext = nil
+                }
+            )
             .environmentObject(sessionStore)
         }
-        .task(id: "\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)") {
-            await loadHome()
+        .task(id: "\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)#\(sessionStore.homeRefreshNonce)") {
+            syncDiskSnapshotIfRoomChanged()
+            await revalidateHome(forceUnconditional: false)
         }
     }
 
-    private func heroHeader(_ hero: TvHeroBanner, client: BFFClient?) -> some View {
-        let bgURL = client?.resolveArtworkURL(hero.backdropUrl ?? hero.posterUrl)
-
-        return ZStack(alignment: .bottomLeading) {
-            MediaArtworkImage(url: bgURL, placeholderSymbol: "sparkles.tv")
-                .frame(maxWidth: .infinity)
-                .frame(height: 620)
-                .clipped()
-
-            LinearGradient(
-                colors: [
-                    .clear,
-                    Color.black.opacity(0.55),
-                    Color.black.opacity(0.92),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 12) {
-                    Text(sessionStore.roomName.uppercased())
-                        .font(.caption.weight(.bold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color(red: 0.96, green: 0.77, blue: 0.42).opacity(0.24), in: Capsule())
-
-                    ForEach(hero.badges ?? [], id: \.self) { badge in
-                        Text(badge)
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.14), in: Capsule())
-                    }
-                }
-
-                Text(hero.title)
-                    .font(.system(size: 52, weight: .bold, design: .rounded))
-                    .lineLimit(2)
-
-                if let overview = hero.overview, !overview.isEmpty {
-                    Text(overview)
-                        .font(.callout)
-                        .foregroundStyle(.white.opacity(0.84))
-                        .lineLimit(3)
-                        .frame(maxWidth: 960, alignment: .leading)
-                }
-
-                HStack(spacing: 22) {
-                    Button {
-                        launchHeroPlayback(hero)
-                    } label: {
-                        Label(hero.primaryCta ?? "Spill av", systemImage: "play.fill")
-                            .font(.headline)
-                            .padding(.horizontal, 14)
-                    }
-
-                    Button {
-                        selectedCard = TvMediaCard(
-                            itemId: hero.itemId,
-                            mediaType: hero.mediaType,
-                            ids: hero.ids,
-                            title: hero.title,
-                            year: hero.year,
-                            overview: hero.overview,
-                            posterUrl: hero.posterUrl,
-                            backdropUrl: hero.backdropUrl,
-                            logoUrl: hero.logoUrl,
-                            imdbRating: hero.imdbRating,
-                            badges: hero.badges,
-                            inWatchlist: hero.inWatchlist,
-                            nextUp: hero.nextUp,
-                            availability: hero.availability,
-                            progress: hero.progress
-                        )
-                    } label: {
-                        Label("Detaljer", systemImage: "info.circle")
-                            .font(.headline)
-                    }
-                }
-                .padding(.top, 6)
+    private var topStatusStrip: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "moon.stars.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(LunaTheme.amber)
+                Text("Luna")
+                    .font(.callout.weight(.bold))
+                    .foregroundStyle(.white)
             }
-            .padding(.horizontal, 64)
-            .padding(.bottom, 44)
+
+            Text("·")
+                .foregroundStyle(LunaTheme.muted)
+
+            Text(sessionStore.roomName)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(LunaTheme.moonlight)
+
+            Text(sessionStore.activePreset.shortBadgeLabel)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(LunaTheme.amber)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(LunaTheme.amber.opacity(0.14), in: Capsule())
+
+            Spacer()
+        }
+        .padding(.horizontal, LunaTheme.horizontalGutter)
+    }
+
+    private func syncDiskSnapshotIfRoomChanged() {
+        guard let current = homePayload else {
+            if let snap = DiskSWRStore.loadHomeSynchronously(
+                roomName: sessionStore.roomName,
+                hardwareProfile: sessionStore.effectiveHardwareProfile
+            ) {
+                homePayload = snap.payload
+                cachedEtag = snap.etag
+            }
+            return
+        }
+        if current.roomName != sessionStore.roomName || current.hardwareProfile != sessionStore.effectiveHardwareProfile {
+            if let snap = DiskSWRStore.loadHomeSynchronously(
+                roomName: sessionStore.roomName,
+                hardwareProfile: sessionStore.effectiveHardwareProfile
+            ) {
+                homePayload = snap.payload
+                cachedEtag = snap.etag
+            } else {
+                cachedEtag = nil
+            }
         }
     }
 
-    private func launchHeroPlayback(_ hero: TvHeroBanner) {
-        let targetItemId: String
-        if hero.mediaType == "series", let next = hero.nextUp, let tmdb = hero.ids.tmdb {
-            targetItemId = "episode:tmdb:\(tmdb):s\(next.season):e\(next.episode)"
-        } else {
-            targetItemId = hero.itemId
-        }
-        sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
-            itemId: targetItemId,
-            title: hero.title,
-            seriesTitle: hero.mediaType == "series" ? hero.title : nil,
-            startPositionSeconds: hero.progress?.positionSeconds
-        )
-    }
-
-    private func launchCardPlayback(_ card: TvMediaCard) {
-        let targetItemId: String
-        if card.mediaType == "series", let next = card.nextUp, let tmdb = card.ids.tmdb {
-            targetItemId = "episode:tmdb:\(tmdb):s\(next.season):e\(next.episode)"
-        } else if card.mediaType == "series",
-                  let s = card.progress?.season,
-                  let e = card.progress?.episode,
-                  let tmdb = card.ids.tmdb {
-            targetItemId = "episode:tmdb:\(tmdb):s\(s):e\(e)"
-        } else {
-            targetItemId = card.itemId
-        }
-        sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
-            itemId: targetItemId,
-            title: card.title,
-            seriesTitle: card.mediaType == "series" ? card.title : nil,
-            startPositionSeconds: card.progress?.positionSeconds
-        )
-    }
-
-    private func loadHome() async {
+    private func revalidateHome(forceUnconditional: Bool) async {
         guard let client = sessionStore.makeClient() else { return }
-        isLoading = true
+        if homePayload == nil {
+            isInitialColdFetch = true
+        }
         errorMessage = nil
+
         do {
-            homePayload = try await client.fetchHome()
-        } catch BFFError.unauthorized {
+            let result = try await client.fetchHomeConditional(
+                ifNoneMatch: forceUnconditional ? nil : cachedEtag
+            )
+            switch result {
+            case .notModified:
+                break
+            case .updated(let payload, let newEtag, let rawData):
+                cachedEtag = newEtag
+                if homePayload != payload {
+                    withAnimation(.easeOut(duration: 0.22)) {
+                        homePayload = payload
+                    }
+                }
+                DiskSWRStore.saveHomeInBackground(
+                    rawPayloadData: rawData,
+                    etag: newEtag,
+                    roomName: sessionStore.roomName,
+                    hardwareProfile: sessionStore.effectiveHardwareProfile
+                )
+            }
+        } catch MediaOSError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
-            errorMessage = error.localizedDescription
-        }
-        isLoading = false
-    }
-}
-
-private struct GenreBrowseSheet: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
-    let chip: TvGenreChip
-    let onPick: (TvMediaCard) -> Void
-
-    @State private var page: TvRowPageResponse?
-    @State private var isLoading = true
-
-    private let columns = [
-        GridItem(.adaptive(minimum: 240, maximum: 280), spacing: 32)
-    ]
-
-    var body: some View {
-        let client = sessionStore.makeClient()
-        VStack(alignment: .leading, spacing: 24) {
-            Text(page?.title ?? chip.label)
-                .font(.title2.bold())
-                .padding(.horizontal, 48)
-                .padding(.top, 36)
-
-            if isLoading {
-                Spacer()
-                HStack {
-                    Spacer()
-                    ProgressView()
-                    Spacer()
-                }
-                Spacer()
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 36) {
-                        ForEach(page?.items ?? []) { card in
-                            Button {
-                                onPick(card)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    MediaArtworkImage(
-                                        url: client?.resolveArtworkURL(card.posterUrl ?? card.backdropUrl),
-                                        placeholderSymbol: "film"
-                                    )
-                                    .frame(width: 230, height: 345)
-                                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-                                    Text(card.title)
-                                        .font(.callout.weight(.semibold))
-                                        .lineLimit(1)
-                                }
-                            }
-                            .buttonStyle(.card)
-                        }
-                    }
-                    .padding(.horizontal, 48)
-                    .padding(.bottom, 48)
-                }
+            if homePayload == nil {
+                errorMessage = error.localizedDescription
             }
         }
-        .task {
-            guard let client else { return }
-            page = try? await client.fetchRow(pathOrRowId: chip.browsePath, offset: 0, limit: 36)
-            isLoading = false
+        isInitialColdFetch = false
+    }
+
+    private func resolvePlayTarget(for card: TvMediaCard) -> (itemId: String, title: String, seriesTitle: String?, startPos: Double?) {
+        if let direct = card.directPlayTarget {
+            let displayTitle = card.episodeTitle ?? direct.title ?? card.title
+            let seriesName = card.mediaType == "series" ? card.title : direct.seriesTitle
+            return (direct.itemId, displayTitle, seriesName, direct.startPositionSeconds ?? card.progress?.positionSeconds)
         }
+        if card.mediaType == "series", let next = card.nextUp, let tmdb = card.ids.tmdb {
+            return (
+                "episode:tmdb:\(tmdb):s\(next.season):e\(next.episode)",
+                card.episodeTitle ?? card.title,
+                card.title,
+                card.progress?.positionSeconds
+            )
+        }
+        if card.mediaType == "series",
+           let s = card.progress?.season,
+           let e = card.progress?.episode,
+           let tmdb = card.ids.tmdb {
+            return (
+                "episode:tmdb:\(tmdb):s\(s):e\(e)",
+                card.title,
+                card.title,
+                card.progress?.positionSeconds
+            )
+        }
+        return (card.itemId, card.title, nil, card.progress?.positionSeconds)
+    }
+
+    private func launchDirectPlayback(for card: TvMediaCard) {
+        let resolved = resolvePlayTarget(for: card)
+        sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
+            itemId: resolved.itemId,
+            title: resolved.title,
+            seriesTitle: resolved.seriesTitle,
+            startPositionSeconds: resolved.startPos,
+            backdropUrl: card.preferredLandscapePath,
+            logoUrl: card.logoUrl
+        )
+    }
+
+    private func openSourcePicker(for card: TvMediaCard) {
+        let resolved = resolvePlayTarget(for: card)
+        sourcePickerContext = SourcePickerContext(
+            itemId: resolved.itemId,
+            title: resolved.title,
+            seriesTitle: resolved.seriesTitle,
+            startPositionSeconds: resolved.startPos
+        )
+    }
+
+    private func toggleWatchlist(for card: TvMediaCard) async {
+        guard let client = sessionStore.makeClient() else { return }
+        let nextListed = !(card.inWatchlist ?? false)
+        try? await client.setWatchlist(
+            listed: nextListed,
+            mediaType: card.mediaType,
+            ids: card.ids,
+            title: card.title,
+            year: card.year
+        )
+        await revalidateHome(forceUnconditional: true)
+    }
+
+    private func toggleFavorite(for card: TvMediaCard) async {
+        guard let client = sessionStore.makeClient() else { return }
+        let nextFav = !(card.isFavorite ?? false)
+        try? await client.setFavorite(
+            favorite: nextFav,
+            mediaType: card.mediaType,
+            ids: card.ids,
+            title: card.title,
+            year: card.year
+        )
+        await revalidateHome(forceUnconditional: true)
+    }
+
+    private func markWatched(for card: TvMediaCard) async {
+        guard let client = sessionStore.makeClient() else { return }
+        if card.mediaType == "series" {
+            let s = card.directPlayTarget?.season ?? card.nextUp?.season ?? card.progress?.season
+            let e = card.directPlayTarget?.episode ?? card.nextUp?.episode ?? card.progress?.episode
+            if let s, let e {
+                try? await client.setWatched(
+                    watched: true,
+                    mediaType: "episode",
+                    ids: card.ids,
+                    title: card.title,
+                    year: card.year,
+                    season: s,
+                    episode: e
+                )
+            }
+        } else {
+            try? await client.setWatched(
+                watched: true,
+                mediaType: "movie",
+                ids: card.ids,
+                title: card.title,
+                year: card.year
+            )
+        }
+        await revalidateHome(forceUnconditional: true)
     }
 }

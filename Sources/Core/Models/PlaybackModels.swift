@@ -7,13 +7,19 @@ public struct PlaybackLaunchRequest: Identifiable, Equatable, Sendable {
     public let seriesTitle: String?
     public let startPositionSeconds: Double?
     public let candidateId: String?
+    public let prepareToken: String?
+    public let backdropUrl: String?
+    public let logoUrl: String?
 
     public init(
         itemId: String,
         title: String,
         seriesTitle: String? = nil,
         startPositionSeconds: Double? = nil,
-        candidateId: String? = nil
+        candidateId: String? = nil,
+        prepareToken: String? = nil,
+        backdropUrl: String? = nil,
+        logoUrl: String? = nil
     ) {
         self.id = "\(itemId)#\(candidateId ?? "auto")#\(UUID().uuidString)"
         self.itemId = itemId
@@ -21,6 +27,31 @@ public struct PlaybackLaunchRequest: Identifiable, Equatable, Sendable {
         self.seriesTitle = seriesTitle
         self.startPositionSeconds = startPositionSeconds
         self.candidateId = candidateId
+        self.prepareToken = prepareToken
+        self.backdropUrl = backdropUrl
+        self.logoUrl = logoUrl
+    }
+}
+
+public struct TvDeviceOverrides: Codable, Equatable, Sendable {
+    public var preferDualLayerDV: Bool?
+    public var speakerLayout: String?
+    public var subtitleMaxLuminancePct: Int?
+    public var autoPlayNextEpisode: Bool?
+    public var smartSubtitleLanguageRule: String?
+
+    public init(
+        preferDualLayerDV: Bool? = nil,
+        speakerLayout: String? = nil,
+        subtitleMaxLuminancePct: Int? = nil,
+        autoPlayNextEpisode: Bool? = nil,
+        smartSubtitleLanguageRule: String? = nil
+    ) {
+        self.preferDualLayerDV = preferDualLayerDV
+        self.speakerLayout = speakerLayout
+        self.subtitleMaxLuminancePct = subtitleMaxLuminancePct
+        self.autoPlayNextEpisode = autoPlayNextEpisode
+        self.smartSubtitleLanguageRule = smartSubtitleLanguageRule
     }
 }
 
@@ -37,6 +68,7 @@ public struct TvPairedDeviceInfo: Codable, Equatable, Sendable {
     public let deviceName: String
     public let roomName: String
     public let hardwareProfile: String
+    public let overrides: TvDeviceOverrides?
 }
 
 public struct TvPairingPollResponse: Codable, Equatable, Sendable {
@@ -68,6 +100,14 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
         let mb = Double(sizeBytes) / 1_048_576.0
         return String(format: "%.0f MB", mb)
     }
+
+    public var sourceBadgeLabel: String {
+        let normTier = (tier ?? "").lowercased()
+        if normTier == "ssd" || normTier == "nvme" { return "På NVMe" }
+        if normTier == "archive" { return "I Arkiv" }
+        if normTier == "vfs" || source.lowercased() == "infinidysk" { return "InfiniDysk VFS" }
+        return source.uppercased()
+    }
 }
 
 public struct TvStreamEndpoint: Codable, Equatable, Sendable {
@@ -75,6 +115,7 @@ public struct TvStreamEndpoint: Codable, Equatable, Sendable {
     public let container: String?
     public let supportsByteRanges: Bool?
     public let zeroCopyMode: String?
+    public let canClientPrewarmBytes: Bool?
     public let startPositionSeconds: Double?
     public let declaredDurationSeconds: Double?
 }
@@ -158,9 +199,19 @@ public struct TvPlaybackSession: Codable, Equatable, Sendable {
     public let nextEpisode: TvNextEpisodeSummary?
 }
 
+public struct TvPrepareResponse: Codable, Equatable, Sendable {
+    public let ok: Bool
+    public let status: String
+    public let reused: Bool?
+    public let prepareToken: String?
+    public let canClientPrewarmBytes: Bool?
+    public let playbackSession: TvPlaybackSession?
+}
+
 public struct TvResolveStartResponse: Codable, Equatable, Sendable {
     public let ok: Bool
     public let status: String
+    public let preResolved: Bool?
     public let resolveId: String
     public let wsPath: String?
     public let playbackSession: TvPlaybackSession?

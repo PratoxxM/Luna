@@ -15,6 +15,13 @@ public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable 
         }
     }
 
+    public var shortBadgeLabel: String {
+        switch self {
+        case .dvFel714: return "DV FEL · 7.1.4"
+        case .hdr10512: return "HDR10+ · 5.1.2"
+        }
+    }
+
     public var displayTitle: String {
         switch self {
         case .dvFel714:
@@ -43,14 +50,26 @@ public final class AppSessionStore: ObservableObject {
     @Published public var roomName: String
     @Published public var hardwareProfile: String
     @Published public var localProfileOverride: String?
+    @Published public var deviceOverrides: TvDeviceOverrides? = nil
+    @Published public private(set) var homeRefreshNonce: Int = 0
+
     @Published public var allowSelfSignedLanTLS: Bool {
         didSet {
             defaults.set(allowSelfSignedLanTLS, forKey: SideloadSafeStorage.allowSelfSignedLanTLSKey)
+            MediaOSSessionPool.shared.invalidateAll()
             applyEngineTLSPolicy()
         }
     }
 
-    @Published public var activePlaybackTarget: PlaybackLaunchRequest?
+    @Published public var activePlaybackTarget: PlaybackLaunchRequest? = nil {
+        didSet {
+            // Trigger silent SWR refresh when returning from the video player so
+            // «Fortsett å se» reflects latest watch progress immediately.
+            if oldValue != nil && activePlaybackTarget == nil {
+                homeRefreshNonce &+= 1
+            }
+        }
+    }
 
     private let defaults: UserDefaults
 
@@ -63,6 +82,10 @@ public final class AppSessionStore: ObservableObject {
             return localProfileOverride
         }
         return hardwareProfile
+    }
+
+    public var activePreset: HardwareProfilePreset {
+        HardwareProfilePreset(rawValue: effectiveHardwareProfile) ?? .dvFel714
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -86,14 +109,20 @@ public final class AppSessionStore: ObservableObject {
         self.roomName = defaults.string(forKey: SideloadSafeStorage.roomNameKey) ?? "Kjellerstua"
         self.hardwareProfile = defaults.string(forKey: SideloadSafeStorage.hardwareProfileKey) ?? HardwareProfilePreset.dvFel714.rawValue
         self.localProfileOverride = defaults.string(forKey: SideloadSafeStorage.localProfileOverrideKey)
+        self.deviceOverrides = nil
+        self.activePlaybackTarget = nil
         self.allowSelfSignedLanTLS = defaults.object(forKey: SideloadSafeStorage.allowSelfSignedLanTLSKey) as? Bool ?? true
 
         applyEngineTLSPolicy()
     }
 
-    public func makeClient(overrideBaseURL: URL? = nil) -> BFFClient? {
+    public func notifyContentMutated() {
+        homeRefreshNonce &+= 1
+    }
+
+    public func makeClient(overrideBaseURL: URL? = nil) -> MediaOSClient? {
         guard let base = overrideBaseURL ?? serverBaseURL else { return nil }
-        return BFFClient(
+        return MediaOSClient(
             baseURL: base,
             deviceID: deviceID,
             deviceToken: deviceToken,
@@ -115,6 +144,7 @@ public final class AppSessionStore: ObservableObject {
         self.deviceName = pairedDevice.deviceName
         self.roomName = pairedDevice.roomName
         self.hardwareProfile = pairedDevice.hardwareProfile
+        self.deviceOverrides = pairedDevice.overrides
         self.localProfileOverride = nil
 
         defaults.set(baseURL.absoluteString, forKey: SideloadSafeStorage.serverURLKey)
@@ -123,15 +153,19 @@ public final class AppSessionStore: ObservableObject {
         defaults.set(pairedDevice.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
         defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
         applyEngineTLSPolicy()
+        homeRefreshNonce &+= 1
     }
 
     public func syncFromBootstrap(_ device: TvPairedDeviceInfo) {
         self.deviceName = device.deviceName
-        self.roomName = device.roomName
-        self.hardwareProfile = device.hardwareProfile
+        if localProfileOverride == nil {
+            self.roomName = device.roomName
+            self.hardwareProfile = device.hardwareProfile
+            defaults.set(device.roomName, forKey: SideloadSafeStorage.roomNameKey)
+            defaults.set(device.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
+        }
+        self.deviceOverrides = device.overrides
         defaults.set(device.deviceName, forKey: SideloadSafeStorage.deviceNameKey)
-        defaults.set(device.roomName, forKey: SideloadSafeStorage.roomNameKey)
-        defaults.set(device.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
     }
 
     public func setRoomAndProfile(roomName: String, hardwareProfile: String, persistAsLocalOverride: Bool = false) {
@@ -147,6 +181,13 @@ public final class AppSessionStore: ObservableObject {
             self.localProfileOverride = nil
             defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
         }
+
+        if let client = makeClient() {
+            Task {
+                try? await client.updateDeviceProfile(roomName: roomName, hardwareProfile: hardwareProfile)
+            }
+        }
+        homeRefreshNonce &+= 1
     }
 
     public func unpairDevice() {
@@ -154,6 +195,8 @@ public final class AppSessionStore: ObservableObject {
             EngineLog.unregisterSecret(old)
         }
         SideloadSafeStorage.deleteDeviceToken()
+        AetherEngine.discardPrewarmedSources()
+        MediaOSSessionPool.shared.invalidateAll()
         deviceToken = nil
         activePlaybackTarget = nil
     }

@@ -1,6 +1,6 @@
 import Foundation
 
-public enum BFFError: LocalizedError, Sendable {
+public enum MediaOSError: LocalizedError, Sendable {
     case invalidURL(String)
     case unauthorized
     case serverMessage(Int, String)
@@ -19,6 +19,8 @@ public enum BFFError: LocalizedError, Sendable {
         }
     }
 }
+
+public typealias BFFError = MediaOSError
 
 private struct ServerErrorEnvelope: Decodable {
     let error: String?
@@ -54,7 +56,60 @@ public final class LanURLSessionDelegate: NSObject, URLSessionDelegate, Sendable
     }
 }
 
-public struct BFFClient: Sendable {
+/// Shared URLSession pool keyed by `(scheme, host, port, allowSelfSignedLanTLS)`.
+/// Prevents leaking ephemeral URLSessions across SwiftUI view body evaluations and
+/// preserves HTTP keep-alive / TLS session resumption against MediaOS Caddy.
+public final class MediaOSSessionPool: @unchecked Sendable {
+    public static let shared = MediaOSSessionPool()
+
+    private let lock = NSLock()
+    private var sessions: [String: URLSession] = [:]
+
+    private init() {}
+
+    public func session(for baseURL: URL, allowSelfSignedLanTLS: Bool) -> URLSession {
+        let key = "\(baseURL.scheme?.lowercased() ?? "http")://\(baseURL.host?.lowercased() ?? ""):\(baseURL.port ?? -1)|tls:\(allowSelfSignedLanTLS)"
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let existing = sessions[key] {
+            return existing
+        }
+
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 25
+        config.timeoutIntervalForResource = 90
+        config.httpMaximumConnectionsPerHost = 8
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+
+        let delegate = LanURLSessionDelegate(
+            trustedHost: baseURL.host,
+            allowSelfSignedTLS: allowSelfSignedLanTLS
+        )
+        let created = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+        sessions[key] = created
+        return created
+    }
+
+    public func invalidateAll() {
+        lock.lock()
+        let old = Array(sessions.values)
+        sessions.removeAll()
+        lock.unlock()
+
+        for session in old {
+            session.invalidateAndCancel()
+        }
+    }
+}
+
+public enum HomeConditionalResult: Sendable {
+    case notModified
+    case updated(payload: TvHomeResponse, etag: String?, rawPayloadData: Data)
+}
+
+public struct MediaOSClient: Sendable {
     public let baseURL: URL
     public let deviceID: String
     public let deviceToken: String?
@@ -78,15 +133,10 @@ public struct BFFClient: Sendable {
         self.roomName = roomName
         self.hardwareProfile = hardwareProfile
         self.allowSelfSignedLanTLS = allowSelfSignedLanTLS
-
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 25
-        config.timeoutIntervalForResource = 90
-        let delegate = LanURLSessionDelegate(
-            trustedHost: baseURL.host,
-            allowSelfSignedTLS: allowSelfSignedLanTLS
+        self.session = MediaOSSessionPool.shared.session(
+            for: baseURL,
+            allowSelfSignedLanTLS: allowSelfSignedLanTLS
         )
-        self.session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
     }
 
     public func resolveArtworkURL(_ rawPathOrURL: String?) -> URL? {
@@ -121,9 +171,25 @@ public struct BFFClient: Sendable {
         return headers
     }
 
+    public func fetchRawImageData(from url: URL) async throws -> (Data, HTTPURLResponse?) {
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.setValue("image/webp,image/*;q=0.9", forHTTPHeaderField: "Accept")
+        req.setValue(deviceID, forHTTPHeaderField: "X-Device-Id")
+        if let deviceToken, !deviceToken.isEmpty {
+            req.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, resp) = try await session.data(for: req)
+        let http = resp as? HTTPURLResponse
+        if let status = http?.statusCode, status >= 400 {
+            throw MediaOSError.serverMessage(status, "Bildehenting feilet (HTTP \(status))")
+        }
+        return (data, http)
+    }
+
     // MARK: - Device Flow Pairing
 
-    public func requestPairingCode(model: String, osVersion: String, appVersion: String = "1.0.0") async throws -> TvPairingRequestResponse {
+    public func requestPairingCode(model: String, osVersion: String, appVersion: String = "2.0.0") async throws -> TvPairingRequestResponse {
         struct Payload: Encodable {
             let deviceId: String
             let model: String
@@ -141,7 +207,7 @@ public struct BFFClient: Sendable {
     public func pollPairingCode(_ code: String) async throws -> (httpStatus: Int, response: TvPairingPollResponse) {
         let digits = code.filter(\.isNumber)
         guard let url = buildAbsoluteURL("/api/tv/v1/pair/poll/\(digits)") else {
-            throw BFFError.invalidURL("/api/tv/v1/pair/poll/\(digits)")
+            throw MediaOSError.invalidURL("/api/tv/v1/pair/poll/\(digits)")
         }
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
@@ -154,18 +220,118 @@ public struct BFFClient: Sendable {
         return (status, decoded)
     }
 
-    // MARK: - Catalog & Detail
+    // MARK: - Bootstrap, Conditional Home & Native Catalog
 
     public func fetchBootstrap() async throws -> TvBootstrapResponse {
         try await sendJSON(method: "GET", path: "/api/tv/v1/bootstrap")
+    }
+
+    public func updateDeviceProfile(
+        roomName: String? = nil,
+        hardwareProfile: String? = nil,
+        overrides: TvDeviceOverrides? = nil
+    ) async throws {
+        struct BodyPayload: Encodable {
+            let roomName: String?
+            let hardwareProfile: String?
+            let overrides: TvDeviceOverrides?
+        }
+        struct AckResponse: Decodable {
+            let ok: Bool
+        }
+        let _: AckResponse = try await sendJSON(
+            method: "PATCH",
+            path: "/api/tv/v1/device/profile",
+            body: BodyPayload(roomName: roomName, hardwareProfile: hardwareProfile, overrides: overrides)
+        )
     }
 
     public func fetchHome() async throws -> TvHomeResponse {
         try await sendJSON(method: "GET", path: "/api/tv/v1/home")
     }
 
-    public func fetchRow(pathOrRowId: String, offset: Int = 0, limit: Int = 24) async throws -> TvRowPageResponse {
-        let path: String
+    public func fetchHomeConditional(ifNoneMatch: String?) async throws -> HomeConditionalResult {
+        guard let url = buildAbsoluteURL("/api/tv/v1/home") else {
+            throw MediaOSError.invalidURL("/api/tv/v1/home")
+        }
+        var req = authorizedRequest(url: url, method: "GET")
+        if let etag = ifNoneMatch?.trimmingCharacters(in: .whitespacesAndNewlines), !etag.isEmpty {
+            req.setValue(etag, forHTTPHeaderField: "If-None-Match")
+        }
+
+        let (data, rawResp) = try await session.data(for: req)
+        let http = rawResp as? HTTPURLResponse
+        let status = http?.statusCode ?? 500
+
+        if status == 304 {
+            return .notModified
+        }
+        if status == 401 {
+            throw MediaOSError.unauthorized
+        }
+        if status >= 400 {
+            let msg = (try? JSONDecoder().decode(ServerErrorEnvelope.self, from: data))?.error ?? "HTTP \(status)"
+            throw MediaOSError.serverMessage(status, msg)
+        }
+        do {
+            let decoded = try JSONDecoder().decode(TvHomeResponse.self, from: data)
+            let responseEtag = http?.value(forHTTPHeaderField: "ETag")
+            return .updated(payload: decoded, etag: responseEtag, rawPayloadData: data)
+        } catch {
+            throw MediaOSError.decodingFailed(error.localizedDescription)
+        }
+    }
+
+    public func fetchCatalog(
+        kind: String,
+        genre: String? = nil,
+        sort: String = "popular",
+        localOnly: Bool = false,
+        unwatchedOnly: Bool = false,
+        page: Int = 1,
+        limit: Int = 24
+    ) async throws -> TvCatalogResponse {
+        let endpointKind = (kind == "series" || kind == "tv") ? "series" : "movies"
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "sort", value: sort),
+            URLQueryItem(name: "page", value: String(max(1, page))),
+            URLQueryItem(name: "limit", value: String(max(1, limit))),
+        ]
+        if let genre, !genre.isEmpty {
+            items.append(URLQueryItem(name: "genre", value: genre))
+        }
+        if localOnly {
+            items.append(URLQueryItem(name: "localOnly", value: "1"))
+        }
+        if unwatchedOnly {
+            items.append(URLQueryItem(name: "unwatchedOnly", value: "1"))
+        }
+        let path = buildQueryPath("/api/tv/v1/catalog/\(endpointKind)", queryItems: items)
+        return try await sendJSON(method: "GET", path: path)
+    }
+
+    public func fetchLibrary(
+        section: String = "all",
+        tier: String = "all",
+        mediaType: String = "all",
+        sort: String = "recent",
+        offset: Int = 0,
+        limit: Int = 36
+    ) async throws -> TvLibraryResponse {
+        let items: [URLQueryItem] = [
+            URLQueryItem(name: "section", value: section),
+            URLQueryItem(name: "tier", value: tier),
+            URLQueryItem(name: "mediaType", value: mediaType),
+            URLQueryItem(name: "sort", value: sort),
+            URLQueryItem(name: "offset", value: String(max(0, offset))),
+            URLQueryItem(name: "limit", value: String(max(1, limit))),
+        ]
+        let path = buildQueryPath("/api/tv/v1/library", queryItems: items)
+        return try await sendJSON(method: "GET", path: path)
+    }
+
+    public func fetchRow(pathOrRowId: String, offset: Int = 0, limit: Int = 24, sort: String? = nil) async throws -> TvRowPageResponse {
+        var path: String
         if pathOrRowId.hasPrefix("/api/tv/v1/") {
             let joiner = pathOrRowId.contains("?") ? "&" : "?"
             path = "\(pathOrRowId)\(joiner)offset=\(offset)&limit=\(limit)"
@@ -173,15 +339,19 @@ public struct BFFClient: Sendable {
             let encoded = pathOrRowId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? pathOrRowId
             path = "/api/tv/v1/rows/\(encoded)?offset=\(offset)&limit=\(limit)"
         }
+        if let sort, !sort.isEmpty, !path.contains("sort=") {
+            path += "&sort=\(sort)"
+        }
         return try await sendJSON(method: "GET", path: path)
     }
 
-    public func fetchItemDetail(mediaType: String, itemId: String) async throws -> TvItemDetail {
+    public func fetchItemDetail(mediaType: String, itemId: String, seasonNumber: Int? = nil) async throws -> TvItemDetail {
         let encodedId = itemId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? itemId
-        let res: TvItemDetailResponse = try await sendJSON(
-            method: "GET",
-            path: "/api/tv/v1/items/\(mediaType)/\(encodedId)"
-        )
+        var path = "/api/tv/v1/items/\(mediaType)/\(encodedId)"
+        if let seasonNumber, seasonNumber > 0 {
+            path += "?season=\(seasonNumber)"
+        }
+        let res: TvItemDetailResponse = try await sendJSON(method: "GET", path: path)
         return res.item
     }
 
@@ -192,13 +362,17 @@ public struct BFFClient: Sendable {
         )
     }
 
+    public func searchFull(query: String, limit: Int = 30) async throws -> TvSearchResponse {
+        let items = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "limit", value: String(max(1, limit))),
+        ]
+        let path = buildQueryPath("/api/tv/v1/search", queryItems: items)
+        return try await sendJSON(method: "GET", path: path)
+    }
+
     public func search(query: String) async throws -> [TvMediaCard] {
-        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        let res: TvSearchResponse = try await sendJSON(
-            method: "GET",
-            path: "/api/tv/v1/search?q=\(encoded)"
-        )
-        return res.items
+        try await searchFull(query: query).items
     }
 
     public func fetchWatchlist() async throws -> [TvMediaCard] {
@@ -227,7 +401,36 @@ public struct BFFClient: Sendable {
         )
     }
 
-    public func setWatched(watched: Bool, mediaType: String, ids: TvMediaIds, title: String, year: Int?, season: Int? = nil, episode: Int? = nil) async throws {
+    public func setFavorite(favorite: Bool, mediaType: String, ids: TvMediaIds, title: String, year: Int?) async throws {
+        struct ItemPayload: Encodable {
+            let kind: String
+            let title: String
+            let year: Int?
+            let ids: TvMediaIds
+        }
+        struct BodyPayload: Encodable {
+            let favorite: Bool
+            let item: ItemPayload
+        }
+        let _: TvMutationAckResponse = try await sendJSON(
+            method: "POST",
+            path: "/api/tv/v1/favorite",
+            body: BodyPayload(
+                favorite: favorite,
+                item: ItemPayload(kind: mediaType, title: title, year: year, ids: ids)
+            )
+        )
+    }
+
+    public func setWatched(
+        watched: Bool,
+        mediaType: String,
+        ids: TvMediaIds,
+        title: String,
+        year: Int?,
+        season: Int? = nil,
+        episode: Int? = nil
+    ) async throws {
         struct ItemPayload: Encodable {
             let kind: String
             let title: String
@@ -250,14 +453,39 @@ public struct BFFClient: Sendable {
         )
     }
 
-    // MARK: - Playback Resolve, Heartbeat & Source Switching
+    // MARK: - Pre-Resolve, Playback Resolve, Heartbeat & Source Switching
+
+    public func preparePlayback(
+        itemId: String,
+        title: String,
+        seriesTitle: String? = nil,
+        startPositionSeconds: Double? = nil
+    ) async throws -> TvPrepareResponse {
+        struct PrepareBody: Encodable {
+            let itemId: String
+            let title: String
+            let seriesTitle: String?
+            let startPositionSeconds: Double?
+        }
+        return try await sendJSON(
+            method: "POST",
+            path: "/api/tv/v1/playback/prepare",
+            body: PrepareBody(
+                itemId: itemId,
+                title: title,
+                seriesTitle: seriesTitle,
+                startPositionSeconds: startPositionSeconds
+            )
+        )
+    }
 
     public func resolvePlayback(
         itemId: String,
         title: String,
         seriesTitle: String?,
         startPositionSeconds: Double?,
-        candidateId: String?
+        candidateId: String?,
+        prepareToken: String? = nil
     ) async throws -> (httpStatus: Int, response: TvResolveStartResponse) {
         struct ResolveBody: Encodable {
             let itemId: String
@@ -265,9 +493,10 @@ public struct BFFClient: Sendable {
             let seriesTitle: String?
             let startPositionSeconds: Double?
             let candidateId: String?
+            let prepareToken: String?
         }
         guard let url = buildAbsoluteURL("/api/tv/v1/playback/resolve") else {
-            throw BFFError.invalidURL("/api/tv/v1/playback/resolve")
+            throw MediaOSError.invalidURL("/api/tv/v1/playback/resolve")
         }
         var req = authorizedRequest(url: url, method: "POST")
         req.httpBody = try JSONEncoder().encode(
@@ -276,7 +505,8 @@ public struct BFFClient: Sendable {
                 title: title,
                 seriesTitle: seriesTitle,
                 startPositionSeconds: startPositionSeconds,
-                candidateId: candidateId
+                candidateId: candidateId,
+                prepareToken: prepareToken
             )
         )
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -284,11 +514,11 @@ public struct BFFClient: Sendable {
         let (data, rawResp) = try await session.data(for: req)
         let status = (rawResp as? HTTPURLResponse)?.statusCode ?? 500
         if status == 401 {
-            throw BFFError.unauthorized
+            throw MediaOSError.unauthorized
         }
         if status >= 400 {
             let msg = (try? JSONDecoder().decode(ServerErrorEnvelope.self, from: data))?.error ?? "HTTP \(status)"
-            throw BFFError.serverMessage(status, msg)
+            throw MediaOSError.serverMessage(status, msg)
         }
         let decoded = try JSONDecoder().decode(TvResolveStartResponse.self, from: data)
         return (status, decoded)
@@ -341,6 +571,13 @@ public struct BFFClient: Sendable {
 
     // MARK: - Internal Helpers
 
+    private func buildQueryPath(_ basePath: String, queryItems: [URLQueryItem]) -> String {
+        var components = URLComponents()
+        components.path = basePath
+        components.queryItems = queryItems
+        return components.string ?? basePath
+    }
+
     private func authorizedRequest(url: URL, method: String, includeAuth: Bool = true) -> URLRequest {
         var req = URLRequest(url: url)
         req.httpMethod = method
@@ -360,7 +597,7 @@ public struct BFFClient: Sendable {
         includeAuth: Bool = true
     ) async throws -> Response {
         guard let url = buildAbsoluteURL(path) else {
-            throw BFFError.invalidURL(path)
+            throw MediaOSError.invalidURL(path)
         }
         let req = authorizedRequest(url: url, method: method, includeAuth: includeAuth)
         return try await executeAndDecode(req)
@@ -373,7 +610,7 @@ public struct BFFClient: Sendable {
         includeAuth: Bool = true
     ) async throws -> Response {
         guard let url = buildAbsoluteURL(path) else {
-            throw BFFError.invalidURL(path)
+            throw MediaOSError.invalidURL(path)
         }
         var req = authorizedRequest(url: url, method: method, includeAuth: includeAuth)
         req.httpBody = try JSONEncoder().encode(body)
@@ -385,16 +622,18 @@ public struct BFFClient: Sendable {
         let (data, rawResp) = try await session.data(for: req)
         let status = (rawResp as? HTTPURLResponse)?.statusCode ?? 500
         if status == 401 {
-            throw BFFError.unauthorized
+            throw MediaOSError.unauthorized
         }
         if status >= 400 {
             let msg = (try? JSONDecoder().decode(ServerErrorEnvelope.self, from: data))?.error ?? "HTTP \(status)"
-            throw BFFError.serverMessage(status, msg)
+            throw MediaOSError.serverMessage(status, msg)
         }
         do {
             return try JSONDecoder().decode(Response.self, from: data)
         } catch {
-            throw BFFError.decodingFailed(error.localizedDescription)
+            throw MediaOSError.decodingFailed(error.localizedDescription)
         }
     }
 }
+
+public typealias BFFClient = MediaOSClient

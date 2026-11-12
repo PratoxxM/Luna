@@ -10,7 +10,12 @@ struct LunaApp: App {
     /// down unnecessarily between titles.
     private let engine: AetherEngine = {
         do {
-            return try AetherEngine()
+            let created = try AetherEngine()
+            // AE#1015: Prevent background forward subtitle prefetch from downloading
+            // high-bitrate interleaved 4K MKV streams a second time over HTTP/VFS.
+            created.maximumSubtitleAdvanceSeconds = 0
+            created.maximumSubtitleDelaySeconds = 10
+            return created
         } catch {
             fatalError("AetherEngine initialization failed: \(error)")
         }
@@ -19,6 +24,7 @@ struct LunaApp: App {
     init() {
         Task.detached(priority: .utility) {
             _ = await AetherEngine.prewarmDualLayerDolbyVision()
+            await ArtworkPipeline.shared.trimDiskCacheIfNeeded()
         }
     }
 
@@ -26,7 +32,7 @@ struct LunaApp: App {
         WindowGroup {
             Group {
                 if sessionStore.isPaired {
-                    MainTabShell(engine: engine)
+                    MainNavigationShell(engine: engine)
                 } else {
                     PairingOnboardingView()
                 }
