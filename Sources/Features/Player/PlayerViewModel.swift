@@ -247,8 +247,7 @@ final class PlayerViewModel: ObservableObject {
         self.resolveHeadline = session.selectedCandidate.displayHeadline
 
         // AE#1015: Ensure forward subtitle prefetch stays disabled before loading
-        engine.maximumSubtitleAdvanceSeconds = 0
-        engine.maximumSubtitleDelaySeconds = 10
+        engine.maximumSubtitleOffsetSeconds = 0
 
         let options = Self.buildLoadOptions(session: session, client: client)
         let startPos = overrideStartPosition ?? session.stream.startPositionSeconds ?? 0
