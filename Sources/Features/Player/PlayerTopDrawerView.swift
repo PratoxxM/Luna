@@ -504,8 +504,7 @@ private struct DrawerTrackRowButton: View {
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .focusEffectDisabled()
+        .focusEffectDisabled(true)
         .focused($isFocused)
     }
 }
@@ -555,8 +554,7 @@ private struct ChapterPillCardButton: View {
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .focusEffectDisabled()
+        .focusEffectDisabled(true)
         .focused($isFocused)
     }
 }

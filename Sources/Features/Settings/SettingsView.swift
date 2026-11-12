@@ -328,8 +328,7 @@ private struct SettingsRoomRowButton: View {
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .focusEffectDisabled()
+        .focusEffectDisabled(true)
         .focused($isFocused)
     }
 }
@@ -380,8 +379,7 @@ private struct SettingsToggleRowButton: View {
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .focusEffectDisabled()
+        .focusEffectDisabled(true)
         .focused($isFocused)
     }
 }

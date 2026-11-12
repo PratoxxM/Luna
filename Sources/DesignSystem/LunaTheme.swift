@@ -132,8 +132,7 @@ public struct LunaPillButton: View {
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(Capsule())
-        .contentShape(.focusEffect, Capsule())
-        .focusEffectDisabled()
+        .focusEffectDisabled(true)
     }
 }
 

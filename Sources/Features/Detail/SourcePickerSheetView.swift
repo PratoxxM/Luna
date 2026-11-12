@@ -239,8 +239,7 @@ private struct CandidateRowButton: View {
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .focusEffectDisabled()
+        .focusEffectDisabled(true)
         .focused($isFocused)
     }
 }
