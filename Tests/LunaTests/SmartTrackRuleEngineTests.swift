@@ -68,4 +68,20 @@ final class SmartTrackRuleEngineTests: XCTestCase {
         XCTAssertFalse(SmartTrackRuleEngine.isTrackForced(reinforced))
         XCTAssertTrue(SmartTrackRuleEngine.isTrackForced(forced))
     }
+
+    func testNegatedForcedAndWordBoundarySDHDetection() {
+        let nonForced = SmartTrackDescriptor(id: 50, name: "Norwegian (Non-Forced)", codec: "srt", language: "nob")
+        let notForced = SmartTrackDescriptor(id: 51, name: "English Not Forced", codec: "srt", language: "eng")
+        let ikkeTvungen = SmartTrackDescriptor(id: 52, name: "Norsk ikke tvungen", codec: "srt", language: "nob")
+        XCTAssertFalse(SmartTrackRuleEngine.isTrackForced(nonForced))
+        XCTAssertFalse(SmartTrackRuleEngine.isTrackForced(notForced))
+        XCTAssertFalse(SmartTrackRuleEngine.isTrackForced(ikkeTvungen))
+
+        // Word-boundary SDH check must not confuse "Accent" or "Occitan" with "CC"
+        XCTAssertFalse(SmartTrackRuleEngine.isNameSDH("Accent English"))
+        XCTAssertFalse(SmartTrackRuleEngine.isNameSDH("Occitan"))
+        XCTAssertTrue(SmartTrackRuleEngine.isNameSDH("English [CC]"))
+        XCTAssertTrue(SmartTrackRuleEngine.isNameSDH("Norsk (SDH)"))
+        XCTAssertTrue(SmartTrackRuleEngine.isNameSDH("Closed Captions"))
+    }
 }

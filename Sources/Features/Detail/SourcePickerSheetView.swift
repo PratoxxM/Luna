@@ -192,6 +192,9 @@ struct SourcePickerSheetView: View {
             candidates = alt.alternatives
             activeCandidateId = alt.activeCandidateId
                 ?? alt.alternatives.first(where: { $0.isActive == true })?.candidateId
+        } catch MediaOSError.unauthorized {
+            sessionStore.unpairDevice()
+            onCancel()
         } catch {
             errorMessage = error.localizedDescription
         }

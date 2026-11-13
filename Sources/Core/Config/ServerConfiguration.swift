@@ -39,6 +39,17 @@ public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable 
             return "4K HDR10+ / HDR10 · DV Base-Layer · Atmos / Lossless (5.1.2)"
         }
     }
+
+    public static var fallbackRooms: [TvRoomDefinition] {
+        allCases.map { preset in
+            TvRoomDefinition(
+                roomName: preset.defaultRoomName,
+                hardwareProfile: preset.rawValue,
+                label: preset.displayTitle,
+                description: preset.technicalSummary
+            )
+        }
+    }
 }
 
 @MainActor
@@ -51,6 +62,7 @@ public final class AppSessionStore: ObservableObject {
     @Published public var hardwareProfile: String
     @Published public var localProfileOverride: String?
     @Published public var deviceOverrides: TvDeviceOverrides? = nil
+    @Published public private(set) var availableRooms: [TvRoomDefinition] = HardwareProfilePreset.fallbackRooms
     @Published public private(set) var homeRefreshNonce: Int = 0
     public let comfort: ComfortPreferences
 
@@ -146,6 +158,9 @@ public final class AppSessionStore: ObservableObject {
             try? await Task.sleep(nanoseconds: 350_000_000)
             guard !Task.isCancelled, let self, let client = self.makeClient() else { return }
             try? await client.updateDeviceProfile(overrides: overrides)
+            if !Task.isCancelled {
+                self.overrideSyncTask = nil
+            }
         }
     }
 
@@ -195,18 +210,36 @@ public final class AppSessionStore: ObservableObject {
         homeRefreshNonce &+= 1
     }
 
-    public func syncFromBootstrap(_ device: TvPairedDeviceInfo) {
-        self.deviceName = device.deviceName
-        if localProfileOverride == nil {
-            self.roomName = device.roomName
-            self.hardwareProfile = device.hardwareProfile
-            defaults.set(device.roomName, forKey: SideloadSafeStorage.roomNameKey)
-            defaults.set(device.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
+    public func syncFromBootstrap(_ device: TvPairedDeviceInfo, defaultRooms: [TvRoomDefinition]? = nil) {
+        var clientInputsChanged = false
+        if device.deviceName != deviceName {
+            self.deviceName = device.deviceName
+            defaults.set(device.deviceName, forKey: SideloadSafeStorage.deviceNameKey)
         }
-        self.deviceOverrides = device.overrides
-        self.comfort.adoptServerOverrides(device.overrides)
-        defaults.set(device.deviceName, forKey: SideloadSafeStorage.deviceNameKey)
-        rebuildCachedClient()
+        if localProfileOverride == nil {
+            if device.roomName != roomName {
+                self.roomName = device.roomName
+                defaults.set(device.roomName, forKey: SideloadSafeStorage.roomNameKey)
+                clientInputsChanged = true
+            }
+            if device.hardwareProfile != hardwareProfile {
+                self.hardwareProfile = device.hardwareProfile
+                defaults.set(device.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
+                clientInputsChanged = true
+            }
+        }
+        if overrideSyncTask == nil {
+            if device.overrides != deviceOverrides {
+                self.deviceOverrides = device.overrides
+            }
+            self.comfort.adoptServerOverrides(device.overrides)
+        }
+        if let defaultRooms, !defaultRooms.isEmpty, defaultRooms != availableRooms {
+            self.availableRooms = defaultRooms
+        }
+        if clientInputsChanged || cachedClient == nil {
+            rebuildCachedClient()
+        }
     }
 
     public func setRoomAndProfile(roomName: String, hardwareProfile: String, persistAsLocalOverride: Bool = false) {
@@ -239,7 +272,7 @@ public final class AppSessionStore: ObservableObject {
         if let client = makeClient() {
             do {
                 let boot = try await client.fetchBootstrap()
-                syncFromBootstrap(boot.device)
+                syncFromBootstrap(boot.device, defaultRooms: boot.defaultRooms)
             } catch MediaOSError.unauthorized {
                 unpairDevice()
                 return
@@ -257,10 +290,12 @@ public final class AppSessionStore: ObservableObject {
                 return trimmed
             }
         }
-        return "2.2.4"
+        return "2.2.5"
     }
 
     public func unpairDevice() {
+        overrideSyncTask?.cancel()
+        overrideSyncTask = nil
         if let old = deviceToken, old.count >= 8 {
             EngineLog.unregisterSecret(old)
         }
@@ -270,6 +305,7 @@ public final class AppSessionStore: ObservableObject {
         DiskSWRStore.clearMemory()
         Task { await DiskSWRStore.clearAllAsync() }
         deviceToken = nil
+        availableRooms = HardwareProfilePreset.fallbackRooms
         activePlaybackTarget = nil
         rebuildCachedClient()
     }

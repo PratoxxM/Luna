@@ -3,6 +3,8 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
 
+    let isActiveTab: Bool
+
     @State private var homePayload: TvHomeResponse?
     @State private var cachedEtag: String?
     @State private var isInitialColdFetch: Bool = false
@@ -27,8 +29,10 @@ struct HomeView: View {
     init(
         initialServerHost: String? = nil,
         initialRoomName: String = "Stua",
-        initialHardwareProfile: String = "hdr10-512"
+        initialHardwareProfile: String = "hdr10-512",
+        isActiveTab: Bool = true
     ) {
+        self.isActiveTab = isActiveTab
         let snap = DiskSWRStore.memorySnapshot(
             serverHost: initialServerHost,
             roomName: initialRoomName,
@@ -50,13 +54,7 @@ struct HomeView: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 38) {
                 if let mutationErrorMessage {
-                    Text(mutationErrorMessage)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(LunaTheme.amber)
-                        .padding(.horizontal, 22)
-                        .padding(.vertical, 12)
-                        .background(LunaTheme.cinemaGlass, in: Capsule())
-                        .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.45), lineWidth: 1))
+                    TransientErrorBanner(message: mutationErrorMessage)
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                 }
 
@@ -93,7 +91,7 @@ struct HomeView: View {
                             selectedCard = card
                         },
                         onPlayContinueCard: { card in
-                            launchDirectPlayback(for: card)
+                            MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
                         },
                         onPickSourceForCard: { card in
                             openSourcePicker(for: card)
@@ -153,8 +151,13 @@ struct HomeView: View {
             await revalidateHome(forceUnconditional: false)
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
-            guard newNonce != lastSeenRefreshNonce else { return }
+            guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
             lastSeenRefreshNonce = newNonce
+            Task { await revalidateHome(forceUnconditional: true) }
+        }
+        .onChange(of: isActiveTab) { _, active in
+            guard active, lastSeenRefreshNonce != sessionStore.homeRefreshNonce else { return }
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
             Task { await revalidateHome(forceUnconditional: true) }
         }
         .onDisappear {
@@ -231,48 +234,8 @@ struct HomeView: View {
         isInitialColdFetch = false
     }
 
-    private func resolvePlayTarget(for card: TvMediaCard) -> (itemId: String, title: String, seriesTitle: String?, startPos: Double?) {
-        if let direct = card.directPlayTarget {
-            let displayTitle = card.episodeTitle ?? direct.title ?? card.title
-            let seriesName = card.mediaType == "series" ? card.title : direct.seriesTitle
-            return (direct.itemId, displayTitle, seriesName, direct.startPositionSeconds ?? card.progress?.positionSeconds)
-        }
-        if card.mediaType == "series", let next = card.nextUp, let tmdb = card.ids.tmdb {
-            return (
-                "episode:tmdb:\(tmdb):s\(next.season):e\(next.episode)",
-                card.episodeTitle ?? card.title,
-                card.title,
-                card.progress?.positionSeconds
-            )
-        }
-        if card.mediaType == "series",
-           let s = card.progress?.season,
-           let e = card.progress?.episode,
-           let tmdb = card.ids.tmdb {
-            return (
-                "episode:tmdb:\(tmdb):s\(s):e\(e)",
-                card.title,
-                card.title,
-                card.progress?.positionSeconds
-            )
-        }
-        return (card.itemId, card.title, nil, card.progress?.positionSeconds)
-    }
-
-    private func launchDirectPlayback(for card: TvMediaCard) {
-        let resolved = resolvePlayTarget(for: card)
-        sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
-            itemId: resolved.itemId,
-            title: resolved.title,
-            seriesTitle: resolved.seriesTitle,
-            startPositionSeconds: resolved.startPos,
-            backdropUrl: card.preferredLandscapePath,
-            logoUrl: card.logoUrl
-        )
-    }
-
     private func openSourcePicker(for card: TvMediaCard) {
-        let resolved = resolvePlayTarget(for: card)
+        let resolved = MediaCardMutator.resolvePlayTarget(for: card)
         sourcePickerContext = SourcePickerContext(
             itemId: resolved.itemId,
             title: resolved.title,
@@ -300,75 +263,38 @@ struct HomeView: View {
     }
 
     private func toggleWatchlist(for card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
         let nextListed = !(card.inWatchlist ?? false)
         do {
-            try await client.setWatchlist(
-                listed: nextListed,
-                mediaType: card.mediaType,
-                ids: card.ids,
-                title: card.title,
-                year: card.year
-            )
-            await markLocalMutationAndRevalidate()
+            if try await MediaCardMutator.setWatchlist(for: card, listed: nextListed, sessionStore: sessionStore) {
+                await markLocalMutationAndRevalidate()
+            }
         } catch {
             showMutationError(error)
         }
     }
 
     private func toggleFavorite(for card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
         let nextFav = !(card.isFavorite ?? false)
         do {
-            try await client.setFavorite(
-                favorite: nextFav,
-                mediaType: card.mediaType,
-                ids: card.ids,
-                title: card.title,
-                year: card.year
-            )
-            await markLocalMutationAndRevalidate()
+            if try await MediaCardMutator.setFavorite(for: card, favorite: nextFav, sessionStore: sessionStore) {
+                await markLocalMutationAndRevalidate()
+            }
         } catch {
             showMutationError(error)
         }
     }
 
     private func markWatched(for card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
+        let nextWatched = !(card.progress?.watched ?? false)
         do {
-            if card.mediaType == "series" {
-                let s = card.directPlayTarget?.season ?? card.nextUp?.season ?? card.progress?.season
-                let e = card.directPlayTarget?.episode ?? card.nextUp?.episode ?? card.progress?.episode
-                if let s, let e {
-                    try await client.setWatched(
-                        watched: true,
-                        mediaType: "episode",
-                        ids: card.ids,
-                        title: card.title,
-                        year: card.year,
-                        season: s,
-                        episode: e
-                    )
-                } else {
-                    try await client.setWatched(
-                        watched: !(card.progress?.watched ?? false),
-                        mediaType: "series",
-                        ids: card.ids,
-                        title: card.title,
-                        year: card.year
-                    )
-                }
-            } else {
-                let nextWatched = !(card.progress?.watched ?? false)
-                try await client.setWatched(
-                    watched: nextWatched,
-                    mediaType: "movie",
-                    ids: card.ids,
-                    title: card.title,
-                    year: card.year
-                )
+            if try await MediaCardMutator.toggleWatched(
+                for: card,
+                watched: nextWatched,
+                preferSeriesEpisodeTarget: true,
+                sessionStore: sessionStore
+            ) {
+                await markLocalMutationAndRevalidate()
             }
-            await markLocalMutationAndRevalidate()
         } catch {
             showMutationError(error)
         }

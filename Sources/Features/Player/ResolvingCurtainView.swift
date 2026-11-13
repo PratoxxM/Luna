@@ -17,7 +17,7 @@ struct ResolvingCurtainView: View {
                 CachedArtworkView(
                     url: backdropURL,
                     client: client,
-                    maxPixelSize: 1920,
+                    maxPixelSize: 480,
                     placeholderSymbol: "film",
                     contentMode: .fill
                 )

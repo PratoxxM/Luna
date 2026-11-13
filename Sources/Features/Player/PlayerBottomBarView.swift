@@ -129,6 +129,7 @@ private struct EndsAtAndFormatLeafView: View {
     let formatSummary: String
 
     @State private var currentTime: Double = 0
+    @State private var lastTimeBucket: Int = -1
 
     private static let formatter: DateFormatter = {
         let f = DateFormatter()
@@ -149,7 +150,13 @@ private struct EndsAtAndFormatLeafView: View {
             .font(.callout.weight(.medium).monospacedDigit())
             .foregroundStyle(LunaTheme.muted)
             .lineLimit(1)
-            .onReceive(engine.clock.$currentTime) { currentTime = $0 }
+            .onReceive(engine.clock.$currentTime) { t in
+                let bucket = Int(max(0, t) / 5.0)
+                if bucket != lastTimeBucket {
+                    lastTimeBucket = bucket
+                    currentTime = t
+                }
+            }
     }
 }
 
@@ -160,16 +167,22 @@ private struct ActiveChapterLabelLeafView: View {
     @State private var currentTime: Double = 0
 
     var body: some View {
-        if let active = chapters.first(where: { currentTime >= $0.startSeconds && currentTime < $0.endSeconds }) {
-            Text("· \(active.title)")
-                .font(.callout.weight(.medium))
-                .foregroundStyle(LunaTheme.muted)
-                .lineLimit(1)
-                .onReceive(engine.clock.$currentTime) { currentTime = $0 }
-        } else {
-            Color.clear
-                .frame(width: 1, height: 1)
-                .onReceive(engine.clock.$currentTime) { currentTime = $0 }
+        Group {
+            if let active = chapters.first(where: { currentTime >= $0.startSeconds && currentTime < $0.endSeconds }) {
+                Text("· \(active.title)")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(LunaTheme.muted)
+                    .lineLimit(1)
+            } else {
+                Color.clear
+                    .frame(width: 1, height: 1)
+            }
+        }
+        .onReceive(engine.clock.$currentTime) { t in
+            guard !chapters.isEmpty else { return }
+            if abs(t - currentTime) >= 0.5 || t < 1.0 {
+                currentTime = t
+            }
         }
     }
 }

@@ -64,8 +64,12 @@ struct PairingOnboardingView: View {
             bonjour.stop()
         }
         .onChange(of: bonjour.servers) { _, discovered in
-            if selectedBaseURL == nil, pairingInfo == nil, let first = discovered.first, !showManualInput {
-                startPairing(against: first.baseURL)
+            if selectedBaseURL == nil,
+               pairingInfo == nil,
+               discovered.count == 1,
+               let onlyServer = discovered.first,
+               !showManualInput {
+                startPairing(against: onlyServer.baseURL)
             }
         }
     }

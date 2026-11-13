@@ -345,10 +345,8 @@ struct PlayerTopDrawerView: View {
                                         onClose()
                                         return
                                     }
+                                    viewModel.triggerSourceSwitch(to: cand.candidateId)
                                     onClose()
-                                    Task {
-                                        await viewModel.switchSource(to: cand.candidateId)
-                                    }
                                 }
                             }
                         }

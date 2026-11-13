@@ -27,6 +27,8 @@ private enum LibrarySectionTab: String, CaseIterable, Identifiable, Sendable {
 struct LibraryHubView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
 
+    let isActiveTab: Bool
+
     @State private var activeSection: LibrarySectionTab = .watchlist
     @State private var mediaTypeFilter: String = "all"
     @State private var localTierFilter: String = "all"
@@ -39,10 +41,16 @@ struct LibraryHubView: View {
     @State private var isLoading: Bool = true
     @State private var isLoadingMoreLocal: Bool = false
     @State private var errorMessage: String?
+    @State private var mutationErrorBanner: String?
     @State private var lastSeenRefreshNonce: Int = -1
+    @State private var mutationBannerTask: Task<Void, Never>?
 
     @State private var selectedCard: TvMediaCard?
     @State private var selectedCustomList: TvCustomListSummary?
+
+    init(isActiveTab: Bool = true) {
+        self.isActiveTab = isActiveTab
+    }
 
     private let pageSize = 36
     private let columns = [
@@ -59,6 +67,12 @@ struct LibraryHubView: View {
 
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 22) {
+                if let mutationErrorBanner {
+                    TransientErrorBanner(message: mutationErrorBanner)
+                        .padding(.horizontal, LunaTheme.horizontalGutter)
+                        .padding(.top, 14)
+                }
+
                 Text("Mitt bibliotek")
                     .font(.title2.weight(.bold))
                     .foregroundStyle(.white)
@@ -155,9 +169,17 @@ struct LibraryHubView: View {
             await loadLibrary()
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
-            guard newNonce != lastSeenRefreshNonce else { return }
+            guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
             lastSeenRefreshNonce = newNonce
             Task { await loadLibrary() }
+        }
+        .onChange(of: isActiveTab) { _, active in
+            guard active, lastSeenRefreshNonce != sessionStore.homeRefreshNonce else { return }
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
+            Task { await loadLibrary() }
+        }
+        .onDisappear {
+            mutationBannerTask?.cancel()
         }
     }
 
@@ -297,43 +319,33 @@ struct LibraryHubView: View {
                         card: card,
                         client: client,
                         width: 244,
-                        showStorageBadge: activeSection == .local
-                    ) {
-                        selectedCard = card
-                    }
-                    .contextMenu {
-                        Button {
+                        showStorageBadge: activeSection == .local,
+                        onSelect: {
                             selectedCard = card
-                        } label: {
-                            Label("Åpne detaljer", systemImage: "info.circle")
+                        },
+                        onPlayShortcut: {
+                            MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
                         }
-
-                        Button {
-                            Task { await toggleWatched(card) }
-                        } label: {
-                            Label(
-                                card.progress?.watched == true ? "Marker som usett" : "Marker som sett",
-                                systemImage: card.progress?.watched == true ? "eye.slash" : "checkmark.circle"
-                            )
-                        }
-
-                        Button {
-                            Task { await toggleFavorite(card) }
-                        } label: {
-                            Label(
-                                card.isFavorite == true ? "Fjern favoritt" : "Marker som favoritt",
-                                systemImage: card.isFavorite == true ? "star.slash" : "star.fill"
-                            )
-                        }
-
-                        Button {
-                            Task { await toggleWatchlist(card) }
-                        } label: {
-                            Label(
-                                card.inWatchlist == true ? "Fjern fra huskeliste" : "Legg til i huskeliste",
-                                systemImage: card.inWatchlist == true ? "bookmark.slash" : "bookmark"
-                            )
-                        }
+                    )
+                    .contextMenu {
+                        StandardPosterContextMenuItems(
+                            card: card,
+                            onPlay: {
+                                MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
+                            },
+                            onOpenDetails: {
+                                selectedCard = card
+                            },
+                            onToggleWatched: {
+                                Task { await toggleWatched(card) }
+                            },
+                            onToggleWatchlist: {
+                                Task { await toggleWatchlist(card) }
+                            },
+                            onToggleFavorite: {
+                                Task { await toggleFavorite(card) }
+                            }
+                        )
                     }
                     .onAppear {
                         if activeSection == .local,
@@ -429,6 +441,16 @@ struct LibraryHubView: View {
         localHasMore = res.localHasMore ?? false
     }
 
+    private func showMutationError(_ error: Error) {
+        mutationBannerTask?.cancel()
+        mutationErrorBanner = "Kunne ikke lagre endring: \(error.localizedDescription)"
+        mutationBannerTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            mutationErrorBanner = nil
+        }
+    }
+
     private func markLocalMutationAndReload() async {
         lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
         sessionStore.notifyContentMutated()
@@ -436,39 +458,35 @@ struct LibraryHubView: View {
     }
 
     private func toggleWatchlist(_ card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
-        try? await client.setWatchlist(
-            listed: !(card.inWatchlist ?? false),
-            mediaType: card.mediaType,
-            ids: card.ids,
-            title: card.title,
-            year: card.year
-        )
-        await markLocalMutationAndReload()
+        let nextListed = !(card.inWatchlist ?? false)
+        do {
+            if try await MediaCardMutator.setWatchlist(for: card, listed: nextListed, sessionStore: sessionStore) {
+                await markLocalMutationAndReload()
+            }
+        } catch {
+            showMutationError(error)
+        }
     }
 
     private func toggleFavorite(_ card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
-        try? await client.setFavorite(
-            favorite: !(card.isFavorite ?? false),
-            mediaType: card.mediaType,
-            ids: card.ids,
-            title: card.title,
-            year: card.year
-        )
-        await markLocalMutationAndReload()
+        let nextFavorite = !(card.isFavorite ?? false)
+        do {
+            if try await MediaCardMutator.setFavorite(for: card, favorite: nextFavorite, sessionStore: sessionStore) {
+                await markLocalMutationAndReload()
+            }
+        } catch {
+            showMutationError(error)
+        }
     }
 
     private func toggleWatched(_ card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
         let nextWatched = !(card.progress?.watched ?? false)
-        try? await client.setWatched(
-            watched: nextWatched,
-            mediaType: card.mediaType,
-            ids: card.ids,
-            title: card.title,
-            year: card.year
-        )
-        await markLocalMutationAndReload()
+        do {
+            if try await MediaCardMutator.toggleWatched(for: card, watched: nextWatched, sessionStore: sessionStore) {
+                await markLocalMutationAndReload()
+            }
+        } catch {
+            showMutationError(error)
+        }
     }
 }

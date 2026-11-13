@@ -357,6 +357,18 @@ public struct TvRoomDefinition: Codable, Identifiable, Equatable, Sendable {
     public let description: String?
 
     public var id: String { roomName }
+
+    public init(
+        roomName: String,
+        hardwareProfile: String,
+        label: String? = nil,
+        description: String? = nil
+    ) {
+        self.roomName = roomName
+        self.hardwareProfile = hardwareProfile
+        self.label = label
+        self.description = description
+    }
 }
 
 public struct TvServerBootstrapInfo: Codable, Equatable, Sendable {

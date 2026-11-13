@@ -386,25 +386,3 @@ public struct CachedArtworkView: View {
         }
     }
 }
-
-/// Backwards-compatible wrapper used by existing views.
-struct MediaArtworkImage: View {
-    let url: URL?
-    let placeholderSymbol: String
-    var client: MediaOSClient? = nil
-    var maxPixelSize: Int = 720
-    var blurHash: String? = nil
-    var dominantColor: String? = nil
-
-    var body: some View {
-        CachedArtworkView(
-            url: url,
-            client: client,
-            maxPixelSize: maxPixelSize,
-            blurHash: blurHash,
-            dominantColor: dominantColor,
-            placeholderSymbol: placeholderSymbol,
-            contentMode: .fill
-        )
-    }
-}

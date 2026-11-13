@@ -47,4 +47,28 @@ final class ChapterClassificationTests: XCTestCase {
         XCTAssertEqual(merged[2].endSeconds, 1440)
         XCTAssertEqual(merged[2].kind, .credits)
     }
+
+    func testMergeRawSortsEngineChaptersAndClampsToMediaDuration() {
+        let engineChapters = [
+            RawEngineChapter(id: 2, name: "ED", startSeconds: 1390, durationSeconds: 200),
+            RawEngineChapter(id: 1, name: "Opening", startSeconds: 85, durationSeconds: 0),
+        ]
+        let probes = [
+            TvProbeChapter(index: 0, idString: "op", title: "OP", startSeconds: 85.4, endSeconds: 175, kind: "intro")
+        ]
+
+        let merged = PlaybackChapter.mergeRaw(
+            probeChapters: probes,
+            engineChapters: engineChapters,
+            mediaDuration: 1440
+        )
+        XCTAssertEqual(merged.count, 2)
+        XCTAssertEqual(merged[0].title, "Opening")
+        XCTAssertEqual(merged[0].kind, .intro)
+        XCTAssertEqual(merged[0].endSeconds, 1390, accuracy: 0.1)
+
+        XCTAssertEqual(merged[1].title, "ED")
+        XCTAssertEqual(merged[1].endSeconds, 1440, accuracy: 0.1)
+        XCTAssertEqual(merged[1].kind, .credits)
+    }
 }

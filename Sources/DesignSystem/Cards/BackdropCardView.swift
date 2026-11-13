@@ -45,7 +45,7 @@ public struct BackdropCardView: View {
                 CachedArtworkView(
                     url: artworkURL,
                     client: client,
-                    maxPixelSize: 1280,
+                    maxPixelSize: 960,
                     blurHash: card.blurHash,
                     dominantColor: card.dominantColor,
                     placeholderSymbol: variant == .upcomingEpisode ? "calendar.badge.clock" : "play.tv",
@@ -116,11 +116,15 @@ public struct BackdropCardView: View {
         }
         .buttonStyle(.card)
         .focused($isFocused)
+        .onPlayPauseCommand {
+            if variant == .continueWatching {
+                onPrimaryAction()
+            }
+        }
         .onChange(of: isFocused) { _, focused in
             if focused {
                 ambient.reportFocus(
                     dominantColor: card.dominantColor,
-                    backdropURL: artworkURL,
                     blurHash: card.blurHash
                 )
             }

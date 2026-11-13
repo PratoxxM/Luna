@@ -75,6 +75,20 @@ public struct TvPairedDeviceInfo: Codable, Equatable, Sendable {
     public let roomName: String
     public let hardwareProfile: String
     public let overrides: TvDeviceOverrides?
+
+    public init(
+        deviceId: String,
+        deviceName: String,
+        roomName: String,
+        hardwareProfile: String,
+        overrides: TvDeviceOverrides? = nil
+    ) {
+        self.deviceId = deviceId
+        self.deviceName = deviceName
+        self.roomName = roomName
+        self.hardwareProfile = hardwareProfile
+        self.overrides = overrides
+    }
 }
 
 public struct TvPairingPollResponse: Codable, Equatable, Sendable {

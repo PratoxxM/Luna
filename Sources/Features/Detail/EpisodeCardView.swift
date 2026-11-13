@@ -22,7 +22,7 @@ struct EpisodeCardView: View {
                     CachedArtworkView(
                         url: stillURL,
                         client: client,
-                        maxPixelSize: 1280,
+                        maxPixelSize: 896,
                         placeholderSymbol: upcoming ? "calendar" : "play.tv",
                         contentMode: .fill
                     )
@@ -80,6 +80,11 @@ struct EpisodeCardView: View {
             }
             .buttonStyle(.card)
             .focused($isFocused)
+            .onPlayPauseCommand {
+                if !upcoming {
+                    onPlay()
+                }
+            }
             .contextMenu {
                 Button(action: onToggleWatched) {
                     Label(

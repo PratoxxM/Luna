@@ -44,12 +44,7 @@ struct SearchView: View {
                 .padding(.top, 18)
 
                 if let mutationErrorBanner {
-                    Text(mutationErrorBanner)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(LunaTheme.amber)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(LunaTheme.amber.opacity(0.14), in: Capsule())
+                    TransientErrorBanner(message: mutationErrorBanner)
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                 }
 
@@ -133,34 +128,30 @@ struct SearchView: View {
                                     card: card,
                                     client: client,
                                     width: 244,
-                                    showStorageBadge: true
-                                ) {
-                                    selectedCard = card
-                                }
-                                .contextMenu {
-                                    Button {
+                                    showStorageBadge: true,
+                                    onSelect: {
                                         selectedCard = card
-                                    } label: {
-                                        Label("Åpne detaljer", systemImage: "info.circle")
+                                    },
+                                    onPlayShortcut: {
+                                        MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
                                     }
-
-                                    Button {
-                                        Task { await toggleWatchlist(card) }
-                                    } label: {
-                                        Label(
-                                            card.inWatchlist == true ? "Fjern fra huskeliste" : "Legg til i huskeliste",
-                                            systemImage: card.inWatchlist == true ? "bookmark.slash" : "bookmark"
-                                        )
-                                    }
-
-                                    Button {
-                                        Task { await toggleFavorite(card) }
-                                    } label: {
-                                        Label(
-                                            card.isFavorite == true ? "Fjern favoritt" : "Marker som favoritt",
-                                            systemImage: card.isFavorite == true ? "star.slash" : "star.fill"
-                                        )
-                                    }
+                                )
+                                .contextMenu {
+                                    StandardPosterContextMenuItems(
+                                        card: card,
+                                        onPlay: {
+                                            MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
+                                        },
+                                        onOpenDetails: {
+                                            selectedCard = card
+                                        },
+                                        onToggleWatchlist: {
+                                            Task { await toggleWatchlist(card) }
+                                        },
+                                        onToggleFavorite: {
+                                            Task { await toggleFavorite(card) }
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -264,23 +255,15 @@ struct SearchView: View {
     }
 
     private func toggleWatchlist(_ card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
         let previous = card.inWatchlist
         let nextListed = !(card.inWatchlist ?? false)
         if let idx = results.firstIndex(where: { $0.id == card.id }) {
             results[idx].inWatchlist = nextListed
         }
         do {
-            try await client.setWatchlist(
-                listed: nextListed,
-                mediaType: card.mediaType,
-                ids: card.ids,
-                title: card.title,
-                year: card.year
-            )
-            sessionStore.notifyContentMutated()
-        } catch MediaOSError.unauthorized {
-            sessionStore.unpairDevice()
+            if try await MediaCardMutator.setWatchlist(for: card, listed: nextListed, sessionStore: sessionStore) {
+                sessionStore.notifyContentMutated()
+            }
         } catch {
             if let idx = results.firstIndex(where: { $0.id == card.id }) {
                 results[idx].inWatchlist = previous
@@ -290,23 +273,15 @@ struct SearchView: View {
     }
 
     private func toggleFavorite(_ card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
         let previous = card.isFavorite
         let nextFavorite = !(card.isFavorite ?? false)
         if let idx = results.firstIndex(where: { $0.id == card.id }) {
             results[idx].isFavorite = nextFavorite
         }
         do {
-            try await client.setFavorite(
-                favorite: nextFavorite,
-                mediaType: card.mediaType,
-                ids: card.ids,
-                title: card.title,
-                year: card.year
-            )
-            sessionStore.notifyContentMutated()
-        } catch MediaOSError.unauthorized {
-            sessionStore.unpairDevice()
+            if try await MediaCardMutator.setFavorite(for: card, favorite: nextFavorite, sessionStore: sessionStore) {
+                sessionStore.notifyContentMutated()
+            }
         } catch {
             if let idx = results.firstIndex(where: { $0.id == card.id }) {
                 results[idx].isFavorite = previous

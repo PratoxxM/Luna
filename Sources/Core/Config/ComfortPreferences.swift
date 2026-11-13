@@ -212,6 +212,7 @@ public enum LowResUpscaleMode: String, CaseIterable, Identifiable, Sendable {
 public final class ComfortPreferences: ObservableObject {
     @Published public var hdrSubtitlePreset: HDRSubtitlePreset {
         didSet {
+            guard oldValue != hdrSubtitlePreset else { return }
             defaults.set(hdrSubtitlePreset.rawValue, forKey: SideloadSafeStorage.hdrSubtitlePresetKey)
             notifyChanged()
         }
@@ -219,6 +220,7 @@ public final class ComfortPreferences: ObservableObject {
 
     @Published public var subtitleFontSize: SubtitleFontSizePreset {
         didSet {
+            guard oldValue != subtitleFontSize else { return }
             defaults.set(subtitleFontSize.scaleFactor, forKey: SideloadSafeStorage.subtitleFontScaleKey)
             notifyChanged()
         }
@@ -226,6 +228,7 @@ public final class ComfortPreferences: ObservableObject {
 
     @Published public var subtitleBoxOpacity: SubtitleBoxOpacityPreset {
         didSet {
+            guard oldValue != subtitleBoxOpacity else { return }
             defaults.set(subtitleBoxOpacity.rawValue, forKey: SideloadSafeStorage.subtitleBoxOpacityKey)
             notifyChanged()
         }
@@ -233,6 +236,7 @@ public final class ComfortPreferences: ObservableObject {
 
     @Published public var dualLayerOverride: DualLayerOverrideMode {
         didSet {
+            guard oldValue != dualLayerOverride else { return }
             defaults.set(dualLayerOverride.rawValue, forKey: SideloadSafeStorage.dualLayerOverrideKey)
             notifyChanged()
         }
@@ -240,6 +244,7 @@ public final class ComfortPreferences: ObservableObject {
 
     @Published public var speakerLayoutOverride: SpeakerLayoutOverrideMode {
         didSet {
+            guard oldValue != speakerLayoutOverride else { return }
             defaults.set(speakerLayoutOverride.rawValue, forKey: SideloadSafeStorage.speakerLayoutOverrideKey)
             notifyChanged()
         }
@@ -247,6 +252,7 @@ public final class ComfortPreferences: ObservableObject {
 
     @Published public var autoPlayNextEpisode: Bool {
         didSet {
+            guard oldValue != autoPlayNextEpisode else { return }
             defaults.set(autoPlayNextEpisode, forKey: SideloadSafeStorage.autoPlayNextEpisodeKey)
             notifyChanged()
         }
@@ -254,6 +260,7 @@ public final class ComfortPreferences: ObservableObject {
 
     @Published public var smartNordicSubtitleRule: Bool {
         didSet {
+            guard oldValue != smartNordicSubtitleRule else { return }
             defaults.set(smartNordicSubtitleRule, forKey: SideloadSafeStorage.smartNordicSubtitleRuleKey)
             notifyChanged()
         }
@@ -261,12 +268,14 @@ public final class ComfortPreferences: ObservableObject {
 
     @Published public var showNerdHUD: Bool {
         didSet {
+            guard oldValue != showNerdHUD else { return }
             defaults.set(showNerdHUD, forKey: SideloadSafeStorage.showNerdHUDKey)
         }
     }
 
     @Published public var lowResUpscaleMode: LowResUpscaleMode {
         didSet {
+            guard oldValue != lowResUpscaleMode else { return }
             defaults.set(lowResUpscaleMode.rawValue, forKey: SideloadSafeStorage.lowResUpscaleModeKey)
         }
     }
@@ -322,25 +331,31 @@ public final class ComfortPreferences: ObservableObject {
         suppressSync = true
         defer { suppressSync = false }
 
-        if let p = ov.hdrSubtitlePreset, let parsed = HDRSubtitlePreset(rawValue: p) {
+        if let p = ov.hdrSubtitlePreset, let parsed = HDRSubtitlePreset(rawValue: p), parsed != hdrSubtitlePreset {
             hdrSubtitlePreset = parsed
         }
         if let s = ov.subtitleFontScale {
-            subtitleFontSize = SubtitleFontSizePreset.fromScale(s)
+            let parsed = SubtitleFontSizePreset.fromScale(s)
+            if parsed != subtitleFontSize {
+                subtitleFontSize = parsed
+            }
         }
         if let boxAlpha = ov.subtitleBoxOpacity {
-            subtitleBoxOpacity = SubtitleBoxOpacityPreset.fromAlpha(boxAlpha)
+            let parsed = SubtitleBoxOpacityPreset.fromAlpha(boxAlpha)
+            if parsed != subtitleBoxOpacity {
+                subtitleBoxOpacity = parsed
+            }
         }
-        if let dl = ov.dualLayerOverride, let parsed = DualLayerOverrideMode(rawValue: dl) {
+        if let dl = ov.dualLayerOverride, let parsed = DualLayerOverrideMode(rawValue: dl), parsed != dualLayerOverride {
             dualLayerOverride = parsed
         }
-        if let spk = ov.speakerLayoutOverride, let parsed = SpeakerLayoutOverrideMode(rawValue: spk) {
+        if let spk = ov.speakerLayoutOverride, let parsed = SpeakerLayoutOverrideMode(rawValue: spk), parsed != speakerLayoutOverride {
             speakerLayoutOverride = parsed
         }
-        if let autoNext = ov.autoPlayNextEpisode {
+        if let autoNext = ov.autoPlayNextEpisode, autoNext != autoPlayNextEpisode {
             autoPlayNextEpisode = autoNext
         }
-        if let smartRule = ov.smartNordicSubtitleRule {
+        if let smartRule = ov.smartNordicSubtitleRule, smartRule != smartNordicSubtitleRule {
             smartNordicSubtitleRule = smartRule
         }
     }
@@ -372,7 +387,7 @@ public final class ComfortPreferences: ObservableObject {
                 dialogueGainDB: 3.5,
                 compressor: .night,
                 loudnessTargetLUFS: -20.0,
-                lfeMixDB: nil
+                lfeMixDB: -6.0
             )
         }
     }
@@ -380,177 +395,5 @@ public final class ComfortPreferences: ObservableObject {
     private func notifyChanged() {
         guard !suppressSync else { return }
         onSyncRequested?(toDeviceOverrides())
-    }
-}
-
-public struct SmartTrackDescriptor: Identifiable, Equatable, Sendable {
-    public let id: Int
-    public let name: String
-    public let codec: String
-    public let language: String?
-    public let isForced: Bool
-    public let isHearingImpaired: Bool
-    public let isCommentary: Bool
-    public let isExternal: Bool
-    public let isDefault: Bool
-
-    public init(
-        id: Int,
-        name: String = "",
-        codec: String = "srt",
-        language: String? = nil,
-        isForced: Bool = false,
-        isHearingImpaired: Bool = false,
-        isCommentary: Bool = false,
-        isExternal: Bool = false,
-        isDefault: Bool = false
-    ) {
-        self.id = id
-        self.name = name
-        self.codec = codec
-        self.language = language
-        self.isForced = isForced
-        self.isHearingImpaired = isHearingImpaired
-        self.isCommentary = isCommentary
-        self.isExternal = isExternal
-        self.isDefault = isDefault
-    }
-
-    public init(track: TrackInfo) {
-        self.id = track.id
-        self.name = track.name
-        self.codec = track.codec
-        self.language = track.language
-        self.isForced = track.isForced
-        self.isHearingImpaired = track.isHearingImpaired
-        self.isCommentary = track.isCommentary
-        self.isExternal = track.isExternal
-        self.isDefault = track.isDefault
-    }
-}
-
-/// Automatic language comfort rules:
-/// - Rule A: Norwegian audio -> subtitles off (unless a Norwegian forced track exists).
-/// - Rule B: Foreign audio -> best Norwegian subtitle (non-SDH preferred, text preferred over bitmap),
-///   falling back to English if Norwegian is unavailable.
-public enum SmartTrackRuleEngine {
-    public enum Decision: Equatable, Sendable {
-        case clearSubtitles
-        case selectTrack(Int)
-        case keepCurrent
-    }
-
-    public static func evaluate(
-        activeAudio: TrackInfo?,
-        subtitleTracks: [TrackInfo]
-    ) -> Decision {
-        evaluate(
-            activeAudio: activeAudio.map(SmartTrackDescriptor.init(track:)),
-            subtitleTracks: subtitleTracks.map(SmartTrackDescriptor.init(track:))
-        )
-    }
-
-    public static func evaluate(
-        activeAudio: SmartTrackDescriptor?,
-        subtitleTracks: [SmartTrackDescriptor]
-    ) -> Decision {
-        guard let activeAudio else { return .keepCurrent }
-        let audioLang = normalizeLanguage(activeAudio.language, fallbackName: activeAudio.name)
-
-        // Rule A: Norwegian dialogue -> turn off full subtitles, keep forced translations only
-        if audioLang == "nob" {
-            if let forcedNo = subtitleTracks.first(where: {
-                isTrackForced($0) && normalizeLanguage($0.language, fallbackName: $0.name) == "nob"
-            }) {
-                return .selectTrack(forcedNo.id)
-            }
-            return .clearSubtitles
-        }
-
-        // Rule B: Foreign dialogue -> prefer Norwegian, fallback to English
-        if let bestNo = pickBestSubtitle(forLanguage: "nob", in: subtitleTracks) {
-            return .selectTrack(bestNo.id)
-        }
-        if let bestEn = pickBestSubtitle(forLanguage: "eng", in: subtitleTracks) {
-            return .selectTrack(bestEn.id)
-        }
-        return .keepCurrent
-    }
-
-    public static func isTrackForced(_ track: TrackInfo) -> Bool {
-        isTrackForced(SmartTrackDescriptor(track: track))
-    }
-
-    public static func isTrackForced(_ track: SmartTrackDescriptor) -> Bool {
-        if track.isForced { return true }
-        let lower = track.name.lowercased()
-        guard !lower.isEmpty else { return false }
-        return lower.range(of: #"\b(?:forced|tvungen)\b"#, options: .regularExpression) != nil
-    }
-
-    public static func normalizeLanguage(_ rawCode: String?, fallbackName: String = "") -> String? {
-        let code = (rawCode ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if ["no", "nb", "nn", "nor", "nob", "nno", "norwegian", "norsk", "bokmål", "nynorsk"].contains(code) {
-            return "nob"
-        }
-        if ["en", "eng", "english", "engelsk"].contains(code) {
-            return "eng"
-        }
-        if ["sv", "swe", "swedish", "svensk"].contains(code) {
-            return "swe"
-        }
-        if ["da", "dan", "danish", "dansk"].contains(code) {
-            return "dan"
-        }
-
-        let nameLower = fallbackName.lowercased()
-        if nameLower.contains("norsk") || nameLower.contains("norwegian") || nameLower.contains("bokmål") || nameLower.contains("nynorsk") {
-            return "nob"
-        }
-        if nameLower.contains("english") || nameLower.contains("engelsk") {
-            return "eng"
-        }
-        return code.isEmpty ? nil : code
-    }
-
-    private static func pickBestSubtitle(forLanguage targetLang: String, in tracks: [SmartTrackDescriptor]) -> SmartTrackDescriptor? {
-        let candidates = tracks.filter {
-            normalizeLanguage($0.language, fallbackName: $0.name) == targetLang && !$0.isCommentary
-        }
-        guard !candidates.isEmpty else { return nil }
-
-        return candidates.max { a, b in
-            scoreSubtitle(a) < scoreSubtitle(b)
-        }
-    }
-
-    private static func scoreSubtitle(_ track: SmartTrackDescriptor) -> Int {
-        var score = 0
-        // Full dialogue subtitles strongly beat forced-only tracks for foreign audio
-        if !isTrackForced(track) {
-            score += 100
-        }
-        // Clean standard captions beat SDH/HI when both exist
-        if !track.isHearingImpaired && !isNameSDH(track.name) {
-            score += 40
-        }
-        // Crisp scalable text subtitles (.srt / ASS) slightly beat bitmap PGS when both exist
-        let codecLower = track.codec.lowercased()
-        let isBitmap = codecLower.contains("pgs") || codecLower.contains("dvd") || codecLower.contains("dvb")
-        if !isBitmap {
-            score += 18
-        }
-        if track.isExternal {
-            score += 8
-        }
-        if track.isDefault {
-            score += 4
-        }
-        return score
-    }
-
-    private static func isNameSDH(_ name: String) -> Bool {
-        let lower = name.lowercased()
-        return lower.contains("sdh") || lower.contains("hearing") || lower.contains("cc")
     }
 }

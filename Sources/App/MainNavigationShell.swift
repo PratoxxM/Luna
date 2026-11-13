@@ -30,7 +30,8 @@ struct MainNavigationShell: View {
                     HomeView(
                         initialServerHost: sessionStore.serverBaseURL?.host,
                         initialRoomName: sessionStore.roomName,
-                        initialHardwareProfile: sessionStore.effectiveHardwareProfile
+                        initialHardwareProfile: sessionStore.effectiveHardwareProfile,
+                        isActiveTab: selectedTab == .home
                     )
                 }
                 .tabItem {
@@ -39,7 +40,11 @@ struct MainNavigationShell: View {
                 .tag(MainNavigationTab.home)
 
                 NavigationStack {
-                    CatalogBrowseView(mediaType: "movie", initialGenre: nil)
+                    CatalogBrowseView(
+                        mediaType: "movie",
+                        initialGenre: nil,
+                        isActiveTab: selectedTab == .movies
+                    )
                 }
                 .tabItem {
                     Label("Filmer", systemImage: "film")
@@ -47,7 +52,11 @@ struct MainNavigationShell: View {
                 .tag(MainNavigationTab.movies)
 
                 NavigationStack {
-                    CatalogBrowseView(mediaType: "series", initialGenre: nil)
+                    CatalogBrowseView(
+                        mediaType: "series",
+                        initialGenre: nil,
+                        isActiveTab: selectedTab == .series
+                    )
                 }
                 .tabItem {
                     Label("Serier", systemImage: "tv")
@@ -55,7 +64,7 @@ struct MainNavigationShell: View {
                 .tag(MainNavigationTab.series)
 
                 NavigationStack {
-                    LibraryHubView()
+                    LibraryHubView(isActiveTab: selectedTab == .library)
                 }
                 .tabItem {
                     Label("Mitt bibliotek", systemImage: "books.vertical.fill")
@@ -113,7 +122,7 @@ struct MainNavigationShell: View {
         lastBootstrapRefreshAt = Date()
         do {
             let boot = try await client.fetchBootstrap()
-            sessionStore.syncFromBootstrap(boot.device)
+            sessionStore.syncFromBootstrap(boot.device, defaultRooms: boot.defaultRooms)
         } catch MediaOSError.unauthorized {
             sessionStore.unpairDevice()
         } catch {

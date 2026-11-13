@@ -8,6 +8,7 @@ public struct PosterCardView: View {
     let width: CGFloat
     let showStorageBadge: Bool
     let onSelect: () -> Void
+    let onPlayShortcut: (() -> Void)?
 
     @FocusState private var isFocused: Bool
 
@@ -16,13 +17,15 @@ public struct PosterCardView: View {
         client: MediaOSClient?,
         width: CGFloat = 248,
         showStorageBadge: Bool = false,
-        onSelect: @escaping () -> Void
+        onSelect: @escaping () -> Void,
+        onPlayShortcut: (() -> Void)? = nil
     ) {
         self.card = card
         self.client = client
         self.width = width
         self.showStorageBadge = showStorageBadge
         self.onSelect = onSelect
+        self.onPlayShortcut = onPlayShortcut
     }
 
     private var height: CGFloat {
@@ -31,7 +34,6 @@ public struct PosterCardView: View {
 
     public var body: some View {
         let posterURL = client?.resolveArtworkURL(card.preferredPosterPath)
-        let ambientURL = client?.resolveArtworkURL(card.preferredLandscapePath)
         let pct = min(100.0, max(0.0, card.progress?.percent ?? 0))
 
         VStack(alignment: .leading, spacing: 10) {
@@ -104,6 +106,9 @@ public struct PosterCardView: View {
             }
             .buttonStyle(.card)
             .focused($isFocused)
+            .onPlayPauseCommand {
+                onPlayShortcut?()
+            }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(card.title)
@@ -123,7 +128,6 @@ public struct PosterCardView: View {
             if focused {
                 ambient.reportFocus(
                     dominantColor: card.dominantColor,
-                    backdropURL: ambientURL ?? posterURL,
                     blurHash: card.blurHash
                 )
             }
@@ -131,10 +135,14 @@ public struct PosterCardView: View {
     }
 
     private var subtitleText: String {
+        let meta = card.compactMetaLine
+        if !meta.isEmpty {
+            return meta
+        }
         if let year = card.year {
             return String(year)
         }
-        return card.compactMetaLine
+        return ""
     }
 
     private var storageBadgeLabel: String? {

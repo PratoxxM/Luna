@@ -5,6 +5,7 @@ struct CatalogBrowseView: View {
 
     let mediaType: String
     let initialGenre: TvGenreChip?
+    let isActiveTab: Bool
 
     @State private var selectedGenreSlug: String?
     @State private var selectedGenreLabel: String?
@@ -36,9 +37,10 @@ struct CatalogBrowseView: View {
         ("local_recent", "Lokalt hos oss", "internaldrive.fill")
     ]
 
-    init(mediaType: String, initialGenre: TvGenreChip?) {
+    init(mediaType: String, initialGenre: TvGenreChip?, isActiveTab: Bool = true) {
         self.mediaType = mediaType
         self.initialGenre = initialGenre
+        self.isActiveTab = isActiveTab
         _selectedGenreSlug = State(initialValue: initialGenre?.slug)
         _selectedGenreLabel = State(initialValue: initialGenre?.label)
     }
@@ -61,13 +63,7 @@ struct CatalogBrowseView: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
                 if let mutationErrorBanner {
-                    Text(mutationErrorBanner)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(LunaTheme.amber)
-                        .padding(.horizontal, 22)
-                        .padding(.vertical, 12)
-                        .background(LunaTheme.cinemaGlass, in: Capsule())
-                        .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.45), lineWidth: 1))
+                    TransientErrorBanner(message: mutationErrorBanner)
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                         .padding(.top, 14)
                 }
@@ -196,43 +192,33 @@ struct CatalogBrowseView: View {
                                 card: card,
                                 client: client,
                                 width: 244,
-                                showStorageBadge: localOnly || selectedSort == "local_recent"
-                            ) {
-                                selectedCard = card
-                            }
-                            .contextMenu {
-                                Button {
+                                showStorageBadge: localOnly || selectedSort == "local_recent",
+                                onSelect: {
                                     selectedCard = card
-                                } label: {
-                                    Label("Åpne detaljer", systemImage: "info.circle")
+                                },
+                                onPlayShortcut: {
+                                    MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
                                 }
-
-                                Button {
-                                    Task { await toggleWatched(card) }
-                                } label: {
-                                    Label(
-                                        card.progress?.watched == true ? "Marker som usett" : "Marker som sett",
-                                        systemImage: card.progress?.watched == true ? "eye.slash" : "checkmark.circle"
-                                    )
-                                }
-
-                                Button {
-                                    Task { await toggleWatchlist(card) }
-                                } label: {
-                                    Label(
-                                        card.inWatchlist == true ? "Fjern fra huskeliste" : "Legg til i huskeliste",
-                                        systemImage: card.inWatchlist == true ? "bookmark.slash" : "bookmark"
-                                    )
-                                }
-
-                                Button {
-                                    Task { await toggleFavorite(card) }
-                                } label: {
-                                    Label(
-                                        card.isFavorite == true ? "Fjern favoritt" : "Marker som favoritt",
-                                        systemImage: card.isFavorite == true ? "star.slash" : "star.fill"
-                                    )
-                                }
+                            )
+                            .contextMenu {
+                                StandardPosterContextMenuItems(
+                                    card: card,
+                                    onPlay: {
+                                        MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
+                                    },
+                                    onOpenDetails: {
+                                        selectedCard = card
+                                    },
+                                    onToggleWatched: {
+                                        Task { await toggleWatched(card) }
+                                    },
+                                    onToggleWatchlist: {
+                                        Task { await toggleWatchlist(card) }
+                                    },
+                                    onToggleFavorite: {
+                                        Task { await toggleFavorite(card) }
+                                    }
+                                )
                             }
                             .onAppear {
                                 if card.id == items.last?.id && hasMore && !isLoadingMore {
@@ -264,8 +250,13 @@ struct CatalogBrowseView: View {
             await loadFirstPage()
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
-            guard newNonce != lastSeenRefreshNonce else { return }
+            guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
             lastSeenRefreshNonce = newNonce
+            Task { await loadFirstPage() }
+        }
+        .onChange(of: isActiveTab) { _, active in
+            guard active, lastSeenRefreshNonce != sessionStore.homeRefreshNonce else { return }
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
             Task { await loadFirstPage() }
         }
         .onDisappear {
@@ -341,21 +332,15 @@ struct CatalogBrowseView: View {
     }
 
     private func toggleWatchlist(_ card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
         let nextListed = !(card.inWatchlist ?? false)
         if let idx = items.firstIndex(where: { $0.id == card.id }) {
             items[idx].inWatchlist = nextListed
         }
         do {
-            try await client.setWatchlist(
-                listed: nextListed,
-                mediaType: card.mediaType,
-                ids: card.ids,
-                title: card.title,
-                year: card.year
-            )
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
-            sessionStore.notifyContentMutated()
+            if try await MediaCardMutator.setWatchlist(for: card, listed: nextListed, sessionStore: sessionStore) {
+                lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+                sessionStore.notifyContentMutated()
+            }
         } catch {
             if let idx = items.firstIndex(where: { $0.id == card.id }) {
                 items[idx].inWatchlist = card.inWatchlist
@@ -365,21 +350,15 @@ struct CatalogBrowseView: View {
     }
 
     private func toggleFavorite(_ card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
         let nextFavorite = !(card.isFavorite ?? false)
         if let idx = items.firstIndex(where: { $0.id == card.id }) {
             items[idx].isFavorite = nextFavorite
         }
         do {
-            try await client.setFavorite(
-                favorite: nextFavorite,
-                mediaType: card.mediaType,
-                ids: card.ids,
-                title: card.title,
-                year: card.year
-            )
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
-            sessionStore.notifyContentMutated()
+            if try await MediaCardMutator.setFavorite(for: card, favorite: nextFavorite, sessionStore: sessionStore) {
+                lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+                sessionStore.notifyContentMutated()
+            }
         } catch {
             if let idx = items.firstIndex(where: { $0.id == card.id }) {
                 items[idx].isFavorite = card.isFavorite
@@ -389,7 +368,6 @@ struct CatalogBrowseView: View {
     }
 
     private func toggleWatched(_ card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
         let nextWatched = !(card.progress?.watched ?? false)
         let originalProgress = card.progress
         if let idx = items.firstIndex(where: { $0.id == card.id }) {
@@ -398,247 +376,18 @@ struct CatalogBrowseView: View {
             items[idx].progress = updated
         }
         do {
-            try await client.setWatched(
-                watched: nextWatched,
-                mediaType: card.mediaType,
-                ids: card.ids,
-                title: card.title,
-                year: card.year
-            )
-            if unwatchedOnly && nextWatched {
-                items.removeAll { $0.id == card.id }
+            if try await MediaCardMutator.toggleWatched(for: card, watched: nextWatched, sessionStore: sessionStore) {
+                if unwatchedOnly && nextWatched {
+                    items.removeAll { $0.id == card.id }
+                }
+                lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+                sessionStore.notifyContentMutated()
             }
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
-            sessionStore.notifyContentMutated()
         } catch {
             if let idx = items.firstIndex(where: { $0.id == card.id }) {
                 items[idx].progress = originalProgress
             }
             showMutationError(error)
-        }
-    }
-}
-
-/// Full-grid explorer for custom MediaLogg shelves or "Se alle" row links.
-struct CustomRowBrowseView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
-
-    let title: String
-    let pathOrRowId: String
-
-    @State private var items: [TvMediaCard] = []
-    @State private var hasMore: Bool = false
-    @State private var offset: Int = 0
-    @State private var isLoading: Bool = true
-    @State private var isLoadingMore: Bool = false
-    @State private var errorMessage: String?
-    @State private var selectedCard: TvMediaCard?
-    @State private var lastSeenRefreshNonce: Int = -1
-
-    private let pageSize = 36
-    private let columns = [
-        GridItem(.adaptive(minimum: 236, maximum: 272), spacing: 34)
-    ]
-
-    var body: some View {
-        let client = sessionStore.makeClient()
-
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 32) {
-                Text(title)
-                    .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.top, 28)
-
-                if isLoading && items.isEmpty {
-                    ProgressView()
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                        .padding(.vertical, 48)
-                } else if let errorMessage, items.isEmpty {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text(errorMessage)
-                            .foregroundStyle(LunaTheme.amber)
-                        LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                            Task { await loadInitial() }
-                        }
-                    }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                } else if items.isEmpty {
-                    Text("Denne listen har ingen titler ennå.")
-                        .foregroundStyle(LunaTheme.muted)
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                } else {
-                    LazyVGrid(columns: columns, spacing: 42) {
-                        ForEach(items) { card in
-                            PosterCardView(
-                                card: card,
-                                client: client,
-                                width: 244,
-                                showStorageBadge: true
-                            ) {
-                                selectedCard = card
-                            }
-                            .contextMenu {
-                                Button {
-                                    selectedCard = card
-                                } label: {
-                                    Label("Åpne detaljer", systemImage: "info.circle")
-                                }
-
-                                Button {
-                                    Task { await toggleCustomWatched(card) }
-                                } label: {
-                                    Label(
-                                        card.progress?.watched == true ? "Marker som usett" : "Marker som sett",
-                                        systemImage: card.progress?.watched == true ? "eye.slash" : "checkmark.circle"
-                                    )
-                                }
-
-                                Button {
-                                    Task { await toggleCustomWatchlist(card) }
-                                } label: {
-                                    Label(
-                                        card.inWatchlist == true ? "Fjern fra huskeliste" : "Legg til i huskeliste",
-                                        systemImage: card.inWatchlist == true ? "bookmark.slash" : "bookmark"
-                                    )
-                                }
-
-                                Button {
-                                    Task { await toggleCustomFavorite(card) }
-                                } label: {
-                                    Label(
-                                        card.isFavorite == true ? "Fjern favoritt" : "Marker som favoritt",
-                                        systemImage: card.isFavorite == true ? "star.slash" : "star.fill"
-                                    )
-                                }
-                            }
-                            .onAppear {
-                                if card.id == items.last?.id && hasMore && !isLoadingMore {
-                                    Task { await loadMore() }
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                }
-            }
-            .padding(.bottom, 72)
-        }
-        .navigationDestination(item: $selectedCard) { card in
-            MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
-        }
-        .task {
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            await loadInitial()
-        }
-        .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
-            guard newNonce != lastSeenRefreshNonce else { return }
-            lastSeenRefreshNonce = newNonce
-            Task { await loadInitial() }
-        }
-    }
-
-    private func loadInitial() async {
-        guard let client = sessionStore.makeClient() else { return }
-        isLoading = true
-        errorMessage = nil
-        offset = 0
-        do {
-            let res = try await client.fetchRow(pathOrRowId: pathOrRowId, offset: 0, limit: pageSize)
-            items = res.items
-            hasMore = res.hasMore
-            offset = res.items.count
-        } catch MediaOSError.unauthorized {
-            sessionStore.unpairDevice()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        isLoading = false
-    }
-
-    private func loadMore() async {
-        guard !isLoadingMore, hasMore, let client = sessionStore.makeClient() else { return }
-        isLoadingMore = true
-        defer { isLoadingMore = false }
-
-        if let res = try? await client.fetchRow(pathOrRowId: pathOrRowId, offset: offset, limit: pageSize) {
-            let existing = Set(items.map(\.id))
-            items.append(contentsOf: res.items.filter { !existing.contains($0.id) })
-            hasMore = res.hasMore
-            offset += res.items.count
-        }
-    }
-
-    private func toggleCustomWatchlist(_ card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
-        let nextVal = !(card.inWatchlist ?? false)
-        if let idx = items.firstIndex(where: { $0.id == card.id }) {
-            items[idx].inWatchlist = nextVal
-        }
-        do {
-            try await client.setWatchlist(
-                listed: nextVal,
-                mediaType: card.mediaType,
-                ids: card.ids,
-                title: card.title,
-                year: card.year
-            )
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
-            sessionStore.notifyContentMutated()
-        } catch {
-            if let idx = items.firstIndex(where: { $0.id == card.id }) {
-                items[idx].inWatchlist = card.inWatchlist
-            }
-        }
-    }
-
-    private func toggleCustomFavorite(_ card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
-        let nextVal = !(card.isFavorite ?? false)
-        if let idx = items.firstIndex(where: { $0.id == card.id }) {
-            items[idx].isFavorite = nextVal
-        }
-        do {
-            try await client.setFavorite(
-                favorite: nextVal,
-                mediaType: card.mediaType,
-                ids: card.ids,
-                title: card.title,
-                year: card.year
-            )
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
-            sessionStore.notifyContentMutated()
-        } catch {
-            if let idx = items.firstIndex(where: { $0.id == card.id }) {
-                items[idx].isFavorite = card.isFavorite
-            }
-        }
-    }
-
-    private func toggleCustomWatched(_ card: TvMediaCard) async {
-        guard let client = sessionStore.makeClient() else { return }
-        let nextVal = !(card.progress?.watched ?? false)
-        let original = card.progress
-        if let idx = items.firstIndex(where: { $0.id == card.id }) {
-            var updated = items[idx].progress ?? TvWatchProgress()
-            updated.watched = nextVal
-            items[idx].progress = updated
-        }
-        do {
-            try await client.setWatched(
-                watched: nextVal,
-                mediaType: card.mediaType,
-                ids: card.ids,
-                title: card.title,
-                year: card.year
-            )
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
-            sessionStore.notifyContentMutated()
-        } catch {
-            if let idx = items.firstIndex(where: { $0.id == card.id }) {
-                items[idx].progress = original
-            }
         }
     }
 }

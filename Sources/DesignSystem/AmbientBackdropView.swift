@@ -7,34 +7,33 @@ import SwiftUI
 @MainActor
 public final class AmbientBackdropController: ObservableObject {
     @Published public private(set) var dominantHex: String?
-    @Published public private(set) var backdropURL: URL?
     @Published public private(set) var blurHash: String?
 
     private var debounceTask: Task<Void, Never>?
 
     public init() {}
 
-    public func reportFocus(dominantColor: String?, backdropURL: URL?, blurHash: String?) {
+    public func reportFocus(dominantColor: String?, backdropURL: URL? = nil, blurHash: String?) {
+        _ = backdropURL
         debounceTask?.cancel()
         debounceTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled, let self else { return }
-            if self.dominantHex == dominantColor && self.backdropURL == backdropURL && self.blurHash == blurHash {
+            if self.dominantHex == dominantColor && self.blurHash == blurHash {
                 return
             }
             withAnimation(.easeOut(duration: 0.42)) {
                 self.dominantHex = dominantColor
-                self.backdropURL = backdropURL
                 self.blurHash = blurHash
             }
         }
     }
 
-    public func setImmediate(dominantColor: String?, backdropURL: URL?, blurHash: String?) {
+    public func setImmediate(dominantColor: String?, backdropURL: URL? = nil, blurHash: String?) {
+        _ = backdropURL
         debounceTask?.cancel()
         withAnimation(.easeOut(duration: 0.30)) {
             self.dominantHex = dominantColor
-            self.backdropURL = backdropURL
             self.blurHash = blurHash
         }
     }

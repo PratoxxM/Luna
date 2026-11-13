@@ -17,6 +17,7 @@ struct PlayerContainerView: View {
     @State private var seriesPromptDismissNonce: Int = 0
     @State private var dismissedNextForSessionID: String?
     @State private var hideBottomBarTask: Task<Void, Never>?
+    @State private var suspendedFatalErrorForDrawer: String? = nil
 
     @FocusState private var isCanvasFocused: Bool
     @Namespace private var playerFocusNamespace
@@ -230,12 +231,7 @@ struct PlayerContainerView: View {
                     viewModel: viewModel,
                     comfort: comfort,
                     selectedTab: $selectedDrawerTab,
-                    onClose: {
-                        withAnimation(.easeOut(duration: 0.22)) {
-                            isTopDrawerOpen = false
-                        }
-                        restoreCanvasFocusSoon()
-                    }
+                    onClose: closeTopDrawer
                 )
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .zIndex(6)
@@ -273,10 +269,7 @@ struct PlayerContainerView: View {
         .onPlayPauseCommand {
             guard !viewModel.isResolving else { return }
             if isTopDrawerOpen {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    isTopDrawerOpen = false
-                }
-                restoreCanvasFocusSoon()
+                closeTopDrawer()
             }
             if viewModel.isScrubbing {
                 viewModel.commitTouchScrub()
@@ -287,10 +280,7 @@ struct PlayerContainerView: View {
         }
         .onExitCommand {
             if isTopDrawerOpen {
-                withAnimation(.easeOut(duration: 0.22)) {
-                    isTopDrawerOpen = false
-                }
-                restoreCanvasFocusSoon()
+                closeTopDrawer()
             } else if viewModel.isScrubbing {
                 viewModel.cancelTouchScrub()
                 revealBottomBarTemporarily()
@@ -307,6 +297,11 @@ struct PlayerContainerView: View {
             }
         }
         .onAppear {
+            let store = sessionStore
+            viewModel.onUnauthorized = {
+                store.unpairDevice()
+                onDismiss()
+            }
             viewModel.start(request: initialRequest, client: client)
         }
         .onDisappear {
@@ -329,6 +324,20 @@ struct PlayerContainerView: View {
             showBottomBar = false
             isTopDrawerOpen = true
         }
+    }
+
+    private func closeTopDrawer() {
+        withAnimation(.easeOut(duration: 0.22)) {
+            isTopDrawerOpen = false
+        }
+        if let suspended = suspendedFatalErrorForDrawer {
+            suspendedFatalErrorForDrawer = nil
+            if !viewModel.isSwitchingSource && viewModel.fatalError == nil {
+                viewModel.fatalError = suspended
+                return
+            }
+        }
+        restoreCanvasFocusSoon()
     }
 
     private func revealBottomBarTemporarily() {
@@ -409,6 +418,7 @@ struct PlayerContainerView: View {
 
                 HStack(spacing: 20) {
                     LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise", prominence: .primaryAmber) {
+                        suspendedFatalErrorForDrawer = nil
                         let base = viewModel.currentRequest ?? initialRequest
                         let retryRequest = PlaybackLaunchRequest(
                             itemId: base.itemId,
@@ -425,12 +435,14 @@ struct PlayerContainerView: View {
 
                     if viewModel.activeSession != nil {
                         LunaPillButton("Velg annen kilde", systemImage: "arrow.triangle.2.circlepath", prominence: .glassPill) {
+                            suspendedFatalErrorForDrawer = message
                             viewModel.fatalError = nil
                             openTopDrawer(tab: .sourcesAndChapters)
                         }
                     }
 
                     LunaPillButton("Lukk", systemImage: "xmark", prominence: .subtleChip) {
+                        suspendedFatalErrorForDrawer = nil
                         closePlayer()
                     }
                 }

@@ -235,17 +235,10 @@ public actor ArtworkPipeline {
     public static let shared = ArtworkPipeline()
 
     private nonisolated let ramCache = ThreadSafeImageMemoryCache(totalCostLimit: 96 * 1024 * 1024)
-    private nonisolated let publicURLSession: URLSession = {
-        let cfg = URLSessionConfiguration.ephemeral
-        cfg.timeoutIntervalForRequest = 15
-        cfg.timeoutIntervalForResource = 45
-        cfg.httpMaximumConnectionsPerHost = 6
-        cfg.urlCache = nil
-        cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: cfg)
-    }()
     private var inflightTasks: [String: Task<CGImage?, Never>] = [:]
     private var inflightWaiters: [String: Set<UUID>] = [:]
+    private var rawFetchTasks: [String: Task<Data?, Never>] = [:]
+    private var rawFetchWaiters: [String: Int] = [:]
     private var writesSinceLastTrim: Int = 0
 
     private static nonisolated var imageCacheDirectoryURL: URL {
@@ -256,14 +249,27 @@ public actor ArtworkPipeline {
             .appendingPathComponent("img", isDirectory: true)
     }
 
-    public nonisolated static func cacheKey(for url: URL, maxPixelSize: Int) -> String {
+    public nonisolated static func rawIdentity(for url: URL) -> String {
         let pathPart: String
         if let query = url.query, !query.isEmpty {
             pathPart = "\(url.path)?\(query)"
         } else {
             pathPart = url.path
         }
-        return "\(pathPart)#px\(maxPixelSize)"
+        if pathPart.hasPrefix("/api/tv/v1") {
+            return pathPart
+        }
+        let scheme = url.scheme?.lowercased() ?? ""
+        let host = url.host?.lowercased() ?? ""
+        guard !host.isEmpty else { return pathPart }
+        if let port = url.port {
+            return "\(scheme)://\(host):\(port)\(pathPart)"
+        }
+        return "\(scheme)://\(host)\(pathPart)"
+    }
+
+    public nonisolated static func cacheKey(for url: URL, maxPixelSize: Int) -> String {
+        "\(rawIdentity(for: url))#px\(maxPixelSize)"
     }
 
     public nonisolated func memoryCachedImage(for url: URL, maxPixelSize: Int) -> CGImage? {
@@ -288,44 +294,18 @@ public actor ArtworkPipeline {
         if let existing = inflightTasks[key] {
             task = existing
         } else {
-            let diskFileURL = Self.diskFileURL(for: url)
+            let rawKey = Self.rawIdentity(for: url)
             let ramCacheRef = self.ramCache
-            let fallbackSession = self.publicURLSession
+            let pipeline = self
 
             let created = Task.detached(priority: .userInitiated) { () -> CGImage? in
-                guard !Task.isCancelled else { return nil }
-                let fm = FileManager.default
-                if let diskData = try? Data(contentsOf: diskFileURL),
-                   let decoded = Self.downsampleAndDecode(data: diskData, maxPixelSize: maxPixelSize) {
-                    if let attrs = try? fm.attributesOfItem(atPath: diskFileURL.path),
-                       let mtime = attrs[.modificationDate] as? Date {
-                        if Date().timeIntervalSince(mtime) > 3600 {
-                            try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: diskFileURL.path)
-                        }
-                    } else {
-                        try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: diskFileURL.path)
-                    }
-                    ramCacheRef.insert(decoded, forKey: key)
-                    return decoded
-                }
-                guard !Task.isCancelled else { return nil }
-
-                let fetchedData: Data?
-                if let client {
-                    fetchedData = (try? await client.fetchRawImageData(from: url))?.0
-                } else {
-                    fetchedData = (try? await fallbackSession.data(from: url))?.0
-                }
-                guard !Task.isCancelled else { return nil }
-
-                guard let data = fetchedData, !data.isEmpty,
+                guard !Task.isCancelled,
+                      let data = await pipeline.acquireRawData(url: url, rawKey: rawKey, client: client),
+                      !Task.isCancelled,
                       let decoded = Self.downsampleAndDecode(data: data, maxPixelSize: maxPixelSize) else {
                     return nil
                 }
-
                 ramCacheRef.insert(decoded, forKey: key)
-                try? fm.createDirectory(at: Self.imageCacheDirectoryURL, withIntermediateDirectories: true)
-                try? data.write(to: diskFileURL, options: .atomic)
                 return decoded
             }
             inflightTasks[key] = created
@@ -346,16 +326,76 @@ public actor ArtworkPipeline {
             inflightWaiters.removeValue(forKey: key)
         }
 
-        if result != nil {
-            writesSinceLastTrim += 1
-            if writesSinceLastTrim >= 28 {
-                writesSinceLastTrim = 0
-                Task.detached(priority: .utility) {
-                    Self.trimDiskCacheSynchronously(maxBytes: 115 * 1024 * 1024)
+        return result
+    }
+
+    private func acquireRawData(url: URL, rawKey: String, client: MediaOSClient?) async -> Data? {
+        rawFetchWaiters[rawKey, default: 0] += 1
+
+        let rawTask: Task<Data?, Never>
+        if let existing = rawFetchTasks[rawKey] {
+            rawTask = existing
+        } else {
+            let diskFileURL = Self.diskFileURL(for: url)
+            let externalSession = MediaOSSessionPool.shared.externalArtworkSession()
+            let pipeline = self
+
+            let created = Task.detached(priority: .userInitiated) { () -> Data? in
+                let fm = FileManager.default
+                if let diskData = try? Data(contentsOf: diskFileURL), !diskData.isEmpty {
+                    if let attrs = try? fm.attributesOfItem(atPath: diskFileURL.path),
+                       let mtime = attrs[.modificationDate] as? Date {
+                        if Date().timeIntervalSince(mtime) > 3600 {
+                            try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: diskFileURL.path)
+                        }
+                    } else {
+                        try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: diskFileURL.path)
+                    }
+                    return diskData
                 }
+
+                let fetchedData: Data?
+                if let client {
+                    fetchedData = (try? await client.fetchRawImageData(from: url))?.0
+                } else {
+                    fetchedData = (try? await externalSession.data(from: url))?.0
+                }
+                guard let data = fetchedData, !data.isEmpty else {
+                    return nil
+                }
+
+                try? fm.createDirectory(at: Self.imageCacheDirectoryURL, withIntermediateDirectories: true)
+                do {
+                    try data.write(to: diskFileURL, options: .atomic)
+                    await pipeline.recordDiskWriteCompleted()
+                } catch {
+                    // Best-effort disk cache write; still decode in-memory data
+                }
+                return data
+            }
+            rawFetchTasks[rawKey] = created
+            rawTask = created
+        }
+
+        let data = await rawTask.value
+        let remaining = (rawFetchWaiters[rawKey] ?? 1) - 1
+        if remaining <= 0 {
+            rawFetchWaiters.removeValue(forKey: rawKey)
+            rawFetchTasks.removeValue(forKey: rawKey)
+        } else {
+            rawFetchWaiters[rawKey] = remaining
+        }
+        return data
+    }
+
+    private func recordDiskWriteCompleted() {
+        writesSinceLastTrim += 1
+        if writesSinceLastTrim >= 28 {
+            writesSinceLastTrim = 0
+            Task.detached(priority: .utility) {
+                Self.trimDiskCacheSynchronously(maxBytes: 115 * 1024 * 1024)
             }
         }
-        return result
     }
 
     private func removeWaiter(_ waiterID: UUID, forKey key: String) {
@@ -407,13 +447,8 @@ public actor ArtworkPipeline {
     }
 
     private nonisolated static func diskFileURL(for url: URL) -> URL {
-        let rawIdentity: String
-        if let query = url.query, !query.isEmpty {
-            rawIdentity = "\(url.path)?\(query)"
-        } else {
-            rawIdentity = url.path
-        }
-        let digest = SHA256.hash(data: Data(rawIdentity.utf8))
+        let identity = rawIdentity(for: url)
+        let digest = SHA256.hash(data: Data(identity.utf8))
         let hex = digest.map { String(format: "%02x", $0) }.joined()
         return imageCacheDirectoryURL.appendingPathComponent("\(hex).img")
     }

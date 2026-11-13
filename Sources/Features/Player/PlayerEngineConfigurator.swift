@@ -70,14 +70,6 @@ extension PlayerViewModel {
         return activeSession?.hardwareProfile == "hdr10-512" ? "5.1.2" : "7.1.4"
     }
 
-    var activeFormatBadges: [String] {
-        var list: [String] = [videoFormatBadge, audioFormatBadge]
-        if let tierLabel = activeSession?.selectedCandidate.sourceBadgeLabel {
-            list.append(tierLabel)
-        }
-        return list
-    }
-
     // MARK: - AetherEngine LoadOptions
 
     static func buildLoadOptions(

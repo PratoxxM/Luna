@@ -1,6 +1,6 @@
 # Luna for tvOS
 
-**Luna** (`v2.2.4`) is a native SwiftUI tvOS media player built on [AetherEngine](https://github.com/superuser404notfound/AetherEngine) (`7.65.0`) for the MediaOS `/api/tv/v1` native TV engine.
+**Luna** (`v2.2.5`) is a native SwiftUI tvOS media player built on [AetherEngine](https://github.com/superuser404notfound/AetherEngine) (`7.65.0`) for the MediaOS `/api/tv/v1` native TV engine.
 
 ## Highlights
 
@@ -35,26 +35,27 @@ Luna/
 │   ├── App/                           # LunaApp (single @MainActor AetherEngine) & MainNavigationShell
 │   ├── Core/
 │   │   ├── Cache/                     # DiskSWRStore (0 ms /home JSON) & ArtworkPipeline (CGImage + BlurHash)
-│   │   ├── Config/                    # SideloadSafeStorage, ServerConfiguration & ComfortPreferences
+│   │   ├── Config/                    # SideloadSafeStorage, ServerConfiguration, ComfortPreferences & SmartTrackRuleEngine
 │   │   ├── Discovery/                 # NWBrowser Bonjour (_mediaos._tcp) discovery
 │   │   ├── Models/                    # Codable contracts for /api/tv/v1 (Home, Detail, Playback, Chapters)
-│   │   └── Networking/                # MediaOSClient (shared URLSession + ETag) & PlaybackResolveSocket
+│   │   └── Networking/                # MediaOSClient, MediaOSSessionPool & PlaybackResolveSocket
 │   ├── DesignSystem/                  # LunaTheme, AmbientBackdropView & isolated-@FocusState Cards/
 │   └── Features/
+│       ├── Shared/                    # MediaCardComponents (TransientErrorBanner, MediaCardMutator, StandardPosterContextMenuItems)
 │       ├── Onboarding/                # 6-digit Device Flow pairing UI
 │       ├── Home/                      # Hero-free HomeView & ShelfRowView
-│       ├── Browse/                    # CatalogBrowseView (genre explorer + Filmer/Serier filters)
+│       ├── Browse/                    # CatalogBrowseView & CustomRowBrowseView
 │       ├── Library/                   # LibraryHubView (Huskeliste, Favoritter & Lokalt NVMe/Arkiv)
-│       ├── Detail/                    # MediaDetailView, DetailPreResolveController, DetailCastStripView & SourcePickerSheetView
+│       ├── Detail/                    # MediaDetailView, DetailHeroHeaderView, DetailPreResolveController, DetailCastStripView & SourcePickerSheetView
 │       ├── Search/                    # Instant FTS5 & TMDB SearchView
-│       ├── Settings/                  # Room/profile switcher, DV/audio/upscaling overrides & cache controls
+│       ├── Settings/                  # Dynamic Room/profile switcher, DV/audio/upscaling overrides & cache controls
 │       └── Player/                    # PlayerContainerView, PlayerViewModel, PlayerSessionCoordinator,
 │                                      # PlayerNowPlayingCoordinator, PlayerEngineConfigurator,
 │                                      # SiriRemoteTouchSurface, ScrubPreviewBubbleView,
 │                                      # ResolvingCurtainView, PlayerBottomBarView, PlayerTopDrawerView,
 │                                      # SubtitleOverlayView, SeriesFlowOverlays & NerdHUDView
 ├── Tests/
-│   └── LunaTests/                     # Swift XCTest suite (tracks, chapters, origin/BlurHash, models)
+│   └── LunaTests/                     # Swift XCTest suite (tracks, chapters, origin/BlurHash, models, cache)
 └── .github/workflows/build-tvos.yml   # Cloud build + LunaTests -> GitHub Release "latest" (Luna-unsigned.ipa)
 ```
 

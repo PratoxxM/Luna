@@ -23,16 +23,23 @@ struct SettingsView: View {
                 // 1. Rom & Lyd/Bilde
                 settingsPanel("Rom & Lyd/Bilde") {
                     VStack(spacing: 10) {
-                        ForEach(HardwareProfilePreset.allCases) { preset in
-                            let isSelected = sessionStore.effectiveHardwareProfile == preset.rawValue
+                        let matchingProfileCount = Dictionary(
+                            grouping: sessionStore.availableRooms,
+                            by: \.hardwareProfile
+                        ).mapValues(\.count)
+
+                        ForEach(sessionStore.availableRooms) { room in
+                            let isSelected = sessionStore.effectiveHardwareProfile == room.hardwareProfile &&
+                                (sessionStore.roomName == room.roomName || (matchingProfileCount[room.hardwareProfile] ?? 0) == 1)
+                            let fallbackPreset = HardwareProfilePreset(rawValue: room.hardwareProfile)
                             SettingsRoomRowButton(
-                                title: preset.displayTitle,
-                                subtitle: preset.technicalSummary,
+                                title: room.label ?? fallbackPreset?.displayTitle ?? room.roomName,
+                                subtitle: room.description ?? fallbackPreset?.technicalSummary ?? room.hardwareProfile,
                                 isSelected: isSelected
                             ) {
                                 sessionStore.setRoomAndProfile(
-                                    roomName: preset.defaultRoomName,
-                                    hardwareProfile: preset.rawValue,
+                                    roomName: room.roomName,
+                                    hardwareProfile: room.hardwareProfile,
                                     persistAsLocalOverride: true
                                 )
                             }

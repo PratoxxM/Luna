@@ -86,7 +86,11 @@ final class PlayerViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var coalescedSeekTask: Task<Void, Never>?
     private var smartRuleTask: Task<Void, Never>?
+    var switchSourceTask: Task<Void, Never>?
     private var didTeardown: Bool = false
+    private var lastObservedPhase: PlaybackPhase = .idle
+    var lastReportedServerState: String?
+    var onUnauthorized: (() -> Void)?
 
     init(engine: AetherEngine, comfort: ComfortPreferences) {
         self.engine = engine
@@ -123,6 +127,10 @@ final class PlayerViewModel: ObservableObject {
 
     func start(request: PlaybackLaunchRequest, client: MediaOSClient?) {
         didTeardown = false
+        fatalError = nil
+        firstFrameFallbackUnlocked = false
+        lastObservedPhase = .idle
+        lastReportedServerState = nil
         currentRequest = request
         guard let client else {
             fatalError = "Mangler tilkobling til MediaOS."
@@ -141,8 +149,11 @@ final class PlayerViewModel: ObservableObject {
     func playNextEpisode(_ next: TvNextEpisodeSummary) {
         guard let client = activeClient, let current = activeSession else { return }
         resolveTask?.cancel()
+        switchSourceTask?.cancel()
+        switchSourceTask = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil
+        lastReportedServerState = nil
 
         let req = PlaybackLaunchRequest(
             itemId: next.itemId,
@@ -167,6 +178,16 @@ final class PlayerViewModel: ObservableObject {
             activeSession = nil
             engine.prepareForItemReplacement()
             await runResolveAndLoad(request: req, client: client, isReplacement: true)
+        }
+    }
+
+    func triggerSourceSwitch(to candidateId: String) {
+        guard activeClient != nil, activeSession != nil else { return }
+        fatalError = nil
+        isSwitchingSource = true
+        switchSourceTask?.cancel()
+        switchSourceTask = Task { @MainActor [weak self] in
+            await self?.switchSource(to: candidateId)
         }
     }
 
@@ -309,6 +330,8 @@ final class PlayerViewModel: ObservableObject {
         didTeardown = true
         resolveTask?.cancel()
         resolveTask = nil
+        switchSourceTask?.cancel()
+        switchSourceTask = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil
         firstFrameFallbackTask?.cancel()
@@ -367,6 +390,8 @@ final class PlayerViewModel: ObservableObject {
         engine.$playbackPhase
             .sink { [weak self] phase in
                 guard let self else { return }
+                let previousPhase = self.lastObservedPhase
+                self.lastObservedPhase = phase
                 self.playbackPhase = phase
                 self.updateIdleTimer(for: phase)
                 if case .error(let errMsg) = phase {
@@ -384,6 +409,13 @@ final class PlayerViewModel: ObservableObject {
                 } else if phase == .paused || phase == .ended {
                     Task { @MainActor [weak self] in
                         await self?.sendHeartbeatOnce(overrideState: phase == .ended ? "stopped" : "paused")
+                    }
+                } else if phase == .playing,
+                          previousPhase != .playing,
+                          self.lastReportedServerState != nil,
+                          self.lastReportedServerState != "playing" {
+                    Task { @MainActor [weak self] in
+                        await self?.sendHeartbeatOnce(overrideState: "playing")
                     }
                 }
             }

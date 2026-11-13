@@ -94,15 +94,15 @@ jobs:
               echo "::error::$f has permissions $perm (expected 644)"
               exit 1
             fi
-          done < <(find Sources -name '*.swift' -print0)
+          done < <(find Sources Tests Packages -name '*.swift' -print0)
 
-          if grep -rnE 'Bundle\.main\.bundleIdentifier' Sources Tests; then
+          if grep -rnE 'Bundle\.main\.bundleIdentifier' Sources Tests Packages; then
             echo "::error::Found forbidden Bundle.main.bundleIdentifier reference!"
             exit 1
           fi
 
-          if grep -rnE '\b(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b|/volume[12]/|luna_tv_' Sources Tests; then
-            echo "::error::Found forbidden private IP, NAS path, or token literal in Sources/ or Tests/!"
+          if grep -rnE '\b(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b|/volume[12]/|luna_tv_' Sources Tests Packages; then
+            echo "::error::Found forbidden private IP, NAS path, or token literal in Sources/, Tests/, or Packages/!"
             exit 1
           fi
 
@@ -113,14 +113,20 @@ jobs:
         run: |
           set -euo pipefail
           TVOS_SIM_UDID=$(xcrun simctl list devices available -j | python3 -c '
-          import json, sys
+          import json, re, sys
           data = json.load(sys.stdin)
+          candidates = []
           for runtime, devices in data.get("devices", {}).items():
-              if "tvOS" in runtime:
-                  for dev in devices:
-                      if dev.get("isAvailable"):
-                          print(dev["udid"])
-                          sys.exit(0)
+              if "tvOS" not in runtime:
+                  continue
+              nums = tuple(int(x) for x in re.findall(r"\d+", runtime))
+              for dev in devices:
+                  if dev.get("isAvailable"):
+                      booted = 1 if dev.get("state") == "Booted" else 0
+                      candidates.append((booted, nums, dev.get("name", ""), dev["udid"]))
+          candidates.sort(reverse=True)
+          if candidates:
+              print(candidates[0][3])
           ' || true)
 
           if [ -n "$TVOS_SIM_UDID" ]; then

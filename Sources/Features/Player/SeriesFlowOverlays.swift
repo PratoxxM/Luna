@@ -119,6 +119,7 @@ struct SeriesFlowOverlays: View {
             let hasContinuityTargets = viewModel.activeSession?.nextEpisode != nil ||
                 viewModel.chapters.contains(where: { $0.kind == .intro || $0.kind == .recap || $0.kind == .credits })
             guard hasContinuityTargets else { return }
+            guard abs(t - currentTime) >= 0.5 || t < 1.0 else { return }
             currentTime = t
             if let tracked = trackedIntroChapterID,
                let ch = viewModel.chapters.first(where: { $0.id == tracked }),

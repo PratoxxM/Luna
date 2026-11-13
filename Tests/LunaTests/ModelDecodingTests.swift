@@ -165,11 +165,15 @@ final class ModelDecodingTests: XCTestCase {
         let stereoNight = comfort.buildAudioShaping(enhancement: .nightMode)
         XCTAssertEqual(stereoNight.maxChannels, 2)
         XCTAssertEqual(stereoNight.loudnessTargetLUFS, -20.0)
-        XCTAssertNil(stereoNight.lfeMixDB)
+        XCTAssertEqual(stereoNight.lfeMixDB, -6.0)
 
         comfort.speakerLayoutOverride = .auto
         let autoRef = comfort.buildAudioShaping(enhancement: .reference)
         XCTAssertNil(autoRef.maxChannels)
         XCTAssertNil(autoRef.lfeMixDB)
+
+        let autoNight = comfort.buildAudioShaping(enhancement: .nightMode)
+        XCTAssertNil(autoNight.maxChannels)
+        XCTAssertEqual(autoNight.lfeMixDB, -6.0)
     }
 }

@@ -150,6 +150,20 @@ public struct TvProbeChapter: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+public struct RawEngineChapter: Sendable, Equatable {
+    public let id: Int
+    public let name: String
+    public let startSeconds: Double
+    public let durationSeconds: Double
+
+    public init(id: Int, name: String, startSeconds: Double, durationSeconds: Double) {
+        self.id = id
+        self.name = name
+        self.startSeconds = startSeconds
+        self.durationSeconds = durationSeconds
+    }
+}
+
 public struct PlaybackChapter: Identifiable, Equatable, Sendable {
     public let id: String
     public let index: Int
@@ -183,18 +197,45 @@ public struct PlaybackChapter: Identifiable, Equatable, Sendable {
         engineChapters: [ChapterInfo],
         mediaDuration: Double
     ) -> [PlaybackChapter] {
+        let rawEngine = engineChapters.map {
+            RawEngineChapter(
+                id: $0.id,
+                name: $0.name,
+                startSeconds: $0.startSeconds,
+                durationSeconds: $0.durationSeconds
+            )
+        }
+        return mergeRaw(
+            probeChapters: probeChapters,
+            engineChapters: rawEngine,
+            mediaDuration: mediaDuration
+        )
+    }
+
+    public static func mergeRaw(
+        probeChapters: [TvProbeChapter],
+        engineChapters: [RawEngineChapter],
+        mediaDuration: Double
+    ) -> [PlaybackChapter] {
         // Prefer live container chapters from AetherEngine when available, enriched with probe kind
         if !engineChapters.isEmpty {
-            return engineChapters.enumerated().map { idx, ch in
-                let start = max(0, ch.startSeconds)
-                let end: Double
-                if ch.durationSeconds > 0 {
-                    end = start + ch.durationSeconds
-                } else if idx + 1 < engineChapters.count {
-                    end = max(start + 1, engineChapters[idx + 1].startSeconds)
-                } else {
-                    end = max(start + 1, mediaDuration)
+            let sortedEngine = engineChapters.sorted { a, b in
+                if a.startSeconds != b.startSeconds {
+                    return a.startSeconds < b.startSeconds
                 }
+                return a.id < b.id
+            }
+            return sortedEngine.enumerated().map { idx, ch in
+                let start = max(0, ch.startSeconds)
+                let rawEnd: Double
+                if ch.durationSeconds > 0 {
+                    rawEnd = start + ch.durationSeconds
+                } else if idx + 1 < sortedEngine.count {
+                    rawEnd = max(start + 1, sortedEngine[idx + 1].startSeconds)
+                } else {
+                    rawEnd = max(start + 1, mediaDuration)
+                }
+                let end = mediaDuration > start ? min(rawEnd, mediaDuration) : rawEnd
 
                 let matchedProbe = probeChapters.first { abs($0.startSeconds - start) < 1.5 }
                 let resolvedKind: TvChapterKind

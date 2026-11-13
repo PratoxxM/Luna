@@ -59,6 +59,11 @@ extension PlayerViewModel {
             isResolving = false
             armFirstFrameFallbackWatchdog()
             startHeartbeatLoop()
+        } catch MediaOSError.unauthorized {
+            guard !Task.isCancelled else { return }
+            isResolving = false
+            UIApplication.shared.isIdleTimerDisabled = false
+            onUnauthorized?()
         } catch {
             guard !Task.isCancelled else { return }
             isResolving = false
@@ -68,7 +73,10 @@ extension PlayerViewModel {
     }
 
     func switchSource(to candidateId: String) async {
-        guard let client = activeClient, let session = activeSession else { return }
+        guard let client = activeClient, let session = activeSession else {
+            isSwitchingSource = false
+            return
+        }
         resetScrubStateOnSessionChange()
         let currentPos = max(0, engine.currentTime)
         isSwitchingSource = true
@@ -93,8 +101,12 @@ extension PlayerViewModel {
                 overrideStartPosition: updatedSession.stream.startPositionSeconds ?? currentPos
             )
             isSwitchingSource = false
+        } catch MediaOSError.unauthorized {
+            isSwitchingSource = false
+            onUnauthorized?()
         } catch {
             isSwitchingSource = false
+            guard !Task.isCancelled else { return }
             showTransientBanner("Kildebytte feilet: \(error.localizedDescription)")
         }
     }
@@ -167,6 +179,7 @@ extension PlayerViewModel {
         }
 
         self.activeSession = session
+        self.lastReportedServerState = "playing"
         self.registeredStreamToken = session.streamToken.count >= 8 ? session.streamToken : previousToken
         self.resolveHeadline = session.selectedCandidate.displayHeadline
         self.engineChapters = []
@@ -302,12 +315,14 @@ extension PlayerViewModel {
         let pos = max(0, engine.currentTime)
         let dur = max(0, effectiveDurationSeconds)
 
-        if let hb = try? await client.sendHeartbeat(
-            sessionId: session.sessionId,
-            state: stateString,
-            positionSeconds: pos,
-            durationSeconds: dur
-        ) {
+        do {
+            let hb = try await client.sendHeartbeat(
+                sessionId: session.sessionId,
+                state: stateString,
+                positionSeconds: pos,
+                durationSeconds: dur
+            )
+            lastReportedServerState = stateString
             if hb.nextEpisodePrewarmStarted == true {
                 nextEpisodePrewarmReady = true
             }
@@ -320,6 +335,10 @@ extension PlayerViewModel {
                let switchedSession = cmd.playbackSession {
                 await applyServerSwitchedSession(switchedSession, client: client, fallbackPosition: pos)
             }
+        } catch MediaOSError.unauthorized {
+            onUnauthorized?()
+        } catch {
+            // Heartbeats are periodic best-effort telemetry
         }
     }
 
