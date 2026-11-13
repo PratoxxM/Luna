@@ -128,9 +128,12 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
 
     public var sourceBadgeLabel: String {
         let normTier = (tier ?? "").lowercased()
+        let normSource = source.lowercased()
+        if normTier == "vfs" || normTier == "infinidysk" || normSource.contains("infinidysk") || normSource == "vfs" {
+            return "InfiniDysk Strøm"
+        }
         if normTier == "ssd" || normTier == "nvme" { return "På NVMe" }
         if normTier == "archive" { return "I Arkiv" }
-        if normTier == "vfs" || source.lowercased() == "infinidysk" { return "InfiniDysk VFS" }
         return source.uppercased()
     }
 

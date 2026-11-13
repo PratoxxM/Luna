@@ -149,7 +149,7 @@ public struct PosterCardView: View {
         guard showStorageBadge, let avail = card.availability else {
             return nil
         }
-        if avail.isLocalNvme || avail.isLocalArchive || avail.isLocalVfs {
+        if avail.isPhysicalLocal {
             return avail.householdBadgeLabel
         }
         return nil

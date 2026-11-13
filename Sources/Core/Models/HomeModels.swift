@@ -41,16 +41,19 @@ public struct TvAvailabilityInfo: Codable, Equatable, Hashable, Sendable {
         return state == "instant" && norm == "archive"
     }
 
+    public var isPhysicalLocal: Bool {
+        isLocalNvme || isLocalArchive
+    }
+
     public var isLocalVfs: Bool {
         let norm = (tier ?? "").lowercased()
-        return state == "instant" && norm == "vfs"
+        return norm == "vfs" || norm == "infinidysk"
     }
 
     public var householdBadgeLabel: String {
         if state == "upcoming" { return "Kommer" }
         if isLocalNvme { return "På NVMe" }
         if isLocalArchive { return "I Arkiv" }
-        if isLocalVfs { return "Klar i VFS" }
         return "Strømmes ved valg"
     }
 }

@@ -36,7 +36,8 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(decoded.rows.count, 1)
         let card = try XCTUnwrap(decoded.rows.first?.items.first)
         XCTAssertEqual(card.availability?.isLocalVfs, true)
-        XCTAssertEqual(card.availability?.householdBadgeLabel, "Klar i VFS")
+        XCTAssertEqual(card.availability?.isPhysicalLocal, false)
+        XCTAssertEqual(card.availability?.householdBadgeLabel, "Strømmes ved valg")
         XCTAssertEqual(card.progress?.percent ?? 0, 16.6, accuracy: 0.01)
     }
 
@@ -113,6 +114,36 @@ final class ModelDecodingTests: XCTestCase {
             "TrueHD Atmos",
             "50.0 GB",
         ])
+    }
+
+    func testVfsCandidateSourceBadgeAndPhysicalAvailability() throws {
+        let vfsJson = #"""
+        [
+          {
+            "candidateId": "vfs-1",
+            "releaseTitle": "Example.2026.2160p",
+            "source": "local",
+            "tier": "infinidysk"
+          },
+          {
+            "candidateId": "vfs-2",
+            "releaseTitle": "Example.2026.1080p",
+            "source": "infinidysk",
+            "tier": "vfs"
+          }
+        ]
+        """#
+        let candidates = try JSONDecoder().decode([TvPlaybackCandidate].self, from: Data(vfsJson.utf8))
+        XCTAssertEqual(candidates.map(\.sourceBadgeLabel), ["InfiniDysk Strøm", "InfiniDysk Strøm"])
+
+        let nvmeAvail = TvAvailabilityInfo(state: "instant", tier: "nvme")
+        XCTAssertTrue(nvmeAvail.isPhysicalLocal)
+        XCTAssertEqual(nvmeAvail.householdBadgeLabel, "På NVMe")
+
+        let vfsAvail = TvAvailabilityInfo(state: "on_demand", tier: "vfs")
+        XCTAssertFalse(vfsAvail.isPhysicalLocal)
+        XCTAssertTrue(vfsAvail.isLocalVfs)
+        XCTAssertEqual(vfsAvail.householdBadgeLabel, "Strømmes ved valg")
     }
 
     @MainActor

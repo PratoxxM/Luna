@@ -218,7 +218,7 @@ struct SeriesFlowOverlays: View {
                         .foregroundStyle(LunaTheme.amber)
 
                     if viewModel.nextEpisodePrewarmReady {
-                        Text("Klar i VFS ⚡")
+                        Text("Klar til avspilling")
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(LunaTheme.emerald)
                             .padding(.horizontal, 8)

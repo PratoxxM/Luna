@@ -219,18 +219,6 @@ struct LibraryHubView: View {
                     localTierFilter = "nvme"
                 }
 
-                if (counts?.vfs ?? 0) > 0 || localTierFilter == "vfs" {
-                    LunaPillButton(
-                        "Klar i VFS",
-                        systemImage: "cloud.bolt.fill",
-                        badgeText: counts.map { String($0.vfs) },
-                        isSelected: localTierFilter == "vfs",
-                        prominence: .subtleChip
-                    ) {
-                        localTierFilter = "vfs"
-                    }
-                }
-
                 LunaPillButton(
                     "Arkiv",
                     systemImage: "archivebox.fill",

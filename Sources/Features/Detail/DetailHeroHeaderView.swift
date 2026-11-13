@@ -67,10 +67,10 @@ struct DetailHeroHeaderView: View {
                     .padding(.vertical, 5)
                     .background(LunaTheme.amber, in: Capsule())
                 } else if let avail = item.availability,
-                          avail.isLocalNvme || avail.isLocalArchive || avail.isLocalVfs {
+                          avail.isPhysicalLocal {
                     Text(avail.householdBadgeLabel)
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle((avail.isLocalNvme || avail.isLocalVfs) ? LunaTheme.emerald : LunaTheme.moonlight)
+                        .foregroundStyle(avail.isLocalNvme ? LunaTheme.emerald : LunaTheme.moonlight)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 5)
                         .background(Color.white.opacity(0.10), in: Capsule())
@@ -235,7 +235,14 @@ struct DetailHeroHeaderView: View {
     }
 
     private var displayedBadges: [String] {
-        var seen = Set<String>()
+        var seen: Set<String> = ["klar i vfs", "infinidysk vfs"]
+        if item.isUpcoming == true {
+            seen.insert("kommer")
+        } else if let avail = item.availability, avail.isPhysicalLocal {
+            seen.insert(avail.householdBadgeLabel.lowercased())
+            seen.insert("på nvme")
+            seen.insert("i arkiv")
+        }
         var result: [String] = []
         for raw in item.badges ?? [] {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
