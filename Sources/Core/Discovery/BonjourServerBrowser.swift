@@ -79,11 +79,10 @@ public final class BonjourServerBrowser: ObservableObject {
                 txtDict = record.dictionary
             }
 
-            let tcp = NWProtocolTCP.Options()
-            let ip = NWProtocolIP.Options()
-            ip.version = .v4
-            let params = NWParameters(tls: nil, tcp: tcp)
-            params.defaultProtocolStack.internetProtocol = ip
+            let params = NWParameters.tcp
+            if let ip = params.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
+                ip.version = .v4
+            }
             let conn = NWConnection(to: result.endpoint, using: params)
             activeResolvers[key] = conn
             let capturedTxt = txtDict

@@ -229,11 +229,6 @@ extension PlayerViewModel {
         resolveId: String,
         client: MediaOSClient
     ) async throws -> TvPlaybackSession {
-        @MainActor
-        final class FirstEventLatch: Sendable {
-            var received = false
-        }
-
         let socket = PlaybackResolveSocket(
             baseURL: client.baseURL,
             wsPath: wsPath,
@@ -241,10 +236,10 @@ extension PlayerViewModel {
             allowSelfSignedLanTLS: client.allowSelfSignedLanTLS
         )
 
-        let latch = FirstEventLatch()
+        let latch = ResolveFirstEventLatch()
         let streamTask = Task { @MainActor [weak self] () throws -> TvPlaybackSession? in
             for try await event in socket.events() {
-                latch.received = true
+                await latch.markReceived()
                 self?.applyResolveProgressEvent(event)
                 if event.type == "resolve.ready", let readySession = event.playbackSession {
                     return readySession
@@ -256,10 +251,12 @@ extension PlayerViewModel {
             return nil
         }
 
-        let watchdogTask = Task { @MainActor in
+        let watchdogTask = Task {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
-            guard !Task.isCancelled, !latch.received else { return }
-            streamTask.cancel()
+            guard !Task.isCancelled else { return }
+            if await !latch.received {
+                streamTask.cancel()
+            }
         }
 
         defer {
@@ -382,5 +379,13 @@ extension PlayerViewModel {
             guard !Task.isCancelled, let self else { return }
             self.transientBannerMessage = nil
         }
+    }
+}
+
+private actor ResolveFirstEventLatch {
+    private(set) var received = false
+
+    func markReceived() {
+        received = true
     }
 }

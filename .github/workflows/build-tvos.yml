@@ -113,6 +113,17 @@ jobs:
       - name: Build & Run LunaTests
         run: |
           set -euo pipefail
+          run_xcodebuild() {
+            set +e
+            "$@" 2>&1 | tee xcodebuild.log
+            local rc=${PIPESTATUS[0]}
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              awk '/error:|fatal error:/ { print "::error::" $0; count++; if (count >= 25) exit }' xcodebuild.log
+              exit "$rc"
+            fi
+          }
+
           TVOS_SIM_UDID=$(xcrun simctl list devices available -j | python3 -c '
           import json, re, sys
           data = json.load(sys.stdin)
@@ -133,7 +144,7 @@ jobs:
           if [ -n "$TVOS_SIM_UDID" ]; then
             echo "Pre-booting & running LunaTests on tvOS Simulator ($TVOS_SIM_UDID)..."
             xcrun simctl boot "$TVOS_SIM_UDID" >/dev/null 2>&1 || true
-            xcodebuild test \
+            run_xcodebuild xcodebuild test \
               -project Luna.xcodeproj \
               -scheme Luna \
               -destination "platform=tvOS Simulator,id=$TVOS_SIM_UDID" \
@@ -147,7 +158,7 @@ jobs:
               CODE_SIGNING_ALLOWED=NO
           else
             echo "No booted/available tvOS Simulator found; running build-for-testing for generic/platform=tvOS Simulator..."
-            xcodebuild build-for-testing \
+            run_xcodebuild xcodebuild build-for-testing \
               -project Luna.xcodeproj \
               -scheme Luna \
               -destination 'generic/platform=tvOS Simulator' \
@@ -216,7 +227,18 @@ jobs:
       - name: Build unsigned Release app for tvOS device (arm64)
         run: |
           set -euo pipefail
-          xcodebuild build \
+          run_xcodebuild() {
+            set +e
+            "$@" 2>&1 | tee xcodebuild.log
+            local rc=${PIPESTATUS[0]}
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              awk '/error:|fatal error:/ { print "::error::" $0; count++; if (count >= 25) exit }' xcodebuild.log
+              exit "$rc"
+            fi
+          }
+
+          run_xcodebuild xcodebuild build \
             -project Luna.xcodeproj \
             -scheme Luna \
             -configuration Release \

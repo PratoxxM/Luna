@@ -15,6 +15,7 @@ struct SubtitleOverlayView: View {
     @ObservedObject var comfort: ComfortPreferences
     var isBottomBarVisible: Bool = false
 
+    @State private var clockBox = SubtitleClockBox()
     @State private var cues: [SubtitleCue] = []
     @State private var visibleCues: [SubtitleCue] = []
     @State private var tracks: [TrackInfo] = []
@@ -51,15 +52,13 @@ struct SubtitleOverlayView: View {
             }
         }
         .allowsHitTesting(false)
-        .onAppear {
-            recomputeVisibleCues(at: engine.clock.sourceTime)
-        }
         .onReceive(engine.clock.$sourceTime) { time in
+            clockBox.lastSourceTime = time
             recomputeVisibleCues(at: time)
         }
         .onReceive(engine.$subtitleCues) { nextCues in
             cues = nextCues
-            recomputeVisibleCues(at: engine.clock.sourceTime, cueSource: nextCues)
+            recomputeVisibleCues(at: clockBox.lastSourceTime, cueSource: nextCues)
         }
         .onReceive(engine.$subtitleTracks) { tracks = $0 }
         .onReceive(engine.$activeSubtitleTrackIndex) { activeTrackID = $0 }
@@ -272,4 +271,9 @@ struct SubtitleOverlayView: View {
             height: position.height * canvasSize.height * scale
         )
     }
+}
+
+@MainActor
+private final class SubtitleClockBox {
+    var lastSourceTime: Double = 0
 }

@@ -258,9 +258,9 @@ struct PlayerTopDrawerView: View {
                     }
                 }
 
+                let audioChainDetail = viewModel.activeAudioDecoder ?? viewModel.audioDelivery.rawValue
                 ObjectAudioStatusLeafView(
-                    engine: viewModel.engine,
-                    fallbackBadge: viewModel.audioFormatBadge
+                    fallbackBadge: "\(viewModel.audioFormatBadge) (\(audioChainDetail))"
                 )
             }
             .frame(width: 640, alignment: .leading)
@@ -607,31 +607,18 @@ private struct ChapterPillCardButton: View {
 }
 
 private struct ObjectAudioStatusLeafView: View {
-    let engine: AetherEngine
     let fallbackBadge: String
-
-    @State private var telemetry: LiveTelemetry?
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "dot.radiowaves.left.and.right")
-                .foregroundStyle(telemetry?.objectAudio != nil ? LunaTheme.emerald : LunaTheme.amber)
-            if let obj = telemetry?.objectAudio {
-                Text("Objektlyd · \(obj.layout.rawValue) · \(obj.activeObjects) objekter")
-                    .font(.caption.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(LunaTheme.moonlight)
-            } else {
-                Text("Aktiv lydkjede: \(fallbackBadge)")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(LunaTheme.moonlight.opacity(0.85))
-            }
+                .foregroundStyle(LunaTheme.amber)
+            Text("Aktiv lydkjede: \(fallbackBadge)")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(LunaTheme.moonlight.opacity(0.85))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(Color.white.opacity(0.06), in: Capsule())
-        .onAppear { telemetry = engine.diagnostics.liveTelemetry }
-        .onChange(of: fallbackBadge) { _, _ in
-            telemetry = engine.diagnostics.liveTelemetry
-        }
     }
 }

@@ -3,7 +3,6 @@ import CryptoKit
 import ImageIO
 import CoreGraphics
 import SwiftUI
-import UIKit
 
 private final class CGImageBox: NSObject {
     let image: CGImage
@@ -256,7 +255,7 @@ public actor ArtworkPipeline {
     private init() {
         let cache = self.ramCache
         NotificationCenter.default.addObserver(
-            forName: UIApplication.didReceiveMemoryWarningNotification,
+            forName: Notification.Name("UIApplicationDidReceiveMemoryWarningNotification"),
             object: nil,
             queue: nil
         ) { _ in
