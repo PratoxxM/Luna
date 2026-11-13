@@ -220,15 +220,24 @@ public struct PlaybackChapter: Identifiable, Equatable, Sendable {
             }
         }
 
-        return probeChapters.enumerated().map { idx, ch in
+        let sortedProbes = probeChapters.sorted { a, b in
+            if a.startSeconds != b.startSeconds {
+                return a.startSeconds < b.startSeconds
+            }
+            return (a.index ?? 0) < (b.index ?? 0)
+        }
+        return sortedProbes.enumerated().map { idx, ch in
+            let start = max(0, ch.startSeconds)
+            let rawEnd = max(start + 1, ch.endSeconds)
+            let end = mediaDuration > start ? min(rawEnd, mediaDuration) : rawEnd
             let parsedKind = ch.kind.flatMap(TvChapterKind.init(rawValue:))
-                ?? TvChapterKind.classify(title: ch.title, startSeconds: ch.startSeconds, durationSeconds: mediaDuration)
+                ?? TvChapterKind.classify(title: ch.title, startSeconds: start, durationSeconds: mediaDuration)
             return PlaybackChapter(
                 id: "prb-\(ch.idString)-\(idx)",
                 index: ch.index ?? idx,
                 title: ch.title,
-                startSeconds: ch.startSeconds,
-                endSeconds: ch.endSeconds,
+                startSeconds: start,
+                endSeconds: end,
                 kind: parsedKind
             )
         }

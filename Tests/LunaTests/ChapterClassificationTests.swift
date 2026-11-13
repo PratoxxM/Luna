@@ -36,14 +36,14 @@ final class ChapterClassificationTests: XCTestCase {
 
         let merged = PlaybackChapter.merge(probeChapters: probes, engineChapters: [], mediaDuration: 1440)
         XCTAssertEqual(merged.count, 3)
-        XCTAssertEqual(merged[0].id, "c1")
+        XCTAssertEqual(merged[0].id, "prb-c1-0")
         XCTAssertEqual(merged[0].startSeconds, 0)
         XCTAssertEqual(merged[0].kind, .intro)
 
-        XCTAssertEqual(merged[1].id, "c2")
+        XCTAssertEqual(merged[1].id, "prb-c2-1")
         XCTAssertEqual(merged[1].kind, .chapter)
 
-        XCTAssertEqual(merged[2].id, "c3")
+        XCTAssertEqual(merged[2].id, "prb-c3-2")
         XCTAssertEqual(merged[2].endSeconds, 1440)
         XCTAssertEqual(merged[2].kind, .credits)
     }
