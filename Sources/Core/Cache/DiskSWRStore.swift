@@ -122,9 +122,13 @@ public enum DiskSWRStore {
         hardwareProfile: String
     ) -> CachedHomeSnapshot? {
         let key = fileBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
-        lock.lock()
-        defer { lock.unlock() }
-        return memoryCache[key]
+        return lock.withLock { memoryCache[key] }
+    }
+
+    private static func storeMemorySnapshot(_ snap: CachedHomeSnapshot, forKey key: String) {
+        lock.withLock {
+            memoryCache[key] = snap
+        }
     }
 
     public static func loadHomeAsync(
@@ -143,9 +147,7 @@ public enum DiskSWRStore {
         ) else {
             return nil
         }
-        lock.lock()
-        memoryCache[primaryKey] = loaded
-        lock.unlock()
+        storeMemorySnapshot(loaded, forKey: primaryKey)
         return loaded
     }
 
@@ -160,17 +162,13 @@ public enum DiskSWRStore {
         let primaryKey = fileBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
         if let decodedPayload {
             let snap = CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: decodedPayload)
-            lock.lock()
-            memoryCache[primaryKey] = snap
-            lock.unlock()
+            storeMemorySnapshot(snap, forKey: primaryKey)
         }
         Task.detached(priority: .utility) {
             if decodedPayload == nil,
                let decoded = try? JSONDecoder().decode(TvHomeResponse.self, from: rawPayloadData) {
                 let snap = CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: decoded)
-                lock.lock()
-                memoryCache[primaryKey] = snap
-                lock.unlock()
+                storeMemorySnapshot(snap, forKey: primaryKey)
             }
             await DiskSWRStorageActor.shared.saveToDisk(
                 rawPayloadData: rawPayloadData,
@@ -185,9 +183,9 @@ public enum DiskSWRStore {
     }
 
     public static func clearMemory() {
-        lock.lock()
-        memoryCache.removeAll()
-        lock.unlock()
+        lock.withLock {
+            memoryCache.removeAll()
+        }
     }
 
     public static func clearAllAsync() async {
