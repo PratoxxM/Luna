@@ -6,6 +6,7 @@ struct DetailHeroHeaderView: View {
     let primaryPlayTitle: String
     let watchedButtonTitle: String
     let isPreResolvedReady: Bool
+    var horizontalGutter: CGFloat = 90
     let focusNamespace: Namespace.ID
 
     let onPlay: () -> Void
@@ -14,162 +15,205 @@ struct DetailHeroHeaderView: View {
     let onPickSource: () -> Void
     let onToggleFavorite: () -> Void
 
+    private let heroMinHeight: CGFloat = 770
+
     var body: some View {
-        let bgURL = client?.resolveArtworkURL(item.backdropUrl ?? item.cardBackdropUrl ?? item.posterUrl)
+        let landscapeURL = client?.resolveArtworkURL(item.backdropUrl ?? item.cardBackdropUrl)
+        let fallbackPosterURL = landscapeURL == nil ? client?.resolveArtworkURL(item.posterUrl) : nil
         let logoURL = client?.resolveArtworkURL(item.logoUrl)
 
-        return ZStack(alignment: .bottomLeading) {
-            CachedArtworkView(
-                url: bgURL,
-                client: client,
-                maxPixelSize: 1920,
-                blurHash: item.blurHash,
-                dominantColor: item.dominantColor,
-                placeholderSymbol: "film.stack",
-                contentMode: .fill
-            )
-            .frame(maxWidth: .infinity)
-            .frame(height: 610)
-            .clipped()
+        VStack(alignment: .leading, spacing: 18) {
+            // ClearLogo or clean typography title
+            if let logoURL {
+                CachedArtworkView(
+                    url: logoURL,
+                    client: client,
+                    maxPixelSize: 800,
+                    placeholderSymbol: "sparkles.tv",
+                    contentMode: .fit
+                )
+                .frame(maxWidth: 520, maxHeight: 118, alignment: .bottomLeading)
+            } else {
+                Text(item.title)
+                    .font(.system(size: 52, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .frame(maxWidth: 980, alignment: .leading)
+            }
 
-            LinearGradient(
-                colors: [
-                    LunaTheme.canvas.opacity(0.05),
-                    LunaTheme.canvas.opacity(0.62),
-                    LunaTheme.canvas.opacity(0.97),
-                    LunaTheme.canvas
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            if let tagline = item.tagline?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !tagline.isEmpty {
+                Text(tagline)
+                    .font(.callout.italic().weight(.medium))
+                    .foregroundStyle(LunaTheme.moonlight.opacity(0.76))
+                    .lineLimit(1)
+                    .frame(maxWidth: 980, alignment: .leading)
+            }
 
-            LinearGradient(
-                colors: [
-                    LunaTheme.canvas.opacity(0.82),
-                    LunaTheme.canvas.opacity(0.32),
-                    .clear
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
+            // Clean metadata + optional availability + technical release badges
+            HStack(spacing: 12) {
+                Text(detailMetadataLine)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(LunaTheme.moonlight.opacity(0.88))
 
-            VStack(alignment: .leading, spacing: 18) {
-                // ClearLogo or clean typography title
-                if let logoURL {
-                    CachedArtworkView(
-                        url: logoURL,
-                        client: client,
-                        maxPixelSize: 800,
-                        placeholderSymbol: "sparkles.tv",
-                        contentMode: .fit
-                    )
-                    .frame(maxWidth: 520, maxHeight: 118, alignment: .bottomLeading)
-                } else {
-                    Text(item.title)
-                        .font(.system(size: 52, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .frame(maxWidth: 980, alignment: .leading)
-                }
-
-                if let tagline = item.tagline?.trimmingCharacters(in: .whitespacesAndNewlines),
-                   !tagline.isEmpty {
-                    Text(tagline)
-                        .font(.callout.italic().weight(.medium))
-                        .foregroundStyle(LunaTheme.moonlight.opacity(0.76))
-                        .lineLimit(1)
-                        .frame(maxWidth: 980, alignment: .leading)
-                }
-
-                // Clean metadata + optional availability + technical release badges
-                HStack(spacing: 12) {
-                    Text(detailMetadataLine)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(LunaTheme.moonlight.opacity(0.88))
-
-                    if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
-                        HStack(spacing: 5) {
-                            Image(systemName: "calendar")
-                            Text("Kommer: \(upcomingBadge)")
-                        }
+                if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
+                    HStack(spacing: 5) {
+                        Image(systemName: "calendar")
+                        Text("Kommer: \(upcomingBadge)")
+                    }
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(LunaTheme.canvas)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 5)
+                    .background(LunaTheme.amber, in: Capsule())
+                } else if let avail = item.availability,
+                          avail.isLocalNvme || avail.isLocalArchive || avail.isLocalVfs {
+                    Text(avail.householdBadgeLabel)
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(LunaTheme.canvas)
+                        .foregroundStyle((avail.isLocalNvme || avail.isLocalVfs) ? LunaTheme.emerald : LunaTheme.moonlight)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 5)
-                        .background(LunaTheme.amber, in: Capsule())
-                    } else if let avail = item.availability,
-                              avail.isLocalNvme || avail.isLocalArchive || avail.isLocalVfs {
-                        Text(avail.householdBadgeLabel)
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle((avail.isLocalNvme || avail.isLocalVfs) ? LunaTheme.emerald : LunaTheme.moonlight)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 5)
-                            .background(Color.white.opacity(0.10), in: Capsule())
-                    }
-
-                    ForEach(displayedBadges, id: \.self) { badge in
-                        Text(badge)
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(LunaTheme.moonlight.opacity(0.92))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color.white.opacity(0.08), in: Capsule())
-                    }
+                        .background(Color.white.opacity(0.10), in: Capsule())
                 }
 
-                // Overview
-                if let overview = item.preferredOverview {
-                    Text(overview)
-                        .font(.callout)
-                        .foregroundStyle(LunaTheme.moonlight.opacity(0.88))
-                        .lineLimit(3)
-                        .frame(maxWidth: 1020, alignment: .leading)
-                }
-
-                // Streamlined Action Bar: Focus lands directly on Primary Play!
-                HStack(spacing: 16) {
-                    PrimaryPlayButton(
-                        title: primaryPlayTitle,
-                        isWarmReady: isPreResolvedReady,
-                        action: onPlay
-                    )
-                    .prefersDefaultFocus(true, in: focusNamespace)
-
-                    LunaPillButton(
-                        item.inWatchlist ? "I huskeliste" : "Huskeliste",
-                        systemImage: item.inWatchlist ? "bookmark.fill" : "bookmark",
-                        isSelected: item.inWatchlist,
-                        action: onToggleWatchlist
-                    )
-
-                    LunaPillButton(
-                        watchedButtonTitle,
-                        systemImage: item.watched ? "checkmark.circle.fill" : "checkmark.circle",
-                        isSelected: item.watched,
-                        action: onToggleWatched
-                    )
-
-                    LunaPillButton(
-                        "Bytt kilde",
-                        systemImage: "arrow.triangle.2.circlepath",
-                        action: onPickSource
-                    )
-
-                    LunaPillButton(
-                        "",
-                        systemImage: item.favoriteFlag ? "star.fill" : "star",
-                        isSelected: item.favoriteFlag,
-                        prominence: .subtleChip,
-                        action: onToggleFavorite
-                    )
-                }
-                .padding(.top, 6)
-                .onPlayPauseCommand {
-                    onPlay()
+                ForEach(displayedBadges, id: \.self) { badge in
+                    Text(badge)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(LunaTheme.moonlight.opacity(0.92))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.08), in: Capsule())
                 }
             }
-            .padding(.horizontal, LunaTheme.horizontalGutter)
-            .padding(.bottom, 34)
+
+            // Overview
+            if let overview = item.preferredOverview {
+                Text(overview)
+                    .font(.callout)
+                    .foregroundStyle(LunaTheme.moonlight.opacity(0.88))
+                    .lineLimit(3)
+                    .frame(maxWidth: 1020, alignment: .leading)
+            }
+
+            // Streamlined Action Bar: Focus lands directly on Primary Play!
+            HStack(spacing: 16) {
+                PrimaryPlayButton(
+                    title: primaryPlayTitle,
+                    isWarmReady: isPreResolvedReady,
+                    action: onPlay
+                )
+                .prefersDefaultFocus(true, in: focusNamespace)
+
+                LunaPillButton(
+                    item.inWatchlist ? "I huskeliste" : "Huskeliste",
+                    systemImage: item.inWatchlist ? "bookmark.fill" : "bookmark",
+                    isSelected: item.inWatchlist,
+                    action: onToggleWatchlist
+                )
+
+                LunaPillButton(
+                    watchedButtonTitle,
+                    systemImage: item.watched ? "checkmark.circle.fill" : "checkmark.circle",
+                    isSelected: item.watched,
+                    action: onToggleWatched
+                )
+
+                LunaPillButton(
+                    "Bytt kilde",
+                    systemImage: "arrow.triangle.2.circlepath",
+                    action: onPickSource
+                )
+
+                LunaPillButton(
+                    "",
+                    systemImage: item.favoriteFlag ? "star.fill" : "star",
+                    isSelected: item.favoriteFlag,
+                    prominence: .subtleChip,
+                    action: onToggleFavorite
+                )
+            }
+            .padding(.top, 6)
+            .onPlayPauseCommand {
+                onPlay()
+            }
+        }
+        .padding(.top, 210)
+        .padding(.bottom, 38)
+        .padding(.horizontal, horizontalGutter)
+        .frame(maxWidth: .infinity, minHeight: heroMinHeight, alignment: .bottomLeading)
+        .background {
+            GeometryReader { geo in
+                ZStack {
+                    LunaTheme.canvas
+
+                    if let landscapeURL {
+                        CachedArtworkView(
+                            url: landscapeURL,
+                            client: client,
+                            maxPixelSize: 1920,
+                            blurHash: item.blurHash,
+                            dominantColor: item.dominantColor,
+                            placeholderSymbol: "film.stack",
+                            contentMode: .fill
+                        )
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                        .clipped()
+                    } else if let fallbackPosterURL {
+                        CachedArtworkView(
+                            url: fallbackPosterURL,
+                            client: client,
+                            maxPixelSize: 640,
+                            blurHash: item.blurHash,
+                            dominantColor: item.dominantColor,
+                            placeholderSymbol: "film.stack",
+                            contentMode: .fill
+                        )
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .blur(radius: 42)
+                        .opacity(0.55)
+                        .clipped()
+                    }
+
+                    // Top vignette for clean tvOS navigation/top edge blending
+                    LinearGradient(
+                        stops: [
+                            .init(color: LunaTheme.canvas.opacity(0.62), location: 0.0),
+                            .init(color: LunaTheme.canvas.opacity(0.18), location: 0.14),
+                            .init(color: .clear, location: 0.28)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+
+                    // Leading cinematic scrim behind logo, metadata, overview & buttons
+                    LinearGradient(
+                        stops: [
+                            .init(color: LunaTheme.canvas.opacity(0.88), location: 0.0),
+                            .init(color: LunaTheme.canvas.opacity(0.52), location: 0.42),
+                            .init(color: LunaTheme.canvas.opacity(0.12), location: 0.72),
+                            .init(color: .clear, location: 1.0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+
+                    // Seamless multi-stop bottom dissolve into LunaTheme.canvas (zero hard cut)
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.0),
+                            .init(color: .clear, location: 0.34),
+                            .init(color: LunaTheme.canvas.opacity(0.46), location: 0.58),
+                            .init(color: LunaTheme.canvas.opacity(0.88), location: 0.82),
+                            .init(color: LunaTheme.canvas, location: 0.97),
+                            .init(color: LunaTheme.canvas, location: 1.0)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
+            }
         }
     }
 

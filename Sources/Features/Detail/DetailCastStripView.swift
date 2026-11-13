@@ -4,6 +4,7 @@ struct DetailCastStripView: View {
     let members: [TvCastMember]?
     let castNames: [String]?
     let client: MediaOSClient?
+    var horizontalGutter: CGFloat = LunaTheme.horizontalGutter
     let onSelectActor: (String) -> Void
 
     var body: some View {
@@ -12,7 +13,7 @@ struct DetailCastStripView: View {
                 Text("Medvirkende")
                     .font(.headline.weight(.bold))
                     .foregroundStyle(LunaTheme.moonlight)
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.horizontal, horizontalGutter)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 18) {
@@ -22,7 +23,7 @@ struct DetailCastStripView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.horizontal, horizontalGutter)
                     .padding(.vertical, 10)
                 }
                 .scrollClipDisabled()
@@ -32,7 +33,7 @@ struct DetailCastStripView: View {
                 Text("Medvirkende")
                     .font(.headline.weight(.bold))
                     .foregroundStyle(LunaTheme.moonlight)
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.horizontal, horizontalGutter)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 14) {
@@ -42,7 +43,7 @@ struct DetailCastStripView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.horizontal, horizontalGutter)
                     .padding(.vertical, 10)
                 }
                 .scrollClipDisabled()

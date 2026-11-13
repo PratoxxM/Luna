@@ -26,82 +26,94 @@ struct MediaDetailView: View {
 
     @Namespace private var detailFocusNamespace
 
+    private let detailGutter: CGFloat = 90
+
     var body: some View {
         let client = sessionStore.makeClient()
 
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 40) {
-                if let mutationErrorBanner {
-                    TransientErrorBanner(message: mutationErrorBanner)
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                        .padding(.top, 18)
-                }
+        ZStack(alignment: .topLeading) {
+            LunaTheme.canvas.ignoresSafeArea()
 
-                if let detail {
-                    DetailHeroHeaderView(
-                        item: detail,
-                        client: client,
-                        primaryPlayTitle: primaryPlayLabel(detail),
-                        watchedButtonTitle: watchedButtonTitle(detail),
-                        isPreResolvedReady: preResolve.isPreResolvedReady,
-                        focusNamespace: detailFocusNamespace,
-                        onPlay: {
-                            launchPrimaryPlayback(detail)
-                        },
-                        onToggleWatchlist: {
-                            Task { await toggleWatchlist(detail) }
-                        },
-                        onToggleWatched: {
-                            Task { await handleHeroWatchedTap(detail) }
-                        },
-                        onPickSource: {
-                            let target = primaryTargetInfo(detail)
-                            sourcePickerContext = SourcePickerContext(
-                                itemId: target.itemId,
-                                title: target.title,
-                                seriesTitle: target.seriesTitle,
-                                startPositionSeconds: target.startPos,
-                                existingPrepareToken: preResolve.matchingToken(for: target.itemId),
-                                backdropUrl: detail.backdropUrl ?? detail.cardBackdropUrl,
-                                logoUrl: detail.logoUrl
-                            )
-                        },
-                        onToggleFavorite: {
-                            Task { await toggleFavorite(detail) }
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 40) {
+                    if let detail {
+                        DetailHeroHeaderView(
+                            item: detail,
+                            client: client,
+                            primaryPlayTitle: primaryPlayLabel(detail),
+                            watchedButtonTitle: watchedButtonTitle(detail),
+                            isPreResolvedReady: preResolve.isPreResolvedReady,
+                            horizontalGutter: detailGutter,
+                            focusNamespace: detailFocusNamespace,
+                            onPlay: {
+                                launchPrimaryPlayback(detail)
+                            },
+                            onToggleWatchlist: {
+                                Task { await toggleWatchlist(detail) }
+                            },
+                            onToggleWatched: {
+                                Task { await handleHeroWatchedTap(detail) }
+                            },
+                            onPickSource: {
+                                let target = primaryTargetInfo(detail)
+                                sourcePickerContext = SourcePickerContext(
+                                    itemId: target.itemId,
+                                    title: target.title,
+                                    seriesTitle: target.seriesTitle,
+                                    startPositionSeconds: target.startPos,
+                                    existingPrepareToken: preResolve.matchingToken(for: target.itemId),
+                                    backdropUrl: detail.backdropUrl ?? detail.cardBackdropUrl,
+                                    logoUrl: detail.logoUrl
+                                )
+                            },
+                            onToggleFavorite: {
+                                Task { await toggleFavorite(detail) }
+                            }
+                        )
+
+                        if detail.mediaType == "series", let seasons = detail.seasons, !seasons.isEmpty {
+                            seasonsAndEpisodesSection(detail: detail, seasons: seasons, client: client)
                         }
-                    )
 
-                    if detail.mediaType == "series", let seasons = detail.seasons, !seasons.isEmpty {
-                        seasonsAndEpisodesSection(detail: detail, seasons: seasons, client: client)
-                    }
-
-                    DetailCastStripView(
-                        members: detail.castMembers,
-                        castNames: detail.cast,
-                        client: client
-                    ) { actorName in
-                        selectedActorQuery = actorName
-                    }
-                } else if isLoading {
-                    HStack(spacing: 16) {
-                        ProgressView()
-                        Text("Henter detaljer for \(initialTitle)…")
-                            .font(.title3)
-                            .foregroundStyle(LunaTheme.moonlight)
-                    }
-                    .padding(80)
-                } else if let errorMessage {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(errorMessage)
-                            .foregroundStyle(LunaTheme.amber)
-                        LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                            Task { await loadDetail() }
+                        DetailCastStripView(
+                            members: detail.castMembers,
+                            castNames: detail.cast,
+                            client: client,
+                            horizontalGutter: detailGutter
+                        ) { actorName in
+                            selectedActorQuery = actorName
                         }
+                    } else if isLoading {
+                        HStack(spacing: 16) {
+                            ProgressView()
+                            Text("Henter detaljer for \(initialTitle)…")
+                                .font(.title3)
+                                .foregroundStyle(LunaTheme.moonlight)
+                        }
+                        .padding(.horizontal, detailGutter)
+                        .padding(.top, 180)
+                    } else if let errorMessage {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text(errorMessage)
+                                .foregroundStyle(LunaTheme.amber)
+                            LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
+                                Task { await loadDetail() }
+                            }
+                        }
+                        .padding(.horizontal, detailGutter)
+                        .padding(.top, 180)
                     }
-                    .padding(LunaTheme.horizontalGutter)
                 }
+                .padding(.bottom, 84)
             }
-            .padding(.bottom, 84)
+            .contentMargins(.zero, for: .scrollContent)
+            .ignoresSafeArea(edges: [.top, .horizontal])
+
+            if let mutationErrorBanner {
+                TransientErrorBanner(message: mutationErrorBanner)
+                    .padding(.horizontal, detailGutter)
+                    .padding(.top, 72)
+            }
         }
         .focusScope(detailFocusNamespace)
         .navigationDestination(item: $selectedActorQuery) { actorName in
@@ -200,7 +212,7 @@ struct MediaDetailView: View {
                         }
                     }
                 }
-                .padding(.horizontal, LunaTheme.horizontalGutter)
+                .padding(.horizontal, detailGutter)
                 .padding(.vertical, 10)
             }
             .scrollClipDisabled()
@@ -212,7 +224,7 @@ struct MediaDetailView: View {
                         .font(.callout)
                         .foregroundStyle(LunaTheme.muted)
                 }
-                .padding(.horizontal, LunaTheme.horizontalGutter)
+                .padding(.horizontal, detailGutter)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -254,7 +266,7 @@ struct MediaDetailView: View {
                                 .id(ep.id)
                             }
                         }
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
+                        .padding(.horizontal, detailGutter)
                         .padding(.vertical, 18)
                     }
                     .scrollClipDisabled()
