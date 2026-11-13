@@ -132,7 +132,7 @@ public struct BackdropCardView: View {
                     .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.muted)
                     .lineLimit(1)
             }
-            .frame(width: width, minHeight: 68, alignment: .topLeading)
+            .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: 68, alignment: .topLeading)
             .offset(y: isFocused ? 7 : 0)
             .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
         }

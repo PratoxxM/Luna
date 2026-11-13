@@ -128,7 +128,7 @@ public struct PosterCardView: View {
                     .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.muted)
                     .lineLimit(1)
             }
-            .frame(width: width, minHeight: 92, alignment: .topLeading)
+            .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: 92, alignment: .topLeading)
             .offset(y: isFocused ? 6 : 0)
             .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
         }
