@@ -236,8 +236,9 @@ struct DetailHeroHeaderView: View {
 
     private var displayedBadges: [String] {
         var seen: Set<String> = ["klar i vfs", "infinidysk vfs"]
-        if item.isUpcoming == true {
+        if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
             seen.insert("kommer")
+            seen.insert("kommer: \(upcomingBadge.lowercased())")
         } else if let avail = item.availability, avail.isPhysicalLocal {
             seen.insert(avail.householdBadgeLabel.lowercased())
             seen.insert("på nvme")

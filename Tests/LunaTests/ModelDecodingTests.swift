@@ -121,19 +121,21 @@ final class ModelDecodingTests: XCTestCase {
         [
           {
             "candidateId": "vfs-1",
+            "displayHeadline": "4K WEB-DL",
             "releaseTitle": "Example.2026.2160p",
             "source": "local",
             "tier": "infinidysk"
           },
           {
             "candidateId": "vfs-2",
+            "displayHeadline": "1080p WEB-DL",
             "releaseTitle": "Example.2026.1080p",
             "source": "infinidysk",
             "tier": "vfs"
           }
         ]
         """#
-        let candidates = try JSONDecoder().decode([TvPlaybackCandidate].self, from: Data(vfsJson.utf8))
+        let candidates = try JSONDecoder().decode([TvCandidateInfo].self, from: Data(vfsJson.utf8))
         XCTAssertEqual(candidates.map(\.sourceBadgeLabel), ["InfiniDysk Strøm", "InfiniDysk Strøm"])
 
         let nvmeAvail = TvAvailabilityInfo(state: "instant", tier: "nvme")
