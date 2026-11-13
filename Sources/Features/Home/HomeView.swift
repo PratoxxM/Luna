@@ -119,7 +119,17 @@ struct HomeView: View {
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
         .navigationDestination(item: $selectedSeeAllRow) { row in
-            CustomRowBrowseView(title: row.title, pathOrRowId: row.nextPath ?? row.rowId)
+            if row.rowId == "popular-movies"
+                || row.sourceKind == "system_popular_movies"
+                || row.nextPath?.contains("/catalog/movies") == true {
+                CatalogBrowseView(mediaType: "movie", initialGenre: nil)
+            } else if row.rowId == "popular-series"
+                || row.sourceKind == "system_popular_series"
+                || row.nextPath?.contains("/catalog/series") == true {
+                CatalogBrowseView(mediaType: "series", initialGenre: nil)
+            } else {
+                CustomRowBrowseView(title: row.title, pathOrRowId: row.nextPath ?? row.rowId)
+            }
         }
         .sheet(item: $sourcePickerContext) { ctx in
             SourcePickerSheetView(
@@ -153,12 +163,12 @@ struct HomeView: View {
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
             guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
             lastSeenRefreshNonce = newNonce
-            Task { await revalidateHome(forceUnconditional: true) }
+            Task { await revalidateHome(forceUnconditional: false) }
         }
         .onChange(of: isActiveTab) { _, active in
             guard active, lastSeenRefreshNonce != sessionStore.homeRefreshNonce else { return }
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            Task { await revalidateHome(forceUnconditional: true) }
+            Task { await revalidateHome(forceUnconditional: false) }
         }
         .onDisappear {
             mutationBannerTask?.cancel()
@@ -210,7 +220,7 @@ struct HomeView: View {
                 break
             case .updated(let payload, let newEtag, let rawData):
                 cachedEtag = newEtag
-                if homePayload != payload {
+                if !(homePayload?.isSemanticallyEqual(to: payload) ?? false) {
                     withAnimation(.easeOut(duration: 0.22)) {
                         homePayload = payload
                     }

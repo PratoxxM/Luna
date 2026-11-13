@@ -113,7 +113,7 @@ struct ResolvingCurtainView: View {
     }
 
     private var resolvedBackdropURL: URL? {
-        let raw = viewModel.activeSession?.item.backdropUrl ?? initialRequest.backdropUrl
+        let raw = initialRequest.backdropUrl ?? viewModel.activeSession?.item.backdropUrl
         guard let raw, !raw.isEmpty else { return nil }
         return client?.buildAbsoluteURL(raw)
     }

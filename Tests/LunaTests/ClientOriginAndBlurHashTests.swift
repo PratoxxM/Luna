@@ -58,5 +58,13 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
 
         XCTAssertNil(BlurHashDecoder.decode("short", width: 32, height: 24, punch: 1.0))
         XCTAssertNil(BlurHashDecoder.decode(nil, width: 32, height: 24, punch: 1.0))
+
+        let defaultSized = BlurHashDecoder.decode(sampleHash)
+        XCTAssertNotNil(defaultSized)
+        XCTAssertEqual(defaultSized?.width, 32)
+        XCTAssertEqual(defaultSized?.height, 18)
+
+        let invalidCharset = "!EV6nWB2yk8pyo0adR*.7kCMdnj"
+        XCTAssertNil(BlurHashDecoder.decode(invalidCharset, width: 32, height: 18, punch: 1.0))
     }
 }

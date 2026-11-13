@@ -25,10 +25,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-tvos:
-    name: Build Luna-unsigned.ipa (tvOS Release)
+  test-tvos:
+    name: Static Guardrails & LunaTests
     runs-on: ${{ inputs.runner || 'xcode-27' }}
-    timeout-minutes: 45
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -70,15 +70,16 @@ jobs:
           fi
           xcodegen --version
 
-      - name: Cache SwiftPM repositories & SourcePackages
+      - name: Cache SwiftPM & Compilation Cache (Simulator)
         uses: actions/cache@v4
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
             build/SourcePackages
-          key: spm-tvos-${{ runner.os }}-${{ hashFiles('Packages/AetherBridge/Package.swift') }}
+            ~/Library/Developer/Xcode/DerivedData/CompilationCache.noindex
+          key: tvos-sim-cache-${{ runner.os }}-${{ hashFiles('Packages/AetherBridge/Package.swift', 'project.yml') }}
           restore-keys: |
-            spm-tvos-${{ runner.os }}-
+            tvos-sim-cache-${{ runner.os }}-
 
       - name: Static Guardrails (LOC, Permissions, Sideload & Public Hygiene)
         run: |
@@ -130,13 +131,17 @@ jobs:
           ' || true)
 
           if [ -n "$TVOS_SIM_UDID" ]; then
-            echo "Running LunaTests on tvOS Simulator ($TVOS_SIM_UDID)..."
+            echo "Pre-booting & running LunaTests on tvOS Simulator ($TVOS_SIM_UDID)..."
+            xcrun simctl boot "$TVOS_SIM_UDID" >/dev/null 2>&1 || true
             xcodebuild test \
               -project Luna.xcodeproj \
               -scheme Luna \
               -destination "platform=tvOS Simulator,id=$TVOS_SIM_UDID" \
               -derivedDataPath build-tests \
               -clonedSourcePackagesDirPath build/SourcePackages \
+              COMPILER_INDEX_STORE_ENABLE=NO \
+              DEBUG_INFORMATION_FORMAT=dwarf \
+              COMPILATION_CACHE_ENABLE_CACHING=YES \
               CODE_SIGN_IDENTITY="" \
               CODE_SIGNING_REQUIRED=NO \
               CODE_SIGNING_ALLOWED=NO
@@ -148,10 +153,65 @@ jobs:
               -destination 'generic/platform=tvOS Simulator' \
               -derivedDataPath build-tests \
               -clonedSourcePackagesDirPath build/SourcePackages \
+              COMPILER_INDEX_STORE_ENABLE=NO \
+              DEBUG_INFORMATION_FORMAT=dwarf \
+              COMPILATION_CACHE_ENABLE_CACHING=YES \
               CODE_SIGN_IDENTITY="" \
               CODE_SIGNING_REQUIRED=NO \
               CODE_SIGNING_ALLOWED=NO
           fi
+
+  build-ipa:
+    name: Build Unsigned Release IPA (arm64)
+    runs-on: ${{ inputs.runner || 'xcode-27' }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select newest Xcode (26.2+ / 27) with tvOS 26+ SDK
+        run: |
+          set -euo pipefail
+          SELECTED_XCODE=""
+          for candidate in $(ls -d /Applications/Xcode*.app | sort -V -r); do
+            if [ -x "$candidate/Contents/Developer/usr/bin/xcodebuild" ]; then
+              SDK_VER=$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version -sdk appletvos SDKVersion 2>/dev/null || echo "0")
+              MAJOR="${SDK_VER%%.*}"
+              if [ "${MAJOR:-0}" -ge 26 ]; then
+                SELECTED_XCODE="$candidate"
+                break
+              fi
+            fi
+          done
+
+          if [ -z "$SELECTED_XCODE" ]; then
+            echo "::error::No Xcode installation with appletvos SDK >= 26.0 found on runner!"
+            exit 1
+          fi
+
+          sudo xcode-select -s "$SELECTED_XCODE"
+          xcodebuild -version
+
+      - name: Ensure XcodeGen is installed
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install xcodegen
+          fi
+
+      - name: Cache SwiftPM & Compilation Cache (Release)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            build/SourcePackages
+            ~/Library/Developer/Xcode/DerivedData/CompilationCache.noindex
+          key: tvos-release-cache-${{ runner.os }}-${{ hashFiles('Packages/AetherBridge/Package.swift', 'project.yml') }}
+          restore-keys: |
+            tvos-release-cache-${{ runner.os }}-
+
+      - name: Generate Luna.xcodeproj from project.yml
+        run: xcodegen generate
 
       - name: Build unsigned Release app for tvOS device (arm64)
         run: |
@@ -163,6 +223,9 @@ jobs:
             -destination 'generic/platform=tvOS' \
             -derivedDataPath build \
             -clonedSourcePackagesDirPath build/SourcePackages \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            DEBUG_INFORMATION_FORMAT=dwarf \
+            COMPILATION_CACHE_ENABLE_CACHING=YES \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
@@ -207,8 +270,32 @@ jobs:
             dist/Luna-unsigned.ipa.sha256
           retention-days: 30
 
+  publish-release:
+    name: Publish Rolling Latest Release
+    runs-on: ubuntu-latest
+    needs: [test-tvos, build-ipa]
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download built IPA artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Luna-unsigned-ipa
+          path: dist
+
+      - name: Verify downloaded artifacts
+        run: |
+          set -euo pipefail
+          test -s dist/Luna-unsigned.ipa
+          test -s dist/Luna-unsigned.ipa.sha256
+          ls -lh dist/
+          cat dist/Luna-unsigned.ipa.sha256
+
       - name: Publish Luna-unsigned.ipa to rolling GitHub Release 'latest'
-        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

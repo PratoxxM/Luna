@@ -1,7 +1,7 @@
 import Foundation
 import AetherBridge
 
-/// Coordinates debounced 450ms `/api/tv/v1/playback/prepare` + strict NVMe/VFS-only
+/// Coordinates debounced 180ms `/api/tv/v1/playback/prepare` + strict NVMe/VFS-only
 /// 8 MiB `AetherEngine.prewarm` on detail views without waking mechanical archive drives.
 @MainActor
 final class DetailPreResolveController: ObservableObject {
@@ -12,6 +12,7 @@ final class DetailPreResolveController: ObservableObject {
 
     private var prewarmedStreamToken: String?
     private var preResolveTask: Task<Void, Never>?
+    private var consumedItemId: String?
 
     func matchingToken(for itemId: String) -> String? {
         guard preparedForItemId == itemId, let tok = preparedToken, !tok.isEmpty else {
@@ -21,6 +22,7 @@ final class DetailPreResolveController: ObservableObject {
     }
 
     func consumeForPlayback(itemId: String, client: MediaOSClient?) -> String? {
+        consumedItemId = itemId
         preResolveTask?.cancel()
         preResolveTask = nil
 
@@ -34,8 +36,17 @@ final class DetailPreResolveController: ObservableObject {
             return token
         }
 
-        cleanupPreparedSession(client: client)
+        if preparedForItemId != itemId {
+            cleanupPreparedSession(client: client)
+        }
         return nil
+    }
+
+    func discardPreparedSession(client: MediaOSClient?) {
+        consumedItemId = nil
+        preResolveTask?.cancel()
+        preResolveTask = nil
+        cleanupPreparedSession(client: client)
     }
 
     func schedule(
@@ -51,6 +62,7 @@ final class DetailPreResolveController: ObservableObject {
             return
         }
 
+        consumedItemId = nil
         preResolveTask?.cancel()
         if preparedForItemId != targetItemId {
             cleanupPreparedSession(client: client)
@@ -59,7 +71,7 @@ final class DetailPreResolveController: ObservableObject {
         guard let client else { return }
 
         preResolveTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 450_000_000)
+            try? await Task.sleep(nanoseconds: 180_000_000)
             guard !Task.isCancelled, let self else { return }
 
             guard let prep = try? await client.preparePlayback(
@@ -72,7 +84,10 @@ final class DetailPreResolveController: ObservableObject {
             }
 
             if Task.isCancelled {
-                if let orphanSid = prep.playbackSession?.sessionId {
+                // Keep an in-flight prepared session alive when playback already
+                // consumed this itemId so `/playback/resolve` promotes it in < 1 ms.
+                if self.consumedItemId != targetItemId,
+                   let orphanSid = prep.playbackSession?.sessionId {
                     Self.stopSessionDetached(sessionId: orphanSid, client: client)
                 }
                 return

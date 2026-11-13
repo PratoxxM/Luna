@@ -311,23 +311,54 @@ public struct MediaOSClient: Sendable {
     }
 
     public func fetchRow(pathOrRowId: String, offset: Int = 0, limit: Int = 24, sort: String? = nil) async throws -> TvRowPageResponse {
-        var path: String
-        if pathOrRowId.hasPrefix("/api/tv/v1/") {
-            if pathOrRowId.contains("offset=") {
-                path = pathOrRowId
-            } else {
-                let joiner = pathOrRowId.contains("?") ? "&" : "?"
-                path = "\(pathOrRowId)\(joiner)offset=\(offset)&limit=\(limit)"
-            }
-        } else {
-            let encoded = pathOrRowId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? pathOrRowId
-            path = "/api/tv/v1/rows/\(encoded)?offset=\(offset)&limit=\(limit)"
-        }
-        if let sort, !sort.isEmpty, !path.contains("sort=") {
-            let joiner = path.contains("?") ? "&" : "?"
-            path += "\(joiner)sort=\(sort)"
-        }
+        let path = Self.buildRowRequestPath(
+            pathOrRowId: pathOrRowId,
+            offset: offset,
+            limit: limit,
+            sort: sort
+        )
         return try await sendJSON(method: "GET", path: path)
+    }
+
+    internal static func buildRowRequestPath(
+        pathOrRowId: String,
+        offset: Int = 0,
+        limit: Int = 24,
+        sort: String? = nil
+    ) -> String {
+        let clampedOffset = max(0, offset)
+        let clampedLimit = max(1, limit)
+
+        if pathOrRowId.hasPrefix("/api/tv/v1/") {
+            if var comps = URLComponents(string: pathOrRowId) {
+                var items = comps.queryItems ?? []
+                if comps.path.hasPrefix("/api/tv/v1/catalog/") {
+                    let page = (clampedOffset / clampedLimit) + 1
+                    items.removeAll { $0.name == "offset" || $0.name == "limit" || $0.name == "page" }
+                    items.append(URLQueryItem(name: "page", value: String(page)))
+                    items.append(URLQueryItem(name: "limit", value: String(clampedLimit)))
+                } else {
+                    items.removeAll { $0.name == "offset" || $0.name == "limit" }
+                    items.append(URLQueryItem(name: "offset", value: String(clampedOffset)))
+                    items.append(URLQueryItem(name: "limit", value: String(clampedLimit)))
+                }
+                if let sort, !sort.isEmpty, !items.contains(where: { $0.name == "sort" }) {
+                    items.append(URLQueryItem(name: "sort", value: sort))
+                }
+                comps.queryItems = items
+                if let built = comps.string {
+                    return built
+                }
+            }
+        }
+
+        let encoded = pathOrRowId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? pathOrRowId
+        var path = "/api/tv/v1/rows/\(encoded)?offset=\(clampedOffset)&limit=\(clampedLimit)"
+        if let sort, !sort.isEmpty {
+            let encodedSort = sort.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? sort
+            path += "&sort=\(encodedSort)"
+        }
+        return path
     }
 
     public func fetchItemDetail(mediaType: String, itemId: String, seasonNumber: Int? = nil) async throws -> TvItemDetail {

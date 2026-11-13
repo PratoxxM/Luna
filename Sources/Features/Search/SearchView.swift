@@ -145,6 +145,9 @@ struct SearchView: View {
                                         onOpenDetails: {
                                             selectedCard = card
                                         },
+                                        onToggleWatched: {
+                                            Task { await toggleWatched(card) }
+                                        },
                                         onToggleWatchlist: {
                                             Task { await toggleWatchlist(card) }
                                         },
@@ -267,6 +270,31 @@ struct SearchView: View {
         } catch {
             if let idx = results.firstIndex(where: { $0.id == card.id }) {
                 results[idx].inWatchlist = previous
+            }
+            showMutationError(error)
+        }
+    }
+
+    private func toggleWatched(_ card: TvMediaCard) async {
+        let previousProgress = card.progress
+        let nextWatched = !(card.progress?.watched ?? false)
+        if let idx = results.firstIndex(where: { $0.id == card.id }) {
+            results[idx].progress = TvWatchProgress(
+                positionSeconds: nextWatched ? 0 : (previousProgress?.positionSeconds ?? 0),
+                durationSeconds: previousProgress?.durationSeconds ?? 0,
+                percent: nextWatched ? 100 : 0,
+                season: previousProgress?.season,
+                episode: previousProgress?.episode,
+                watched: nextWatched
+            )
+        }
+        do {
+            if try await MediaCardMutator.toggleWatched(for: card, watched: nextWatched, sessionStore: sessionStore) {
+                sessionStore.notifyContentMutated()
+            }
+        } catch {
+            if let idx = results.firstIndex(where: { $0.id == card.id }) {
+                results[idx].progress = previousProgress
             }
             showMutationError(error)
         }

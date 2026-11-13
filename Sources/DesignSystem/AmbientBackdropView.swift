@@ -1,5 +1,28 @@
 import SwiftUI
 
+/// Lightweight focus-reporting closure bag so focused cards and detail views
+/// never subscribe to `AmbientBackdropController`'s `@Published` properties.
+public struct AmbientFocusSink: Sendable {
+    public let reportFocus: @MainActor @Sendable (String?, URL?, String?) -> Void
+    public let setImmediate: @MainActor @Sendable (String?, URL?, String?) -> Void
+
+    public static let noop = AmbientFocusSink(
+        reportFocus: { _, _, _ in },
+        setImmediate: { _, _, _ in }
+    )
+}
+
+private struct AmbientFocusSinkKey: EnvironmentKey {
+    static let defaultValue: AmbientFocusSink = .noop
+}
+
+public extension EnvironmentValues {
+    var ambientFocusSink: AmbientFocusSink {
+        get { self[AmbientFocusSinkKey.self] }
+        set { self[AmbientFocusSinkKey.self] = newValue }
+    }
+}
+
 /// Debounced ambient focus backdrop state.
 ///
 /// Delays updates by `400 ms` so fast Siri Remote scrolling across rows cancels
@@ -12,6 +35,17 @@ public final class AmbientBackdropController: ObservableObject {
     private var debounceTask: Task<Void, Never>?
 
     public init() {}
+
+    public var focusSink: AmbientFocusSink {
+        AmbientFocusSink(
+            reportFocus: { [weak self] dominantColor, backdropURL, blurHash in
+                self?.reportFocus(dominantColor: dominantColor, backdropURL: backdropURL, blurHash: blurHash)
+            },
+            setImmediate: { [weak self] dominantColor, backdropURL, blurHash in
+                self?.setImmediate(dominantColor: dominantColor, backdropURL: backdropURL, blurHash: blurHash)
+            }
+        )
+    }
 
     public func reportFocus(dominantColor: String?, backdropURL: URL? = nil, blurHash: String?) {
         _ = backdropURL

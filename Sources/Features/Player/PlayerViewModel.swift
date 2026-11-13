@@ -4,6 +4,15 @@ import UIKit
 import Combine
 import AetherBridge
 
+/// Isolated high-frequency scrubbing state so touch-surface updates during
+/// 60–120 Hz Siri Remote panning only invalidate `TimelineScrubberLeafView`.
+@MainActor
+final class PlayerScrubState: ObservableObject {
+    @Published var targetSeconds: Double = 0
+    @Published var originSeconds: Double = 0
+    @Published var previewImage: CGImage?
+}
+
 @MainActor
 final class PlayerViewModel: ObservableObject {
     // Resolve & First-Frame Reveal State
@@ -60,9 +69,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var coalescedSeekDelta: Double = 0
     @Published var coalescedSeekPreviewTarget: Double?
     @Published var isScrubbing: Bool = false
-    @Published var scrubTargetSeconds: Double = 0
-    @Published var scrubOriginSeconds: Double = 0
-    @Published var scrubPreviewImage: CGImage?
+    let scrubState = PlayerScrubState()
 
     let engine: AetherEngine
     let comfort: ComfortPreferences
@@ -172,12 +179,28 @@ final class PlayerViewModel: ObservableObject {
         resolveHeadline = nil
         resolvePercent = 12
         resolveStageLabel = "Starter neste episode…"
+        isResolving = true
+        hasFirstFrameReadyForDisplay = false
+        firstFrameFallbackUnlocked = false
 
-        resolveTask = Task { @MainActor in
-            await sendHeartbeatOnce(overrideState: "stopped")
-            activeSession = nil
-            engine.prepareForItemReplacement()
-            await runResolveAndLoad(request: req, client: client, isReplacement: true)
+        let prevSessionId = current.sessionId
+        let finalPos = max(0, engine.currentTime)
+        let finalDur = max(0, effectiveDurationSeconds)
+        activeSession = nil
+        engine.prepareForItemReplacement()
+
+        Task.detached(priority: .utility) {
+            _ = try? await client.sendHeartbeat(
+                sessionId: prevSessionId,
+                state: "stopped",
+                positionSeconds: finalPos,
+                durationSeconds: finalDur
+            )
+        }
+
+        resolveTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.runResolveAndLoad(request: req, client: client, isReplacement: true)
         }
     }
 
@@ -353,6 +376,7 @@ final class PlayerViewModel: ObservableObject {
         let finalDur = max(0, effectiveDurationSeconds)
 
         PlayerNowPlayingCoordinator.clear(engine: engine)
+        cancellables.removeAll()
         engine.stop(resetDisplayCriteria: true)
 
         if let tok = registeredStreamToken, tok.count >= 8 {

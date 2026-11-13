@@ -27,6 +27,8 @@ struct LunaApp: App {
     init() {
         Task.detached(priority: .utility) {
             _ = await AetherEngine.prewarmDualLayerDolbyVision()
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard !Task.isCancelled else { return }
             await ArtworkPipeline.shared.trimDiskCacheIfNeeded()
         }
     }

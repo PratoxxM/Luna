@@ -77,6 +77,7 @@ struct PlayerBottomBarView: View {
 
                 TimelineScrubberLeafView(
                     viewModel: viewModel,
+                    scrubState: viewModel.scrubState,
                     engine: viewModel.engine,
                     duration: duration,
                     isPaused: isPaused
@@ -189,6 +190,7 @@ private struct ActiveChapterLabelLeafView: View {
 
 struct TimelineScrubberLeafView: View {
     @ObservedObject var viewModel: PlayerViewModel
+    @ObservedObject var scrubState: PlayerScrubState
     let engine: AetherEngine
     let duration: Double
     let isPaused: Bool
@@ -201,7 +203,7 @@ struct TimelineScrubberLeafView: View {
         let isScrubbing = viewModel.isScrubbing
         let displayTime: Double = {
             if isScrubbing {
-                return viewModel.scrubTargetSeconds
+                return scrubState.targetSeconds
             }
             if let seekOverride = viewModel.coalescedSeekPreviewTarget {
                 return seekOverride
@@ -261,9 +263,9 @@ struct TimelineScrubberLeafView: View {
                         let chapterTitle = viewModel.activeChapter(at: displayTime)?.title
                         let bubble = ScrubPreviewBubbleView(
                             targetSeconds: displayTime,
-                            originSeconds: viewModel.scrubOriginSeconds,
+                            originSeconds: scrubState.originSeconds,
                             chapterTitle: chapterTitle,
-                            previewImage: viewModel.scrubPreviewImage,
+                            previewImage: scrubState.previewImage,
                             drawsInCompositorView: engine.scrubPreviewDrawsInView,
                             onMountCompositorView: { compView in
                                 viewModel.attachCompositorPreviewView(compView)

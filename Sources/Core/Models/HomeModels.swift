@@ -391,6 +391,16 @@ public struct TvHomeResponse: Codable, Equatable, Sendable {
     public let roomName: String
     public let hardwareProfile: String
     public let rows: [TvShelfRow]
+
+    /// Ignores transient `generatedAt` timestamps when checking whether a home
+    /// response actually changed the visible shelves or room/profile state.
+    public func isSemanticallyEqual(to other: TvHomeResponse) -> Bool {
+        ok == other.ok
+            && layoutMode == other.layoutMode
+            && roomName == other.roomName
+            && hardwareProfile == other.hardwareProfile
+            && rows == other.rows
+    }
 }
 
 public struct TvRowPageResponse: Codable, Equatable, Sendable {

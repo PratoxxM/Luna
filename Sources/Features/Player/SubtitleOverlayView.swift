@@ -15,8 +15,8 @@ struct SubtitleOverlayView: View {
     @ObservedObject var comfort: ComfortPreferences
     var isBottomBarVisible: Bool = false
 
-    @State private var sourceTime: Double = 0
     @State private var cues: [SubtitleCue] = []
+    @State private var visibleCues: [SubtitleCue] = []
     @State private var tracks: [TrackInfo] = []
     @State private var activeTrackID: Int?
     @State private var videoFormat: VideoFormat = .sdr
@@ -24,13 +24,11 @@ struct SubtitleOverlayView: View {
     var body: some View {
         GeometryReader { geo in
             if !isNativeSubtitleActive {
-                let effectiveTime = sourceTime - engine.softwareSubtitleDelaySeconds
-                let visible = cues.filter { $0.startTime <= effectiveTime && effectiveTime < $0.endTime }
                 let isHDR = (videoFormat != .sdr)
-                let topCues = visible.filter { isTextCue($0) && resolveVerticalSlot(for: $0.placement) == .top }
-                let centerCues = visible.filter { isTextCue($0) && resolveVerticalSlot(for: $0.placement) == .center }
-                let bottomCues = visible.filter { isTextCue($0) && resolveVerticalSlot(for: $0.placement) == .bottom }
-                let bitmapCues = visible.filter { !isTextCue($0) }
+                let topCues = visibleCues.filter { isTextCue($0) && resolveVerticalSlot(for: $0.placement) == .top }
+                let centerCues = visibleCues.filter { isTextCue($0) && resolveVerticalSlot(for: $0.placement) == .center }
+                let bottomCues = visibleCues.filter { isTextCue($0) && resolveVerticalSlot(for: $0.placement) == .bottom }
+                let bitmapCues = visibleCues.filter { !isTextCue($0) }
 
                 ZStack {
                     Color.clear
@@ -53,11 +51,29 @@ struct SubtitleOverlayView: View {
             }
         }
         .allowsHitTesting(false)
-        .onReceive(engine.clock.$sourceTime) { sourceTime = $0 }
-        .onReceive(engine.$subtitleCues) { cues = $0 }
+        .onAppear {
+            recomputeVisibleCues(at: engine.clock.sourceTime)
+        }
+        .onReceive(engine.clock.$sourceTime) { time in
+            recomputeVisibleCues(at: time)
+        }
+        .onReceive(engine.$subtitleCues) { nextCues in
+            cues = nextCues
+            recomputeVisibleCues(at: engine.clock.sourceTime, cueSource: nextCues)
+        }
         .onReceive(engine.$subtitleTracks) { tracks = $0 }
         .onReceive(engine.$activeSubtitleTrackIndex) { activeTrackID = $0 }
         .onReceive(engine.$videoFormat) { videoFormat = $0 }
+    }
+
+    private func recomputeVisibleCues(at sourceTime: Double, cueSource: [SubtitleCue]? = nil) {
+        let activeCues = cueSource ?? cues
+        let effectiveTime = sourceTime - engine.softwareSubtitleDelaySeconds
+        let next = activeCues.filter { $0.startTime <= effectiveTime && effectiveTime < $0.endTime }
+        let changed = next.count != visibleCues.count || zip(next, visibleCues).contains(where: { $0.id != $1.id })
+        if changed {
+            visibleCues = next
+        }
     }
 
     private var isNativeSubtitleActive: Bool {

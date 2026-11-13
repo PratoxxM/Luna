@@ -1,7 +1,7 @@
 import SwiftUI
 
 public struct PosterCardView: View {
-    @EnvironmentObject private var ambient: AmbientBackdropController
+    @Environment(\.ambientFocusSink) private var ambientFocus
 
     let card: TvMediaCard
     let client: MediaOSClient?
@@ -134,9 +134,10 @@ public struct PosterCardView: View {
         }
         .onChange(of: isFocused) { _, focused in
             if focused {
-                ambient.reportFocus(
-                    dominantColor: card.dominantColor,
-                    blurHash: card.blurHash
+                ambientFocus.reportFocus(
+                    card.dominantColor,
+                    nil,
+                    card.blurHash
                 )
             }
         }

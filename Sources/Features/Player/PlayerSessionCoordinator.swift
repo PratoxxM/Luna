@@ -203,7 +203,7 @@ extension PlayerViewModel {
         firstFrameFallbackTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             guard !Task.isCancelled, let self else { return }
-            if !self.hasFirstFrameReadyForDisplay {
+            if !self.isPictureReadyForReveal {
                 self.firstFrameFallbackUnlocked = true
             }
         }
@@ -229,6 +229,11 @@ extension PlayerViewModel {
         resolveId: String,
         client: MediaOSClient
     ) async throws -> TvPlaybackSession {
+        @MainActor
+        final class FirstEventLatch: Sendable {
+            var received = false
+        }
+
         let socket = PlaybackResolveSocket(
             baseURL: client.baseURL,
             wsPath: wsPath,
@@ -236,15 +241,41 @@ extension PlayerViewModel {
             allowSelfSignedLanTLS: client.allowSelfSignedLanTLS
         )
 
-        do {
+        let latch = FirstEventLatch()
+        let streamTask = Task { @MainActor [weak self] () throws -> TvPlaybackSession? in
             for try await event in socket.events() {
-                applyResolveProgressEvent(event)
+                latch.received = true
+                self?.applyResolveProgressEvent(event)
                 if event.type == "resolve.ready", let readySession = event.playbackSession {
                     return readySession
                 }
                 if event.type == "resolve.failed" {
                     throw MediaOSError.serverMessage(502, event.error ?? "Kunne ikke klargjøre strøm.")
                 }
+            }
+            return nil
+        }
+
+        let watchdogTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled, !latch.received else { return }
+            streamTask.cancel()
+        }
+
+        defer {
+            watchdogTask.cancel()
+            streamTask.cancel()
+        }
+
+        do {
+            let ready = try await withTaskCancellationHandler {
+                try await streamTask.value
+            } onCancel: {
+                watchdogTask.cancel()
+                streamTask.cancel()
+            }
+            if let readySession = ready {
+                return readySession
             }
         } catch let err as MediaOSError {
             if case .serverMessage(502, _) = err {
@@ -254,9 +285,10 @@ extension PlayerViewModel {
                 throw err
             }
         } catch {
-            // Fall through to HTTP snapshot polling if WebSocket upgrade/stream drops
+            // Fall through to HTTP snapshot polling if WebSocket stalls or drops
         }
 
+        try Task.checkCancellation()
         return try await pollHttpResolutionFallback(resolveId: resolveId, client: client)
     }
 

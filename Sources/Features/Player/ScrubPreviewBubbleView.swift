@@ -121,9 +121,9 @@ extension PlayerViewModel {
             if wasPlayingBeforeScrub {
                 engine.pause()
             }
-            scrubOriginSeconds = origin
-            scrubTargetSeconds = origin
-            scrubPreviewImage = nil
+            scrubState.originSeconds = origin
+            scrubState.targetSeconds = origin
+            scrubState.previewImage = nil
             isScrubbing = true
             UIApplication.shared.isIdleTimerDisabled = true
             enqueueScrubPreview(at: origin)
@@ -147,23 +147,23 @@ extension PlayerViewModel {
             secondsPerPoint = min(3.4, (1.30 + t * 1.55) * durationScale)
         }
 
-        let rawNext = scrubTargetSeconds + Double(deltaPoints) * secondsPerPoint
+        let rawNext = scrubState.targetSeconds + Double(deltaPoints) * secondsPerPoint
         let clamped = min(max(0, rawNext), max(0, dur - 0.5))
-        scrubTargetSeconds = clamped
+        scrubState.targetSeconds = clamped
         enqueueScrubPreview(at: clamped)
     }
 
     func stepTouchScrub(by deltaSeconds: Double) {
         guard isScrubbing else { return }
         let dur = max(1, effectiveDurationSeconds)
-        let clamped = min(max(0, scrubTargetSeconds + deltaSeconds), max(0, dur - 0.5))
-        scrubTargetSeconds = clamped
+        let clamped = min(max(0, scrubState.targetSeconds + deltaSeconds), max(0, dur - 0.5))
+        scrubState.targetSeconds = clamped
         enqueueScrubPreview(at: clamped)
     }
 
     func commitTouchScrub() {
         guard isScrubbing else { return }
-        let target = scrubTargetSeconds
+        let target = scrubState.targetSeconds
         resetScrubStateOnSessionChange()
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -186,7 +186,7 @@ extension PlayerViewModel {
         guard view != nil else { return }
         Task { @MainActor [weak self] in
             guard let self, self.isScrubbing else { return }
-            self.enqueueScrubPreview(at: self.scrubTargetSeconds)
+            self.enqueueScrubPreview(at: self.scrubState.targetSeconds)
         }
     }
 
@@ -198,8 +198,8 @@ extension PlayerViewModel {
         if isScrubbing {
             isScrubbing = false
         }
-        if scrubPreviewImage != nil {
-            scrubPreviewImage = nil
+        if scrubState.previewImage != nil {
+            scrubState.previewImage = nil
         }
         wasPlayingBeforeScrub = false
     }
@@ -221,9 +221,9 @@ extension PlayerViewModel {
                 } else if self.engine.supportsCacheBackedStills {
                     let still = await self.engine.scrubThumbnail(atSeconds: requested, maxWidth: 320)
                     guard !Task.isCancelled, self.isScrubbing else { return }
-                    self.scrubPreviewImage = still
-                } else if self.scrubPreviewImage != nil {
-                    self.scrubPreviewImage = nil
+                    self.scrubState.previewImage = still
+                } else if self.scrubState.previewImage != nil {
+                    self.scrubState.previewImage = nil
                 }
 
                 try? await Task.sleep(nanoseconds: 45_000_000)

@@ -3,7 +3,7 @@ import AetherBridge
 
 struct MediaDetailView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
-    @EnvironmentObject private var ambient: AmbientBackdropController
+    @Environment(\.ambientFocusSink) private var ambientFocus
 
     let mediaType: String
     let itemId: String
@@ -124,7 +124,11 @@ struct MediaDetailView: View {
                 context: ctx,
                 onSelectCandidate: { picked, reusedToken in
                     let target = ctx
-                    _ = preResolve.consumeForPlayback(itemId: target.itemId, client: sessionStore.makeClient())
+                    if reusedToken != nil {
+                        _ = preResolve.consumeForPlayback(itemId: target.itemId, client: sessionStore.makeClient())
+                    } else {
+                        preResolve.discardPreparedSession(client: sessionStore.makeClient())
+                    }
                     sourcePickerContext = nil
                     sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
                         itemId: target.itemId,
@@ -386,10 +390,15 @@ struct MediaDetailView: View {
                 seasonNumber: requestedSeason
             )
             detail = loaded
-            ambient.setImmediate(
-                dominantColor: loaded.dominantColor,
-                blurHash: loaded.blurHash
+            ambientFocus.setImmediate(
+                loaded.dominantColor,
+                nil,
+                loaded.blurHash
             )
+
+            if loaded.mediaType == "movie" || loaded.nextUp != nil {
+                schedulePreResolve(for: loaded)
+            }
 
             if loaded.mediaType == "series" {
                 let targetSeason: Int
@@ -409,9 +418,10 @@ struct MediaDetailView: View {
                 } else {
                     await loadSeasonEpisodes(detail: loaded, seasonNumber: targetSeason)
                 }
+                if loaded.nextUp == nil {
+                    schedulePreResolve(for: loaded)
+                }
             }
-
-            schedulePreResolve(for: loaded)
         } catch MediaOSError.unauthorized {
             sessionStore.unpairDevice()
         } catch {

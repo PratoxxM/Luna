@@ -113,12 +113,12 @@ enum MediaCardMutator {
     ) async throws -> Bool {
         guard let client = sessionStore.makeClient() else { return false }
         do {
-            if preferSeriesEpisodeTarget && card.mediaType == "series" {
+            if preferSeriesEpisodeTarget && card.mediaType == "series" && (watched || card.directPlayTarget?.season != nil) {
                 let s = card.directPlayTarget?.season ?? card.nextUp?.season ?? card.progress?.season
                 let e = card.directPlayTarget?.episode ?? card.nextUp?.episode ?? card.progress?.episode
                 if let s, let e {
                     try await client.setWatched(
-                        watched: true,
+                        watched: watched,
                         mediaType: "episode",
                         ids: card.ids,
                         title: card.title,

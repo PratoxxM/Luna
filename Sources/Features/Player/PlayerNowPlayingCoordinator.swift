@@ -60,7 +60,7 @@ enum PlayerNowPlayingCoordinator {
         viewModel.nowPlayingArtworkTask = Task { @MainActor [weak viewModel] in
             guard let cgImage = await ArtworkPipeline.shared.loadImage(
                 url: artURL,
-                maxPixelSize: 600,
+                maxPixelSize: 640,
                 client: client
             ) else {
                 return

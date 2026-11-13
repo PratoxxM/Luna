@@ -3,6 +3,7 @@ import CryptoKit
 import ImageIO
 import CoreGraphics
 import SwiftUI
+import UIKit
 
 private final class CGImageBox: NSObject {
     let image: CGImage
@@ -36,17 +37,28 @@ private final class ThreadSafeImageMemoryCache: @unchecked Sendable {
     }
 }
 
-/// Fast pure-Swift BlurHash decoder producing tiny 32x32 smooth placeholders off or on demand.
+/// Fast pure-Swift BlurHash decoder producing tiny 32x18 smooth placeholders off or on demand.
 public enum BlurHashDecoder {
     private static let cache = ThreadSafeImageMemoryCache(totalCostLimit: 4 * 1024 * 1024)
 
-    private static let alphabet: [Character: Int] = {
-        let chars = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~")
-        var map: [Character: Int] = [:]
-        for (idx, ch) in chars.enumerated() {
-            map[ch] = idx
+    private static let base83Table: [Int16] = {
+        var table = [Int16](repeating: -1, count: 256)
+        for (idx, byte) in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~".utf8.enumerated() {
+            table[Int(byte)] = Int16(idx)
         }
-        return map
+        return table
+    }()
+
+    private static let linearTosRGBTable: [UInt8] = {
+        var lut = [UInt8](repeating: 0, count: 4097)
+        for i in 0...4096 {
+            let v = Float(i) / 4096.0
+            let encoded: Float = v <= 0.0031308
+                ? (v * 12.92)
+                : (1.055 * pow(v, 1.0 / 2.4) - 0.055)
+            lut[i] = UInt8(max(0, min(255, Int(encoded * 255.0 + 0.5))))
+        }
+        return lut
     }()
 
     private static func makeCacheKey(_ raw: String, width: Int, height: Int, punch: Float) -> String {
@@ -54,7 +66,7 @@ public enum BlurHashDecoder {
         return "\(raw)#\(width)x\(height)#p\(roundedPunch)"
     }
 
-    public static func cachedImage(_ blurHash: String?, width: Int = 32, height: Int = 24, punch: Float = 1.0) -> CGImage? {
+    public static func cachedImage(_ blurHash: String?, width: Int = 32, height: Int = 18, punch: Float = 1.0) -> CGImage? {
         guard let raw = blurHash?.trimmingCharacters(in: .whitespacesAndNewlines),
               raw.count >= 6 else {
             return nil
@@ -62,7 +74,7 @@ public enum BlurHashDecoder {
         return cache.image(forKey: makeCacheKey(raw, width: width, height: height, punch: punch))
     }
 
-    public static func decodeAsync(_ blurHash: String?, width: Int = 32, height: Int = 24, punch: Float = 1.0) async -> CGImage? {
+    public static func decodeAsync(_ blurHash: String?, width: Int = 32, height: Int = 18, punch: Float = 1.0) async -> CGImage? {
         if let hit = cachedImage(blurHash, width: width, height: height, punch: punch) {
             return hit
         }
@@ -75,7 +87,7 @@ public enum BlurHashDecoder {
         }.value
     }
 
-    public static func decode(_ blurHash: String?, width: Int = 32, height: Int = 24, punch: Float = 1.0) -> CGImage? {
+    public static func decode(_ blurHash: String?, width: Int = 32, height: Int = 18, punch: Float = 1.0) -> CGImage? {
         guard width > 0, height > 0,
               let raw = blurHash?.trimmingCharacters(in: .whitespacesAndNewlines),
               raw.count >= 6 else {
@@ -86,14 +98,14 @@ public enum BlurHashDecoder {
             return hit
         }
 
-        let chars = Array(raw)
-        guard let sizeFlag = decode83(chars, from: 0, to: 1) else { return nil }
+        let bytes = Array(raw.utf8)
+        guard let sizeFlag = decode83(bytes, from: 0, to: 1) else { return nil }
         let numY = (sizeFlag / 9) + 1
         let numX = (sizeFlag % 9) + 1
         let expectedLength = 4 + 2 * numX * numY
-        guard chars.count == expectedLength else { return nil }
+        guard bytes.count == expectedLength else { return nil }
 
-        guard let quantisedMaxValue = decode83(chars, from: 1, to: 2) else { return nil }
+        guard let quantisedMaxValue = decode83(bytes, from: 1, to: 2) else { return nil }
         let maximumValue = Float(quantisedMaxValue + 1) / 166.0
 
         var colors: [(Float, Float, Float)] = []
@@ -101,11 +113,11 @@ public enum BlurHashDecoder {
 
         for i in 0..<(numX * numY) {
             if i == 0 {
-                guard let val = decode83(chars, from: 2, to: 6) else { return nil }
+                guard let val = decode83(bytes, from: 2, to: 6) else { return nil }
                 colors.append(decodeDC(val))
             } else {
                 let start = 4 + i * 2
-                guard let val = decode83(chars, from: start, to: start + 2) else { return nil }
+                guard let val = decode83(bytes, from: start, to: start + 2) else { return nil }
                 colors.append(decodeAC(val, maximumValue: maximumValue * punch))
             }
         }
@@ -150,9 +162,9 @@ public enum BlurHashDecoder {
                 }
 
                 let offset = (y * width + x) * 4
-                pixels[offset] = UInt8(linearTosRGB(r))
-                pixels[offset + 1] = UInt8(linearTosRGB(g))
-                pixels[offset + 2] = UInt8(linearTosRGB(b))
+                pixels[offset] = linearTosRGB(r)
+                pixels[offset + 1] = linearTosRGB(g)
+                pixels[offset + 2] = linearTosRGB(b)
                 pixels[offset + 3] = 255
             }
         }
@@ -179,10 +191,11 @@ public enum BlurHashDecoder {
         return cgImage
     }
 
-    private static func decode83(_ chars: [Character], from: Int, to: Int) -> Int? {
+    private static func decode83(_ bytes: [UInt8], from: Int, to: Int) -> Int? {
         var value = 0
         for idx in from..<to {
-            guard let digit = alphabet[chars[idx]] else { return nil }
+            let digit = Int(base83Table[Int(bytes[idx])])
+            guard digit >= 0 else { return nil }
             value = value * 83 + digit
         }
         return value
@@ -218,15 +231,9 @@ public enum BlurHashDecoder {
         return pow((v + 0.055) / 1.055, 2.4)
     }
 
-    private static func linearTosRGB(_ value: Float) -> Int {
+    private static func linearTosRGB(_ value: Float) -> UInt8 {
         let v = max(0.0, min(1.0, value))
-        let encoded: Float
-        if v <= 0.0031308 {
-            encoded = v * 12.92
-        } else {
-            encoded = 1.055 * pow(v, 1.0 / 2.4) - 0.055
-        }
-        return max(0, min(255, Int(encoded * 255.0 + 0.5)))
+        return linearTosRGBTable[Int((v * 4096.0).rounded())]
     }
 }
 
@@ -238,8 +245,24 @@ public actor ArtworkPipeline {
     private var inflightTasks: [String: Task<CGImage?, Never>] = [:]
     private var inflightWaiters: [String: Set<UUID>] = [:]
     private var rawFetchTasks: [String: Task<Data?, Never>] = [:]
-    private var rawFetchWaiters: [String: Int] = [:]
+    private var rawFetchWaiters: [String: Set<UUID>] = [:]
     private var writesSinceLastTrim: Int = 0
+    private var didEnsureCacheDir: Bool = false
+
+    private let maxConcurrentDecodes = 4
+    private var activeDecodeCount: Int = 0
+    private var decodeWaiters: [CheckedContinuation<Void, Never>] = []
+
+    private init() {
+        let cache = self.ramCache
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            cache.removeAll()
+        }
+    }
 
     private static nonisolated var imageCacheDirectoryURL: URL {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
@@ -301,10 +324,18 @@ public actor ArtworkPipeline {
             let created = Task.detached(priority: .userInitiated) { () -> CGImage? in
                 guard !Task.isCancelled,
                       let data = await pipeline.acquireRawData(url: url, rawKey: rawKey, client: client),
-                      !Task.isCancelled,
-                      let decoded = Self.downsampleAndDecode(data: data, maxPixelSize: maxPixelSize) else {
+                      !Task.isCancelled else {
                     return nil
                 }
+                await pipeline.acquireDecodePermit()
+                let decoded: CGImage?
+                if Task.isCancelled {
+                    decoded = nil
+                } else {
+                    decoded = Self.downsampleAndDecode(data: data, maxPixelSize: maxPixelSize)
+                }
+                await pipeline.releaseDecodePermit()
+                guard let decoded else { return nil }
                 ramCacheRef.insert(decoded, forKey: key)
                 return decoded
             }
@@ -330,7 +361,8 @@ public actor ArtworkPipeline {
     }
 
     private func acquireRawData(url: URL, rawKey: String, client: MediaOSClient?) async -> Data? {
-        rawFetchWaiters[rawKey, default: 0] += 1
+        let rawWaiterID = UUID()
+        rawFetchWaiters[rawKey, default: []].insert(rawWaiterID)
 
         let rawTask: Task<Data?, Never>
         if let existing = rawFetchTasks[rawKey] {
@@ -341,6 +373,7 @@ public actor ArtworkPipeline {
             let pipeline = self
 
             let created = Task.detached(priority: .userInitiated) { () -> Data? in
+                guard !Task.isCancelled else { return nil }
                 let fm = FileManager.default
                 if let diskData = try? Data(contentsOf: diskFileURL), !diskData.isEmpty {
                     if let attrs = try? fm.attributesOfItem(atPath: diskFileURL.path),
@@ -354,17 +387,18 @@ public actor ArtworkPipeline {
                     return diskData
                 }
 
+                guard !Task.isCancelled else { return nil }
                 let fetchedData: Data?
                 if let client {
                     fetchedData = (try? await client.fetchRawImageData(from: url))?.0
                 } else {
                     fetchedData = (try? await externalSession.data(from: url))?.0
                 }
-                guard let data = fetchedData, !data.isEmpty else {
+                guard !Task.isCancelled, let data = fetchedData, !data.isEmpty else {
                     return nil
                 }
 
-                try? fm.createDirectory(at: Self.imageCacheDirectoryURL, withIntermediateDirectories: true)
+                await pipeline.ensureCacheDirectoryIfNeeded()
                 do {
                     try data.write(to: diskFileURL, options: .atomic)
                     await pipeline.recordDiskWriteCompleted()
@@ -377,15 +411,53 @@ public actor ArtworkPipeline {
             rawTask = created
         }
 
-        let data = await rawTask.value
-        let remaining = (rawFetchWaiters[rawKey] ?? 1) - 1
-        if remaining <= 0 {
-            rawFetchWaiters.removeValue(forKey: rawKey)
-            rawFetchTasks.removeValue(forKey: rawKey)
-        } else {
-            rawFetchWaiters[rawKey] = remaining
+        let data = await withTaskCancellationHandler {
+            await rawTask.value
+        } onCancel: {
+            Task {
+                await self.removeRawWaiter(rawWaiterID, forKey: rawKey)
+            }
         }
+        removeRawWaiter(rawWaiterID, forKey: rawKey)
         return data
+    }
+
+    private func ensureCacheDirectoryIfNeeded() {
+        guard !didEnsureCacheDir else { return }
+        try? FileManager.default.createDirectory(at: Self.imageCacheDirectoryURL, withIntermediateDirectories: true)
+        didEnsureCacheDir = true
+    }
+
+    private func acquireDecodePermit() async {
+        if activeDecodeCount < maxConcurrentDecodes {
+            activeDecodeCount += 1
+            return
+        }
+        await withCheckedContinuation { continuation in
+            decodeWaiters.append(continuation)
+        }
+    }
+
+    private func releaseDecodePermit() {
+        if !decodeWaiters.isEmpty {
+            let next = decodeWaiters.removeFirst()
+            next.resume()
+        } else {
+            activeDecodeCount = max(0, activeDecodeCount - 1)
+        }
+    }
+
+    private func removeRawWaiter(_ waiterID: UUID, forKey rawKey: String) {
+        guard var set = rawFetchWaiters[rawKey] else { return }
+        set.remove(waiterID)
+        if set.isEmpty {
+            rawFetchWaiters.removeValue(forKey: rawKey)
+            if let running = rawFetchTasks.removeValue(forKey: rawKey) {
+                running.cancel()
+            }
+        } else {
+            rawFetchWaiters[rawKey] = set
+        }
     }
 
     private func recordDiskWriteCompleted() {
@@ -419,6 +491,7 @@ public actor ArtworkPipeline {
 
     public func clearAll() {
         ramCache.removeAll()
+        didEnsureCacheDir = false
         try? FileManager.default.removeItem(at: Self.imageCacheDirectoryURL)
     }
 

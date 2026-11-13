@@ -629,6 +629,9 @@ private struct ObjectAudioStatusLeafView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(Color.white.opacity(0.06), in: Capsule())
-        .onReceive(engine.diagnostics.$liveTelemetry) { telemetry = $0 }
+        .onAppear { telemetry = engine.diagnostics.liveTelemetry }
+        .onChange(of: fallbackBadge) { _, _ in
+            telemetry = engine.diagnostics.liveTelemetry
+        }
     }
 }

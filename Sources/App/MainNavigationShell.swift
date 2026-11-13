@@ -89,7 +89,7 @@ struct MainNavigationShell: View {
             }
             .tint(LunaTheme.amber)
         }
-        .environmentObject(ambientController)
+        .environment(\.ambientFocusSink, ambientController.focusSink)
         .environmentObject(sessionStore.comfort)
         .fullScreenCover(item: $sessionStore.activePlaybackTarget) { launchRequest in
             PlayerContainerView(
