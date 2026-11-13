@@ -11,6 +11,7 @@ struct PairingOnboardingView: View {
     @State private var statusMessage: String = "Søker etter MediaOS på lokalnettet…"
     @State private var errorMessage: String?
     @State private var isRequestingCode: Bool = false
+    @State private var isCodeExpired: Bool = false
     @State private var pollTask: Task<Void, Never>?
 
     var body: some View {
@@ -127,13 +128,14 @@ struct PairingOnboardingView: View {
 
     private func pairingCodePanel(pairingInfo: TvPairingRequestResponse, baseURL: URL) -> some View {
         VStack(spacing: 28) {
-            Text("Godkjenn TV-en i MediaOS Web")
+            Text(isCodeExpired ? "Paringskoden er utløpt" : "Godkjenn TV-en i MediaOS Web")
                 .font(.title2.weight(.semibold))
+                .foregroundStyle(isCodeExpired ? LunaTheme.amber : .white)
 
-            Text(pairingInfo.displayCode)
+            Text(isCodeExpired ? "------" : pairingInfo.displayCode)
                 .font(.system(size: 88, weight: .heavy, design: .monospaced))
                 .tracking(8)
-                .foregroundStyle(Color(red: 0.96, green: 0.77, blue: 0.42))
+                .foregroundStyle(isCodeExpired ? LunaTheme.muted : Color(red: 0.96, green: 0.77, blue: 0.42))
                 .padding(.horizontal, 48)
                 .padding(.vertical, 24)
                 .background(
@@ -172,6 +174,7 @@ struct PairingOnboardingView: View {
     private func startPairing(against baseURL: URL) {
         pollTask?.cancel()
         errorMessage = nil
+        isCodeExpired = false
         selectedBaseURL = baseURL
         isRequestingCode = true
 
@@ -210,11 +213,17 @@ struct PairingOnboardingView: View {
                             )
                             return
                         }
-                        if httpStatus == 410 || poll.status == "expired" {
-                            self.errorMessage = "Paringskoden utløp. Trykk «Ny kode» for å prøve igjen."
+                        if httpStatus == 404 || httpStatus == 410 || poll.status == "expired" {
+                            self.isCodeExpired = true
+                            self.errorMessage = "Paringskoden utløp eller ble brukt. Trykk «Ny kode» for å hente en ny."
                             return
                         }
+                        if httpStatus == 429 || poll.status == "rate_limited" {
+                            try? await Task.sleep(nanoseconds: UInt64(interval) * 2_000_000_000)
+                            continue
+                        }
                         if httpStatus == 400 || poll.status == "invalid" {
+                            self.isCodeExpired = true
                             self.pairingInfo = nil
                             self.errorMessage = poll.error ?? "Ugyldig paringskode. Trykk «Ny kode» for å prøve igjen."
                             return

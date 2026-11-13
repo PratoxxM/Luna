@@ -7,6 +7,8 @@ struct SettingsView: View {
 
     @State private var cacheBytes: Int64 = 0
     @State private var cacheClearedNotice: Bool = false
+    @State private var showUnpairConfirm: Bool = false
+    @State private var showResetConfirm: Bool = false
 
     var body: some View {
         let caps = AetherEngine.displayCapabilities
@@ -89,6 +91,30 @@ struct SettingsView: View {
                         }
                     }
                     .padding(.top, 4)
+
+                    Divider().overlay(LunaTheme.moonlight.opacity(0.12))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Lavoppløst oppskalering (SD / 720p / Anime)")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(LunaTheme.moonlight)
+
+                        HStack(spacing: 12) {
+                            ForEach(LowResUpscaleMode.allCases) { mode in
+                                LunaPillButton(
+                                    mode.displayTitle,
+                                    isSelected: comfort.lowResUpscaleMode == mode,
+                                    prominence: comfort.lowResUpscaleMode == mode ? .glassPill : .subtleChip
+                                ) {
+                                    comfort.lowResUpscaleMode = mode
+                                }
+                            }
+                        }
+
+                        Text(comfort.lowResUpscaleMode.shortDescription)
+                            .font(.caption)
+                            .foregroundStyle(LunaTheme.muted)
+                    }
 
                     Divider().overlay(LunaTheme.moonlight.opacity(0.12))
 
@@ -191,20 +217,20 @@ struct SettingsView: View {
                     HStack(spacing: 18) {
                         LunaPillButton("Tøm hurtigbuffer", systemImage: "trash", prominence: .subtleChip) {
                             Task {
-                                DiskSWRStore.clearAll()
+                                await DiskSWRStore.clearAllAsync()
                                 await ArtworkPipeline.shared.clearAll()
                                 AetherEngine.discardPrewarmedSources()
-                                refreshCacheMetrics()
+                                await refreshCacheMetricsAsync()
                                 cacheClearedNotice = true
                             }
                         }
 
                         LunaPillButton("Par TV på nytt", systemImage: "qrcode", prominence: .subtleChip) {
-                            sessionStore.unpairDevice()
+                            showUnpairConfirm = true
                         }
 
                         LunaPillButton("Nullstill tilkobling", systemImage: "xmark.circle", prominence: .subtleChip) {
-                            sessionStore.resetAllConnectionSettings()
+                            showResetConfirm = true
                         }
 
                         if cacheClearedNotice {
@@ -219,8 +245,32 @@ struct SettingsView: View {
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.bottom, 56)
         }
+        .confirmationDialog(
+            "Par denne Apple TV-en på nytt?",
+            isPresented: $showUnpairConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Par TV på nytt", role: .destructive) {
+                sessionStore.unpairDevice()
+            }
+            Button("Avbryt", role: .cancel) {}
+        } message: {
+            Text("Dette fjerner aktiv paringstoken og tømmer lokal katalogbuffer. Du beholder serveradressen.")
+        }
+        .confirmationDialog(
+            "Nullstille alle tilkoblingsinnstillinger?",
+            isPresented: $showResetConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Nullstill tilkobling", role: .destructive) {
+                sessionStore.resetAllConnectionSettings()
+            }
+            Button("Avbryt", role: .cancel) {}
+        } message: {
+            Text("Fjerner både serveradresse og paringstoken fra Apple TV.")
+        }
         .task {
-            refreshCacheMetrics()
+            await refreshCacheMetricsAsync()
         }
     }
 
@@ -242,8 +292,10 @@ struct SettingsView: View {
         return String(format: "%.1f MB", mb)
     }
 
-    private func refreshCacheMetrics() {
-        cacheBytes = DiskSWRStore.diskUsageBytes() + ArtworkPipeline.diskUsageBytes()
+    private func refreshCacheMetricsAsync() async {
+        async let swr = DiskSWRStore.diskUsageBytesAsync()
+        async let img = ArtworkPipeline.diskUsageBytesAsync()
+        cacheBytes = await (swr + img)
     }
 
     private func settingsPanel<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

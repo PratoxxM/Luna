@@ -13,8 +13,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "2.2.3"
-    CURRENT_PROJECT_VERSION: "8"
+    MARKETING_VERSION: "2.2.4"
+    CURRENT_PROJECT_VERSION: "9"
     TARGETED_DEVICE_FAMILY: "3"
     TVOS_DEPLOYMENT_TARGET: "18.0"
     ENABLE_USER_SCRIPT_SANDBOXING: "NO"
@@ -43,10 +43,36 @@ targets:
       - package: AetherBridge
         product: AetherBridge
 
+  LunaTests:
+    type: bundle.unit-test
+    platform: tvOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Tests/LunaTests
+    settings:
+      base:
+        PRODUCT_NAME: LunaTests
+        PRODUCT_BUNDLE_IDENTIFIER: local.mediaos.luna.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Luna.app/Luna"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGN_IDENTITY: ""
+    dependencies:
+      - target: Luna
+      - package: AetherBridge
+        product: AetherBridge
+
 schemes:
   Luna:
     build:
       targets:
         Luna: all
+        LunaTests: [test]
+    test:
+      targets:
+        - LunaTests
     archive:
       config: Release

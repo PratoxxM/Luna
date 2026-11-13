@@ -11,9 +11,13 @@ struct LunaApp: App {
     private let engine: AetherEngine = {
         do {
             let created = try AetherEngine()
-            // AE#1015: Prevent background forward subtitle prefetch from downloading
-            // high-bitrate interleaved 4K MKV streams a second time over HTTP/VFS.
-            created.maximumSubtitleOffsetSeconds = 0
+            // AE#1015 / AE#1031: Keep forward subtitle prefetch disabled so 4K MKVs never open
+            // a parallel HTTP stream, while retaining 10 s of past PGS history for positive delay.
+            created.maximumSubtitleAdvanceSeconds = 0
+            created.maximumSubtitleDelaySeconds = 10
+            created.ownsSoftwareNowPlaying = true
+            created.ownsVideoNowPlayingSession = true
+            created.ownsVideoNowPlayingCommands = true
             return created
         } catch {
             fatalError("AetherEngine initialization failed: \(error)")

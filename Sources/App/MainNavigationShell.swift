@@ -12,22 +12,23 @@ public enum MainNavigationTab: Hashable, Sendable {
 
 struct MainNavigationShell: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var ambientController = AmbientBackdropController()
 
     let engine: AetherEngine
     @State private var selectedTab: MainNavigationTab = .home
+    @State private var lastBootstrapRefreshAt: Date = .distantPast
 
     var body: some View {
-        let client = sessionStore.makeClient()
-
         ZStack {
             if sessionStore.activePlaybackTarget == nil {
-                AmbientBackdropView(controller: ambientController, client: client)
+                AmbientBackdropView(controller: ambientController)
             }
 
             TabView(selection: $selectedTab) {
                 NavigationStack {
                     HomeView(
+                        initialServerHost: sessionStore.serverBaseURL?.host,
                         initialRoomName: sessionStore.roomName,
                         initialHardwareProfile: sessionStore.effectiveHardwareProfile
                     )
@@ -97,10 +98,19 @@ struct MainNavigationShell: View {
         .task {
             await refreshBootstrapProfile()
         }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active,
+                  sessionStore.activePlaybackTarget == nil,
+                  Date().timeIntervalSince(lastBootstrapRefreshAt) >= 30 else {
+                return
+            }
+            Task { await refreshBootstrapProfile() }
+        }
     }
 
     private func refreshBootstrapProfile() async {
         guard let client = sessionStore.makeClient() else { return }
+        lastBootstrapRefreshAt = Date()
         do {
             let boot = try await client.fetchBootstrap()
             sessionStore.syncFromBootstrap(boot.device)

@@ -56,12 +56,28 @@ public struct TvAvailabilityInfo: Codable, Equatable, Hashable, Sendable {
 }
 
 public struct TvWatchProgress: Codable, Equatable, Hashable, Sendable {
-    public let positionSeconds: Double
-    public let durationSeconds: Double
-    public let percent: Double
-    public let season: Int?
-    public let episode: Int?
-    public let watched: Bool?
+    public var positionSeconds: Double
+    public var durationSeconds: Double
+    public var percent: Double
+    public var season: Int?
+    public var episode: Int?
+    public var watched: Bool?
+
+    public init(
+        positionSeconds: Double = 0,
+        durationSeconds: Double = 0,
+        percent: Double = 0,
+        season: Int? = nil,
+        episode: Int? = nil,
+        watched: Bool? = nil
+    ) {
+        self.positionSeconds = positionSeconds
+        self.durationSeconds = durationSeconds
+        self.percent = percent
+        self.season = season
+        self.episode = episode
+        self.watched = watched
+    }
 }
 
 public struct TvDirectPlayTarget: Codable, Equatable, Hashable, Sendable {
@@ -91,8 +107,8 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
     public let blurHash: String?
     public let imdbRating: Double?
     public let badges: [String]?
-    public let inWatchlist: Bool?
-    public let isFavorite: Bool?
+    public var inWatchlist: Bool?
+    public var isFavorite: Bool?
     public let contextSubtitle: String?
     public let airDate: String?
     public let daysUntil: Int?
@@ -102,7 +118,7 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
     public let directPlayTarget: TvDirectPlayTarget?
     public let nextUp: TvNextUpPointer?
     public let availability: TvAvailabilityInfo?
-    public let progress: TvWatchProgress?
+    public var progress: TvWatchProgress?
 
     public var id: String { itemId }
 
@@ -205,26 +221,6 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
     }
 }
 
-public struct TvHeroBanner: Codable, Equatable, Sendable {
-    public let itemId: String
-    public let mediaType: String
-    public let ids: TvMediaIds
-    public let title: String
-    public let year: Int?
-    public let overview: String?
-    public let backdropUrl: String?
-    public let posterUrl: String?
-    public let logoUrl: String?
-    public let imdbRating: Double?
-    public let runtimeSeconds: Double?
-    public let badges: [String]?
-    public let inWatchlist: Bool?
-    public let nextUp: TvNextUpPointer?
-    public let availability: TvAvailabilityInfo?
-    public let progress: TvWatchProgress?
-    public let primaryCta: String?
-}
-
 public struct TvGenreChip: Codable, Identifiable, Equatable, Hashable, Sendable {
     public let slug: String
     public let label: String
@@ -267,7 +263,6 @@ public struct TvHomeResponse: Codable, Equatable, Sendable {
     public let layoutMode: String?
     public let roomName: String
     public let hardwareProfile: String
-    public let hero: TvHeroBanner?
     public let rows: [TvShelfRow]
 }
 

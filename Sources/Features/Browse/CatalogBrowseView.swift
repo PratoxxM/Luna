@@ -19,6 +19,9 @@ struct CatalogBrowseView: View {
     @State private var isLoading: Bool = true
     @State private var isLoadingMore: Bool = false
     @State private var errorMessage: String?
+    @State private var mutationErrorBanner: String?
+    @State private var lastSeenRefreshNonce: Int = -1
+    @State private var mutationBannerTask: Task<Void, Never>?
 
     @State private var selectedCard: TvMediaCard?
 
@@ -57,6 +60,18 @@ struct CatalogBrowseView: View {
 
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
+                if let mutationErrorBanner {
+                    Text(mutationErrorBanner)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(LunaTheme.amber)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 12)
+                        .background(LunaTheme.cinemaGlass, in: Capsule())
+                        .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.45), lineWidth: 1))
+                        .padding(.horizontal, LunaTheme.horizontalGutter)
+                        .padding(.top, 14)
+                }
+
                 Text(headerTitle)
                     .font(.title2.weight(.bold))
                     .foregroundStyle(.white)
@@ -245,7 +260,16 @@ struct CatalogBrowseView: View {
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
         .task(id: reloadTriggerKey) {
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
             await loadFirstPage()
+        }
+        .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
+            guard newNonce != lastSeenRefreshNonce else { return }
+            lastSeenRefreshNonce = newNonce
+            Task { await loadFirstPage() }
+        }
+        .onDisappear {
+            mutationBannerTask?.cancel()
         }
     }
 
@@ -306,44 +330,92 @@ struct CatalogBrowseView: View {
         items.append(contentsOf: fresh)
     }
 
+    private func showMutationError(_ error: Error) {
+        mutationBannerTask?.cancel()
+        mutationErrorBanner = "Kunne ikke lagre endring: \(error.localizedDescription)"
+        mutationBannerTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            mutationErrorBanner = nil
+        }
+    }
+
     private func toggleWatchlist(_ card: TvMediaCard) async {
         guard let client = sessionStore.makeClient() else { return }
-        try? await client.setWatchlist(
-            listed: !(card.inWatchlist ?? false),
-            mediaType: card.mediaType,
-            ids: card.ids,
-            title: card.title,
-            year: card.year
-        )
-        sessionStore.notifyContentMutated()
-        await loadFirstPage()
+        let nextListed = !(card.inWatchlist ?? false)
+        if let idx = items.firstIndex(where: { $0.id == card.id }) {
+            items[idx].inWatchlist = nextListed
+        }
+        do {
+            try await client.setWatchlist(
+                listed: nextListed,
+                mediaType: card.mediaType,
+                ids: card.ids,
+                title: card.title,
+                year: card.year
+            )
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+            sessionStore.notifyContentMutated()
+        } catch {
+            if let idx = items.firstIndex(where: { $0.id == card.id }) {
+                items[idx].inWatchlist = card.inWatchlist
+            }
+            showMutationError(error)
+        }
     }
 
     private func toggleFavorite(_ card: TvMediaCard) async {
         guard let client = sessionStore.makeClient() else { return }
-        try? await client.setFavorite(
-            favorite: !(card.isFavorite ?? false),
-            mediaType: card.mediaType,
-            ids: card.ids,
-            title: card.title,
-            year: card.year
-        )
-        sessionStore.notifyContentMutated()
-        await loadFirstPage()
+        let nextFavorite = !(card.isFavorite ?? false)
+        if let idx = items.firstIndex(where: { $0.id == card.id }) {
+            items[idx].isFavorite = nextFavorite
+        }
+        do {
+            try await client.setFavorite(
+                favorite: nextFavorite,
+                mediaType: card.mediaType,
+                ids: card.ids,
+                title: card.title,
+                year: card.year
+            )
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+            sessionStore.notifyContentMutated()
+        } catch {
+            if let idx = items.firstIndex(where: { $0.id == card.id }) {
+                items[idx].isFavorite = card.isFavorite
+            }
+            showMutationError(error)
+        }
     }
 
     private func toggleWatched(_ card: TvMediaCard) async {
         guard let client = sessionStore.makeClient() else { return }
         let nextWatched = !(card.progress?.watched ?? false)
-        try? await client.setWatched(
-            watched: nextWatched,
-            mediaType: card.mediaType,
-            ids: card.ids,
-            title: card.title,
-            year: card.year
-        )
-        sessionStore.notifyContentMutated()
-        await loadFirstPage()
+        let originalProgress = card.progress
+        if let idx = items.firstIndex(where: { $0.id == card.id }) {
+            var updated = items[idx].progress ?? TvWatchProgress()
+            updated.watched = nextWatched
+            items[idx].progress = updated
+        }
+        do {
+            try await client.setWatched(
+                watched: nextWatched,
+                mediaType: card.mediaType,
+                ids: card.ids,
+                title: card.title,
+                year: card.year
+            )
+            if unwatchedOnly && nextWatched {
+                items.removeAll { $0.id == card.id }
+            }
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+            sessionStore.notifyContentMutated()
+        } catch {
+            if let idx = items.firstIndex(where: { $0.id == card.id }) {
+                items[idx].progress = originalProgress
+            }
+            showMutationError(error)
+        }
     }
 }
 
@@ -359,7 +431,9 @@ struct CustomRowBrowseView: View {
     @State private var offset: Int = 0
     @State private var isLoading: Bool = true
     @State private var isLoadingMore: Bool = false
+    @State private var errorMessage: String?
     @State private var selectedCard: TvMediaCard?
+    @State private var lastSeenRefreshNonce: Int = -1
 
     private let pageSize = 36
     private let columns = [
@@ -381,6 +455,15 @@ struct CustomRowBrowseView: View {
                     ProgressView()
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                         .padding(.vertical, 48)
+                } else if let errorMessage, items.isEmpty {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text(errorMessage)
+                            .foregroundStyle(LunaTheme.amber)
+                        LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
+                            Task { await loadInitial() }
+                        }
+                    }
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else if items.isEmpty {
                     Text("Denne listen har ingen titler ennå.")
                         .foregroundStyle(LunaTheme.muted)
@@ -395,6 +478,40 @@ struct CustomRowBrowseView: View {
                                 showStorageBadge: true
                             ) {
                                 selectedCard = card
+                            }
+                            .contextMenu {
+                                Button {
+                                    selectedCard = card
+                                } label: {
+                                    Label("Åpne detaljer", systemImage: "info.circle")
+                                }
+
+                                Button {
+                                    Task { await toggleCustomWatched(card) }
+                                } label: {
+                                    Label(
+                                        card.progress?.watched == true ? "Marker som usett" : "Marker som sett",
+                                        systemImage: card.progress?.watched == true ? "eye.slash" : "checkmark.circle"
+                                    )
+                                }
+
+                                Button {
+                                    Task { await toggleCustomWatchlist(card) }
+                                } label: {
+                                    Label(
+                                        card.inWatchlist == true ? "Fjern fra huskeliste" : "Legg til i huskeliste",
+                                        systemImage: card.inWatchlist == true ? "bookmark.slash" : "bookmark"
+                                    )
+                                }
+
+                                Button {
+                                    Task { await toggleCustomFavorite(card) }
+                                } label: {
+                                    Label(
+                                        card.isFavorite == true ? "Fjern favoritt" : "Marker som favoritt",
+                                        systemImage: card.isFavorite == true ? "star.slash" : "star.fill"
+                                    )
+                                }
                             }
                             .onAppear {
                                 if card.id == items.last?.id && hasMore && !isLoadingMore {
@@ -412,18 +529,30 @@ struct CustomRowBrowseView: View {
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
         .task {
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
             await loadInitial()
+        }
+        .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
+            guard newNonce != lastSeenRefreshNonce else { return }
+            lastSeenRefreshNonce = newNonce
+            Task { await loadInitial() }
         }
     }
 
     private func loadInitial() async {
         guard let client = sessionStore.makeClient() else { return }
         isLoading = true
+        errorMessage = nil
         offset = 0
-        if let res = try? await client.fetchRow(pathOrRowId: pathOrRowId, offset: 0, limit: pageSize) {
+        do {
+            let res = try await client.fetchRow(pathOrRowId: pathOrRowId, offset: 0, limit: pageSize)
             items = res.items
             hasMore = res.hasMore
             offset = res.items.count
+        } catch MediaOSError.unauthorized {
+            sessionStore.unpairDevice()
+        } catch {
+            errorMessage = error.localizedDescription
         }
         isLoading = false
     }
@@ -438,6 +567,78 @@ struct CustomRowBrowseView: View {
             items.append(contentsOf: res.items.filter { !existing.contains($0.id) })
             hasMore = res.hasMore
             offset += res.items.count
+        }
+    }
+
+    private func toggleCustomWatchlist(_ card: TvMediaCard) async {
+        guard let client = sessionStore.makeClient() else { return }
+        let nextVal = !(card.inWatchlist ?? false)
+        if let idx = items.firstIndex(where: { $0.id == card.id }) {
+            items[idx].inWatchlist = nextVal
+        }
+        do {
+            try await client.setWatchlist(
+                listed: nextVal,
+                mediaType: card.mediaType,
+                ids: card.ids,
+                title: card.title,
+                year: card.year
+            )
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+            sessionStore.notifyContentMutated()
+        } catch {
+            if let idx = items.firstIndex(where: { $0.id == card.id }) {
+                items[idx].inWatchlist = card.inWatchlist
+            }
+        }
+    }
+
+    private func toggleCustomFavorite(_ card: TvMediaCard) async {
+        guard let client = sessionStore.makeClient() else { return }
+        let nextVal = !(card.isFavorite ?? false)
+        if let idx = items.firstIndex(where: { $0.id == card.id }) {
+            items[idx].isFavorite = nextVal
+        }
+        do {
+            try await client.setFavorite(
+                favorite: nextVal,
+                mediaType: card.mediaType,
+                ids: card.ids,
+                title: card.title,
+                year: card.year
+            )
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+            sessionStore.notifyContentMutated()
+        } catch {
+            if let idx = items.firstIndex(where: { $0.id == card.id }) {
+                items[idx].isFavorite = card.isFavorite
+            }
+        }
+    }
+
+    private func toggleCustomWatched(_ card: TvMediaCard) async {
+        guard let client = sessionStore.makeClient() else { return }
+        let nextVal = !(card.progress?.watched ?? false)
+        let original = card.progress
+        if let idx = items.firstIndex(where: { $0.id == card.id }) {
+            var updated = items[idx].progress ?? TvWatchProgress()
+            updated.watched = nextVal
+            items[idx].progress = updated
+        }
+        do {
+            try await client.setWatched(
+                watched: nextVal,
+                mediaType: card.mediaType,
+                ids: card.ids,
+                title: card.title,
+                year: card.year
+            )
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+            sessionStore.notifyContentMutated()
+        } catch {
+            if let idx = items.firstIndex(where: { $0.id == card.id }) {
+                items[idx].progress = original
+            }
         }
     }
 }

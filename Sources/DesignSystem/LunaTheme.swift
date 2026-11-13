@@ -305,7 +305,12 @@ public struct CachedArtworkView: View {
                 placeholderLayer
             }
         }
-        .task(id: url) {
+        .task(id: "\(url?.absoluteString ?? "nil")#\(blurHash ?? "")") {
+            let targetBlur = BlurHashDecoder.cachedImage(blurHash, width: 32, height: 24)
+            if decodedBlurCGImage !== targetBlur {
+                decodedBlurCGImage = targetBlur
+            }
+
             guard let url else {
                 loadedCGImage = nil
                 if decodedBlurCGImage == nil, contentMode != .fit, blurHash != nil {
@@ -321,6 +326,8 @@ public struct CachedArtworkView: View {
                 }
                 return
             }
+            // Clear previous cell's artwork while loading the new URL.
+            loadedCGImage = nil
             if decodedBlurCGImage == nil, contentMode != .fit, blurHash != nil {
                 if let blurImg = await BlurHashDecoder.decodeAsync(blurHash, width: 32, height: 24), !Task.isCancelled {
                     decodedBlurCGImage = blurImg
@@ -336,6 +343,8 @@ public struct CachedArtworkView: View {
                 withAnimation(.easeOut(duration: 0.18)) {
                     loadedCGImage = fetched
                 }
+            } else {
+                loadedCGImage = nil
             }
         }
     }

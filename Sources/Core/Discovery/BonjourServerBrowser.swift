@@ -65,9 +65,11 @@ public final class BonjourServerBrowser: ObservableObject {
     }
 
     private func handleBrowseResults(_ results: Set<NWBrowser.Result>) {
+        var activeKeys = Set<String>()
         for result in results {
             guard case let .service(name, type, domain, _) = result.endpoint else { continue }
             let key = "\(name).\(type).\(domain)"
+            activeKeys.insert(key)
             if servers.contains(where: { $0.id == key }) || activeResolvers[key] != nil {
                 continue
             }
@@ -96,7 +98,9 @@ public final class BonjourServerBrowser: ObservableObject {
                             remoteEndpoint: remoteEndpoint,
                             txt: capturedTxt
                         ) {
-                            if !self.servers.contains(where: { $0.baseURL == resolved.baseURL }) {
+                            if let existingIdx = self.servers.firstIndex(where: { $0.id == key }) {
+                                self.servers[existingIdx] = resolved
+                            } else if !self.servers.contains(where: { $0.baseURL == resolved.baseURL }) {
                                 self.servers.append(resolved)
                             }
                         }
@@ -111,6 +115,13 @@ public final class BonjourServerBrowser: ObservableObject {
             }
             conn.start(queue: .global(qos: .userInitiated))
         }
+
+        // Prune servers and pending resolvers that disappeared from the LAN.
+        for (staleKey, staleConn) in activeResolvers where !activeKeys.contains(staleKey) {
+            staleConn.cancel()
+            activeResolvers.removeValue(forKey: staleKey)
+        }
+        servers.removeAll { !activeKeys.contains($0.id) }
     }
 
     private static func extractServer(
@@ -141,16 +152,30 @@ public final class BonjourServerBrowser: ObservableObject {
             rawHost = String(rawHost[..<pctIndex])
         }
 
-        let portNum = Int(port.rawValue)
-        guard portNum > 0, let url = URL(string: "http://\(rawHost):\(portNum)") else {
+        let scheme: String
+        let effectivePort: Int
+        if let rawHttps = txt["https_port"] ?? txt["tls_port"],
+           let httpsPort = Int(rawHttps.trimmingCharacters(in: .whitespacesAndNewlines)),
+           httpsPort > 0 {
+            scheme = "https"
+            effectivePort = httpsPort
+        } else {
+            scheme = "http"
+            effectivePort = Int(port.rawValue)
+        }
+
+        guard effectivePort > 0, let url = URL(string: "\(scheme)://\(rawHost):\(effectivePort)") else {
             return nil
         }
+
+        let rawApi = txt["api"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let apiPath = (rawApi?.isEmpty == false) ? (rawApi ?? "/api/tv/v1") : "/api/tv/v1"
 
         return DiscoveredMediaOSServer(
             id: id,
             name: serviceName,
             baseURL: url,
-            apiPath: txt["api"] ?? "/api/tv/v1"
+            apiPath: apiPath
         )
     }
 }

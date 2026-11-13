@@ -6,6 +6,9 @@ on:
       - main
     tags:
       - "v*"
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       runner:
@@ -77,8 +80,72 @@ jobs:
           restore-keys: |
             spm-tvos-${{ runner.os }}-
 
+      - name: Static Guardrails (LOC, Permissions, Sideload & Public Hygiene)
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' f; do
+            lines=$(wc -l < "$f" | tr -d ' ')
+            if [ "$lines" -gt 800 ]; then
+              echo "::error::$f has $lines lines (max 800)"
+              exit 1
+            fi
+            perm=$(stat -f '%Lp' "$f")
+            if [ "$perm" != "644" ]; then
+              echo "::error::$f has permissions $perm (expected 644)"
+              exit 1
+            fi
+          done < <(find Sources -name '*.swift' -print0)
+
+          if grep -rnE 'Bundle\.main\.bundleIdentifier' Sources Tests; then
+            echo "::error::Found forbidden Bundle.main.bundleIdentifier reference!"
+            exit 1
+          fi
+
+          if grep -rnE '\b(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b|/volume[12]/|luna_tv_' Sources Tests; then
+            echo "::error::Found forbidden private IP, NAS path, or token literal in Sources/ or Tests/!"
+            exit 1
+          fi
+
       - name: Generate Luna.xcodeproj from project.yml
         run: xcodegen generate
+
+      - name: Build & Run LunaTests
+        run: |
+          set -euo pipefail
+          TVOS_SIM_UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          for runtime, devices in data.get("devices", {}).items():
+              if "tvOS" in runtime:
+                  for dev in devices:
+                      if dev.get("isAvailable"):
+                          print(dev["udid"])
+                          sys.exit(0)
+          ' || true)
+
+          if [ -n "$TVOS_SIM_UDID" ]; then
+            echo "Running LunaTests on tvOS Simulator ($TVOS_SIM_UDID)..."
+            xcodebuild test \
+              -project Luna.xcodeproj \
+              -scheme Luna \
+              -destination "platform=tvOS Simulator,id=$TVOS_SIM_UDID" \
+              -derivedDataPath build-tests \
+              -clonedSourcePackagesDirPath build/SourcePackages \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO
+          else
+            echo "No booted/available tvOS Simulator found; running build-for-testing for generic/platform=tvOS Simulator..."
+            xcodebuild build-for-testing \
+              -project Luna.xcodeproj \
+              -scheme Luna \
+              -destination 'generic/platform=tvOS Simulator' \
+              -derivedDataPath build-tests \
+              -clonedSourcePackagesDirPath build/SourcePackages \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO
+          fi
 
       - name: Build unsigned Release app for tvOS device (arm64)
         run: |
@@ -89,6 +156,7 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=tvOS' \
             -derivedDataPath build \
+            -clonedSourcePackagesDirPath build/SourcePackages \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
@@ -99,6 +167,10 @@ jobs:
           APP_PATH="build/Build/Products/Release-appletvos/Luna.app"
           if [ ! -d "$APP_PATH" ]; then
             echo "::error::Expected $APP_PATH was not produced by xcodebuild"
+            exit 1
+          fi
+          if [ ! -f "$APP_PATH/Assets.car" ]; then
+            echo "::error::Expected $APP_PATH/Assets.car was not compiled into Luna.app"
             exit 1
           fi
 
@@ -130,7 +202,7 @@ jobs:
           retention-days: 30
 
       - name: Publish Luna-unsigned.ipa to rolling GitHub Release 'latest'
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -139,6 +211,8 @@ jobs:
           BUILD_UTC="$(date -u '+%Y-%m-%d %H:%M UTC')"
           NOTES="Automated tvOS unsigned build of **Luna** (\`${SHORT_SHA}\`, ${BUILD_UTC}). Ready for wireless signing & 7-day auto-renewal in **ATVLoadly**."
 
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -f latest HEAD
           git push origin refs/tags/latest --force
 

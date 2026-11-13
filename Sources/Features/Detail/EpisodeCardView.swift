@@ -62,15 +62,14 @@ struct EpisodeCardView: View {
                         Spacer()
 
                         if pct > 1 && !upcoming {
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(Color.white.opacity(0.24))
-                                    Capsule()
-                                        .fill(LunaTheme.amber)
-                                        .frame(width: geo.size.width * CGFloat(pct / 100.0))
-                                }
+                            let trackWidth: CGFloat = 392
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.white.opacity(0.24))
+                                Capsule()
+                                    .fill(LunaTheme.amber)
+                                    .frame(width: trackWidth * CGFloat(pct / 100.0))
                             }
-                            .frame(height: 5)
+                            .frame(width: trackWidth, height: 5)
                             .padding(.horizontal, 14)
                             .padding(.bottom, 10)
                         }

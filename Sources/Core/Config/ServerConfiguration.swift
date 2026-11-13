@@ -59,12 +59,16 @@ public final class AppSessionStore: ObservableObject {
             defaults.set(allowSelfSignedLanTLS, forKey: SideloadSafeStorage.allowSelfSignedLanTLSKey)
             MediaOSSessionPool.shared.invalidateAll()
             applyEngineTLSPolicy()
+            rebuildCachedClient()
         }
     }
 
     @Published public var activePlaybackTarget: PlaybackLaunchRequest? = nil
 
     private let defaults: UserDefaults
+    private let cachedAppVersion: String
+    private let cachedOSVersion: String
+    private var cachedClient: MediaOSClient?
     private var overrideSyncTask: Task<Void, Never>?
 
     public var isPaired: Bool {
@@ -86,6 +90,8 @@ public final class AppSessionStore: ObservableObject {
         self.defaults = defaults
         self.comfort = ComfortPreferences(defaults: defaults)
         self.deviceID = SideloadSafeStorage.ensurePersistentDeviceID(defaults: defaults)
+        self.cachedAppVersion = Self.currentAppVersionString()
+        self.cachedOSVersion = Self.currentSystemVersionString()
 
         if let rawURL = defaults.string(forKey: SideloadSafeStorage.serverURLKey),
            let parsed = Self.normalizeServerURL(rawURL) {
@@ -94,7 +100,7 @@ public final class AppSessionStore: ObservableObject {
             self.serverBaseURL = nil
         }
 
-        let loadedToken = SideloadSafeStorage.loadDeviceToken()
+        let loadedToken = SideloadSafeStorage.loadDeviceToken(defaults: defaults)
         self.deviceToken = loadedToken
         if let loadedToken, loadedToken.count >= 8 {
             _ = EngineLog.registerSecret(loadedToken)
@@ -109,10 +115,28 @@ public final class AppSessionStore: ObservableObject {
         self.allowSelfSignedLanTLS = defaults.object(forKey: SideloadSafeStorage.allowSelfSignedLanTLSKey) as? Bool ?? true
 
         applyEngineTLSPolicy()
+        rebuildCachedClient()
 
         self.comfort.onSyncRequested = { [weak self] updatedOverrides in
             self?.scheduleOverridesSync(updatedOverrides)
         }
+    }
+
+    private func rebuildCachedClient() {
+        guard let base = serverBaseURL else {
+            cachedClient = nil
+            return
+        }
+        cachedClient = MediaOSClient(
+            baseURL: base,
+            deviceID: deviceID,
+            deviceToken: deviceToken,
+            roomName: roomName,
+            hardwareProfile: effectiveHardwareProfile,
+            allowSelfSignedLanTLS: allowSelfSignedLanTLS,
+            appVersion: cachedAppVersion,
+            osVersion: cachedOSVersion
+        )
     }
 
     private func scheduleOverridesSync(_ overrides: TvDeviceOverrides) {
@@ -130,17 +154,19 @@ public final class AppSessionStore: ObservableObject {
     }
 
     public func makeClient(overrideBaseURL: URL? = nil) -> MediaOSClient? {
-        guard let base = overrideBaseURL ?? serverBaseURL else { return nil }
-        return MediaOSClient(
-            baseURL: base,
-            deviceID: deviceID,
-            deviceToken: deviceToken,
-            roomName: roomName,
-            hardwareProfile: effectiveHardwareProfile,
-            allowSelfSignedLanTLS: allowSelfSignedLanTLS,
-            appVersion: Self.currentAppVersionString(),
-            osVersion: Self.currentSystemVersionString()
-        )
+        if let overrideBaseURL {
+            return MediaOSClient(
+                baseURL: overrideBaseURL,
+                deviceID: deviceID,
+                deviceToken: deviceToken,
+                roomName: roomName,
+                hardwareProfile: effectiveHardwareProfile,
+                allowSelfSignedLanTLS: allowSelfSignedLanTLS,
+                appVersion: cachedAppVersion,
+                osVersion: cachedOSVersion
+            )
+        }
+        return cachedClient
     }
 
     public func completePairing(baseURL: URL, token: String, pairedDevice: TvPairedDeviceInfo) {
@@ -148,7 +174,7 @@ public final class AppSessionStore: ObservableObject {
             EngineLog.unregisterSecret(old)
         }
         _ = EngineLog.registerSecret(token)
-        SideloadSafeStorage.saveDeviceToken(token)
+        SideloadSafeStorage.saveDeviceToken(token, defaults: defaults)
 
         self.serverBaseURL = baseURL
         self.deviceToken = token
@@ -165,6 +191,7 @@ public final class AppSessionStore: ObservableObject {
         defaults.set(pairedDevice.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
         defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
         applyEngineTLSPolicy()
+        rebuildCachedClient()
         homeRefreshNonce &+= 1
     }
 
@@ -179,6 +206,7 @@ public final class AppSessionStore: ObservableObject {
         self.deviceOverrides = device.overrides
         self.comfort.adoptServerOverrides(device.overrides)
         defaults.set(device.deviceName, forKey: SideloadSafeStorage.deviceNameKey)
+        rebuildCachedClient()
     }
 
     public func setRoomAndProfile(roomName: String, hardwareProfile: String, persistAsLocalOverride: Bool = false) {
@@ -190,9 +218,11 @@ public final class AppSessionStore: ObservableObject {
         if persistAsLocalOverride {
             self.localProfileOverride = hardwareProfile
             defaults.set(hardwareProfile, forKey: SideloadSafeStorage.localProfileOverrideKey)
+            rebuildCachedClient()
         } else {
             self.localProfileOverride = nil
             defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
+            rebuildCachedClient()
             if let client = makeClient() {
                 Task {
                     try? await client.updateDeviceProfile(roomName: roomName, hardwareProfile: hardwareProfile)
@@ -205,6 +235,7 @@ public final class AppSessionStore: ObservableObject {
     public func restoreServerManagedRoomAndProfile() async {
         self.localProfileOverride = nil
         defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
+        rebuildCachedClient()
         if let client = makeClient() {
             do {
                 let boot = try await client.fetchBootstrap()
@@ -226,24 +257,28 @@ public final class AppSessionStore: ObservableObject {
                 return trimmed
             }
         }
-        return "2.2.3"
+        return "2.2.4"
     }
 
     public func unpairDevice() {
         if let old = deviceToken, old.count >= 8 {
             EngineLog.unregisterSecret(old)
         }
-        SideloadSafeStorage.deleteDeviceToken()
+        SideloadSafeStorage.deleteDeviceToken(defaults: defaults)
         AetherEngine.discardPrewarmedSources()
         MediaOSSessionPool.shared.invalidateAll()
+        DiskSWRStore.clearMemory()
+        Task { await DiskSWRStore.clearAllAsync() }
         deviceToken = nil
         activePlaybackTarget = nil
+        rebuildCachedClient()
     }
 
     public func resetAllConnectionSettings() {
         unpairDevice()
         serverBaseURL = nil
         defaults.removeObject(forKey: SideloadSafeStorage.serverURLKey)
+        rebuildCachedClient()
     }
 
     public static func currentSystemVersionString() -> String {

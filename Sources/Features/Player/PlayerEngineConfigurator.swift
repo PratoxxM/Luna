@@ -144,13 +144,28 @@ extension PlayerViewModel {
         }
 
         options.preferredAudioLanguages = cfg.preferredAudioLanguages ?? ["nob", "nor", "no", "eng"]
-        options.preferredSubtitleLanguages = cfg.preferredSubtitleLanguages ?? ["nob", "nor", "no", "eng"]
+        // When smart Nordic rule is enabled, let SmartTrackRuleEngine evaluate tracks once loaded
+        // so Norwegian audio never flashes an initial subtitle before clearSubtitles() runs.
+        options.preferredSubtitleLanguages = comfort.smartNordicSubtitleRule
+            ? []
+            : (cfg.preferredSubtitleLanguages ?? ["nob", "nor", "no", "eng"])
         options.skipsContainerAttachments = cfg.skipsContainerAttachments ?? true
         options.generatesBackgroundScrubPreviews = cfg.generatesBackgroundScrubPreviews ?? false
         options.serveIFramePlaylist = cfg.serveIFramePlaylist ?? false
         options.confirmAtmos = cfg.confirmAtmos ?? false
         options.maxConcurrentSourceRequests = cfg.maxConcurrentSourceRequests ?? 2
         options.declaredDurationSeconds = cfg.declaredDurationSeconds ?? session.stream.declaredDurationSeconds
+
+        switch comfort.lowResUpscaleMode {
+        case .off:
+            options.upscalesLowResolutionVideo = false
+        case .auto:
+            options.upscalesLowResolutionVideo = true
+            options.upscaleScaler = .automatic
+        case .animeLineArt:
+            options.upscalesLowResolutionVideo = true
+            options.upscaleScaler = .lineArt
+        }
 
         let extSubs: [ExternalSubtitleTrack] = (session.tracks?.externalSubtitles ?? []).compactMap { sub in
             guard let fullURL = client.buildAbsoluteURL(sub.url) else { return nil }

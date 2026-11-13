@@ -14,6 +14,7 @@ struct SeriesFlowOverlays: View {
     let client: MediaOSClient?
     let isBottomBarVisible: Bool
     @Binding var hasActivePrompt: Bool
+    @Binding var dismissedNextForSessionID: String?
     let dismissNonce: Int
     var onReturnFocusToCanvas: () -> Void = {}
     var onOpenTopDrawer: () -> Void = {}
@@ -25,7 +26,6 @@ struct SeriesFlowOverlays: View {
     @State private var trackedIntroChapterID: String?
     @State private var dismissedIntroChapterIDs: Set<String> = []
 
-    @State private var dismissedNextForSessionID: String?
     @State private var autoAdvanceRemaining: Int?
     @State private var countdownTask: Task<Void, Never>?
 
@@ -73,6 +73,7 @@ struct SeriesFlowOverlays: View {
                 focusedPromptControl = .skipIntro
             } else if newID == nil && focusedPromptControl == .skipIntro {
                 focusedPromptControl = nil
+                onReturnFocusToCanvas()
             }
         }
         .onMoveCommand { direction in
@@ -159,7 +160,7 @@ struct SeriesFlowOverlays: View {
         let dur = viewModel.effectiveDurationSeconds
         guard dur > 90, currentTime > 30 else { return false }
         let remaining = dur - currentTime
-        if remaining <= 45.0 && remaining > 0.2 {
+        if remaining <= 45.0 && (remaining >= 0 || countdownTask != nil) {
             return true
         }
         if remaining <= 95.0,
@@ -277,21 +278,21 @@ struct SeriesFlowOverlays: View {
     private func startCountdownIfEnabled() {
         stopCountdown()
         guard comfort.autoPlayNextEpisode, let next = viewModel.activeSession?.nextEpisode else { return }
-        autoAdvanceRemaining = 10
+        var remaining = 10
+        autoAdvanceRemaining = remaining
         countdownTask = Task { @MainActor in
-            for remaining in stride(from: 9, through: 0, by: -1) {
+            while remaining > 0 && !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard !Task.isCancelled else { return }
-                if viewModel.playbackPhase != .playing {
+                guard viewModel.playbackPhase == .playing, !viewModel.isScrubbing else {
                     continue
                 }
+                remaining -= 1
                 autoAdvanceRemaining = remaining
-                if remaining == 0 {
-                    hasActivePrompt = false
-                    viewModel.playNextEpisode(next)
-                    return
-                }
             }
+            guard !Task.isCancelled else { return }
+            hasActivePrompt = false
+            viewModel.playNextEpisode(next)
         }
     }
 

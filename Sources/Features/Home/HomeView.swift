@@ -7,9 +7,13 @@ struct HomeView: View {
     @State private var cachedEtag: String?
     @State private var isInitialColdFetch: Bool = false
     @State private var errorMessage: String?
+    @State private var mutationErrorMessage: String?
+    @State private var lastSeenRefreshNonce: Int = -1
 
     @State private var selectedCard: TvMediaCard?
+    @State private var selectedSeeAllRow: TvShelfRow?
     @State private var sourcePickerContext: SourcePickerContext?
+    @State private var mutationBannerTask: Task<Void, Never>?
 
     @Namespace private var homeFocusNamespace
 
@@ -20,8 +24,13 @@ struct HomeView: View {
         "popular-series"
     ]
 
-    init(initialRoomName: String = "Stua", initialHardwareProfile: String = "hdr10-512") {
-        let snap = DiskSWRStore.loadHomeSynchronously(
+    init(
+        initialServerHost: String? = nil,
+        initialRoomName: String = "Stua",
+        initialHardwareProfile: String = "hdr10-512"
+    ) {
+        let snap = DiskSWRStore.memorySnapshot(
+            serverHost: initialServerHost,
             roomName: initialRoomName,
             hardwareProfile: initialHardwareProfile
         )
@@ -40,6 +49,17 @@ struct HomeView: View {
 
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 38) {
+                if let mutationErrorMessage {
+                    Text(mutationErrorMessage)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(LunaTheme.amber)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 12)
+                        .background(LunaTheme.cinemaGlass, in: Capsule())
+                        .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.45), lineWidth: 1))
+                        .padding(.horizontal, LunaTheme.horizontalGutter)
+                }
+
                 if visibleRows.isEmpty && isInitialColdFetch {
                     HStack(spacing: 16) {
                         ProgressView()
@@ -86,6 +106,9 @@ struct HomeView: View {
                         },
                         onMarkWatched: { card in
                             Task { await markWatched(for: card) }
+                        },
+                        onSeeAllRow: { row in
+                            selectedSeeAllRow = row
                         }
                     )
                 }
@@ -97,10 +120,13 @@ struct HomeView: View {
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
+        .navigationDestination(item: $selectedSeeAllRow) { row in
+            CustomRowBrowseView(title: row.title, pathOrRowId: row.nextPath ?? row.rowId)
+        }
         .sheet(item: $sourcePickerContext) { ctx in
             SourcePickerSheetView(
                 context: ctx,
-                onSelectCandidate: { picked in
+                onSelectCandidate: { picked, reusedPrepareToken in
                     let target = ctx
                     sourcePickerContext = nil
                     sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
@@ -108,7 +134,8 @@ struct HomeView: View {
                         title: target.title,
                         seriesTitle: target.seriesTitle,
                         startPositionSeconds: target.startPositionSeconds,
-                        candidateId: picked.candidateId,
+                        candidateId: reusedPrepareToken == nil ? picked.candidateId : nil,
+                        prepareToken: reusedPrepareToken,
                         backdropUrl: target.backdropUrl,
                         logoUrl: target.logoUrl
                     )
@@ -120,17 +147,28 @@ struct HomeView: View {
             .environmentObject(sessionStore)
             .preferredColorScheme(.dark)
         }
-        .task(id: "\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)#\(sessionStore.homeRefreshNonce)") {
+        .task(id: "\(sessionStore.serverBaseURL?.host ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)") {
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
             await syncDiskSnapshotIfRoomChanged()
             await revalidateHome(forceUnconditional: false)
+        }
+        .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
+            guard newNonce != lastSeenRefreshNonce else { return }
+            lastSeenRefreshNonce = newNonce
+            Task { await revalidateHome(forceUnconditional: true) }
+        }
+        .onDisappear {
+            mutationBannerTask?.cancel()
         }
     }
 
     private func syncDiskSnapshotIfRoomChanged() async {
+        let targetHost = sessionStore.serverBaseURL?.host
         let targetRoom = sessionStore.roomName
         let targetProfile = sessionStore.effectiveHardwareProfile
         guard let current = homePayload else {
             if let snap = await DiskSWRStore.loadHomeAsync(
+                serverHost: targetHost,
                 roomName: targetRoom,
                 hardwareProfile: targetProfile
             ), !Task.isCancelled {
@@ -141,6 +179,7 @@ struct HomeView: View {
         }
         if current.roomName != targetRoom || current.hardwareProfile != targetProfile {
             if let snap = await DiskSWRStore.loadHomeAsync(
+                serverHost: targetHost,
                 roomName: targetRoom,
                 hardwareProfile: targetProfile
             ), !Task.isCancelled {
@@ -176,8 +215,10 @@ struct HomeView: View {
                 DiskSWRStore.saveHomeInBackground(
                     rawPayloadData: rawData,
                     etag: newEtag,
+                    serverHost: sessionStore.serverBaseURL?.host,
                     roomName: sessionStore.roomName,
-                    hardwareProfile: sessionStore.effectiveHardwareProfile
+                    hardwareProfile: sessionStore.effectiveHardwareProfile,
+                    decodedPayload: payload
                 )
             }
         } catch MediaOSError.unauthorized {
@@ -242,69 +283,94 @@ struct HomeView: View {
         )
     }
 
+    private func showMutationError(_ error: Error) {
+        mutationBannerTask?.cancel()
+        mutationErrorMessage = "Kunne ikke lagre endring: \(error.localizedDescription)"
+        mutationBannerTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            mutationErrorMessage = nil
+        }
+    }
+
+    private func markLocalMutationAndRevalidate() async {
+        lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+        sessionStore.notifyContentMutated()
+        await revalidateHome(forceUnconditional: true)
+    }
+
     private func toggleWatchlist(for card: TvMediaCard) async {
         guard let client = sessionStore.makeClient() else { return }
         let nextListed = !(card.inWatchlist ?? false)
-        try? await client.setWatchlist(
-            listed: nextListed,
-            mediaType: card.mediaType,
-            ids: card.ids,
-            title: card.title,
-            year: card.year
-        )
-        sessionStore.notifyContentMutated()
-        await revalidateHome(forceUnconditional: true)
+        do {
+            try await client.setWatchlist(
+                listed: nextListed,
+                mediaType: card.mediaType,
+                ids: card.ids,
+                title: card.title,
+                year: card.year
+            )
+            await markLocalMutationAndRevalidate()
+        } catch {
+            showMutationError(error)
+        }
     }
 
     private func toggleFavorite(for card: TvMediaCard) async {
         guard let client = sessionStore.makeClient() else { return }
         let nextFav = !(card.isFavorite ?? false)
-        try? await client.setFavorite(
-            favorite: nextFav,
-            mediaType: card.mediaType,
-            ids: card.ids,
-            title: card.title,
-            year: card.year
-        )
-        sessionStore.notifyContentMutated()
-        await revalidateHome(forceUnconditional: true)
+        do {
+            try await client.setFavorite(
+                favorite: nextFav,
+                mediaType: card.mediaType,
+                ids: card.ids,
+                title: card.title,
+                year: card.year
+            )
+            await markLocalMutationAndRevalidate()
+        } catch {
+            showMutationError(error)
+        }
     }
 
     private func markWatched(for card: TvMediaCard) async {
         guard let client = sessionStore.makeClient() else { return }
-        if card.mediaType == "series" {
-            let s = card.directPlayTarget?.season ?? card.nextUp?.season ?? card.progress?.season
-            let e = card.directPlayTarget?.episode ?? card.nextUp?.episode ?? card.progress?.episode
-            if let s, let e {
-                try? await client.setWatched(
-                    watched: true,
-                    mediaType: "episode",
-                    ids: card.ids,
-                    title: card.title,
-                    year: card.year,
-                    season: s,
-                    episode: e
-                )
+        do {
+            if card.mediaType == "series" {
+                let s = card.directPlayTarget?.season ?? card.nextUp?.season ?? card.progress?.season
+                let e = card.directPlayTarget?.episode ?? card.nextUp?.episode ?? card.progress?.episode
+                if let s, let e {
+                    try await client.setWatched(
+                        watched: true,
+                        mediaType: "episode",
+                        ids: card.ids,
+                        title: card.title,
+                        year: card.year,
+                        season: s,
+                        episode: e
+                    )
+                } else {
+                    try await client.setWatched(
+                        watched: !(card.progress?.watched ?? false),
+                        mediaType: "series",
+                        ids: card.ids,
+                        title: card.title,
+                        year: card.year
+                    )
+                }
             } else {
-                try? await client.setWatched(
-                    watched: !(card.progress?.watched ?? false),
-                    mediaType: "series",
+                let nextWatched = !(card.progress?.watched ?? false)
+                try await client.setWatched(
+                    watched: nextWatched,
+                    mediaType: "movie",
                     ids: card.ids,
                     title: card.title,
                     year: card.year
                 )
             }
-        } else {
-            let nextWatched = !(card.progress?.watched ?? false)
-            try? await client.setWatched(
-                watched: nextWatched,
-                mediaType: "movie",
-                ids: card.ids,
-                title: card.title,
-                year: card.year
-            )
+            await markLocalMutationAndRevalidate()
+        } catch {
+            showMutationError(error)
         }
-        sessionStore.notifyContentMutated()
-        await revalidateHome(forceUnconditional: true)
     }
 }

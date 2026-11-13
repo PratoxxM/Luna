@@ -49,16 +49,21 @@ public enum BlurHashDecoder {
         return map
     }()
 
-    public static func cachedImage(_ blurHash: String?, width: Int = 32, height: Int = 24) -> CGImage? {
+    private static func makeCacheKey(_ raw: String, width: Int, height: Int, punch: Float) -> String {
+        let roundedPunch = Int((punch * 100).rounded())
+        return "\(raw)#\(width)x\(height)#p\(roundedPunch)"
+    }
+
+    public static func cachedImage(_ blurHash: String?, width: Int = 32, height: Int = 24, punch: Float = 1.0) -> CGImage? {
         guard let raw = blurHash?.trimmingCharacters(in: .whitespacesAndNewlines),
               raw.count >= 6 else {
             return nil
         }
-        return cache.image(forKey: "\(raw)#\(width)x\(height)")
+        return cache.image(forKey: makeCacheKey(raw, width: width, height: height, punch: punch))
     }
 
     public static func decodeAsync(_ blurHash: String?, width: Int = 32, height: Int = 24, punch: Float = 1.0) async -> CGImage? {
-        if let hit = cachedImage(blurHash, width: width, height: height) {
+        if let hit = cachedImage(blurHash, width: width, height: height, punch: punch) {
             return hit
         }
         guard let raw = blurHash?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -71,11 +76,12 @@ public enum BlurHashDecoder {
     }
 
     public static func decode(_ blurHash: String?, width: Int = 32, height: Int = 24, punch: Float = 1.0) -> CGImage? {
-        guard let raw = blurHash?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard width > 0, height > 0,
+              let raw = blurHash?.trimmingCharacters(in: .whitespacesAndNewlines),
               raw.count >= 6 else {
             return nil
         }
-        let cacheKey = "\(raw)#\(width)x\(height)"
+        let cacheKey = makeCacheKey(raw, width: width, height: height, punch: punch)
         if let hit = cache.image(forKey: cacheKey) {
             return hit
         }
@@ -104,20 +110,39 @@ public enum BlurHashDecoder {
             }
         }
 
-        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        var cosX = [Float](repeating: 0, count: width * numX)
+        for x in 0..<width {
+            let fx = Float.pi * Float(x) / Float(width)
+            let base = x * numX
+            for i in 0..<numX {
+                cosX[base + i] = cos(fx * Float(i))
+            }
+        }
+
+        var cosY = [Float](repeating: 0, count: height * numY)
         for y in 0..<height {
             let fy = Float.pi * Float(y) / Float(height)
+            let base = y * numY
+            for j in 0..<numY {
+                cosY[base + j] = cos(fy * Float(j))
+            }
+        }
+
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height {
+            let yBase = y * numY
             for x in 0..<width {
-                let fx = Float.pi * Float(x) / Float(width)
+                let xBase = x * numX
                 var r: Float = 0
                 var g: Float = 0
                 var b: Float = 0
 
                 for j in 0..<numY {
-                    let basisY = cos(fy * Float(j))
+                    let basisY = cosY[yBase + j]
+                    let rowOffset = j * numX
                     for i in 0..<numX {
-                        let basis = cos(fx * Float(i)) * basisY
-                        let color = colors[i + j * numX]
+                        let basis = cosX[xBase + i] * basisY
+                        let color = colors[rowOffset + i]
                         r += color.0 * basis
                         g += color.1 * basis
                         b += color.2 * basis
@@ -355,6 +380,12 @@ public actor ArtworkPipeline {
     public func clearAll() {
         ramCache.removeAll()
         try? FileManager.default.removeItem(at: Self.imageCacheDirectoryURL)
+    }
+
+    public nonisolated static func diskUsageBytesAsync() async -> Int64 {
+        await Task.detached(priority: .utility) {
+            diskUsageBytes()
+        }.value
     }
 
     public nonisolated static func diskUsageBytes() -> Int64 {

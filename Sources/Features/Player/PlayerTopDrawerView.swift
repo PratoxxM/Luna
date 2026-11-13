@@ -34,6 +34,7 @@ struct PlayerTopDrawerView: View {
     let onClose: () -> Void
 
     @FocusState private var focusedTab: PlayerTopDrawerTab?
+    @State private var chapterSnapshotTime: Double = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -269,22 +270,37 @@ struct PlayerTopDrawerView: View {
     // MARK: - Tab 3: Kilde & Kapitler
 
     private var sourcesAndChaptersTabContent: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        let activeChapterID = viewModel.activeChapter(at: chapterSnapshotTime)?.id
+        let activeCandidateId = viewModel.activeSession?.selectedCandidate.candidateId
+
+        return VStack(alignment: .leading, spacing: 20) {
             if !viewModel.chapters.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     sectionHeader("Kapitler (\(viewModel.chapters.count))")
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 14) {
-                            ForEach(viewModel.chapters) { ch in
-                                ChapterPillCardButton(chapter: ch) {
-                                    viewModel.seekToChapter(ch)
-                                    onClose()
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 14) {
+                                ForEach(viewModel.chapters) { ch in
+                                    ChapterPillCardButton(
+                                        chapter: ch,
+                                        isActive: ch.id == activeChapterID
+                                    ) {
+                                        viewModel.seekToChapter(ch)
+                                        onClose()
+                                    }
+                                    .id(ch.id)
                                 }
                             }
+                            .padding(.vertical, 6)
                         }
-                        .padding(.vertical, 6)
+                        .scrollClipDisabled()
+                        .onAppear {
+                            chapterSnapshotTime = max(0, viewModel.engine.currentTime)
+                            if let targetID = viewModel.activeChapter(at: chapterSnapshotTime)?.id {
+                                proxy.scrollTo(targetID, anchor: .center)
+                            }
+                        }
                     }
-                    .scrollClipDisabled()
                 }
             }
 
@@ -316,8 +332,9 @@ struct PlayerTopDrawerView: View {
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(spacing: 10) {
                             ForEach(viewModel.alternatives) { cand in
-                                let isCurrent = cand.isActive == true ||
-                                    cand.candidateId == viewModel.activeSession?.selectedCandidate.candidateId
+                                let isCurrent = activeCandidateId != nil
+                                    ? (cand.candidateId == activeCandidateId)
+                                    : (cand.isActive == true)
                                 DrawerTrackRowButton(
                                     title: cand.displayHeadline,
                                     subtitle: cand.releaseTitle,
@@ -340,9 +357,26 @@ struct PlayerTopDrawerView: View {
                     .frame(maxHeight: viewModel.chapters.isEmpty ? 280 : 200)
                 }
             }
+
+            VStack(alignment: .leading, spacing: 8) {
+                sectionHeader("Lavoppløst oppskalering (neste start)")
+
+                HStack(spacing: 10) {
+                    ForEach(LowResUpscaleMode.allCases) { mode in
+                        LunaPillButton(
+                            mode.displayTitle,
+                            isSelected: comfort.lowResUpscaleMode == mode,
+                            prominence: comfort.lowResUpscaleMode == mode ? .glassPill : .subtleChip
+                        ) {
+                            comfort.lowResUpscaleMode = mode
+                        }
+                    }
+                }
+            }
         }
-        .task {
-            if viewModel.alternatives.isEmpty {
+        .task(id: viewModel.activeSession?.sessionId) {
+            chapterSnapshotTime = max(0, viewModel.engine.currentTime)
+            if viewModel.alternativesSessionId != viewModel.activeSession?.sessionId || viewModel.alternatives.isEmpty {
                 await viewModel.loadAlternatives()
             }
         }
@@ -511,6 +545,7 @@ private struct DrawerTrackRowButton: View {
 
 private struct ChapterPillCardButton: View {
     let chapter: PlaybackChapter
+    var isActive: Bool = false
     let action: () -> Void
 
     @FocusState private var isFocused: Bool
@@ -523,7 +558,14 @@ private struct ChapterPillCardButton: View {
                         .font(.caption.monospacedDigit().weight(.bold))
                         .foregroundStyle(LunaTheme.amber)
 
-                    if let kindLabel = chapter.kind.badgeLabel {
+                    if isActive {
+                        Text("Spiller nå")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(LunaTheme.amber)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(LunaTheme.amber.opacity(0.18), in: Capsule())
+                    } else if let kindLabel = chapter.kind.badgeLabel {
                         Text(kindLabel)
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(LunaTheme.canvas)
@@ -543,11 +585,18 @@ private struct ChapterPillCardButton: View {
             .frame(minWidth: 204, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isFocused ? LunaTheme.amber.opacity(0.24) : Color.white.opacity(0.06))
+                    .fill(
+                        isFocused
+                            ? LunaTheme.amber.opacity(0.24)
+                            : (isActive ? LunaTheme.amber.opacity(0.12) : Color.white.opacity(0.06))
+                    )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(isFocused ? LunaTheme.amber : Color.white.opacity(0.12), lineWidth: isFocused ? 2 : 1)
+                    .strokeBorder(
+                        isFocused ? LunaTheme.amber : (isActive ? LunaTheme.amber.opacity(0.55) : Color.white.opacity(0.12)),
+                        lineWidth: isFocused ? 2 : (isActive ? 1.5 : 1)
+                    )
             )
             .scaleEffect(isFocused ? 1.03 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isFocused)

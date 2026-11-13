@@ -13,6 +13,7 @@ import AetherBridge
 struct SubtitleOverlayView: View {
     let engine: AetherEngine
     @ObservedObject var comfort: ComfortPreferences
+    var isBottomBarVisible: Bool = false
 
     @State private var sourceTime: Double = 0
     @State private var cues: [SubtitleCue] = []
@@ -26,12 +27,26 @@ struct SubtitleOverlayView: View {
                 let effectiveTime = sourceTime - engine.softwareSubtitleDelaySeconds
                 let visible = cues.filter { $0.startTime <= effectiveTime && effectiveTime < $0.endTime }
                 let isHDR = (videoFormat != .sdr)
+                let topCues = visible.filter { isTextCue($0) && resolveVerticalSlot(for: $0.placement) == .top }
+                let centerCues = visible.filter { isTextCue($0) && resolveVerticalSlot(for: $0.placement) == .center }
+                let bottomCues = visible.filter { isTextCue($0) && resolveVerticalSlot(for: $0.placement) == .bottom }
+                let bitmapCues = visible.filter { !isTextCue($0) }
 
                 ZStack {
                     Color.clear
 
-                    ForEach(visible) { cue in
-                        renderCue(cue, containerSize: geo.size, isHDR: isHDR)
+                    ForEach(bitmapCues) { cue in
+                        renderBitmapCue(cue, containerSize: geo.size, isHDR: isHDR)
+                    }
+
+                    if !topCues.isEmpty {
+                        stackedTextSlot(topCues, verticalSlot: .top, isHDR: isHDR)
+                    }
+                    if !centerCues.isEmpty {
+                        stackedTextSlot(centerCues, verticalSlot: .center, isHDR: isHDR)
+                    }
+                    if !bottomCues.isEmpty {
+                        stackedTextSlot(bottomCues, verticalSlot: .bottom, isHDR: isHDR)
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
@@ -53,11 +68,45 @@ struct SubtitleOverlayView: View {
         return track.isNativelyRenderedSubtitle
     }
 
+    private func isTextCue(_ cue: SubtitleCue) -> Bool {
+        switch cue.body {
+        case .text, .richText:
+            return true
+        case .image:
+            return false
+        }
+    }
+
+    private func stackedTextSlot(
+        _ slotCues: [SubtitleCue],
+        verticalSlot: VerticalSlot,
+        isHDR: Bool
+    ) -> some View {
+        let alignment: Alignment = {
+            switch verticalSlot {
+            case .top: return .top
+            case .center: return .center
+            case .bottom: return .bottom
+            }
+        }()
+        let bottomInset: CGFloat = isBottomBarVisible ? 204 : 74
+
+        return VStack(spacing: 8) {
+            ForEach(slotCues) { cue in
+                renderTextCue(cue, isHDR: isHDR)
+            }
+        }
+        .padding(.horizontal, 120)
+        .padding(.top, verticalSlot == .top ? 72 : 0)
+        .padding(.bottom, verticalSlot == .bottom ? bottomInset : 0)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+        .animation(.easeOut(duration: 0.16), value: isBottomBarVisible)
+    }
+
     @ViewBuilder
-    private func renderCue(_ cue: SubtitleCue, containerSize: CGSize, isHDR: Bool) -> some View {
+    private func renderTextCue(_ cue: SubtitleCue, isHDR: Bool) -> some View {
         let pointSize = comfort.subtitleFontSize.pointSize
         let boxAlpha = comfort.subtitleBoxOpacity.alpha
-        let verticalSlot = resolveVerticalSlot(for: cue.placement)
 
         switch cue.body {
         case .text(let plain):
@@ -65,33 +114,47 @@ struct SubtitleOverlayView: View {
                 content: Text(plain)
                     .font(.system(size: pointSize, weight: .semibold, design: .rounded))
                     .foregroundStyle(comfort.hdrSubtitlePreset.foregroundColor(isHDR: isHDR)),
-                boxAlpha: boxAlpha,
-                verticalSlot: verticalSlot
+                boxAlpha: boxAlpha
             )
 
         case .richText(let runs):
             styledTextBox(
                 content: Text(buildAttributedString(from: runs, pointSize: pointSize, isHDR: isHDR)),
-                boxAlpha: boxAlpha,
-                verticalSlot: verticalSlot
+                boxAlpha: boxAlpha
             )
 
-        case .image(let bitmap):
-            let rect = Self.computeBitmapFrame(
+        case .image:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private func renderBitmapCue(_ cue: SubtitleCue, containerSize: CGSize, isHDR: Bool) -> some View {
+        if case .image(let bitmap) = cue.body {
+            let baseRect = Self.computeBitmapFrame(
                 position: bitmap.position,
                 canvasSize: bitmap.canvasSize,
                 containerSize: containerSize
             )
+            let safeBottomY = containerSize.height - 204
+            let adjustedMidY: CGFloat = {
+                guard isBottomBarVisible, baseRect.maxY > safeBottomY else {
+                    return baseRect.midY
+                }
+                let shift = baseRect.maxY - safeBottomY
+                return max(baseRect.height / 2.0 + 24, baseRect.midY - shift)
+            }()
+
             Image(decorative: bitmap.cgImage, scale: 1.0)
                 .resizable()
                 .interpolation(.high)
                 .colorMultiply(comfort.hdrSubtitlePreset.bitmapMultiplyColor(isHDR: isHDR))
-                .frame(width: max(1, rect.width), height: max(1, rect.height))
-                .position(x: rect.midX, y: rect.midY)
+                .frame(width: max(1, baseRect.width), height: max(1, baseRect.height))
+                .position(x: baseRect.midX, y: adjustedMidY)
         }
     }
 
-    private enum VerticalSlot {
+    private enum VerticalSlot: Equatable {
         case top
         case center
         case bottom
@@ -110,18 +173,9 @@ struct SubtitleOverlayView: View {
 
     private func styledTextBox<Content: View>(
         content: Content,
-        boxAlpha: Double,
-        verticalSlot: VerticalSlot
+        boxAlpha: Double
     ) -> some View {
-        let alignment: Alignment = {
-            switch verticalSlot {
-            case .top: return .top
-            case .center: return .center
-            case .bottom: return .bottom
-            }
-        }()
-
-        return content
+        content
             .multilineTextAlignment(.center)
             .shadow(color: .black.opacity(0.96), radius: 2, x: 0, y: 1)
             .shadow(color: .black.opacity(0.92), radius: 6, x: 0, y: 2)
@@ -133,10 +187,6 @@ struct SubtitleOverlayView: View {
                         .fill(Color.black.opacity(boxAlpha))
                 }
             }
-            .padding(.horizontal, 120)
-            .padding(.top, verticalSlot == .top ? 72 : 0)
-            .padding(.bottom, verticalSlot == .bottom ? 74 : 0)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
     }
 
     private func buildAttributedString(

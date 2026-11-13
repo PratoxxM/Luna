@@ -15,6 +15,7 @@ struct PlayerContainerView: View {
     @State private var selectedDrawerTab: PlayerTopDrawerTab = .subtitles
     @State private var hasSeriesPrompt: Bool = false
     @State private var seriesPromptDismissNonce: Int = 0
+    @State private var dismissedNextForSessionID: String?
     @State private var hideBottomBarTask: Task<Void, Never>?
 
     @FocusState private var isCanvasFocused: Bool
@@ -42,6 +43,9 @@ struct PlayerContainerView: View {
     var body: some View {
         let client = sessionStore.makeClient()
 
+        let effectiveRequest = viewModel.currentRequest ?? initialRequest
+        let isBottomBarShown = showBottomBar || viewModel.playbackPhase == .paused || viewModel.isScrubbing
+
         ZStack {
             LunaTheme.pureBlack.ignoresSafeArea()
 
@@ -51,9 +55,13 @@ struct PlayerContainerView: View {
                 .zIndex(0)
 
             // 1. Leaf-isolated HDR/OLED Subtitle Overlay
-            SubtitleOverlayView(engine: engine, comfort: comfort)
-                .ignoresSafeArea()
-                .zIndex(1)
+            SubtitleOverlayView(
+                engine: engine,
+                comfort: comfort,
+                isBottomBarVisible: viewModel.isPictureReadyForReveal && !isTopDrawerOpen && viewModel.fatalError == nil && isBottomBarShown
+            )
+            .ignoresSafeArea()
+            .zIndex(1)
 
             // 1.5 Invisible UIKit Siri Remote Touch & Click Surface (`focusEffect = nil`)
             if shouldEnableCanvasAnchor {
@@ -128,7 +136,7 @@ struct PlayerContainerView: View {
             if !viewModel.isPictureReadyForReveal && viewModel.fatalError == nil {
                 ResolvingCurtainView(
                     viewModel: viewModel,
-                    initialRequest: initialRequest,
+                    initialRequest: effectiveRequest,
                     client: client
                 )
                 .transition(.opacity)
@@ -158,6 +166,7 @@ struct PlayerContainerView: View {
                     client: client,
                     isBottomBarVisible: showBottomBar || viewModel.playbackPhase == .paused,
                     hasActivePrompt: $hasSeriesPrompt,
+                    dismissedNextForSessionID: $dismissedNextForSessionID,
                     dismissNonce: seriesPromptDismissNonce,
                     onReturnFocusToCanvas: {
                         revealBottomBarTemporarily()
@@ -177,10 +186,10 @@ struct PlayerContainerView: View {
 
             // 5. Minimalist Bottom Bar + Coalesced Tactile Seek Pill
             if viewModel.isPictureReadyForReveal && !isTopDrawerOpen && viewModel.fatalError == nil {
-                if showBottomBar || viewModel.playbackPhase == .paused || viewModel.isScrubbing {
+                if isBottomBarShown {
                     PlayerBottomBarView(
                         viewModel: viewModel,
-                        fallbackTitle: initialRequest.title
+                        fallbackTitle: effectiveRequest.title
                     )
                     .transition(.opacity)
                     .zIndex(5)
@@ -190,6 +199,28 @@ struct PlayerContainerView: View {
                     coalescedSeekFeedbackPill
                         .transition(.scale(scale: 0.92).combined(with: .opacity))
                         .zIndex(5.5)
+                }
+
+                if let banner = viewModel.transientBannerMessage {
+                    VStack {
+                        HStack(spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(LunaTheme.amber)
+                            Text(banner)
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .lineLimit(2)
+                        }
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 12)
+                        .background(LunaTheme.cinemaGlass, in: Capsule())
+                        .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.55), lineWidth: 1))
+                        .padding(.top, 42)
+                        Spacer()
+                    }
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                    .zIndex(5.6)
                 }
             }
 
@@ -227,6 +258,16 @@ struct PlayerContainerView: View {
         .onChange(of: shouldEnableCanvasAnchor) { _, enabled in
             if enabled {
                 restoreCanvasFocusSoon()
+            }
+        }
+        .onChange(of: viewModel.playbackPhase) { _, phase in
+            guard phase == .ended, !viewModel.isResolving, !viewModel.isSwitchingSource else { return }
+            if let next = viewModel.activeSession?.nextEpisode,
+               comfort.autoPlayNextEpisode,
+               dismissedNextForSessionID != viewModel.activeSession?.sessionId {
+                viewModel.playNextEpisode(next)
+            } else {
+                closePlayer()
             }
         }
         .onPlayPauseCommand {
@@ -368,7 +409,18 @@ struct PlayerContainerView: View {
 
                 HStack(spacing: 20) {
                     LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise", prominence: .primaryAmber) {
-                        viewModel.start(request: initialRequest, client: sessionStore.makeClient())
+                        let base = viewModel.currentRequest ?? initialRequest
+                        let retryRequest = PlaybackLaunchRequest(
+                            itemId: base.itemId,
+                            title: base.title,
+                            seriesTitle: base.seriesTitle,
+                            startPositionSeconds: base.startPositionSeconds,
+                            candidateId: base.candidateId,
+                            prepareToken: nil,
+                            backdropUrl: base.backdropUrl,
+                            logoUrl: base.logoUrl
+                        )
+                        viewModel.start(request: retryRequest, client: sessionStore.makeClient())
                     }
 
                     if viewModel.activeSession != nil {

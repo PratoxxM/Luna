@@ -39,6 +39,7 @@ struct LibraryHubView: View {
     @State private var isLoading: Bool = true
     @State private var isLoadingMoreLocal: Bool = false
     @State private var errorMessage: String?
+    @State private var lastSeenRefreshNonce: Int = -1
 
     @State private var selectedCard: TvMediaCard?
     @State private var selectedCustomList: TvCustomListSummary?
@@ -49,7 +50,7 @@ struct LibraryHubView: View {
     ]
 
     private var queryKey: String {
-        "\(activeSection.rawValue)#\(mediaTypeFilter)#\(localTierFilter)#\(localSort)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)#\(sessionStore.homeRefreshNonce)"
+        "\(activeSection.rawValue)#\(mediaTypeFilter)#\(localTierFilter)#\(localSort)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
     }
 
     var body: some View {
@@ -150,7 +151,13 @@ struct LibraryHubView: View {
             CustomRowBrowseView(title: list.name, pathOrRowId: list.browsePath)
         }
         .task(id: queryKey) {
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
             await loadLibrary()
+        }
+        .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
+            guard newNonce != lastSeenRefreshNonce else { return }
+            lastSeenRefreshNonce = newNonce
+            Task { await loadLibrary() }
         }
     }
 
@@ -188,6 +195,18 @@ struct LibraryHubView: View {
                     prominence: .subtleChip
                 ) {
                     localTierFilter = "nvme"
+                }
+
+                if (counts?.vfs ?? 0) > 0 || localTierFilter == "vfs" {
+                    LunaPillButton(
+                        "Klar i VFS",
+                        systemImage: "cloud.bolt.fill",
+                        badgeText: counts.map { String($0.vfs) },
+                        isSelected: localTierFilter == "vfs",
+                        prominence: .subtleChip
+                    ) {
+                        localTierFilter = "vfs"
+                    }
                 }
 
                 LunaPillButton(
@@ -410,6 +429,12 @@ struct LibraryHubView: View {
         localHasMore = res.localHasMore ?? false
     }
 
+    private func markLocalMutationAndReload() async {
+        lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+        sessionStore.notifyContentMutated()
+        await loadLibrary()
+    }
+
     private func toggleWatchlist(_ card: TvMediaCard) async {
         guard let client = sessionStore.makeClient() else { return }
         try? await client.setWatchlist(
@@ -419,8 +444,7 @@ struct LibraryHubView: View {
             title: card.title,
             year: card.year
         )
-        sessionStore.notifyContentMutated()
-        await loadLibrary()
+        await markLocalMutationAndReload()
     }
 
     private func toggleFavorite(_ card: TvMediaCard) async {
@@ -432,8 +456,7 @@ struct LibraryHubView: View {
             title: card.title,
             year: card.year
         )
-        sessionStore.notifyContentMutated()
-        await loadLibrary()
+        await markLocalMutationAndReload()
     }
 
     private func toggleWatched(_ card: TvMediaCard) async {
@@ -446,7 +469,6 @@ struct LibraryHubView: View {
             title: card.title,
             year: card.year
         )
-        sessionStore.notifyContentMutated()
-        await loadLibrary()
+        await markLocalMutationAndReload()
     }
 }

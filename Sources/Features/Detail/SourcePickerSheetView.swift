@@ -34,11 +34,14 @@ struct SourcePickerSheetView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
 
     let context: SourcePickerContext
-    let onSelectCandidate: (TvCandidateInfo) -> Void
+    let onSelectCandidate: (TvCandidateInfo, String?) -> Void
     let onCancel: () -> Void
 
     @State private var candidates: [TvCandidateInfo] = []
     @State private var activeCandidateId: String?
+    @State private var resolvedPrepareToken: String?
+    @State private var createdOrphanSessionId: String?
+    @State private var didSelectCandidate: Bool = false
     @State private var isLoading: Bool = true
     @State private var errorMessage: String?
 
@@ -102,12 +105,22 @@ struct SourcePickerSheetView: View {
                     ScrollView(.vertical, showsIndicators: false) {
                         LazyVStack(spacing: 16) {
                             ForEach(Array(candidates.enumerated()), id: \.element.id) { index, candidate in
+                                let isCurrent = activeCandidateId != nil
+                                    ? (candidate.candidateId == activeCandidateId)
+                                    : (candidate.isActive == true)
                                 CandidateRowButton(
                                     candidate: candidate,
                                     isRecommended: index == 0,
-                                    isCurrentWinner: candidate.candidateId == activeCandidateId || candidate.isActive == true
+                                    isCurrentWinner: isCurrent
                                 ) {
-                                    onSelectCandidate(candidate)
+                                    didSelectCandidate = true
+                                    if isCurrent, let tok = resolvedPrepareToken {
+                                        createdOrphanSessionId = nil
+                                        onSelectCandidate(candidate, tok)
+                                    } else {
+                                        stopOrphanSessionIfNeeded()
+                                        onSelectCandidate(candidate, nil)
+                                    }
                                 }
                             }
                         }
@@ -119,6 +132,28 @@ struct SourcePickerSheetView: View {
         }
         .task {
             await loadCandidates()
+        }
+        .onDisappear {
+            if !didSelectCandidate {
+                stopOrphanSessionIfNeeded()
+            }
+        }
+    }
+
+    private func stopOrphanSessionIfNeeded() {
+        guard context.existingPrepareToken == nil,
+              let sid = createdOrphanSessionId,
+              let client = sessionStore.makeClient() else {
+            return
+        }
+        createdOrphanSessionId = nil
+        Task.detached(priority: .utility) {
+            _ = try? await client.sendHeartbeat(
+                sessionId: sid,
+                state: "stopped",
+                positionSeconds: 0,
+                durationSeconds: 0
+            )
         }
     }
 
@@ -135,6 +170,7 @@ struct SourcePickerSheetView: View {
             let sessionToken: String
             if let existing = context.existingPrepareToken, !existing.isEmpty {
                 sessionToken = existing
+                resolvedPrepareToken = existing
             } else {
                 let prep = try await client.preparePlayback(
                     itemId: context.itemId,
@@ -148,11 +184,14 @@ struct SourcePickerSheetView: View {
                     return
                 }
                 sessionToken = tok
+                resolvedPrepareToken = tok
+                createdOrphanSessionId = prep.playbackSession?.sessionId
             }
 
             let alt = try await client.fetchAlternatives(sessionId: sessionToken)
-            activeCandidateId = alt.activeCandidateId
             candidates = alt.alternatives
+            activeCandidateId = alt.activeCandidateId
+                ?? alt.alternatives.first(where: { $0.isActive == true })?.candidateId
         } catch {
             errorMessage = error.localizedDescription
         }

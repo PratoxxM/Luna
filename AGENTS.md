@@ -2,7 +2,7 @@
 
 ## 1. Purpose & Public-Repository Security Rules
 
-`Luna` (`v2.2.3`) is a public, standalone tvOS client powered by `AetherEngine` (`7.65.0`) and backed by the native MediaOS TV API (`/api/tv/v1` on `:8090` / `:8920`).
+`Luna` (`v2.2.4`) is a public, standalone tvOS client powered by `AetherEngine` (`7.65.0`) and backed by the native MediaOS TV API (`/api/tv/v1` on `:8090` / `:8920`).
 
 Because this repository is **public on GitHub**, these rules are hard invariants:
 
@@ -33,7 +33,7 @@ Development happens on Linux/Windows without a local macOS SDK:
 
 ## 5. Cloud Build & Verification Workflow (`gh` CLI)
 
-Every code change is verified in GitHub Actions (`.github/workflows/build-tvos.yml`), which compiles `Luna` for `generic/platform=tvOS` using Xcode 26.3+ / 27 and uploads `Luna-unsigned.ipa` to the rolling `latest` GitHub Release monitored by ATVLoadly.
+Every code change is verified in GitHub Actions (`.github/workflows/build-tvos.yml`), which runs static guardrails, compiles and tests `Tests/LunaTests` (`LunaTests`), compiles `Luna` for `generic/platform=tvOS` using Xcode 26.3+ / 27, and uploads `Luna-unsigned.ipa` to the rolling `latest` GitHub Release monitored by ATVLoadly.
 
 ```bash
 # Push changes and watch the cloud build
@@ -52,7 +52,7 @@ gh release view latest --json assets,updatedAt
 
 ## 6. tvOS 26 & AetherEngine Host Rules
 
-- Reuse a **single** `@MainActor` `AetherEngine` instance across the app lifetime (`LunaApp.swift`), setting `engine.maximumSubtitleOffsetSeconds = 0` at initialization and before `engine.load(...)` so active subtitles never open a second parallel 4K HTTP stream.
+- Reuse a **single** `@MainActor` `AetherEngine` instance across the app lifetime (`LunaApp.swift`), setting `engine.maximumSubtitleAdvanceSeconds = 0` and `engine.maximumSubtitleDelaySeconds = 10` at initialization and before `engine.load(...)` so active subtitles never open a second parallel 4K HTTP stream.
 - Call `engine.prepareForItemReplacement()` for back-to-back episode transitions and seamless timecode source switches (`HeldStillPresenter`), and `engine.stop(resetDisplayCriteria: true)` when dismissing the player.
 - Hold `ResolvingCurtainView` visible until `hasFirstFrameReadyForDisplay && !isAwaitingDisplaySwitch` (with a 5-second fallback watchdog) so HDMI range/frame-rate switches never flash black.
 - Observe `engine.clock` (`$currentTime`, `$sourceTime`) **only** in leaf scrubber (`PlayerBottomBarView`) and subtitle (`SubtitleOverlayView`) views, and `engine.diagnostics.$liveTelemetry` **only** in `NerdHUDView` (1 Hz), so high-frequency ticks never re-render the player hierarchy.

@@ -12,6 +12,7 @@ struct ShelfRowView: View {
     let onToggleWatchlist: (TvMediaCard) -> Void
     let onToggleFavorite: (TvMediaCard) -> Void
     let onMarkWatched: (TvMediaCard) -> Void
+    let onSeeAllRow: (TvShelfRow) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -59,6 +60,12 @@ struct ShelfRowView: View {
                                 }
                             }
                         }
+
+                        if row.hasMore == true {
+                            SeeAllShelfCardButton(width: 240, height: 263) {
+                                onSeeAllRow(row)
+                            }
+                        }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 18)
@@ -83,6 +90,12 @@ struct ShelfRowView: View {
                                 } label: {
                                     Label("Åpne serie og sesonger", systemImage: "tv")
                                 }
+                            }
+                        }
+
+                        if row.hasMore == true {
+                            SeeAllShelfCardButton(width: 240, height: 248) {
+                                onSeeAllRow(row)
                             }
                         }
                     }
@@ -144,6 +157,12 @@ struct ShelfRowView: View {
                                 }
                             }
                         }
+
+                        if row.hasMore == true {
+                            SeeAllShelfCardButton(width: 248, height: 372) {
+                                onSeeAllRow(row)
+                            }
+                        }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 18)
@@ -151,5 +170,51 @@ struct ShelfRowView: View {
                 .scrollClipDisabled()
             }
         }
+    }
+}
+
+private struct SeeAllShelfCardButton: View {
+    let width: CGFloat
+    let height: CGFloat
+    let action: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 14) {
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(.system(size: 42, weight: .semibold))
+                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.amber)
+
+                Text("Se alle")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(isFocused ? LunaTheme.canvas : .white)
+            }
+            .frame(width: width, height: height)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(isFocused ? LunaTheme.amber : LunaTheme.surfaceRaised.opacity(0.75))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(
+                        isFocused ? Color.white.opacity(0.92) : LunaTheme.moonlight.opacity(0.14),
+                        lineWidth: isFocused ? 2.5 : 1
+                    )
+            )
+            .shadow(
+                color: isFocused ? LunaTheme.amber.opacity(0.4) : .black.opacity(0.25),
+                radius: isFocused ? 20 : 8,
+                x: 0,
+                y: isFocused ? 8 : 4
+            )
+            .scaleEffect(isFocused ? 1.04 : 1.0)
+            .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
+        }
+        .buttonStyle(LunaChromelessButtonStyle())
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .focusEffectDisabled(true)
+        .focused($isFocused)
     }
 }

@@ -227,15 +227,33 @@ public struct MediaOSClient: Sendable {
         return headers
     }
 
+    public func isSameOrigin(_ url: URL) -> Bool {
+        guard let targetScheme = url.scheme?.lowercased(),
+              let baseScheme = baseURL.scheme?.lowercased(),
+              targetScheme == baseScheme,
+              let targetHost = url.host?.lowercased(),
+              let baseHost = baseURL.host?.lowercased(),
+              targetHost == baseHost else {
+            return false
+        }
+        let targetPort = url.port ?? (targetScheme == "https" ? 443 : 80)
+        let basePort = baseURL.port ?? (baseScheme == "https" ? 443 : 80)
+        return targetPort == basePort
+    }
+
     public func fetchRawImageData(from url: URL) async throws -> (Data, HTTPURLResponse?) {
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
         req.setValue("image/webp,image/*;q=0.9", forHTTPHeaderField: "Accept")
-        req.setValue(deviceID, forHTTPHeaderField: "X-Device-Id")
-        if let deviceToken, !deviceToken.isEmpty {
-            req.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")
+        let sameOrigin = isSameOrigin(url)
+        if sameOrigin {
+            req.setValue(deviceID, forHTTPHeaderField: "X-Device-Id")
+            if let deviceToken, !deviceToken.isEmpty {
+                req.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")
+            }
         }
-        let (data, resp) = try await imageSession.data(for: req)
+        let targetSession = sameOrigin ? imageSession : URLSession.shared
+        let (data, resp) = try await targetSession.data(for: req)
         let http = resp as? HTTPURLResponse
         if let status = http?.statusCode, status >= 400 {
             throw MediaOSError.serverMessage(status, "Bildehenting feilet (HTTP \(status))")
@@ -276,8 +294,31 @@ public struct MediaOSClient: Sendable {
 
         let (data, rawResp) = try await session.data(for: req)
         let status = (rawResp as? HTTPURLResponse)?.statusCode ?? 500
-        let decoded = try JSONDecoder().decode(TvPairingPollResponse.self, from: data)
-        return (status, decoded)
+        if let decoded = try? JSONDecoder().decode(TvPairingPollResponse.self, from: data) {
+            return (status, decoded)
+        }
+        let fallbackStatus: String
+        switch status {
+        case 404, 410:
+            fallbackStatus = "expired"
+        case 429:
+            fallbackStatus = "rate_limited"
+        case 400:
+            fallbackStatus = "invalid"
+        default:
+            fallbackStatus = "error"
+        }
+        let serverMsg = (try? JSONDecoder().decode(ServerErrorEnvelope.self, from: data))?.error
+        return (
+            status,
+            TvPairingPollResponse(
+                ok: false,
+                status: fallbackStatus,
+                deviceToken: nil,
+                device: nil,
+                error: serverMsg
+            )
+        )
     }
 
     // MARK: - Bootstrap, Conditional Home & Native Catalog

@@ -24,6 +24,8 @@ public enum SideloadSafeStorage {
     public static let autoPlayNextEpisodeKey = "luna.v1.comfort.auto_play_next_episode"
     public static let smartNordicSubtitleRuleKey = "luna.v1.comfort.smart_nordic_subtitle_rule"
     public static let showNerdHUDKey = "luna.v1.comfort.show_nerd_hud"
+    public static let lowResUpscaleModeKey = "luna.v1.comfort.low_res_upscale_mode"
+    public static let recentSearchesKey = "luna.v1.recent_searches"
 
     private static let keychainService = "luna.v1.credentials"
     private static let tokenAccount = "device_bearer_token"

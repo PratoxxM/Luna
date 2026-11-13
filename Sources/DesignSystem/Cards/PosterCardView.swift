@@ -86,15 +86,14 @@ public struct PosterCardView: View {
                         Spacer()
 
                         if pct > 2 && pct < 95 {
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(Color.black.opacity(0.55))
-                                    Capsule()
-                                        .fill(LunaTheme.amber)
-                                        .frame(width: geo.size.width * CGFloat(pct / 100.0))
-                                }
+                            let trackWidth = max(0, width - 24)
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.black.opacity(0.55))
+                                Capsule()
+                                    .fill(LunaTheme.amber)
+                                    .frame(width: trackWidth * CGFloat(pct / 100.0))
                             }
-                            .frame(height: 5)
+                            .frame(width: trackWidth, height: 5)
                             .padding(.horizontal, 12)
                             .padding(.bottom, 10)
                         }

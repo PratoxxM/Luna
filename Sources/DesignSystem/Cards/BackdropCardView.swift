@@ -3,7 +3,6 @@ import SwiftUI
 public enum BackdropCardVariant: Sendable {
     case continueWatching
     case upcomingEpisode
-    case landscapeFeature
 }
 
 public struct BackdropCardView: View {
@@ -98,15 +97,14 @@ public struct BackdropCardView: View {
                         .lineLimit(1)
 
                     if variant == .continueWatching && pct > 0 {
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Color.white.opacity(0.22))
-                                Capsule()
-                                    .fill(LunaTheme.amber)
-                                    .frame(width: geo.size.width * CGFloat(pct / 100.0))
-                            }
+                        let trackWidth = max(0, width - 36)
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.22))
+                            Capsule()
+                                .fill(LunaTheme.amber)
+                                .frame(width: trackWidth * CGFloat(pct / 100.0))
                         }
-                        .frame(height: 5)
+                        .frame(width: trackWidth, height: 5)
                         .padding(.top, 4)
                     }
                 }

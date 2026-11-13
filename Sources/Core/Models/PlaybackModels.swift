@@ -177,12 +177,6 @@ public struct TvObjectAudioConfig: Codable, Equatable, Sendable {
     public let layout: String?
 }
 
-public struct TvSubtitleStyleConfig: Codable, Equatable, Sendable {
-    public let preset: String?
-    public let fontScale: Double?
-    public let boxOpacity: Double?
-}
-
 public struct TvAetherConfig: Codable, Equatable, Sendable {
     public let preferDualLayerDolbyVision: Bool
     public let dualLayerRoute: String?
@@ -197,7 +191,6 @@ public struct TvAetherConfig: Codable, Equatable, Sendable {
     public let audioBridgeMode: String
     public let preferredAudioLanguages: [String]?
     public let preferredSubtitleLanguages: [String]?
-    public let subtitleStyle: TvSubtitleStyleConfig?
     public let autoPlayNextEpisode: Bool?
     public let smartNordicSubtitleRule: Bool?
     public let skipsContainerAttachments: Bool?
@@ -229,7 +222,6 @@ public struct TvNextEpisodeSummary: Codable, Equatable, Sendable {
     public let episode: Int
     public let title: String?
     public let stillUrl: String?
-    public let prewarmThresholdFraction: Double?
 }
 
 public struct TvPlaybackSession: Codable, Equatable, Sendable {

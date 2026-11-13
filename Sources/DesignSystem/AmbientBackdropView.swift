@@ -19,7 +19,7 @@ public final class AmbientBackdropController: ObservableObject {
         debounceTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled, let self else { return }
-            if self.dominantHex == dominantColor && self.backdropURL == backdropURL {
+            if self.dominantHex == dominantColor && self.backdropURL == backdropURL && self.blurHash == blurHash {
                 return
             }
             withAnimation(.easeOut(duration: 0.42)) {
@@ -42,13 +42,11 @@ public final class AmbientBackdropController: ObservableObject {
 
 public struct AmbientBackdropView: View {
     @ObservedObject var controller: AmbientBackdropController
-    let client: MediaOSClient?
 
     @State private var decodedBlurImage: CGImage?
 
-    public init(controller: AmbientBackdropController, client: MediaOSClient?) {
+    public init(controller: AmbientBackdropController) {
         self.controller = controller
-        self.client = client
         _decodedBlurImage = State(initialValue: BlurHashDecoder.cachedImage(controller.blurHash, width: 32, height: 18))
     }
 

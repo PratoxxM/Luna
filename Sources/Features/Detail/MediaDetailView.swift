@@ -15,16 +15,14 @@ struct MediaDetailView: View {
     @State private var isLoading: Bool = true
     @State private var isLoadingEpisodes: Bool = false
     @State private var errorMessage: String?
+    @State private var mutationErrorBanner: String?
+    @State private var pendingSeriesWatchedItem: TvItemDetail?
+    @State private var lastSeenRefreshNonce: Int = -1
+    @State private var selectedActorQuery: String?
 
-    // Silent 450ms Pre-Resolve state
-    @State private var preparedToken: String?
-    @State private var preparedSessionId: String?
-    @State private var preparedForItemId: String?
-    @State private var prewarmedStreamToken: String?
-    @State private var isPreResolvedReady: Bool = false
-    @State private var preResolveTask: Task<Void, Never>?
-
+    @StateObject private var preResolve = DetailPreResolveController()
     @State private var sourcePickerContext: SourcePickerContext?
+    @State private var bannerClearTask: Task<Void, Never>?
 
     @Namespace private var detailFocusNamespace
 
@@ -33,6 +31,18 @@ struct MediaDetailView: View {
 
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 40) {
+                if let mutationErrorBanner {
+                    Text(mutationErrorBanner)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(LunaTheme.amber)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 12)
+                        .background(LunaTheme.cinemaGlass, in: Capsule())
+                        .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.45), lineWidth: 1))
+                        .padding(.horizontal, LunaTheme.horizontalGutter)
+                        .padding(.top, 18)
+                }
+
                 if let detail {
                     heroHeaderSection(detail, client: client)
 
@@ -40,10 +50,12 @@ struct MediaDetailView: View {
                         seasonsAndEpisodesSection(detail: detail, seasons: seasons, client: client)
                     }
 
-                    if let members = detail.castMembers, !members.isEmpty {
-                        castMembersSection(members, client: client)
-                    } else if let cast = detail.cast, !cast.isEmpty {
-                        castSection(cast)
+                    DetailCastStripView(
+                        members: detail.castMembers,
+                        castNames: detail.cast,
+                        client: client
+                    ) { actorName in
+                        selectedActorQuery = actorName
                     }
                 } else if isLoading {
                     HStack(spacing: 16) {
@@ -67,20 +79,25 @@ struct MediaDetailView: View {
             .padding(.bottom, 84)
         }
         .focusScope(detailFocusNamespace)
+        .navigationDestination(item: $selectedActorQuery) { actorName in
+            SearchView(initialQuery: actorName)
+        }
         .sheet(item: $sourcePickerContext) { ctx in
             SourcePickerSheetView(
                 context: ctx,
-                onSelectCandidate: { picked in
+                onSelectCandidate: { picked, reusedToken in
                     let target = ctx
+                    _ = preResolve.consumeForPlayback(itemId: target.itemId, client: sessionStore.makeClient())
                     sourcePickerContext = nil
                     sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
                         itemId: target.itemId,
                         title: target.title,
                         seriesTitle: target.seriesTitle,
                         startPositionSeconds: target.startPositionSeconds,
-                        candidateId: picked.candidateId,
-                        backdropUrl: detail?.backdropUrl,
-                        logoUrl: detail?.logoUrl
+                        candidateId: reusedToken == nil ? picked.candidateId : nil,
+                        prepareToken: reusedToken,
+                        backdropUrl: target.backdropUrl ?? detail?.backdropUrl,
+                        logoUrl: target.logoUrl ?? detail?.logoUrl
                     )
                 },
                 onCancel: {
@@ -90,31 +107,47 @@ struct MediaDetailView: View {
             .environmentObject(sessionStore)
             .preferredColorScheme(.dark)
         }
-        .task(id: "\(mediaType)#\(itemId)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)#\(sessionStore.homeRefreshNonce)") {
-            await loadDetail()
-        }
-        .onDisappear {
-            preResolveTask?.cancel()
-            preResolveTask = nil
-            if sessionStore.activePlaybackTarget == nil {
-                if let tok = prewarmedStreamToken, tok.count >= 8 {
-                    EngineLog.unregisterSecret(tok)
-                    prewarmedStreamToken = nil
+        .confirmationDialog(
+            pendingSeriesWatchedItem?.watched == true
+                ? "Marker hele serien som usett?"
+                : "Marker hele serien som sett?",
+            isPresented: Binding(
+                get: { pendingSeriesWatchedItem != nil },
+                set: { if !$0 { pendingSeriesWatchedItem = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let item = pendingSeriesWatchedItem {
+                Button(item.watched ? "Marker hele serien som usett" : "Marker hele serien som sett") {
+                    pendingSeriesWatchedItem = nil
+                    Task { await toggleWatched(item) }
                 }
-                if let sid = preparedSessionId, let client = sessionStore.makeClient() {
-                    preparedSessionId = nil
-                    preparedToken = nil
-                    isPreResolvedReady = false
-                    Task.detached(priority: .utility) {
-                        _ = try? await client.sendHeartbeat(
-                            sessionId: sid,
-                            state: "stopped",
-                            positionSeconds: 0,
-                            durationSeconds: 0
-                        )
-                    }
+                Button("Avbryt", role: .cancel) {
+                    pendingSeriesWatchedItem = nil
                 }
             }
+        }
+        .task(id: "\(mediaType)#\(itemId)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)") {
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
+            await loadDetail()
+        }
+        .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
+            guard newNonce != lastSeenRefreshNonce else { return }
+            lastSeenRefreshNonce = newNonce
+            Task { await loadDetail(preserveSeason: true) }
+        }
+        .onChange(of: sessionStore.activePlaybackTarget) { oldTarget, newTarget in
+            if oldTarget != nil, newTarget == nil, let detail {
+                schedulePreResolve(for: detail)
+            }
+        }
+        .onDisappear {
+            bannerClearTask?.cancel()
+            preResolve.handleDisappear(
+                isLaunchingPlayback: sessionStore.activePlaybackTarget != nil,
+                isShowingSourcePicker: sourcePickerContext != nil,
+                client: sessionStore.makeClient()
+            )
         }
     }
 
@@ -194,10 +227,11 @@ struct MediaDetailView: View {
                         .padding(.horizontal, 11)
                         .padding(.vertical, 5)
                         .background(LunaTheme.amber, in: Capsule())
-                    } else if let avail = item.availability, avail.isLocalNvme || avail.isLocalArchive {
+                    } else if let avail = item.availability,
+                              avail.isLocalNvme || avail.isLocalArchive || avail.isLocalVfs {
                         Text(avail.householdBadgeLabel)
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(avail.isLocalNvme ? LunaTheme.emerald : LunaTheme.moonlight)
+                            .foregroundStyle((avail.isLocalNvme || avail.isLocalVfs) ? LunaTheme.emerald : LunaTheme.moonlight)
                             .padding(.horizontal, 11)
                             .padding(.vertical, 5)
                             .background(Color.white.opacity(0.10), in: Capsule())
@@ -217,7 +251,7 @@ struct MediaDetailView: View {
                 HStack(spacing: 16) {
                     PrimaryPlayButton(
                         title: primaryPlayLabel(item),
-                        isWarmReady: isPreResolvedReady
+                        isWarmReady: preResolve.isPreResolvedReady
                     ) {
                         launchPrimaryPlayback(item)
                     }
@@ -246,7 +280,7 @@ struct MediaDetailView: View {
                             title: target.title,
                             seriesTitle: target.seriesTitle,
                             startPositionSeconds: target.startPos,
-                            existingPrepareToken: preparedForItemId == target.itemId ? preparedToken : nil,
+                            existingPrepareToken: preResolve.matchingToken(for: target.itemId),
                             backdropUrl: item.backdropUrl ?? item.cardBackdropUrl,
                             logoUrl: item.logoUrl
                         )
@@ -314,7 +348,10 @@ struct MediaDetailView: View {
                                 client: client,
                                 onPlay: {
                                     guard ep.isUpcoming != true else { return }
-                                    let usePrep = (preparedForItemId == ep.itemId) ? preparedToken : nil
+                                    let usePrep = preResolve.consumeForPlayback(
+                                        itemId: ep.itemId,
+                                        client: sessionStore.makeClient()
+                                    )
                                     sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
                                         itemId: ep.itemId,
                                         title: ep.title,
@@ -332,7 +369,7 @@ struct MediaDetailView: View {
                                         title: ep.title,
                                         seriesTitle: detail.title,
                                         startPositionSeconds: ep.progress?.positionSeconds,
-                                        existingPrepareToken: preparedForItemId == ep.itemId ? preparedToken : nil
+                                        existingPrepareToken: preResolve.matchingToken(for: ep.itemId)
                                     )
                                 },
                                 onToggleWatched: {
@@ -345,68 +382,6 @@ struct MediaDetailView: View {
                     .padding(.vertical, 18)
                 }
                 .scrollClipDisabled()
-            }
-        }
-    }
-
-    private func castMembersSection(_ members: [TvCastMember], client: MediaOSClient?) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Medvirkende")
-                .font(.headline.weight(.bold))
-                .foregroundStyle(LunaTheme.moonlight)
-                .padding(.horizontal, LunaTheme.horizontalGutter)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 18) {
-                    ForEach(members.prefix(12)) { member in
-                        VStack(alignment: .leading, spacing: 6) {
-                            CachedArtworkView(
-                                url: client?.resolveArtworkURL(member.profileUrl),
-                                client: client,
-                                maxPixelSize: 180,
-                                placeholderSymbol: "person.fill",
-                                contentMode: .fill
-                            )
-                            .frame(width: 96, height: 120)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            Text(member.name)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                            if let character = member.character, !character.isEmpty {
-                                Text(character)
-                                    .font(.caption2)
-                                    .foregroundStyle(LunaTheme.muted)
-                                    .lineLimit(1)
-                            }
-                        }
-                        .frame(width: 108, alignment: .leading)
-                    }
-                }
-                .padding(.horizontal, LunaTheme.horizontalGutter)
-            }
-        }
-    }
-
-    private func castSection(_ castNames: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Medvirkende")
-                .font(.headline.weight(.bold))
-                .foregroundStyle(LunaTheme.moonlight)
-                .padding(.horizontal, LunaTheme.horizontalGutter)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
-                    ForEach(castNames.prefix(12), id: \.self) { actor in
-                        Text(actor)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(LunaTheme.moonlight.opacity(0.85))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 9)
-                            .background(LunaTheme.surfaceRaised.opacity(0.8), in: Capsule())
-                    }
-                }
-                .padding(.horizontal, LunaTheme.horizontalGutter)
             }
         }
     }
@@ -468,7 +443,10 @@ struct MediaDetailView: View {
 
     private func launchPrimaryPlayback(_ item: TvItemDetail) {
         let target = primaryTargetInfo(item)
-        let matchingToken = (preparedForItemId == target.itemId) ? preparedToken : nil
+        let matchingToken = preResolve.consumeForPlayback(
+            itemId: target.itemId,
+            client: sessionStore.makeClient()
+        )
         sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
             itemId: target.itemId,
             title: target.title,
@@ -480,83 +458,15 @@ struct MediaDetailView: View {
         )
     }
 
-    /// 450ms debounced `POST /api/tv/v1/playback/prepare` + strict NVMe/VFS-only
-    /// `AetherEngine.prewarm(byteBudget: 8 MiB)` (never spins up mechanical archive drives!).
-    private func scheduleSilentPreResolve(for item: TvItemDetail) {
+    private func schedulePreResolve(for item: TvItemDetail) {
         let target = primaryTargetInfo(item)
-        if preparedForItemId == target.itemId, let existingToken = preparedToken, !existingToken.isEmpty {
-            return
-        }
-        preResolveTask?.cancel()
-        if preparedForItemId != target.itemId {
-            if let oldTok = prewarmedStreamToken, oldTok.count >= 8 {
-                EngineLog.unregisterSecret(oldTok)
-                prewarmedStreamToken = nil
-            }
-            if let oldSid = preparedSessionId, let client = sessionStore.makeClient() {
-                Task.detached(priority: .utility) {
-                    _ = try? await client.sendHeartbeat(sessionId: oldSid, state: "stopped", positionSeconds: 0, durationSeconds: 0)
-                }
-            }
-            preparedToken = nil
-            preparedSessionId = nil
-            isPreResolvedReady = false
-        }
-
-        preResolveTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            guard !Task.isCancelled, let client = sessionStore.makeClient() else { return }
-
-            guard let prep = try? await client.preparePlayback(
-                itemId: target.itemId,
-                title: target.title,
-                seriesTitle: target.seriesTitle,
-                startPositionSeconds: target.startPos
-            ) else {
-                return
-            }
-            if Task.isCancelled {
-                if let orphanSid = prep.playbackSession?.sessionId {
-                    Task.detached(priority: .utility) {
-                        _ = try? await client.sendHeartbeat(sessionId: orphanSid, state: "stopped", positionSeconds: 0, durationSeconds: 0)
-                    }
-                }
-                return
-            }
-
-            if let token = prep.prepareToken, !token.isEmpty {
-                self.preparedToken = token
-                self.preparedSessionId = prep.playbackSession?.sessionId
-                self.preparedForItemId = target.itemId
-                self.isPreResolvedReady = true
-            }
-
-            if let streamTok = prep.playbackSession?.streamToken, streamTok.count >= 8 {
-                if let oldTok = self.prewarmedStreamToken, oldTok.count >= 8, oldTok != streamTok {
-                    EngineLog.unregisterSecret(oldTok)
-                }
-                _ = EngineLog.registerSecret(streamTok)
-                self.prewarmedStreamToken = streamTok
-            }
-
-            // Strictly respect `canClientPrewarmBytes == true` so mechanical archive drives
-            // are NEVER spun up merely by opening a detail page!
-            if prep.canClientPrewarmBytes == true,
-               let relStreamPath = prep.playbackSession?.stream.url,
-               let streamURL = client.buildAbsoluteURL(relStreamPath) {
-                let headers = client.streamHTTPHeaders()
-                Task.detached(priority: .utility) {
-                    guard !Task.isCancelled else { return }
-                    if !AetherEngine.isPrewarmed(url: streamURL) {
-                        _ = await AetherEngine.prewarm(
-                            url: streamURL,
-                            httpHeaders: headers,
-                            byteBudget: 8 * 1024 * 1024
-                        )
-                    }
-                }
-            }
-        }
+        preResolve.schedule(
+            targetItemId: target.itemId,
+            title: target.title,
+            seriesTitle: target.seriesTitle,
+            startPos: target.startPos,
+            client: sessionStore.makeClient()
+        )
     }
 
     // MARK: - Data Loading & Mutations
@@ -610,7 +520,7 @@ struct MediaDetailView: View {
                 }
             }
 
-            scheduleSilentPreResolve(for: loaded)
+            schedulePreResolve(for: loaded)
         } catch MediaOSError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
@@ -629,34 +539,58 @@ struct MediaDetailView: View {
         isLoadingEpisodes = false
     }
 
+    private func showMutationError(_ error: Error) {
+        bannerClearTask?.cancel()
+        mutationErrorBanner = "Kunne ikke lagre endring: \(error.localizedDescription)"
+        bannerClearTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
+            mutationErrorBanner = nil
+        }
+    }
+
+    private func markLocalMutationAndReload() async {
+        lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+        sessionStore.notifyContentMutated()
+        await loadDetail(preserveSeason: true)
+    }
+
     private func toggleWatchlist(_ item: TvItemDetail) async {
         guard let client = sessionStore.makeClient() else { return }
         let nextVal = !item.inWatchlist
         detail?.inWatchlist = nextVal
-        try? await client.setWatchlist(
-            listed: nextVal,
-            mediaType: item.mediaType,
-            ids: item.ids,
-            title: item.title,
-            year: item.year
-        )
-        sessionStore.notifyContentMutated()
-        await loadDetail(preserveSeason: true)
+        do {
+            try await client.setWatchlist(
+                listed: nextVal,
+                mediaType: item.mediaType,
+                ids: item.ids,
+                title: item.title,
+                year: item.year
+            )
+            await markLocalMutationAndReload()
+        } catch {
+            detail?.inWatchlist = item.inWatchlist
+            showMutationError(error)
+        }
     }
 
     private func toggleFavorite(_ item: TvItemDetail) async {
         guard let client = sessionStore.makeClient() else { return }
         let nextVal = !item.favoriteFlag
         detail?.isFavorite = nextVal
-        try? await client.setFavorite(
-            favorite: nextVal,
-            mediaType: item.mediaType,
-            ids: item.ids,
-            title: item.title,
-            year: item.year
-        )
-        sessionStore.notifyContentMutated()
-        await loadDetail(preserveSeason: true)
+        do {
+            try await client.setFavorite(
+                favorite: nextVal,
+                mediaType: item.mediaType,
+                ids: item.ids,
+                title: item.title,
+                year: item.year
+            )
+            await markLocalMutationAndReload()
+        } catch {
+            detail?.isFavorite = item.isFavorite
+            showMutationError(error)
+        }
     }
 
     private func handleHeroWatchedTap(_ item: TvItemDetail) async {
@@ -676,9 +610,14 @@ struct MediaDetailView: View {
                     season: next.season,
                     episode: next.episode
                 )
-                sessionStore.notifyContentMutated()
-                await loadDetail(preserveSeason: true)
-            } catch {}
+                await markLocalMutationAndReload()
+            } catch {
+                showMutationError(error)
+            }
+            return
+        }
+        if item.mediaType == "series" {
+            pendingSeriesWatchedItem = item
             return
         }
         await toggleWatched(item)
@@ -696,10 +635,10 @@ struct MediaDetailView: View {
                 title: item.title,
                 year: item.year
             )
-            sessionStore.notifyContentMutated()
-            await loadDetail(preserveSeason: true)
+            await markLocalMutationAndReload()
         } catch {
             detail?.watched = item.watched
+            showMutationError(error)
         }
     }
 
@@ -722,12 +661,12 @@ struct MediaDetailView: View {
                 season: episode.seasonNumber,
                 episode: episode.episodeNumber
             )
-            sessionStore.notifyContentMutated()
-            await loadDetail(preserveSeason: true)
+            await markLocalMutationAndReload()
         } catch {
             if let idx = episodes.firstIndex(where: { $0.id == episode.id }) {
-                episodes[idx].watched = episode.watched
+                episodes[idx] = episode
             }
+            showMutationError(error)
         }
     }
 }

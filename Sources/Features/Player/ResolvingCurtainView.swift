@@ -73,27 +73,35 @@ struct ResolvingCurtainView: View {
                 }
 
                 VStack(spacing: 14) {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.14))
-                            Capsule()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [LunaTheme.amber, LunaTheme.amberDeep],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.white.opacity(0.14))
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [LunaTheme.amber, LunaTheme.amberDeep],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
                                 )
-                                .frame(width: max(20, geo.size.width * CGFloat(effectiveProgressFraction)))
-                                .animation(.easeOut(duration: 0.28), value: effectiveProgressFraction)
-                        }
+                            )
+                            .frame(width: max(20, 440 * CGFloat(effectiveProgressFraction)))
+                            .animation(.easeOut(duration: 0.28), value: effectiveProgressFraction)
                     }
                     .frame(width: 440, height: 4)
 
                     Text(statusLineText)
                         .font(.callout)
                         .foregroundStyle(LunaTheme.muted)
+
+                    if let headline = viewModel.resolveHeadline, !headline.isEmpty {
+                        Text(headline)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(LunaTheme.amber.opacity(0.92))
+                            .lineLimit(1)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 5)
+                            .background(Color.white.opacity(0.08), in: Capsule())
+                    }
                 }
                 .padding(.top, 6)
 
@@ -145,6 +153,7 @@ struct ResolvingCurtainView: View {
             }
             return "Starter avspilling…"
         }
-        return "Klargjør strøm…"
+        let stage = viewModel.resolveStageLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        return stage.isEmpty ? "Klargjør strøm…" : stage
     }
 }

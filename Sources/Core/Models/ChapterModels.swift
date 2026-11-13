@@ -16,6 +16,37 @@ public enum TvChapterKind: String, Codable, Equatable, Sendable {
         }
     }
 
+    private static let recapRegex = try? NSRegularExpression(
+        pattern: #"\b(?:recap|previously|tidligere|sammendrag)\b"#,
+        options: .caseInsensitive
+    )
+    private static let introPrefixRegex = try? NSRegularExpression(
+        pattern: #"^(?:intro|opening|op|main\s*title|title\s*sequence|åpning|vignett)\b"#,
+        options: .caseInsensitive
+    )
+    private static let introPhraseRegex = try? NSRegularExpression(
+        pattern: #"\b(?:opening\s*credits|intro\s*credits|theme\s*song)\b"#,
+        options: .caseInsensitive
+    )
+    private static let unconditionalCreditsRegex = try? NSRegularExpression(
+        pattern: #"\b(?:end\s*credits|closing\s*credits|outro|rulletekst)\b"#,
+        options: .caseInsensitive
+    )
+    private static let lateCreditsRegex = try? NSRegularExpression(
+        pattern: #"\b(?:credits|slutt)\b"#,
+        options: .caseInsensitive
+    )
+    private static let animeEndingTitleRegex = try? NSRegularExpression(
+        pattern: #"^(?:ed|ending)(?:\s*\d+[a-z]?)?$"#,
+        options: .caseInsensitive
+    )
+
+    private static func matches(_ regex: NSRegularExpression?, in text: String) -> Bool {
+        guard let regex else { return false }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.firstMatch(in: text, options: [], range: range) != nil
+    }
+
     public static func classify(
         title rawTitle: String,
         startSeconds: Double,
@@ -23,20 +54,18 @@ public enum TvChapterKind: String, Codable, Equatable, Sendable {
     ) -> TvChapterKind {
         let trimmed = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .chapter }
-        let lower = trimmed.lowercased()
 
-        if lower.range(of: #"\b(?:recap|previously|tidligere|sammendrag)\b"#, options: .regularExpression) != nil {
+        if matches(recapRegex, in: trimmed) {
             return .recap
         }
-        if lower.range(of: #"^(?:intro|opening|op|main\s*title|title\s*sequence|åpning|vignett)\b"#, options: .regularExpression) != nil ||
-            lower.range(of: #"\b(?:opening\s*credits|intro\s*credits|theme\s*song)\b"#, options: .regularExpression) != nil {
+        if matches(introPrefixRegex, in: trimmed) || matches(introPhraseRegex, in: trimmed) {
             return .intro
         }
-        if lower.range(of: #"\b(?:end\s*credits|closing\s*credits|outro|ending|rulletekst)\b"#, options: .regularExpression) != nil {
+        if matches(unconditionalCreditsRegex, in: trimmed) {
             return .credits
         }
-        if lower.range(of: #"\b(?:credits|ed|slutt)\b"#, options: .regularExpression) != nil &&
-            (durationSeconds <= 0 || startSeconds >= durationSeconds * 0.72) {
+        let isInLateWindow = durationSeconds <= 0 || startSeconds >= durationSeconds * 0.72
+        if isInLateWindow && (matches(lateCreditsRegex, in: trimmed) || matches(animeEndingTitleRegex, in: trimmed)) {
             return .credits
         }
         return .chapter

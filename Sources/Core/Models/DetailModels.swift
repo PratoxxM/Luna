@@ -131,13 +131,6 @@ public struct TvSearchResponse: Codable, Equatable, Sendable {
     public let items: [TvMediaCard]
 }
 
-public struct TvWatchlistResponse: Codable, Equatable, Sendable {
-    public let ok: Bool
-    public let items: [TvMediaCard]
-    public let favorites: [TvMediaCard]?
-    public let watchlist: [TvMediaCard]?
-}
-
 public struct TvMutationAckResponse: Codable, Equatable, Sendable {
     public let ok: Bool
 }
