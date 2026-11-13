@@ -222,6 +222,130 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         }
         return parts.joined(separator: " · ")
     }
+
+    public var nonGenericEpisodeTitle: String? {
+        guard let raw = episodeTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            return nil
+        }
+        if raw.caseInsensitiveCompare(title) == .orderedSame {
+            return nil
+        }
+        if let episodeCode, raw.caseInsensitiveCompare(episodeCode) == .orderedSame {
+            return nil
+        }
+        let lower = raw.lowercased()
+        if ["tba", "tbd", "ukjent", "unknown"].contains(lower) {
+            return nil
+        }
+        for prefix in ["episode #", "episode ", "ep. ", "ep ", "del ", "avsnitt "] {
+            if lower.hasPrefix(prefix) {
+                let tail = lower.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+                if !tail.isEmpty, tail.allSatisfy(\.isNumber) {
+                    return nil
+                }
+            }
+        }
+        return raw
+    }
+
+    public var upcomingPillText: String {
+        if let badge = airDateBadge?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !badge.isEmpty {
+            if let range = badge.range(of: " · ") {
+                let datePart = badge[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
+                if !datePart.isEmpty {
+                    return datePart
+                }
+            }
+            return badge
+        }
+        if let daysUntil {
+            if daysUntil <= 0 { return "I dag" }
+            if daysUntil == 1 { return "I morgen" }
+        }
+        return airDate ?? "Kommer"
+    }
+
+    public var isUrgentUpcoming: Bool {
+        if let daysUntil, daysUntil <= 1 {
+            return true
+        }
+        let lower = upcomingPillText.lowercased()
+        return lower.hasPrefix("i dag") || lower.hasPrefix("i morgen")
+    }
+
+    private var remainingMinutesLabel: String? {
+        if let prog = progress,
+           prog.positionSeconds > 15,
+           prog.durationSeconds > prog.positionSeconds {
+            let mins = max(1, Int(((prog.durationSeconds - prog.positionSeconds) / 60.0).rounded()))
+            return "\(mins) min igjen"
+        }
+        if let ctx = contextSubtitle {
+            for part in ctx.components(separatedBy: " · ") {
+                let trimmed = part.trimmingCharacters(in: .whitespaces)
+                if trimmed.lowercased().contains("min igjen") {
+                    return trimmed
+                }
+            }
+        }
+        return nil
+    }
+
+    public var cleanContinueSubtitle: String {
+        let code = episodeCode ?? nextUp.map { String(format: "S%02dE%02d", $0.season, $0.episode) }
+        let isResume = (progress?.percent ?? 0) > 1.0 || directPlayTarget?.mode == "resume"
+
+        if mediaType == "movie" {
+            if let rem = remainingMinutesLabel {
+                return year.map { "\($0) · \(rem)" } ?? rem
+            }
+            if let contextSubtitle, !contextSubtitle.isEmpty {
+                return contextSubtitle
+            }
+            return formattedSubtitle
+        }
+
+        if isResume {
+            var parts: [String] = []
+            if let code {
+                parts.append(remainingMinutesLabel == nil ? "Fortsett \(code)" : code)
+            } else if remainingMinutesLabel == nil {
+                parts.append("Fortsett")
+            }
+            if let epName = nonGenericEpisodeTitle {
+                parts.append(epName)
+            }
+            if let rem = remainingMinutesLabel {
+                parts.append(rem)
+            }
+            if !parts.isEmpty {
+                return parts.joined(separator: " · ")
+            }
+        } else if let code {
+            if let epName = nonGenericEpisodeTitle {
+                return "Neste · \(code) · \(epName)"
+            }
+            return "Neste · \(code)"
+        }
+
+        return formattedSubtitle
+    }
+
+    public var cleanUpcomingSubtitle: String {
+        let code = episodeCode ?? nextUp.map { String(format: "S%02dE%02d", $0.season, $0.episode) }
+        if let epName = nonGenericEpisodeTitle {
+            return code.map { "\($0) · \(epName)" } ?? epName
+        }
+        if let nextUp, nextUp.season > 0, nextUp.episode > 0 {
+            return "Sesong \(nextUp.season) · Episode \(nextUp.episode)"
+        }
+        if let code {
+            return code
+        }
+        return airDate.map { "Sendes \($0)" } ?? "Kommende episode"
+    }
 }
 
 public struct TvGenreChip: Codable, Identifiable, Equatable, Hashable, Sendable {

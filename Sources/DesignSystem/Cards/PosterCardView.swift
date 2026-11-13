@@ -103,6 +103,10 @@ public struct PosterCardView: View {
                 }
                 .frame(width: width, height: height)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(Color.white.opacity(isFocused ? 0.28 : 0.08), lineWidth: 1)
+                )
             }
             .buttonStyle(.card)
             .focused($isFocused)
@@ -110,19 +114,23 @@ public struct PosterCardView: View {
                 onPlayShortcut?()
             }
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(card.title)
-                    .font(.callout.weight(.semibold))
+                    .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(isFocused ? .white : LunaTheme.moonlight)
-                    .lineLimit(1)
-                    .frame(width: width, alignment: .leading)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Text(subtitleText)
-                    .font(.caption2)
+                    .font(.system(size: 19, weight: .medium))
                     .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.muted)
                     .lineLimit(1)
-                    .frame(width: width, alignment: .leading)
             }
+            .frame(width: width, minHeight: 92, alignment: .topLeading)
+            .offset(y: isFocused ? 6 : 0)
+            .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
         }
         .onChange(of: isFocused) { _, focused in
             if focused {

@@ -38,88 +38,103 @@ public struct BackdropCardView: View {
         let artworkURL = client?.resolveArtworkURL(card.preferredLandscapePath)
         let pct = min(100.0, max(0.0, card.progress?.percent ?? 0))
 
-        Button(action: onPrimaryAction) {
-            ZStack(alignment: .bottomLeading) {
-                LunaTheme.surface
+        VStack(alignment: .leading, spacing: 12) {
+            Button(action: onPrimaryAction) {
+                ZStack {
+                    LunaTheme.surface
 
-                CachedArtworkView(
-                    url: artworkURL,
-                    client: client,
-                    maxPixelSize: 960,
-                    blurHash: card.blurHash,
-                    dominantColor: card.dominantColor,
-                    placeholderSymbol: variant == .upcomingEpisode ? "calendar.badge.clock" : "play.tv",
-                    contentMode: .fill
-                )
+                    CachedArtworkView(
+                        url: artworkURL,
+                        client: client,
+                        maxPixelSize: 960,
+                        blurHash: card.blurHash,
+                        dominantColor: card.dominantColor,
+                        placeholderSymbol: variant == .upcomingEpisode ? "calendar.badge.clock" : "play.tv",
+                        contentMode: .fill
+                    )
+                    .frame(width: width, height: height)
+                    .clipped()
+
+                    VStack(spacing: 0) {
+                        if variant == .upcomingEpisode {
+                            upcomingDatePill
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(14)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        if variant == .continueWatching && (pct > 0 || isFocused) {
+                            VStack(spacing: 8) {
+                                if isFocused {
+                                    HStack {
+                                        Spacer()
+                                        Image(systemName: "play.fill")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(LunaTheme.canvas)
+                                            .frame(width: 34, height: 34)
+                                            .background(LunaTheme.amber, in: Circle())
+                                            .shadow(color: .black.opacity(0.45), radius: 6, x: 0, y: 2)
+                                    }
+                                    .padding(.horizontal, 14)
+                                }
+
+                                if pct > 0 {
+                                    let trackWidth = max(0, width - 28)
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(Color.white.opacity(0.26))
+                                        Capsule()
+                                            .fill(LunaTheme.amber)
+                                            .frame(width: trackWidth * CGFloat(pct / 100.0))
+                                    }
+                                    .frame(width: trackWidth, height: 5)
+                                    .padding(.horizontal, 14)
+                                }
+                            }
+                            .padding(.top, 16)
+                            .padding(.bottom, 10)
+                            .background(
+                                LinearGradient(
+                                    colors: [.clear, Color.black.opacity(0.68)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                        }
+                    }
+                }
                 .frame(width: width, height: height)
-                .clipped()
-
-                LinearGradient(
-                    colors: [
-                        Color.black.opacity(0.04),
-                        Color.black.opacity(0.36),
-                        Color.black.opacity(0.88)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(Color.white.opacity(isFocused ? 0.28 : 0.08), lineWidth: 1)
                 )
-
-                // Top-left air-date pill strictly for upcoming episodes
-                if variant == .upcomingEpisode {
-                    VStack {
-                        HStack(spacing: 6) {
-                            Image(systemName: "calendar")
-                                .font(.caption2.weight(.bold))
-                            Text(card.airDateBadge ?? fallbackUpcomingBadge)
-                                .font(.caption2.weight(.bold))
-                        }
-                        .foregroundStyle(LunaTheme.canvas)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(LunaTheme.amber, in: Capsule())
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-
-                        Spacer()
-                    }
-                }
-
-                // Bottom title, episode context & progress bar
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(card.title)
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-
-                    Text(subtitleLine)
-                        .font(.caption)
-                        .foregroundStyle(LunaTheme.moonlight.opacity(0.86))
-                        .lineLimit(1)
-
-                    if variant == .continueWatching && pct > 0 {
-                        let trackWidth = max(0, width - 36)
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color.white.opacity(0.22))
-                            Capsule()
-                                .fill(LunaTheme.amber)
-                                .frame(width: trackWidth * CGFloat(pct / 100.0))
-                        }
-                        .frame(width: trackWidth, height: 5)
-                        .padding(.top, 4)
-                    }
-                }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 16)
             }
-            .frame(width: width, height: height)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        }
-        .buttonStyle(.card)
-        .focused($isFocused)
-        .onPlayPauseCommand {
-            if variant == .continueWatching {
-                onPrimaryAction()
+            .buttonStyle(.card)
+            .focused($isFocused)
+            .onPlayPauseCommand {
+                if variant == .continueWatching {
+                    onPrimaryAction()
+                }
             }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(card.title)
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(isFocused ? .white : LunaTheme.moonlight)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(subtitleLine)
+                    .font(.system(size: 21, weight: .medium))
+                    .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.muted)
+                    .lineLimit(1)
+            }
+            .frame(width: width, minHeight: 68, alignment: .topLeading)
+            .offset(y: isFocused ? 7 : 0)
+            .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
         }
         .onChange(of: isFocused) { _, focused in
             if focused {
@@ -131,25 +146,36 @@ public struct BackdropCardView: View {
         }
     }
 
-    private var fallbackUpcomingBadge: String {
-        if let code = card.episodeCode, let air = card.airDate {
-            return "\(air) · \(code)"
+    private var upcomingDatePill: some View {
+        let urgent = card.isUrgentUpcoming
+        return HStack(spacing: 7) {
+            Image(systemName: "calendar")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundStyle(urgent ? LunaTheme.canvas : LunaTheme.amber)
+            Text(card.upcomingPillText)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundStyle(urgent ? LunaTheme.canvas : LunaTheme.moonlight)
+                .lineLimit(1)
         }
-        return card.airDate ?? "Kommende episode"
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            urgent ? LunaTheme.amber : Color.black.opacity(0.76),
+            in: Capsule()
+        )
+        .overlay(
+            Capsule()
+                .strokeBorder(
+                    urgent ? Color.clear : LunaTheme.amber.opacity(0.35),
+                    lineWidth: 0.9
+                )
+        )
     }
 
     private var subtitleLine: String {
         if variant == .upcomingEpisode {
-            if let epTitle = card.episodeTitle, !epTitle.isEmpty {
-                if let code = card.episodeCode {
-                    return "\(code) · \(epTitle)"
-                }
-                return epTitle
-            }
-            if let air = card.airDate {
-                return "Sendes \(air)"
-            }
+            return card.cleanUpcomingSubtitle
         }
-        return card.formattedSubtitle
+        return card.cleanContinueSubtitle
     }
 }

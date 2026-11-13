@@ -209,4 +209,94 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertNil(autoNight.maxChannels)
         XCTAssertEqual(autoNight.lfeMixDB, -6.0)
     }
+
+    func testFrontPageCardCleanSubtitlesAndUpcomingPills() {
+        let genericContinue = TvMediaCard(
+            itemId: "series:tmdb:100",
+            mediaType: "series",
+            ids: TvMediaIds(tmdb: 100),
+            title: "Kompani Lauritzen",
+            episodeCode: "S05E13",
+            episodeTitle: "Episode 13",
+            nextUp: TvNextUpPointer(season: 5, episode: 13)
+        )
+        XCTAssertNil(genericContinue.nonGenericEpisodeTitle)
+        XCTAssertEqual(genericContinue.cleanContinueSubtitle, "Neste · S05E13")
+
+        let epAliasCard = TvMediaCard(
+            itemId: "series:tmdb:101",
+            mediaType: "series",
+            ids: TvMediaIds(tmdb: 101),
+            title: "Eksempelserie",
+            episodeCode: "S01E05",
+            episodeTitle: "Ep 5",
+            nextUp: TvNextUpPointer(season: 1, episode: 5)
+        )
+        XCTAssertNil(epAliasCard.nonGenericEpisodeTitle)
+
+        let delAliasCard = TvMediaCard(
+            itemId: "series:tmdb:102",
+            mediaType: "series",
+            ids: TvMediaIds(tmdb: 102),
+            title: "Eksempelserie",
+            episodeCode: "S01E02",
+            episodeTitle: "Del 2",
+            nextUp: TvNextUpPointer(season: 1, episode: 2)
+        )
+        XCTAssertNil(delAliasCard.nonGenericEpisodeTitle)
+
+        let namedContinue = TvMediaCard(
+            itemId: "series:tmdb:103",
+            mediaType: "series",
+            ids: TvMediaIds(tmdb: 103),
+            title: "Kompani Lauritzen",
+            episodeCode: "S05E13",
+            episodeTitle: "Finaleuke",
+            nextUp: TvNextUpPointer(season: 5, episode: 13)
+        )
+        XCTAssertEqual(namedContinue.nonGenericEpisodeTitle, "Finaleuke")
+        XCTAssertEqual(namedContinue.cleanContinueSubtitle, "Neste · S05E13 · Finaleuke")
+
+        let inProgressSeries = TvMediaCard(
+            itemId: "series:tmdb:104",
+            mediaType: "series",
+            ids: TvMediaIds(tmdb: 104),
+            title: "Luksusfellen",
+            episodeCode: "S28E05",
+            episodeTitle: "Episode 5",
+            nextUp: TvNextUpPointer(season: 28, episode: 5),
+            progress: TvWatchProgress(positionSeconds: 900, durationSeconds: 2700, percent: 33.3, season: 28, episode: 5, watched: false)
+        )
+        XCTAssertEqual(inProgressSeries.cleanContinueSubtitle, "S28E05 · 30 min igjen")
+
+        let upcomingGeneric = TvMediaCard(
+            itemId: "series:tmdb:105",
+            mediaType: "series",
+            ids: TvMediaIds(tmdb: 105),
+            title: "Dexter: Resurrection",
+            daysUntil: 2,
+            episodeCode: "S02E03",
+            episodeTitle: "Episode 3",
+            airDateBadge: "På søndag · S02E03",
+            nextUp: TvNextUpPointer(season: 2, episode: 3)
+        )
+        XCTAssertEqual(upcomingGeneric.upcomingPillText, "På søndag")
+        XCTAssertFalse(upcomingGeneric.isUrgentUpcoming)
+        XCTAssertEqual(upcomingGeneric.cleanUpcomingSubtitle, "Sesong 2 · Episode 3")
+
+        let upcomingUrgent = TvMediaCard(
+            itemId: "series:tmdb:106",
+            mediaType: "series",
+            ids: TvMediaIds(tmdb: 106),
+            title: "Dexter: Resurrection",
+            daysUntil: 1,
+            episodeCode: "S02E06",
+            episodeTitle: "Finaleuke",
+            airDateBadge: "I morgen · S02E06",
+            nextUp: TvNextUpPointer(season: 2, episode: 6)
+        )
+        XCTAssertEqual(upcomingUrgent.upcomingPillText, "I morgen")
+        XCTAssertTrue(upcomingUrgent.isUrgentUpcoming)
+        XCTAssertEqual(upcomingUrgent.cleanUpcomingSubtitle, "S02E06 · Finaleuke")
+    }
 }

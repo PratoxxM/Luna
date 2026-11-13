@@ -23,7 +23,7 @@ struct ShelfRowView: View {
 
             if row.rowStyle == "continue_backdrop" {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 32) {
+                    LazyHStack(alignment: .top, spacing: 32) {
                         ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
                             BackdropCardView(
                                 card: card,
@@ -73,13 +73,13 @@ struct ShelfRowView: View {
                 .scrollClipDisabled()
             } else if row.rowStyle == "upcoming_backdrop" {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 30) {
+                    LazyHStack(alignment: .top, spacing: 32) {
                         ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
                             BackdropCardView(
                                 card: card,
                                 client: client,
                                 variant: .upcomingEpisode,
-                                width: 440
+                                width: 468
                             ) {
                                 onSelectCard(card)
                             }
@@ -94,7 +94,7 @@ struct ShelfRowView: View {
                         }
 
                         if row.hasMore == true {
-                            SeeAllShelfCardButton(width: 240, height: 248) {
+                            SeeAllShelfCardButton(width: 240, height: 263) {
                                 onSeeAllRow(row)
                             }
                         }
@@ -105,7 +105,7 @@ struct ShelfRowView: View {
                 .scrollClipDisabled()
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 30) {
+                    LazyHStack(alignment: .top, spacing: 30) {
                         ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
                             PosterCardView(
                                 card: card,
