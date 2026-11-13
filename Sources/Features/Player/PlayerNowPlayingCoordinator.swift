@@ -3,6 +3,23 @@ import MediaPlayer
 import UIKit
 import AetherBridge
 
+private struct SendableCGImageBox: @unchecked Sendable {
+    let cgImage: CGImage
+}
+
+/// Top-level `nonisolated` factory so `MPMediaItemArtwork`'s Objective-C `requestHandler`
+/// never inherits dynamic `@MainActor` isolation under Swift 6 (`SE-0423`) when `MediaPlayer`
+/// requests artwork bitmaps on background `MediaRemote` queues.
+enum NowPlayingArtworkFactory {
+    static func makeArtwork(cgImage: CGImage) -> MPMediaItemArtwork {
+        let size = CGSize(width: max(1, cgImage.width), height: max(1, cgImage.height))
+        let box = SendableCGImageBox(cgImage: cgImage)
+        return MPMediaItemArtwork(boundsSize: size) { @Sendable _ in
+            UIImage(cgImage: box.cgImage)
+        }
+    }
+}
+
 /// Publishes tvOS Control Center / iPhone Remote Now Playing metadata, chapter/next-episode
 /// command handlers, and decoded poster/backdrop artwork via `AetherEngine 7.65.0`.
 @MainActor
@@ -54,10 +71,7 @@ enum PlayerNowPlayingCoordinator {
                 return
             }
 
-            let boundsSize = CGSize(width: cgImage.width, height: cgImage.height)
-            let artwork = MPMediaItemArtwork(boundsSize: boundsSize) { _ in
-                UIImage(cgImage: cgImage)
-            }
+            let artwork = NowPlayingArtworkFactory.makeArtwork(cgImage: cgImage)
             var enrichedInfo = makeBaseInfo(for: session)
             enrichedInfo[MPMediaItemPropertyArtwork] = artwork
             viewModel.engine.setVideoNowPlayingInfo(enrichedInfo)
@@ -71,10 +85,7 @@ enum PlayerNowPlayingCoordinator {
 
     private static func makeBaseInfo(for session: TvPlaybackSession) -> [String: Any] {
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: session.item.title,
-            MPMediaItemPropertyMediaType: session.item.mediaType == "movie"
-                ? MPMediaType.movie.rawValue
-                : MPMediaType.tvShow.rawValue
+            MPMediaItemPropertyTitle: session.item.title
         ]
 
         if let seriesTitle = session.item.seriesTitle, !seriesTitle.isEmpty {
@@ -86,11 +97,6 @@ enum PlayerNowPlayingCoordinator {
             }
         } else if let year = session.item.year {
             info[MPMediaItemPropertyArtist] = String(year)
-        }
-
-        let declaredDuration = session.stream.declaredDurationSeconds ?? session.item.runtimeSeconds ?? 0
-        if declaredDuration > 0 {
-            info[MPMediaItemPropertyPlaybackDuration] = declaredDuration
         }
 
         return info

@@ -290,7 +290,7 @@ public final class AppSessionStore: ObservableObject {
                 return trimmed
             }
         }
-        return "2.2.5"
+        return "2.2.7"
     }
 
     public func unpairDevice() {

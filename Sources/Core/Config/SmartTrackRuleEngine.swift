@@ -58,7 +58,7 @@ public enum SmartTrackRuleEngine {
         case keepCurrent
     }
 
-    nonisolated(unsafe) private static let negatedForcedRegex: NSRegularExpression = {
+    private static let negatedForcedRegex: NSRegularExpression = {
         // Guard against titles like "Non-Forced", "Not Forced", "Unforced", "Ikke tvungen".
         try! NSRegularExpression(
             pattern: #"\b(?:non[\s\-_]*forced|not[\s\-_]*forced|unforced|ikke[\s\-_]*tvungen)\b"#,
@@ -66,11 +66,11 @@ public enum SmartTrackRuleEngine {
         )
     }()
 
-    nonisolated(unsafe) private static let forcedRegex: NSRegularExpression = {
+    private static let forcedRegex: NSRegularExpression = {
         try! NSRegularExpression(pattern: #"\b(?:forced|tvungen)\b"#, options: [])
     }()
 
-    nonisolated(unsafe) private static let sdhWordRegex: NSRegularExpression = {
+    private static let sdhWordRegex: NSRegularExpression = {
         try! NSRegularExpression(
             pattern: #"\b(?:sdh|cc|closed[\s\-_]*captions?)\b"#,
             options: []

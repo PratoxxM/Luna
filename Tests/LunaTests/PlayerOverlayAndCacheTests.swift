@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import MediaPlayer
 import XCTest
 @testable import Luna
 
@@ -72,5 +74,36 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
         XCTAssertEqual(store.roomName, "Kino")
         XCTAssertEqual(store.hardwareProfile, "dv-fel-714")
         XCTAssertEqual(store.availableRooms, customRooms)
+    }
+
+    func testNowPlayingArtworkRequestHandlerIsSafeOffMainActor() async throws {
+        struct UncheckedArtworkBox: @unchecked Sendable {
+            let artwork: MPMediaItemArtwork
+        }
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil,
+            width: 16,
+            height: 24,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ), let cgImage = context.makeImage() else {
+            XCTFail("Failed to allocate test CGImage")
+            return
+        }
+
+        let box = await MainActor.run {
+            UncheckedArtworkBox(artwork: NowPlayingArtworkFactory.makeArtwork(cgImage: cgImage))
+        }
+
+        let renderedSize = await Task.detached(priority: .userInitiated) {
+            box.artwork.image(at: CGSize(width: 16, height: 24))?.size
+        }.value
+
+        XCTAssertEqual(renderedSize?.width, 16)
+        XCTAssertEqual(renderedSize?.height, 24)
     }
 }
