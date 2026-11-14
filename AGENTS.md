@@ -55,7 +55,7 @@ gh run view --log-failed
 gh api --allow-escape-sequences repos/PratoxxM/Luna/actions/jobs/<job-id>/logs | grep -C 4 "error:"
 
 # Verify the published unsigned IPA asset on the rolling 'latest' release
-gh release view latest --json assets,updatedAt
+gh release view latest --json assets,publishedAt
 ```
 
 ## 6. tvOS 26 & AetherEngine Host Rules
