@@ -277,7 +277,7 @@ struct LibraryHubView: View {
     }
 
     @ViewBuilder
-    private func sectionGrid(client: MediaOSClient?) -> some View {
+    private func sectionGrid(client: LunaCoreClient?) -> some View {
         let activeItems: [TvMediaCard] = {
             switch activeSection {
             case .watchlist:
@@ -398,7 +398,7 @@ struct LibraryHubView: View {
             localItems = res.localItems
             localOffset = res.localItems.count
             localHasMore = res.localHasMore ?? false
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
             errorMessage = error.localizedDescription

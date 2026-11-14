@@ -29,10 +29,10 @@
 	</dict>
 	<key>NSBonjourServices</key>
 	<array>
-		<string>_mediaos._tcp</string>
+		<string>_lunacore._tcp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Luna bruker lokalnettet for å finne MediaOS automatisk og strømme film og serier med lav latens.</string>
+	<string>Luna bruker lokalnettet for å finne LunaCore automatisk og strømme film og serier med lav latens.</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>

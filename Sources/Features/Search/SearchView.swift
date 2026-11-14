@@ -212,7 +212,7 @@ struct SearchView: View {
                 }
             } catch is CancellationError {
                 return
-            } catch MediaOSError.unauthorized {
+            } catch LunaCoreError.unauthorized {
                 guard !Task.isCancelled else { return }
                 sessionStore.unpairDevice()
             } catch {

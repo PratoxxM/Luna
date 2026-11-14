@@ -102,8 +102,13 @@ jobs:
             exit 1
           fi
 
-          if grep -rnE '\b(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b|/volume[12]/|luna_tv_' Sources Tests Packages; then
-            echo "::error::Found forbidden private IP, NAS path, or token literal in Sources/, Tests/, or Packages/!"
+          if grep -rnE '\b(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b|/volume[12]/|luna_tv_|skogsrudveien' Sources Tests Packages Config project.yml AGENTS.md README.md docs; then
+            echo "::error::Found forbidden private IP, NAS path, or token literal in repository!"
+            exit 1
+          fi
+
+          if grep -rnEi 'mediaos|media[-_]core' Sources Tests Packages Config project.yml AGENTS.md README.md docs; then
+            echo "::error::Found retired MediaOS reference!"
             exit 1
           fi
 
@@ -268,8 +273,8 @@ jobs:
           ATS_ALLOW=$(/usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity:NSAllowsArbitraryLoads" "$APP_PATH/Info.plist")
           BONJOUR_SVC=$(/usr/libexec/PlistBuddy -c "Print :NSBonjourServices:0" "$APP_PATH/Info.plist")
           echo "Verified Info.plist: NSAllowsArbitraryLoads=${ATS_ALLOW}, NSBonjourServices[0]=${BONJOUR_SVC}"
-          if [ "$ATS_ALLOW" != "true" ] || [ "$BONJOUR_SVC" != "_mediaos._tcp" ]; then
-            echo "::error::Compiled Info.plist is missing ATS LAN HTTP or _mediaos._tcp Bonjour keys!"
+          if [ "$ATS_ALLOW" != "true" ] || [ "$BONJOUR_SVC" != "_lunacore._tcp" ]; then
+            echo "::error::Compiled Info.plist is missing ATS LAN HTTP or _lunacore._tcp Bonjour keys!"
             exit 1
           fi
 

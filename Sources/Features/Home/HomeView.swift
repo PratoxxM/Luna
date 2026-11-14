@@ -234,7 +234,7 @@ struct HomeView: View {
                     decodedPayload: payload
                 )
             }
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
             if homePayload == nil {

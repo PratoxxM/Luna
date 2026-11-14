@@ -69,7 +69,7 @@ public final class AppSessionStore: ObservableObject {
     @Published public var allowSelfSignedLanTLS: Bool {
         didSet {
             defaults.set(allowSelfSignedLanTLS, forKey: SideloadSafeStorage.allowSelfSignedLanTLSKey)
-            MediaOSSessionPool.shared.invalidateAll()
+            LunaCoreSessionPool.shared.invalidateAll()
             applyEngineTLSPolicy()
             rebuildCachedClient()
         }
@@ -80,7 +80,7 @@ public final class AppSessionStore: ObservableObject {
     private let defaults: UserDefaults
     private let cachedAppVersion: String
     private let cachedOSVersion: String
-    private var cachedClient: MediaOSClient?
+    private var cachedClient: LunaCoreClient?
     private var overrideSyncTask: Task<Void, Never>?
 
     public var isPaired: Bool {
@@ -139,7 +139,7 @@ public final class AppSessionStore: ObservableObject {
             cachedClient = nil
             return
         }
-        cachedClient = MediaOSClient(
+        cachedClient = LunaCoreClient(
             baseURL: base,
             deviceID: deviceID,
             deviceToken: deviceToken,
@@ -168,9 +168,9 @@ public final class AppSessionStore: ObservableObject {
         homeRefreshNonce &+= 1
     }
 
-    public func makeClient(overrideBaseURL: URL? = nil) -> MediaOSClient? {
+    public func makeClient(overrideBaseURL: URL? = nil) -> LunaCoreClient? {
         if let overrideBaseURL {
-            return MediaOSClient(
+            return LunaCoreClient(
                 baseURL: overrideBaseURL,
                 deviceID: deviceID,
                 deviceToken: deviceToken,
@@ -273,7 +273,7 @@ public final class AppSessionStore: ObservableObject {
             do {
                 let boot = try await client.fetchBootstrap()
                 syncFromBootstrap(boot.device, defaultRooms: boot.defaultRooms)
-            } catch MediaOSError.unauthorized {
+            } catch LunaCoreError.unauthorized {
                 unpairDevice()
                 return
             } catch {
@@ -290,7 +290,7 @@ public final class AppSessionStore: ObservableObject {
                 return trimmed
             }
         }
-        return "2.2.10"
+        return "2.3.0"
     }
 
     public func unpairDevice() {
@@ -301,7 +301,7 @@ public final class AppSessionStore: ObservableObject {
         }
         SideloadSafeStorage.deleteDeviceToken(defaults: defaults)
         AetherEngine.discardPrewarmedSources()
-        MediaOSSessionPool.shared.invalidateAll()
+        LunaCoreSessionPool.shared.invalidateAll()
         DiskSWRStore.clearMemory()
         Task { await DiskSWRStore.clearAllAsync() }
         deviceToken = nil

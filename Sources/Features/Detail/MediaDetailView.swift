@@ -197,7 +197,7 @@ struct MediaDetailView: View {
     private func seasonsAndEpisodesSection(
         detail: TvItemDetail,
         seasons: [TvSeasonSummary],
-        client: MediaOSClient?
+        client: LunaCoreClient?
     ) -> some View {
         VStack(alignment: .leading, spacing: 24) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -422,7 +422,7 @@ struct MediaDetailView: View {
                     schedulePreResolve(for: loaded)
                 }
             }
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
             errorMessage = error.localizedDescription

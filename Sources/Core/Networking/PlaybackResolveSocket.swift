@@ -21,11 +21,11 @@ public struct PlaybackResolveSocket: Sendable {
     public func events() -> AsyncThrowingStream<TvResolveSocketEvent, Error> {
         AsyncThrowingStream { continuation in
             guard let wsURL = Self.makeWebSocketURL(baseURL: baseURL, wsPath: wsPath) else {
-                continuation.finish(throwing: MediaOSError.invalidURL(wsPath))
+                continuation.finish(throwing: LunaCoreError.invalidURL(wsPath))
                 return
             }
 
-            let urlSession = MediaOSSessionPool.shared.webSocketSession(
+            let urlSession = LunaCoreSessionPool.shared.webSocketSession(
                 for: baseURL,
                 allowSelfSignedLanTLS: allowSelfSignedLanTLS
             )
@@ -58,7 +58,7 @@ public struct PlaybackResolveSocket: Sendable {
                         do {
                             event = try JSONDecoder().decode(TvResolveSocketEvent.self, from: data)
                         } catch {
-                            continuation.finish(throwing: MediaOSError.decodingFailed(error.localizedDescription))
+                            continuation.finish(throwing: LunaCoreError.decodingFailed(error.localizedDescription))
                             return
                         }
                         continuation.yield(event)

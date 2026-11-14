@@ -2,7 +2,7 @@ import SwiftUI
 
 struct DetailHeroHeaderView: View {
     let item: TvItemDetail
-    let client: MediaOSClient?
+    let client: LunaCoreClient?
     let primaryPlayTitle: String
     let watchedButtonTitle: String
     let isPreResolvedReady: Bool

@@ -5,12 +5,12 @@ import XCTest
 final class PlaybackAndNavigationFixesTests: XCTestCase {
     func testBuildRowRequestPathReplacesExistingOffsetAndMapsCatalogPages() {
         XCTAssertEqual(
-            MediaOSClient.buildRowRequestPath(pathOrRowId: "sci-fi", offset: 36, limit: 36),
+            LunaCoreClient.buildRowRequestPath(pathOrRowId: "sci-fi", offset: 36, limit: 36),
             "/api/tv/v1/rows/sci-fi?offset=36&limit=36"
         )
 
         XCTAssertEqual(
-            MediaOSClient.buildRowRequestPath(
+            LunaCoreClient.buildRowRequestPath(
                 pathOrRowId: "/api/tv/v1/rows/custom?offset=0&limit=24",
                 offset: 48,
                 limit: 24
@@ -19,7 +19,7 @@ final class PlaybackAndNavigationFixesTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            MediaOSClient.buildRowRequestPath(
+            LunaCoreClient.buildRowRequestPath(
                 pathOrRowId: "/api/tv/v1/catalog/movies?sort=popular",
                 offset: 48,
                 limit: 24

@@ -288,7 +288,7 @@ struct CatalogBrowseView: View {
             if let serverGenre = res.genre {
                 selectedGenreLabel = serverGenre.label
             }
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
             errorMessage = error.localizedDescription

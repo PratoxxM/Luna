@@ -3,7 +3,7 @@ import SwiftUI
 struct DetailCastStripView: View {
     let members: [TvCastMember]?
     let castNames: [String]?
-    let client: MediaOSClient?
+    let client: LunaCoreClient?
     var horizontalGutter: CGFloat = LunaTheme.horizontalGutter
     let onSelectActor: (String) -> Void
 
@@ -54,7 +54,7 @@ struct DetailCastStripView: View {
 
 private struct CastMemberCardButton: View {
     let member: TvCastMember
-    let client: MediaOSClient?
+    let client: LunaCoreClient?
     let action: () -> Void
 
     @FocusState private var isFocused: Bool

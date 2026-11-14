@@ -78,7 +78,7 @@ enum MediaCardMutator {
                 year: card.year
             )
             return true
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
             return false
         }
@@ -99,7 +99,7 @@ enum MediaCardMutator {
                 year: card.year
             )
             return true
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
             return false
         }
@@ -137,7 +137,7 @@ enum MediaCardMutator {
                 year: card.year
             )
             return true
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
             return false
         }

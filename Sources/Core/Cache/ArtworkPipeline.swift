@@ -302,7 +302,7 @@ public actor ArtworkPipeline {
     public func loadImage(
         url: URL,
         maxPixelSize: Int,
-        client: MediaOSClient?
+        client: LunaCoreClient?
     ) async -> CGImage? {
         let key = Self.cacheKey(for: url, maxPixelSize: maxPixelSize)
         if let memHit = ramCache.image(forKey: key) {
@@ -359,7 +359,7 @@ public actor ArtworkPipeline {
         return result
     }
 
-    private func acquireRawData(url: URL, rawKey: String, client: MediaOSClient?) async -> Data? {
+    private func acquireRawData(url: URL, rawKey: String, client: LunaCoreClient?) async -> Data? {
         let rawWaiterID = UUID()
         rawFetchWaiters[rawKey, default: []].insert(rawWaiterID)
 
@@ -368,7 +368,7 @@ public actor ArtworkPipeline {
             rawTask = existing
         } else {
             let diskFileURL = Self.diskFileURL(for: url)
-            let externalSession = MediaOSSessionPool.shared.externalArtworkSession()
+            let externalSession = LunaCoreSessionPool.shared.externalArtworkSession()
             let pipeline = self
 
             let created = Task.detached(priority: .userInitiated) { () -> Data? in

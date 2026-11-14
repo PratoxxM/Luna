@@ -123,10 +123,10 @@ struct MainNavigationShell: View {
         do {
             let boot = try await client.fetchBootstrap()
             sessionStore.syncFromBootstrap(boot.device, defaultRooms: boot.defaultRooms)
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
-            // Preserve cached room and hardware profile if MediaOS is briefly unreachable
+            // Preserve cached room and hardware profile if LunaCore is briefly unreachable
         }
     }
 }

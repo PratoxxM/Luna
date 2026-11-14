@@ -140,7 +140,7 @@ struct CustomRowBrowseView: View {
             items = res.items
             hasMore = res.hasMore
             offset = res.items.count
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
             errorMessage = error.localizedDescription
@@ -159,7 +159,7 @@ struct CustomRowBrowseView: View {
             items.append(contentsOf: res.items.filter { !existing.contains($0.id) })
             hasMore = res.hasMore
             offset += res.items.count
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
             showMutationError(error)

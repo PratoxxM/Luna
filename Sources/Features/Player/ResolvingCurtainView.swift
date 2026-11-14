@@ -7,7 +7,7 @@ import AetherBridge
 struct ResolvingCurtainView: View {
     @ObservedObject var viewModel: PlayerViewModel
     let initialRequest: PlaybackLaunchRequest
-    let client: MediaOSClient?
+    let client: LunaCoreClient?
 
     var body: some View {
         ZStack {

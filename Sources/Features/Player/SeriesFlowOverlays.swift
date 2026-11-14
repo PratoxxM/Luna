@@ -11,7 +11,7 @@ struct SeriesFlowOverlays: View {
 
     @ObservedObject var viewModel: PlayerViewModel
     @ObservedObject var comfort: ComfortPreferences
-    let client: MediaOSClient?
+    let client: LunaCoreClient?
     let isBottomBarVisible: Bool
     @Binding var hasActivePrompt: Bool
     @Binding var dismissedNextForSessionID: String?

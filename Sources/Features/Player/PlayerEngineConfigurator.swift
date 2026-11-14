@@ -74,7 +74,7 @@ extension PlayerViewModel {
 
     static func buildLoadOptions(
         session: TvPlaybackSession,
-        client: MediaOSClient,
+        client: LunaCoreClient,
         comfort: ComfortPreferences,
         audioEnhancement: AudioEnhancementMode,
         audioDelaySeconds: Double

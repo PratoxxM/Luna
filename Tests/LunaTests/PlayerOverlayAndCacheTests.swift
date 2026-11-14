@@ -6,8 +6,8 @@ import XCTest
 
 final class PlayerOverlayAndCacheTests: XCTestCase {
     func testArtworkPipelineRawIdentityAndCacheKeyDeduplication() throws {
-        let lanHostA = try XCTUnwrap(URL(string: "http://mediaos.local:8090/api/tv/v1/artwork/123?w=600"))
-        let lanHostB = try XCTUnwrap(URL(string: "https://mediaos.example.test:8920/api/tv/v1/artwork/123?w=600"))
+        let lanHostA = try XCTUnwrap(URL(string: "http://lunacore.local:8090/api/tv/v1/artwork/123?w=600"))
+        let lanHostB = try XCTUnwrap(URL(string: "https://lunacore.example.test:8920/api/tv/v1/artwork/123?w=600"))
         XCTAssertEqual(ArtworkPipeline.rawIdentity(for: lanHostA), ArtworkPipeline.rawIdentity(for: lanHostB))
         XCTAssertNotEqual(
             ArtworkPipeline.cacheKey(for: lanHostA, maxPixelSize: 480),

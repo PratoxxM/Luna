@@ -4,7 +4,7 @@ public struct PosterCardView: View {
     @Environment(\.ambientFocusSink) private var ambientFocus
 
     let card: TvMediaCard
-    let client: MediaOSClient?
+    let client: LunaCoreClient?
     let width: CGFloat
     let showStorageBadge: Bool
     let onSelect: () -> Void
@@ -14,7 +14,7 @@ public struct PosterCardView: View {
 
     public init(
         card: TvMediaCard,
-        client: MediaOSClient?,
+        client: LunaCoreClient?,
         width: CGFloat = 248,
         showStorageBadge: Bool = false,
         onSelect: @escaping () -> Void,

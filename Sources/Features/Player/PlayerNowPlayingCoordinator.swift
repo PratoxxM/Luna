@@ -26,7 +26,7 @@ enum NowPlayingArtworkFactory {
 enum PlayerNowPlayingCoordinator {
     static func publish(
         session: TvPlaybackSession,
-        client: MediaOSClient,
+        client: LunaCoreClient,
         viewModel: PlayerViewModel
     ) {
         viewModel.nowPlayingArtworkTask?.cancel()

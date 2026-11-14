@@ -259,7 +259,7 @@ private struct LunaPillLabel: View {
 
 public struct CachedArtworkView: View {
     let url: URL?
-    let client: MediaOSClient?
+    let client: LunaCoreClient?
     let maxPixelSize: Int
     let blurHash: String?
     let dominantColor: String?
@@ -271,7 +271,7 @@ public struct CachedArtworkView: View {
 
     public init(
         url: URL?,
-        client: MediaOSClient? = nil,
+        client: LunaCoreClient? = nil,
         maxPixelSize: Int = 720,
         blurHash: String? = nil,
         dominantColor: String? = nil,

@@ -10,14 +10,14 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
             "https://tv.example.test:8920"
         )
         XCTAssertEqual(
-            AppSessionStore.normalizeServerURL("mediaos.local:8090///")?.absoluteString,
-            "http://mediaos.local:8090"
+            AppSessionStore.normalizeServerURL("lunacore.local:8090///")?.absoluteString,
+            "http://lunacore.local:8090"
         )
         XCTAssertNil(AppSessionStore.normalizeServerURL("   "))
     }
 
-    func testMediaOSClientSameOriginChecks() throws {
-        let tlsClient = MediaOSClient(
+    func testLunaCoreClientSameOriginChecks() throws {
+        let tlsClient = LunaCoreClient(
             baseURL: try XCTUnwrap(URL(string: "https://tv.example.test:8920")),
             deviceID: "luna-test-device",
             deviceToken: "token-placeholder",
@@ -31,7 +31,7 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         XCTAssertFalse(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "https://tv.example.test:8090/api/tv/v1/img/1"))))
         XCTAssertFalse(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "http://tv.example.test:8920/api/tv/v1/img/1"))))
 
-        let defaultPortClient = MediaOSClient(
+        let defaultPortClient = LunaCoreClient(
             baseURL: try XCTUnwrap(URL(string: "https://cdn.example.net")),
             deviceID: "luna-test-device",
             deviceToken: nil,

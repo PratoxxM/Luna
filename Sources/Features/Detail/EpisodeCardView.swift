@@ -2,7 +2,7 @@ import SwiftUI
 
 struct EpisodeCardView: View {
     let episode: TvEpisodeCard
-    let client: MediaOSClient?
+    let client: LunaCoreClient?
     let onPlay: () -> Void
     let onPickSource: () -> Void
     let onToggleWatched: () -> Void

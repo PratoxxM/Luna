@@ -9,7 +9,7 @@ public struct BackdropCardView: View {
     @Environment(\.ambientFocusSink) private var ambientFocus
 
     let card: TvMediaCard
-    let client: MediaOSClient?
+    let client: LunaCoreClient?
     let variant: BackdropCardVariant
     let width: CGFloat
     let onPrimaryAction: () -> Void
@@ -18,7 +18,7 @@ public struct BackdropCardView: View {
 
     public init(
         card: TvMediaCard,
-        client: MediaOSClient?,
+        client: LunaCoreClient?,
         variant: BackdropCardVariant,
         width: CGFloat = 468,
         onPrimaryAction: @escaping () -> Void

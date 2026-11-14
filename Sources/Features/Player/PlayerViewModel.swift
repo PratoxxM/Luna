@@ -86,7 +86,7 @@ final class PlayerViewModel: ObservableObject {
     var nowPlayingArtworkTask: Task<Void, Never>?
     var engineChapters: [ChapterInfo] = []
     var registeredStreamToken: String?
-    var activeClient: MediaOSClient?
+    var activeClient: LunaCoreClient?
     var userManuallySelectedSubtitle: Bool = false
     var didApplyInitialSmartRule: Bool = false
 
@@ -132,7 +132,7 @@ final class PlayerViewModel: ObservableObject {
 
     // MARK: - Lifecycle & Commands
 
-    func start(request: PlaybackLaunchRequest, client: MediaOSClient?) {
+    func start(request: PlaybackLaunchRequest, client: LunaCoreClient?) {
         didTeardown = false
         fatalError = nil
         firstFrameFallbackUnlocked = false
@@ -140,7 +140,7 @@ final class PlayerViewModel: ObservableObject {
         lastReportedServerState = nil
         currentRequest = request
         guard let client else {
-            fatalError = "Mangler tilkobling til MediaOS."
+            fatalError = "Mangler tilkobling til LunaCore."
             isResolving = false
             return
         }

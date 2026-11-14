@@ -21,7 +21,7 @@ final class DetailPreResolveController: ObservableObject {
         return tok
     }
 
-    func consumeForPlayback(itemId: String, client: MediaOSClient?) -> String? {
+    func consumeForPlayback(itemId: String, client: LunaCoreClient?) -> String? {
         consumedItemId = itemId
         preResolveTask?.cancel()
         preResolveTask = nil
@@ -42,7 +42,7 @@ final class DetailPreResolveController: ObservableObject {
         return nil
     }
 
-    func discardPreparedSession(client: MediaOSClient?) {
+    func discardPreparedSession(client: LunaCoreClient?) {
         consumedItemId = nil
         preResolveTask?.cancel()
         preResolveTask = nil
@@ -54,7 +54,7 @@ final class DetailPreResolveController: ObservableObject {
         title: String,
         seriesTitle: String?,
         startPos: Double?,
-        client: MediaOSClient?
+        client: LunaCoreClient?
     ) {
         if preparedForItemId == targetItemId,
            let existingToken = preparedToken,
@@ -131,7 +131,7 @@ final class DetailPreResolveController: ObservableObject {
     func handleDisappear(
         isLaunchingPlayback: Bool,
         isShowingSourcePicker: Bool,
-        client: MediaOSClient?
+        client: LunaCoreClient?
     ) {
         preResolveTask?.cancel()
         preResolveTask = nil
@@ -140,7 +140,7 @@ final class DetailPreResolveController: ObservableObject {
         cleanupPreparedSession(client: client)
     }
 
-    private func cleanupPreparedSession(client: MediaOSClient?) {
+    private func cleanupPreparedSession(client: LunaCoreClient?) {
         if let tok = prewarmedStreamToken, tok.count >= 8 {
             EngineLog.unregisterSecret(tok)
             prewarmedStreamToken = nil
@@ -154,7 +154,7 @@ final class DetailPreResolveController: ObservableObject {
         isPreResolvedReady = false
     }
 
-    private static func stopSessionDetached(sessionId: String, client: MediaOSClient) {
+    private static func stopSessionDetached(sessionId: String, client: LunaCoreClient) {
         Task.detached(priority: .utility) {
             _ = try? await client.sendHeartbeat(
                 sessionId: sessionId,

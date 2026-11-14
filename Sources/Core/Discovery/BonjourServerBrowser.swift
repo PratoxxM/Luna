@@ -1,7 +1,7 @@
 import Foundation
 import Network
 
-public struct DiscoveredMediaOSServer: Identifiable, Equatable, Sendable {
+public struct DiscoveredLunaCoreServer: Identifiable, Equatable, Sendable {
     public let id: String
     public let name: String
     public let baseURL: URL
@@ -14,7 +14,7 @@ public struct DiscoveredMediaOSServer: Identifiable, Equatable, Sendable {
 
 @MainActor
 public final class BonjourServerBrowser: ObservableObject {
-    @Published public private(set) var servers: [DiscoveredMediaOSServer] = []
+    @Published public private(set) var servers: [DiscoveredLunaCoreServer] = []
     @Published public private(set) var isSearching: Bool = false
 
     private var browser: NWBrowser?
@@ -26,7 +26,7 @@ public final class BonjourServerBrowser: ObservableObject {
         stop()
         let params = NWParameters()
         params.includePeerToPeer = false
-        let descriptor = NWBrowser.Descriptor.bonjourWithTXTRecord(type: "_mediaos._tcp", domain: nil)
+        let descriptor = NWBrowser.Descriptor.bonjourWithTXTRecord(type: "_lunacore._tcp", domain: nil)
         let nwBrowser = NWBrowser(for: descriptor, using: params)
 
         nwBrowser.stateUpdateHandler = { [weak self] state in
@@ -133,7 +133,7 @@ public final class BonjourServerBrowser: ObservableObject {
         serviceName: String,
         remoteEndpoint: NWEndpoint?,
         txt: [String: String]
-    ) -> DiscoveredMediaOSServer? {
+    ) -> DiscoveredLunaCoreServer? {
         guard case let .hostPort(host, port) = remoteEndpoint else { return nil }
 
         var rawHost: String
@@ -175,7 +175,7 @@ public final class BonjourServerBrowser: ObservableObject {
         let rawApi = txt["api"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         let apiPath = (rawApi?.isEmpty == false) ? (rawApi ?? "/api/tv/v1") : "/api/tv/v1"
 
-        return DiscoveredMediaOSServer(
+        return DiscoveredLunaCoreServer(
             id: id,
             name: serviceName,
             baseURL: url,

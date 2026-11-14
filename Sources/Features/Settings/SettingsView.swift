@@ -48,7 +48,7 @@ struct SettingsView: View {
 
                     if sessionStore.localProfileOverride != nil {
                         LunaPillButton(
-                            "Bruk rom valgt i MediaOS Web",
+                            "Bruk rom valgt i LunaCore Web",
                             systemImage: "arrow.uturn.backward",
                             prominence: .subtleChip
                         ) {
@@ -212,7 +212,7 @@ struct SettingsView: View {
 
                 // 3. System & Tilkobling
                 settingsPanel("System & Tilkobling") {
-                    infoRow("MediaOS-server", value: sessionStore.serverBaseURL?.absoluteString ?? "Ikke tilkoblet")
+                    infoRow("LunaCore-server", value: sessionStore.serverBaseURL?.absoluteString ?? "Ikke tilkoblet")
                     infoRow("Aktivt rom", value: "\(sessionStore.roomName) (\(sessionStore.effectiveHardwareProfile))")
                     infoRow("Bilde- og kataloghurtigbuffer", value: formattedCacheSize)
 

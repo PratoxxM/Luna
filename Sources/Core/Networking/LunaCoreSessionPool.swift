@@ -32,9 +32,9 @@ public final class LanURLSessionDelegate: NSObject, URLSessionDelegate, Sendable
 
 /// Shared URLSession pool keyed by `(lane, scheme, host, port, allowSelfSignedLanTLS)`.
 /// Prevents leaking ephemeral URLSessions across SwiftUI view body evaluations and
-/// preserves HTTP keep-alive / TLS session resumption against MediaOS Caddy.
-public final class MediaOSSessionPool: @unchecked Sendable {
-    public static let shared = MediaOSSessionPool()
+/// preserves HTTP keep-alive / TLS session resumption against LunaCore Caddy.
+public final class LunaCoreSessionPool: @unchecked Sendable {
+    public static let shared = LunaCoreSessionPool()
 
     private let lock = NSLock()
     private var sessions: [String: URLSession] = [:]

@@ -4,7 +4,7 @@ struct ShelfRowView: View {
     let row: TvShelfRow
     let isFirstRow: Bool
     let focusNamespace: Namespace.ID
-    let client: MediaOSClient?
+    let client: LunaCoreClient?
 
     let onSelectCard: (TvMediaCard) -> Void
     let onPlayContinueCard: (TvMediaCard) -> Void

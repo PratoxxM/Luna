@@ -2,26 +2,34 @@
 
 ## 1. Purpose & Public-Repository Security Rules
 
-`Luna` (`v2.2.10`) is a public, standalone tvOS client powered by `AetherEngine` (`7.65.0`) and backed by the native MediaOS TV API (`/api/tv/v1` on `:8090` / `:8920`).
+`Luna` (`v2.3.0`) is a public, standalone tvOS client powered by `AetherEngine` (`7.65.0`) and backed by the native LunaCore TV API (`/api/tv/v1` on `:8090` / `:8920`).
 
 Because this repository is **public on GitHub**, these rules are hard invariants:
 
 - **Zero private infrastructure details**: Never commit private IP addresses (`10.x`, `172.16-31.x`, `192.168.x`), internal hostnames/domains, API keys, Bearer tokens, Apple IDs, UDIDs, or local NAS filesystem paths.
-- All server discovery happens at runtime on the Apple TV via Bonjour/mDNS (`_mediaos._tcp`) or manual URL input, authenticated via a 6-digit Device Flow pairing code approved in MediaOS Web.
+- All server discovery happens at runtime on the Apple TV via Bonjour/mDNS (`_lunacore._tcp`) or manual URL input, authenticated via a 6-digit Device Flow pairing code approved in LunaCore Web.
 - Signed stream tokens must be registered with `EngineLog.registerSecret(...)` before loading a stream and unregistered on stop so playback logs never leak URL credentials.
 
 ## 2. Sideload Compatibility (ATVLoadly / Free Apple ID Signing)
 
-`Luna-unsigned.ipa` is signed and sideloaded onto Apple TV devices by **ATVLoadly**, which **rewrites `CFBundleIdentifier`** on every free Apple ID signing profile.
+`Luna-unsigned.ipa` is signed and sideloaded onto Apple TV devices by **ATVLoadly** (`local.lunacore.luna` bundle prefix in `project.yml`), which **rewrites `CFBundleIdentifier`** on every free Apple ID signing profile.
 
 - **NEVER** read, assert on, or key storage by `Bundle.main.bundleIdentifier`.
 - Always use the fixed storage namespace in `Sources/Core/Config/SideloadSafeStorage.swift` (`luna.v1.*` keys in `UserDefaults.standard` and static Keychain `kSecAttrService = "luna.v1.credentials"` without bundle-tied access groups). Preserve these exact `"luna.v1.*"` key strings across major/minor releases so already-paired Apple TV devices never lose their pairing tokens or comfort settings during OTA updates.
 
 ## 3. Code Organization & Naming Rules
 
-- **Domain naming only**: Use `MediaOSClient` / `MediaOSError` for `/api/tv/v1` networking (`Sources/Core/Networking/MediaOSClient.swift`). Never reintroduce legacy `BFF*` typealiases, `Hero` banners, or retired `Watchlist/` / `PlayerSheets.swift` views.
+- **Domain naming only**: Use `LunaCoreClient` / `LunaCoreError` / `LunaCoreSessionPool` for `/api/tv/v1` networking (`Sources/Core/Networking/LunaCoreClient.swift`, `Sources/Core/Networking/LunaCoreSessionPool.swift`) and `DiscoveredLunaCoreServer` in `Sources/Core/Discovery/BonjourServerBrowser.swift`. Never reintroduce retired legacy client names, `BFF*` typealiases, `Hero` banners, or retired `Watchlist/` / `PlayerSheets.swift` views.
 - **File size budget**: Keep every `.swift` source file in `Sources/` strictly `<= 800 LOC` with clear single responsibility.
-- **Shared networking & caching**: Reuse a single `URLSession` per `MediaOSClient`, decode images off the main actor via `ArtworkPipeline`, and persist `/api/tv/v1/home` ETag/JSON snapshots in `DiskSWRStore` (`.cachesDirectory`).
+- **Shared networking & caching**: Reuse a single `URLSession` per `LunaCoreClient`, decode images off the main actor via `ArtworkPipeline`, and persist `/api/tv/v1/home` ETag/JSON snapshots in `DiskSWRStore` (`.cachesDirectory`).
+
+## 4. Where to Look First
+
+- **Full module-to-endpoint-to-test index**: [`docs/architecture/CODEBASE_MODULE_MAP.md`](docs/architecture/CODEBASE_MODULE_MAP.md)
+- **App lifecycle & single `@MainActor` engine**: `Sources/App/LunaApp.swift`, `Sources/App/MainNavigationShell.swift`
+- **Discovery, pairing & config**: `Sources/Core/Discovery/BonjourServerBrowser.swift`, `Sources/Core/Config/ServerConfiguration.swift`, `Sources/Core/Config/SideloadSafeStorage.swift`, `Sources/Features/Onboarding/PairingOnboardingView.swift`
+- **API client, WebSocket & SWR/image caching**: `Sources/Core/Networking/LunaCoreClient.swift`, `Sources/Core/Networking/LunaCoreSessionPool.swift`, `Sources/Core/Networking/PlaybackResolveSocket.swift`, `Sources/Core/Cache/DiskSWRStore.swift`, `Sources/Core/Cache/ArtworkPipeline.swift`
+- **Player shell & AetherEngine bridge**: `Packages/AetherBridge/Package.swift`, `Sources/Features/Player/PlayerViewModel.swift`, `Sources/Features/Player/PlayerSessionCoordinator.swift`, `Sources/Features/Player/PlayerContainerView.swift`
 
 ## 4. PC / Linux Development Without a Mac
 

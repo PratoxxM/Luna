@@ -160,7 +160,7 @@ struct SourcePickerSheetView: View {
     private func loadCandidates() async {
         guard let client = sessionStore.makeClient() else {
             isLoading = false
-            errorMessage = "Mangler tilkobling til MediaOS."
+            errorMessage = "Mangler tilkobling til LunaCore."
             return
         }
         isLoading = true
@@ -192,7 +192,7 @@ struct SourcePickerSheetView: View {
             candidates = alt.alternatives
             activeCandidateId = alt.activeCandidateId
                 ?? alt.alternatives.first(where: { $0.isActive == true })?.candidateId
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
             onCancel()
         } catch {

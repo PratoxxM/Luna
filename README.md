@@ -1,6 +1,6 @@
 # Luna for tvOS
 
-**Luna** (`v2.2.9`) is a native SwiftUI tvOS media player built on [AetherEngine](https://github.com/superuser404notfound/AetherEngine) (`7.65.0`) for the MediaOS `/api/tv/v1` native TV engine.
+**Luna** (`v2.3.0`) is a native SwiftUI tvOS media player built on [AetherEngine](https://github.com/superuser404notfound/AetherEngine) (`7.65.0`) for the **LunaCore** `/api/tv/v1` native TV engine.
 
 ## Highlights
 
@@ -19,16 +19,20 @@
   - Warm-white text subtitles and `.colorMultiply` HDR luminance dimming for PGS/DVB bitmap subtitles in `SubtitleOverlayView`, plus `SmartTrackRuleEngine` automatic Nordic/English audio & subtitle selection.
   - Compact 3-tab swipe-down `PlayerTopDrawerView` (*Undertekster*, *Lyd* `±50 ms`, *Kilde & Kapitler* seamless timecode switch), intro/credits skip & next-episode cards (`SeriesFlowOverlays`), and a 1 Hz leaf `NerdHUDView`.
 - **Zero-Touch LAN Setup & Sideload-Ready Cloud Builds**:
-  - Discovers MediaOS automatically via Bonjour (`_mediaos._tcp`) and pairs using a 6-digit TV code approved in MediaOS Web.
+  - Discovers LunaCore automatically via Bonjour (`_lunacore._tcp`) and pairs using a 6-digit TV code approved in LunaCore Web.
   - GitHub Actions generates `Luna.xcodeproj` via XcodeGen, runs `LunaTests`, compiles an unsigned Release `Luna-unsigned.ipa`, and publishes it to the rolling `latest` GitHub Release for wireless installation and 7-day certificate renewal via ATVLoadly.
 
 ## Architecture
 
+See [docs/architecture/CODEBASE_MODULE_MAP.md](docs/architecture/CODEBASE_MODULE_MAP.md) for the complete module, endpoint, and test map.
+
 ```text
 Luna/
 ├── AGENTS.md
-├── project.yml                        # XcodeGen specification (Luna + LunaTests)
-├── Config/Info.plist                  # ATS LAN HTTP + Bonjour (_mediaos._tcp)
+├── docs/architecture/
+│   └── CODEBASE_MODULE_MAP.md         # Module -> /api/tv/v1 endpoint -> XCTest lookup map
+├── project.yml                        # XcodeGen specification (Luna + LunaTests, local.lunacore.luna)
+├── Config/Info.plist                  # ATS LAN HTTP + Bonjour (_lunacore._tcp)
 ├── Packages/AetherBridge/             # Local SPM bridge enabling all 5 AetherEngine traits
 ├── Resources/Assets.xcassets/         # tvOS App Icon & Top Shelf brand assets
 ├── Sources/
@@ -36,9 +40,9 @@ Luna/
 │   ├── Core/
 │   │   ├── Cache/                     # DiskSWRStore (0 ms /home JSON) & ArtworkPipeline (CGImage + BlurHash)
 │   │   ├── Config/                    # SideloadSafeStorage, ServerConfiguration, ComfortPreferences & SmartTrackRuleEngine
-│   │   ├── Discovery/                 # NWBrowser Bonjour (_mediaos._tcp) discovery
+│   │   ├── Discovery/                 # NWBrowser Bonjour (_lunacore._tcp) discovery
 │   │   ├── Models/                    # Codable contracts for /api/tv/v1 (Home, Detail, Playback, Chapters)
-│   │   └── Networking/                # MediaOSClient, MediaOSSessionPool & PlaybackResolveSocket
+│   │   └── Networking/                # LunaCoreClient, LunaCoreSessionPool & PlaybackResolveSocket
 │   ├── DesignSystem/                  # LunaTheme, AmbientBackdropView & isolated-@FocusState Cards/
 │   └── Features/
 │       ├── Shared/                    # MediaCardComponents (TransientErrorBanner, MediaCardMutator, StandardPosterContextMenuItems)

@@ -1,6 +1,6 @@
 import Foundation
 
-public enum MediaOSError: LocalizedError, Sendable {
+public enum LunaCoreError: LocalizedError, Sendable {
     case invalidURL(String)
     case unauthorized
     case serverMessage(Int, String)
@@ -11,11 +11,11 @@ public enum MediaOSError: LocalizedError, Sendable {
         case .invalidURL(let path):
             return "Ugyldig serveradresse (\(path))."
         case .unauthorized:
-            return "TV-paringen er utløpt eller trukket tilbake. Par på nytt i MediaOS Web."
+            return "TV-paringen er utløpt eller trukket tilbake. Par på nytt i LunaCore Web."
         case .serverMessage(_, let msg):
             return msg
         case .decodingFailed(let detail):
-            return "Kunne ikke tolke svar fra MediaOS (\(detail))."
+            return "Kunne ikke tolke svar fra LunaCore (\(detail))."
         }
     }
 }
@@ -29,7 +29,7 @@ public enum HomeConditionalResult: Sendable {
     case updated(payload: TvHomeResponse, etag: String?, rawPayloadData: Data)
 }
 
-public struct MediaOSClient: Sendable {
+public struct LunaCoreClient: Sendable {
     public let baseURL: URL
     public let deviceID: String
     public let deviceToken: String?
@@ -60,11 +60,11 @@ public struct MediaOSClient: Sendable {
         self.allowSelfSignedLanTLS = allowSelfSignedLanTLS
         self.appVersion = appVersion
         self.osVersion = osVersion
-        self.session = MediaOSSessionPool.shared.session(
+        self.session = LunaCoreSessionPool.shared.session(
             for: baseURL,
             allowSelfSignedLanTLS: allowSelfSignedLanTLS
         )
-        self.imageSession = MediaOSSessionPool.shared.artworkSession(
+        self.imageSession = LunaCoreSessionPool.shared.artworkSession(
             for: baseURL,
             allowSelfSignedLanTLS: allowSelfSignedLanTLS
         )
@@ -138,11 +138,11 @@ public struct MediaOSClient: Sendable {
                 req.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")
             }
         }
-        let targetSession = sameOrigin ? imageSession : MediaOSSessionPool.shared.externalArtworkSession()
+        let targetSession = sameOrigin ? imageSession : LunaCoreSessionPool.shared.externalArtworkSession()
         let (data, resp) = try await targetSession.data(for: req)
         let http = resp as? HTTPURLResponse
         if let status = http?.statusCode, status >= 400 {
-            throw MediaOSError.serverMessage(status, "Bildehenting feilet (HTTP \(status))")
+            throw LunaCoreError.serverMessage(status, "Bildehenting feilet (HTTP \(status))")
         }
         return (data, http)
     }
@@ -171,7 +171,7 @@ public struct MediaOSClient: Sendable {
     public func pollPairingCode(_ code: String) async throws -> (httpStatus: Int, response: TvPairingPollResponse) {
         let digits = code.filter(\.isNumber)
         guard let url = buildAbsoluteURL("/api/tv/v1/pair/poll/\(digits)") else {
-            throw MediaOSError.invalidURL("/api/tv/v1/pair/poll/\(digits)")
+            throw LunaCoreError.invalidURL("/api/tv/v1/pair/poll/\(digits)")
         }
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
@@ -232,7 +232,7 @@ public struct MediaOSClient: Sendable {
 
     public func fetchHomeConditional(ifNoneMatch: String?) async throws -> HomeConditionalResult {
         guard let url = buildAbsoluteURL("/api/tv/v1/home") else {
-            throw MediaOSError.invalidURL("/api/tv/v1/home")
+            throw LunaCoreError.invalidURL("/api/tv/v1/home")
         }
         var req = authorizedRequest(url: url, method: "GET")
         if let etag = ifNoneMatch?.trimmingCharacters(in: .whitespacesAndNewlines), !etag.isEmpty {
@@ -247,18 +247,18 @@ public struct MediaOSClient: Sendable {
             return .notModified
         }
         if status == 401 {
-            throw MediaOSError.unauthorized
+            throw LunaCoreError.unauthorized
         }
         if status >= 400 {
             let msg = (try? JSONDecoder().decode(ServerErrorEnvelope.self, from: data))?.error ?? "HTTP \(status)"
-            throw MediaOSError.serverMessage(status, msg)
+            throw LunaCoreError.serverMessage(status, msg)
         }
         do {
             let decoded = try JSONDecoder().decode(TvHomeResponse.self, from: data)
             let responseEtag = http?.value(forHTTPHeaderField: "ETag")
             return .updated(payload: decoded, etag: responseEtag, rawPayloadData: data)
         } catch {
-            throw MediaOSError.decodingFailed(error.localizedDescription)
+            throw LunaCoreError.decodingFailed(error.localizedDescription)
         }
     }
 
@@ -503,7 +503,7 @@ public struct MediaOSClient: Sendable {
             let prepareToken: String?
         }
         guard let url = buildAbsoluteURL("/api/tv/v1/playback/resolve") else {
-            throw MediaOSError.invalidURL("/api/tv/v1/playback/resolve")
+            throw LunaCoreError.invalidURL("/api/tv/v1/playback/resolve")
         }
         var req = authorizedRequest(url: url, method: "POST")
         req.httpBody = try JSONEncoder().encode(
@@ -521,11 +521,11 @@ public struct MediaOSClient: Sendable {
         let (data, rawResp) = try await session.data(for: req)
         let status = (rawResp as? HTTPURLResponse)?.statusCode ?? 500
         if status == 401 {
-            throw MediaOSError.unauthorized
+            throw LunaCoreError.unauthorized
         }
         if status >= 400 {
             let msg = (try? JSONDecoder().decode(ServerErrorEnvelope.self, from: data))?.error ?? "HTTP \(status)"
-            throw MediaOSError.serverMessage(status, msg)
+            throw LunaCoreError.serverMessage(status, msg)
         }
         let decoded = try JSONDecoder().decode(TvResolveStartResponse.self, from: data)
         return (status, decoded)
@@ -613,7 +613,7 @@ public struct MediaOSClient: Sendable {
         includeAuth: Bool = true
     ) async throws -> Response {
         guard let url = buildAbsoluteURL(path) else {
-            throw MediaOSError.invalidURL(path)
+            throw LunaCoreError.invalidURL(path)
         }
         let req = authorizedRequest(url: url, method: method, includeAuth: includeAuth)
         return try await executeAndDecode(req)
@@ -626,7 +626,7 @@ public struct MediaOSClient: Sendable {
         includeAuth: Bool = true
     ) async throws -> Response {
         guard let url = buildAbsoluteURL(path) else {
-            throw MediaOSError.invalidURL(path)
+            throw LunaCoreError.invalidURL(path)
         }
         var req = authorizedRequest(url: url, method: method, includeAuth: includeAuth)
         req.httpBody = try JSONEncoder().encode(body)
@@ -638,16 +638,16 @@ public struct MediaOSClient: Sendable {
         let (data, rawResp) = try await session.data(for: req)
         let status = (rawResp as? HTTPURLResponse)?.statusCode ?? 500
         if status == 401 {
-            throw MediaOSError.unauthorized
+            throw LunaCoreError.unauthorized
         }
         if status >= 400 {
             let msg = (try? JSONDecoder().decode(ServerErrorEnvelope.self, from: data))?.error ?? "HTTP \(status)"
-            throw MediaOSError.serverMessage(status, msg)
+            throw LunaCoreError.serverMessage(status, msg)
         }
         do {
             return try JSONDecoder().decode(Response.self, from: data)
         } catch {
-            throw MediaOSError.decodingFailed(error.localizedDescription)
+            throw LunaCoreError.decodingFailed(error.localizedDescription)
         }
     }
 }

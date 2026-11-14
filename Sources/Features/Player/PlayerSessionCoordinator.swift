@@ -5,7 +5,7 @@ import AetherBridge
 extension PlayerViewModel {
     // MARK: - Resolve & Engine Load Pipeline
 
-    func runResolveAndLoad(request: PlaybackLaunchRequest, client: MediaOSClient, isReplacement: Bool) async {
+    func runResolveAndLoad(request: PlaybackLaunchRequest, client: LunaCoreClient, isReplacement: Bool) async {
         resetScrubStateOnSessionChange()
         fatalError = nil
         transientBannerMessage = nil
@@ -40,7 +40,7 @@ extension PlayerViewModel {
                     client: client
                 )
             } else {
-                throw MediaOSError.serverMessage(status, startRes.error ?? "Uventet svar ved klargjøring av strøm.")
+                throw LunaCoreError.serverMessage(status, startRes.error ?? "Uventet svar ved klargjøring av strøm.")
             }
 
             resolveStageKey = "awaiting_first_frame"
@@ -59,7 +59,7 @@ extension PlayerViewModel {
             isResolving = false
             armFirstFrameFallbackWatchdog()
             startHeartbeatLoop()
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             guard !Task.isCancelled else { return }
             isResolving = false
             UIApplication.shared.isIdleTimerDisabled = false
@@ -101,7 +101,7 @@ extension PlayerViewModel {
                 overrideStartPosition: updatedSession.stream.startPositionSeconds ?? currentPos
             )
             isSwitchingSource = false
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             isSwitchingSource = false
             onUnauthorized?()
         } catch {
@@ -113,14 +113,14 @@ extension PlayerViewModel {
 
     func applyServerSwitchedSession(
         _ switchedSession: TvPlaybackSession,
-        client: MediaOSClient,
+        client: LunaCoreClient,
         fallbackPosition: Double
     ) async {
         guard !isSwitchingSource, !isResolving else { return }
         resetScrubStateOnSessionChange()
         isSwitchingSource = true
         resolveStageKey = "switching"
-        resolveStageLabel = "Bytter kilde valgt fra MediaOS Web…"
+        resolveStageLabel = "Bytter kilde valgt fra LunaCore Web…"
         resolvePercent = 75
         do {
             engine.prepareForItemReplacement()
@@ -141,11 +141,11 @@ extension PlayerViewModel {
 
     func mountSessionInEngine(
         _ session: TvPlaybackSession,
-        client: MediaOSClient,
+        client: LunaCoreClient,
         overrideStartPosition: Double?
     ) async throws {
         guard let streamURL = client.buildAbsoluteURL(session.stream.url) else {
-            throw MediaOSError.invalidURL(session.stream.url)
+            throw LunaCoreError.invalidURL(session.stream.url)
         }
 
         let previousToken = registeredStreamToken
@@ -227,7 +227,7 @@ extension PlayerViewModel {
     func awaitWebSocketResolution(
         wsPath: String,
         resolveId: String,
-        client: MediaOSClient
+        client: LunaCoreClient
     ) async throws -> TvPlaybackSession {
         let socket = PlaybackResolveSocket(
             baseURL: client.baseURL,
@@ -245,7 +245,7 @@ extension PlayerViewModel {
                     return readySession
                 }
                 if event.type == "resolve.failed" {
-                    throw MediaOSError.serverMessage(502, event.error ?? "Kunne ikke klargjøre strøm.")
+                    throw LunaCoreError.serverMessage(502, event.error ?? "Kunne ikke klargjøre strøm.")
                 }
             }
             return nil
@@ -274,7 +274,7 @@ extension PlayerViewModel {
             if let readySession = ready {
                 return readySession
             }
-        } catch let err as MediaOSError {
+        } catch let err as LunaCoreError {
             if case .serverMessage(502, _) = err {
                 throw err
             }
@@ -291,7 +291,7 @@ extension PlayerViewModel {
 
     func pollHttpResolutionFallback(
         resolveId: String,
-        client: MediaOSClient
+        client: LunaCoreClient
     ) async throws -> TvPlaybackSession {
         let maxAttempts = 60
         for attempt in 0..<maxAttempts {
@@ -305,10 +305,10 @@ extension PlayerViewModel {
                 return readySession
             }
             if snap.type == "resolve.failed" {
-                throw MediaOSError.serverMessage(502, snap.error ?? "Kunne ikke klargjøre strøm.")
+                throw LunaCoreError.serverMessage(502, snap.error ?? "Kunne ikke klargjøre strøm.")
             }
         }
-        throw MediaOSError.serverMessage(504, "Tidsavbrudd under klargjøring av strøm.")
+        throw LunaCoreError.serverMessage(504, "Tidsavbrudd under klargjøring av strøm.")
     }
 
     // MARK: - 15s Pause-Safe VFS Heartbeat
@@ -364,7 +364,7 @@ extension PlayerViewModel {
                let switchedSession = cmd.playbackSession {
                 await applyServerSwitchedSession(switchedSession, client: client, fallbackPosition: pos)
             }
-        } catch MediaOSError.unauthorized {
+        } catch LunaCoreError.unauthorized {
             onUnauthorized?()
         } catch {
             // Heartbeats are periodic best-effort telemetry

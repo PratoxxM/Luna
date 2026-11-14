@@ -8,7 +8,7 @@ struct PairingOnboardingView: View {
     @State private var showManualInput: Bool = false
     @State private var selectedBaseURL: URL?
     @State private var pairingInfo: TvPairingRequestResponse?
-    @State private var statusMessage: String = "Søker etter MediaOS på lokalnettet…"
+    @State private var statusMessage: String = "Søker etter LunaCore på lokalnettet…"
     @State private var errorMessage: String?
     @State private var isRequestingCode: Bool = false
     @State private var isCodeExpired: Bool = false
@@ -35,7 +35,7 @@ struct PairingOnboardingView: View {
                     Text("Luna")
                         .font(.system(size: 56, weight: .bold, design: .rounded))
 
-                    Text("Dedikert hjemmekino for MediaOS · Dolby Vision FEL & Spatial Audio")
+                    Text("Dedikert hjemmekino for LunaCore · Dolby Vision FEL & Spatial Audio")
                         .font(.headline)
                         .foregroundStyle(.secondary)
                 }
@@ -104,7 +104,7 @@ struct PairingOnboardingView: View {
 
             if showManualInput {
                 VStack(spacing: 16) {
-                    TextField("Serveradresse (f.eks. http://mediaos.local:8090)", text: $manualURLInput)
+                    TextField("Serveradresse (f.eks. http://lunacore.local:8090)", text: $manualURLInput)
                         .frame(width: 760)
 
                     HStack(spacing: 20) {
@@ -132,7 +132,7 @@ struct PairingOnboardingView: View {
 
     private func pairingCodePanel(pairingInfo: TvPairingRequestResponse, baseURL: URL) -> some View {
         VStack(spacing: 28) {
-            Text(isCodeExpired ? "Paringskoden er utløpt" : "Godkjenn TV-en i MediaOS Web")
+            Text(isCodeExpired ? "Paringskoden er utløpt" : "Godkjenn TV-en i LunaCore Web")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(isCodeExpired ? LunaTheme.amber : .white)
 
@@ -148,7 +148,7 @@ struct PairingOnboardingView: View {
                 )
 
             VStack(spacing: 8) {
-                Text("Åpne MediaOS på mobil eller PC → Tjenester → TV-signering (eller banneret øverst).")
+                Text("Åpne LunaCore på mobil eller PC → System → Luna Apple TV (eller banneret øverst).")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Text("Velg rom («Kjellerstua» eller «Stua») og trykk Godkjenn — Luna logger inn automatisk.")
@@ -235,7 +235,7 @@ struct PairingOnboardingView: View {
                     } catch {
                         consecutivePollFailures += 1
                         if consecutivePollFailures >= 8, !Task.isCancelled {
-                            self.errorMessage = "Midlertidig nettverksbrudd mot MediaOS (\(error.localizedDescription)). Prøver fortsatt…"
+                            self.errorMessage = "Midlertidig nettverksbrudd mot LunaCore (\(error.localizedDescription)). Prøver fortsatt…"
                         }
                     }
                 }
@@ -243,7 +243,7 @@ struct PairingOnboardingView: View {
                 if !Task.isCancelled {
                     self.isRequestingCode = false
                     self.pairingInfo = nil
-                    self.errorMessage = "Kunne ikke kontakte MediaOS på \(baseURL.absoluteString): \(error.localizedDescription)"
+                    self.errorMessage = "Kunne ikke kontakte LunaCore på \(baseURL.absoluteString): \(error.localizedDescription)"
                 }
             }
         }
