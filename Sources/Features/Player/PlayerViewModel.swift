@@ -207,6 +207,10 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
+    func togglePlayPause() {
+        PlayerAudioSessionCoordinator.shared.togglePlayPause(engine: engine, phase: playbackPhase)
+    }
+
     func triggerSourceSwitch(to candidateId: String) {
         guard activeClient != nil, activeSession != nil else { return }
         fatalError = nil
@@ -380,7 +384,9 @@ final class PlayerViewModel: ObservableObject {
 
         PlayerNowPlayingCoordinator.clear(engine: engine)
         cancellables.removeAll()
+        PlayerAudioSessionCoordinator.shared.notePlaybackStopped()
         engine.stop(resetDisplayCriteria: true)
+        PlayerAudioSessionCoordinator.shared.noteDisplayCriteriaReset()
 
         if let tok = registeredStreamToken, tok.count >= 8 {
             EngineLog.unregisterSecret(tok)
@@ -440,19 +446,29 @@ final class PlayerViewModel: ObservableObject {
                     Task { @MainActor [weak self] in
                         await self?.sendHeartbeatOnce(overrideState: phase == .ended ? "stopped" : "paused", completed: phase == .ended)
                     }
-                } else if phase == .playing,
-                          previousPhase != .playing,
-                          self.lastReportedServerState != nil,
-                          self.lastReportedServerState != "playing" {
-                    Task { @MainActor [weak self] in
-                        await self?.sendHeartbeatOnce(overrideState: "playing")
+                } else if phase == .playing, previousPhase != .playing {
+                    PlayerAudioSessionCoordinator.shared.ensureActiveAfterDisplaySwitch()
+                    if self.lastReportedServerState != nil,
+                       self.lastReportedServerState != "playing" {
+                        Task { @MainActor [weak self] in
+                            await self?.sendHeartbeatOnce(overrideState: "playing")
+                        }
                     }
                 }
             }
             .store(in: &cancellables)
 
         engine.$hasFirstFrameReadyForDisplay.assign(to: &$hasFirstFrameReadyForDisplay)
-        engine.$isAwaitingDisplaySwitch.assign(to: &$isAwaitingDisplaySwitch)
+        engine.$isAwaitingDisplaySwitch
+            .sink { [weak self] awaiting in
+                guard let self else { return }
+                let wasAwaiting = self.isAwaitingDisplaySwitch
+                self.isAwaitingDisplaySwitch = awaiting
+                if wasAwaiting, !awaiting, self.activeSession != nil {
+                    PlayerAudioSessionCoordinator.shared.ensureActiveAfterDisplaySwitch()
+                }
+            }
+            .store(in: &cancellables)
         engine.$startupProgress.assign(to: &$startupProgress)
 
         engine.$duration

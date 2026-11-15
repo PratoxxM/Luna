@@ -93,7 +93,7 @@ struct PlayerContainerView: View {
                             viewModel.commitTouchScrub()
                             revealBottomBarTemporarily()
                         } else {
-                            engine.togglePlayPause()
+                            viewModel.togglePlayPause()
                             revealBottomBarTemporarily()
                         }
                     },
@@ -274,7 +274,7 @@ struct PlayerContainerView: View {
             if viewModel.isScrubbing {
                 viewModel.commitTouchScrub()
             } else {
-                engine.togglePlayPause()
+                viewModel.togglePlayPause()
             }
             revealBottomBarTemporarily()
         }

@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import XCTest
 @testable import Luna
@@ -82,5 +83,43 @@ final class PlaybackAndNavigationFixesTests: XCTestCase {
         XCTAssertFalse(controller.isPreResolvedReady)
         XCTAssertNil(controller.preparedToken)
         XCTAssertNil(controller.preparedForItemId)
+    }
+
+    func testRapidReentrySettleDelayGuardsRecentDisplayCriteriaReset() {
+        XCTAssertEqual(PlayerAudioSessionCoordinator.rapidReentrySettleDelayMs(elapsedSinceResetMs: nil), 0)
+        XCTAssertEqual(PlayerAudioSessionCoordinator.rapidReentrySettleDelayMs(elapsedSinceResetMs: -5), 0)
+        XCTAssertEqual(PlayerAudioSessionCoordinator.rapidReentrySettleDelayMs(elapsedSinceResetMs: 0), 1100)
+        XCTAssertEqual(PlayerAudioSessionCoordinator.rapidReentrySettleDelayMs(elapsedSinceResetMs: 300), 800)
+        XCTAssertEqual(PlayerAudioSessionCoordinator.rapidReentrySettleDelayMs(elapsedSinceResetMs: 1100), 0)
+        XCTAssertEqual(PlayerAudioSessionCoordinator.rapidReentrySettleDelayMs(elapsedSinceResetMs: 2500), 0)
+    }
+
+    func testRouteChangeReactivationFilter() {
+        XCTAssertFalse(PlayerAudioSessionCoordinator.shouldReactivateOnRouteChange(reasonRawValue: nil))
+        XCTAssertTrue(
+            PlayerAudioSessionCoordinator.shouldReactivateOnRouteChange(
+                reasonRawValue: AVAudioSession.RouteChangeReason.newDeviceAvailable.rawValue
+            )
+        )
+        XCTAssertTrue(
+            PlayerAudioSessionCoordinator.shouldReactivateOnRouteChange(
+                reasonRawValue: AVAudioSession.RouteChangeReason.routeConfigurationChange.rawValue
+            )
+        )
+        XCTAssertTrue(
+            PlayerAudioSessionCoordinator.shouldReactivateOnRouteChange(
+                reasonRawValue: AVAudioSession.RouteChangeReason.override.rawValue
+            )
+        )
+        XCTAssertTrue(
+            PlayerAudioSessionCoordinator.shouldReactivateOnRouteChange(
+                reasonRawValue: AVAudioSession.RouteChangeReason.categoryChange.rawValue
+            )
+        )
+        XCTAssertFalse(
+            PlayerAudioSessionCoordinator.shouldReactivateOnRouteChange(
+                reasonRawValue: AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue
+            )
+        )
     }
 }

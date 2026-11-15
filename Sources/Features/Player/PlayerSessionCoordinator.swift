@@ -54,7 +54,8 @@ extension PlayerViewModel {
             try await mountSessionInEngine(
                 resolvedSession,
                 client: client,
-                overrideStartPosition: request.startPositionSeconds ?? resolvedSession.stream.startPositionSeconds
+                overrideStartPosition: request.startPositionSeconds ?? resolvedSession.stream.startPositionSeconds,
+                isInPlaceReplacement: isReplacement
             )
             isResolving = false
             armFirstFrameFallbackWatchdog()
@@ -98,7 +99,8 @@ extension PlayerViewModel {
             try await mountSessionInEngine(
                 updatedSession,
                 client: client,
-                overrideStartPosition: updatedSession.stream.startPositionSeconds ?? currentPos
+                overrideStartPosition: updatedSession.stream.startPositionSeconds ?? currentPos,
+                isInPlaceReplacement: true
             )
             isSwitchingSource = false
         } catch LunaCoreError.unauthorized {
@@ -130,7 +132,8 @@ extension PlayerViewModel {
             try await mountSessionInEngine(
                 switchedSession,
                 client: client,
-                overrideStartPosition: switchedSession.stream.startPositionSeconds ?? fallbackPosition
+                overrideStartPosition: switchedSession.stream.startPositionSeconds ?? fallbackPosition,
+                isInPlaceReplacement: true
             )
             isSwitchingSource = false
         } catch {
@@ -142,11 +145,17 @@ extension PlayerViewModel {
     func mountSessionInEngine(
         _ session: TvPlaybackSession,
         client: LunaCoreClient,
-        overrideStartPosition: Double?
+        overrideStartPosition: Double?,
+        isInPlaceReplacement: Bool = false
     ) async throws {
         guard let streamURL = client.buildAbsoluteURL(session.stream.url) else {
             throw LunaCoreError.invalidURL(session.stream.url)
         }
+
+        await PlayerAudioSessionCoordinator.shared.prepareForPlayback(
+            isInPlaceReplacement: isInPlaceReplacement
+        )
+        try Task.checkCancellation()
 
         let previousToken = registeredStreamToken
         if session.streamToken.count >= 8 {
