@@ -36,6 +36,39 @@ private final class ThreadSafeImageMemoryCache: @unchecked Sendable {
     }
 }
 
+private final class DiskTouchTracker: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lastTouchByKey: [String: TimeInterval] = [:]
+
+    func shouldTouchAndRecord(_ key: String, now: TimeInterval) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if let prev = lastTouchByKey[key], now - prev <= 3600 {
+            return false
+        }
+        if lastTouchByKey.count >= 1024 {
+            lastTouchByKey.removeAll(keepingCapacity: true)
+        }
+        lastTouchByKey[key] = now
+        return true
+    }
+
+    func recordWrite(_ key: String, now: TimeInterval) {
+        lock.lock()
+        defer { lock.unlock() }
+        if lastTouchByKey.count >= 1024 {
+            lastTouchByKey.removeAll(keepingCapacity: true)
+        }
+        lastTouchByKey[key] = now
+    }
+
+    func removeAll() {
+        lock.lock()
+        lastTouchByKey.removeAll()
+        lock.unlock()
+    }
+}
+
 /// Fast pure-Swift BlurHash decoder producing tiny 32x18 smooth placeholders off or on demand.
 public enum BlurHashDecoder {
     private static let cache = ThreadSafeImageMemoryCache(totalCostLimit: 4 * 1024 * 1024)
@@ -241,6 +274,8 @@ public actor ArtworkPipeline {
     public static let shared = ArtworkPipeline()
 
     private nonisolated let ramCache = ThreadSafeImageMemoryCache(totalCostLimit: 96 * 1024 * 1024)
+    private nonisolated let diskTouchTracker = DiskTouchTracker()
+    private nonisolated static let hexChars: [UInt8] = Array("0123456789abcdef".utf8)
     private var inflightTasks: [String: Task<CGImage?, Never>] = [:]
     private var inflightWaiters: [String: Set<UUID>] = [:]
     private var rawFetchTasks: [String: Task<Data?, Never>] = [:]
@@ -370,18 +405,17 @@ public actor ArtworkPipeline {
             let diskFileURL = Self.diskFileURL(for: url)
             let externalSession = LunaCoreSessionPool.shared.externalArtworkSession()
             let pipeline = self
+            let diskTouchTracker = self.diskTouchTracker
 
             let created = Task.detached(priority: .userInitiated) { () -> Data? in
                 guard !Task.isCancelled else { return nil }
-                let fm = FileManager.default
                 if let diskData = try? Data(contentsOf: diskFileURL), !diskData.isEmpty {
-                    if let attrs = try? fm.attributesOfItem(atPath: diskFileURL.path),
-                       let mtime = attrs[.modificationDate] as? Date {
-                        if Date().timeIntervalSince(mtime) > 3600 {
-                            try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: diskFileURL.path)
+                    let now = Date().timeIntervalSinceReferenceDate
+                    if diskTouchTracker.shouldTouchAndRecord(rawKey, now: now) {
+                        let path = diskFileURL.path
+                        Task.detached(priority: .background) {
+                            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: path)
                         }
-                    } else {
-                        try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: diskFileURL.path)
                     }
                     return diskData
                 }
@@ -400,6 +434,7 @@ public actor ArtworkPipeline {
                 await pipeline.ensureCacheDirectoryIfNeeded()
                 do {
                     try data.write(to: diskFileURL, options: .atomic)
+                    diskTouchTracker.recordWrite(rawKey, now: Date().timeIntervalSinceReferenceDate)
                     await pipeline.recordDiskWriteCompleted()
                 } catch {
                     // Best-effort disk cache write; still decode in-memory data
@@ -490,6 +525,7 @@ public actor ArtworkPipeline {
 
     public func clearAll() {
         ramCache.removeAll()
+        diskTouchTracker.removeAll()
         didEnsureCacheDir = false
         try? FileManager.default.removeItem(at: Self.imageCacheDirectoryURL)
     }
@@ -521,7 +557,16 @@ public actor ArtworkPipeline {
     private nonisolated static func diskFileURL(for url: URL) -> URL {
         let identity = rawIdentity(for: url)
         let digest = SHA256.hash(data: Data(identity.utf8))
-        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        let hexBytes = [UInt8](unsafeUninitializedCapacity: 64) { buffer, count in
+            var idx = 0
+            for byte in digest {
+                buffer[idx] = hexChars[Int(byte >> 4)]
+                buffer[idx + 1] = hexChars[Int(byte & 0x0F)]
+                idx += 2
+            }
+            count = 64
+        }
+        let hex = String(decoding: hexBytes, as: UTF8.self)
         return imageCacheDirectoryURL.appendingPathComponent("\(hex).img")
     }
 

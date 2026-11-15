@@ -1,5 +1,43 @@
 import SwiftUI
 
+private struct CatalogBrowseSnapshot {
+    var items: [TvMediaCard]
+    var availableGenres: [TvGenreChip]
+    var selectedGenreLabel: String?
+    var hasMore: Bool
+    var currentPage: Int
+}
+
+@MainActor
+private final class CatalogBrowseMemoryCache {
+    static let shared = CatalogBrowseMemoryCache()
+    private let maxEntries = 16
+    private var entries: [String: CatalogBrowseSnapshot] = [:]
+    private var order: [String] = []
+
+    func snapshot(for key: String) -> CatalogBrowseSnapshot? {
+        guard let hit = entries[key] else { return nil }
+        order.removeAll { $0 == key }
+        order.append(key)
+        return hit
+    }
+
+    func store(_ snapshot: CatalogBrowseSnapshot, for key: String) {
+        entries[key] = snapshot
+        order.removeAll { $0 == key }
+        order.append(key)
+        while order.count > maxEntries {
+            let evicted = order.removeFirst()
+            entries.removeValue(forKey: evicted)
+        }
+    }
+
+    func clear() {
+        entries.removeAll()
+        order.removeAll()
+    }
+}
+
 struct CatalogBrowseView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
 
@@ -264,11 +302,37 @@ struct CatalogBrowseView: View {
         }
     }
 
+    private func persistSnapshot(for triggerKey: String) {
+        CatalogBrowseMemoryCache.shared.store(
+            CatalogBrowseSnapshot(
+                items: items,
+                availableGenres: availableGenres,
+                selectedGenreLabel: selectedGenreLabel,
+                hasMore: hasMore,
+                currentPage: currentPage
+            ),
+            for: triggerKey
+        )
+    }
+
     private func loadFirstPage() async {
         guard let client = sessionStore.makeClient() else { return }
-        isLoading = true
+        let triggerKey = reloadTriggerKey
+        if let cached = CatalogBrowseMemoryCache.shared.snapshot(for: triggerKey) {
+            items = cached.items
+            if availableGenres.isEmpty && !cached.availableGenres.isEmpty {
+                availableGenres = cached.availableGenres
+            }
+            if selectedGenreSlug != nil, selectedGenreLabel == nil {
+                selectedGenreLabel = cached.selectedGenreLabel
+            }
+            hasMore = cached.hasMore
+            currentPage = max(1, cached.currentPage)
+            isLoading = cached.items.isEmpty
+        } else {
+            isLoading = true
+        }
         errorMessage = nil
-        currentPage = 1
 
         do {
             let res = try await client.fetchCatalog(
@@ -280,6 +344,8 @@ struct CatalogBrowseView: View {
                 page: 1,
                 limit: 30
             )
+            guard !Task.isCancelled, reloadTriggerKey == triggerKey else { return }
+            currentPage = 1
             items = res.items
             hasMore = res.hasMore
             if let genres = res.availableGenres, !genres.isEmpty {
@@ -288,16 +354,21 @@ struct CatalogBrowseView: View {
             if let serverGenre = res.genre {
                 selectedGenreLabel = serverGenre.label
             }
+            persistSnapshot(for: triggerKey)
         } catch LunaCoreError.unauthorized {
+            CatalogBrowseMemoryCache.shared.clear()
             sessionStore.unpairDevice()
         } catch {
-            errorMessage = error.localizedDescription
+            if items.isEmpty {
+                errorMessage = error.localizedDescription
+            }
         }
         isLoading = false
     }
 
     private func loadNextPage() async {
         guard !isLoadingMore, hasMore, let client = sessionStore.makeClient() else { return }
+        let triggerKey = reloadTriggerKey
         isLoadingMore = true
         let nextPage = currentPage + 1
         defer { isLoadingMore = false }
@@ -310,7 +381,7 @@ struct CatalogBrowseView: View {
             unwatchedOnly: unwatchedOnly,
             page: nextPage,
             limit: 30
-        ) else {
+        ), reloadTriggerKey == triggerKey else {
             return
         }
 
@@ -319,6 +390,7 @@ struct CatalogBrowseView: View {
         let existingIDs = Set(items.map(\.id))
         let fresh = res.items.filter { !existingIDs.contains($0.id) }
         items.append(contentsOf: fresh)
+        persistSnapshot(for: triggerKey)
     }
 
     private func showMutationError(_ error: Error) {
@@ -333,8 +405,10 @@ struct CatalogBrowseView: View {
 
     private func toggleWatchlist(_ card: TvMediaCard) async {
         let nextListed = !(card.inWatchlist ?? false)
+        let triggerKey = reloadTriggerKey
         if let idx = items.firstIndex(where: { $0.id == card.id }) {
             items[idx].inWatchlist = nextListed
+            persistSnapshot(for: triggerKey)
         }
         do {
             if try await MediaCardMutator.setWatchlist(for: card, listed: nextListed, sessionStore: sessionStore) {
@@ -344,6 +418,7 @@ struct CatalogBrowseView: View {
         } catch {
             if let idx = items.firstIndex(where: { $0.id == card.id }) {
                 items[idx].inWatchlist = card.inWatchlist
+                persistSnapshot(for: triggerKey)
             }
             showMutationError(error)
         }
@@ -351,8 +426,10 @@ struct CatalogBrowseView: View {
 
     private func toggleFavorite(_ card: TvMediaCard) async {
         let nextFavorite = !(card.isFavorite ?? false)
+        let triggerKey = reloadTriggerKey
         if let idx = items.firstIndex(where: { $0.id == card.id }) {
             items[idx].isFavorite = nextFavorite
+            persistSnapshot(for: triggerKey)
         }
         do {
             if try await MediaCardMutator.setFavorite(for: card, favorite: nextFavorite, sessionStore: sessionStore) {
@@ -362,6 +439,7 @@ struct CatalogBrowseView: View {
         } catch {
             if let idx = items.firstIndex(where: { $0.id == card.id }) {
                 items[idx].isFavorite = card.isFavorite
+                persistSnapshot(for: triggerKey)
             }
             showMutationError(error)
         }
@@ -370,22 +448,26 @@ struct CatalogBrowseView: View {
     private func toggleWatched(_ card: TvMediaCard) async {
         let nextWatched = !(card.progress?.watched ?? false)
         let originalProgress = card.progress
+        let triggerKey = reloadTriggerKey
         if let idx = items.firstIndex(where: { $0.id == card.id }) {
             var updated = items[idx].progress ?? TvWatchProgress()
             updated.watched = nextWatched
             items[idx].progress = updated
+            persistSnapshot(for: triggerKey)
         }
         do {
             if try await MediaCardMutator.toggleWatched(for: card, watched: nextWatched, sessionStore: sessionStore) {
                 if unwatchedOnly && nextWatched {
                     items.removeAll { $0.id == card.id }
                 }
+                persistSnapshot(for: triggerKey)
                 lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
                 sessionStore.notifyContentMutated()
             }
         } catch {
             if let idx = items.firstIndex(where: { $0.id == card.id }) {
                 items[idx].progress = originalProgress
+                persistSnapshot(for: triggerKey)
             }
             showMutationError(error)
         }

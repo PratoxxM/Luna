@@ -44,7 +44,7 @@ public struct PosterCardView: View {
                     CachedArtworkView(
                         url: posterURL,
                         client: client,
-                        maxPixelSize: 640,
+                        maxPixelSize: 750,
                         blurHash: card.blurHash,
                         dominantColor: card.dominantColor,
                         placeholderSymbol: card.mediaType == "series" ? "tv" : "film",
