@@ -1,17 +1,55 @@
 import SwiftUI
 import AetherBridge
 
-/// Isolated 10 Hz leaf view for series continuity («Hopp over intro» & «Spill neste episode»).
+/// Pure visibility & duration rules for series continuity overlays, isolated for unit testing.
+internal enum SeriesFlowEligibility {
+    static func authoritativeStreamDurationSeconds(
+        engineDurationSeconds: Double,
+        declaredStreamDurationSeconds: Double?
+    ) -> Double {
+        if engineDurationSeconds > 0 {
+            return engineDurationSeconds
+        }
+        if let declared = declaredStreamDurationSeconds, declared > 0 {
+            return declared
+        }
+        return 0
+    }
+
+    static func shouldShowNextEpisodePrompt(
+        hasNextEpisode: Bool,
+        isDismissedForCurrentSession: Bool,
+        currentTime: Double,
+        authoritativeDurationSeconds: Double,
+        chapters: [PlaybackChapter]
+    ) -> Bool {
+        guard hasNextEpisode, !isDismissedForCurrentSession else {
+            return false
+        }
+        guard authoritativeDurationSeconds > 90, currentTime > 30 else {
+            return false
+        }
+        let remaining = authoritativeDurationSeconds - currentTime
+        if remaining <= 30.0 && remaining >= -5.0 {
+            return true
+        }
+        if remaining <= 120.0,
+           let ch = chapters.first(where: { currentTime >= $0.startSeconds && currentTime < $0.endSeconds }),
+           ch.kind == .credits {
+            return true
+        }
+        return false
+    }
+}
+
+/// Isolated 2 Hz leaf view for series continuity («Hopp over intro» & «Neste episode»).
 struct SeriesFlowOverlays: View {
     private enum PromptFocusTarget: Hashable {
         case skipIntro
         case playNext
-        case watchCredits
     }
 
     @ObservedObject var viewModel: PlayerViewModel
-    @ObservedObject var comfort: ComfortPreferences
-    let client: LunaCoreClient?
     let isBottomBarVisible: Bool
     @Binding var hasActivePrompt: Bool
     @Binding var dismissedNextForSessionID: String?
@@ -26,21 +64,18 @@ struct SeriesFlowOverlays: View {
     @State private var trackedIntroChapterID: String?
     @State private var dismissedIntroChapterIDs: Set<String> = []
 
-    @State private var autoAdvanceRemaining: Int?
-    @State private var countdownTask: Task<Void, Never>?
-
     var body: some View {
         let activeIntro = currentSkippableChapter
-        let showNextCard = shouldShowNextEpisodeCard
+        let showNextButton = shouldShowNextEpisodeButton
 
         VStack {
             Spacer()
             HStack {
                 Spacer()
 
-                if showNextCard, let next = viewModel.activeSession?.nextEpisode {
-                    nextEpisodeCard(next)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                if showNextButton, let next = viewModel.activeSession?.nextEpisode {
+                    nextEpisodeButton(next)
+                        .transition(.scale(scale: 0.94).combined(with: .opacity))
                 } else if let intro = activeIntro {
                     skipIntroButton(intro)
                         .transition(.scale(scale: 0.94).combined(with: .opacity))
@@ -48,18 +83,30 @@ struct SeriesFlowOverlays: View {
             }
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.bottom, isBottomBarVisible ? 195 : 58)
-            .animation(.spring(response: 0.28, dampingFraction: 0.82), value: showNextCard)
+            .animation(.spring(response: 0.28, dampingFraction: 0.82), value: showNextButton)
             .animation(.spring(response: 0.26, dampingFraction: 0.82), value: activeIntro?.id)
         }
-        .onChange(of: showNextCard) { _, visible in
+        .onAppear {
+            currentTime = viewModel.engine.currentTime
+            let intro = currentSkippableChapter
+            let nextVisible = shouldShowNextEpisodeButton
+            if let intro, !nextVisible {
+                trackedIntroChapterID = intro.id
+                enteredIntroAtWallTime = Date()
+                focusedPromptControl = .skipIntro
+            } else if nextVisible {
+                focusedPromptControl = .playNext
+            }
+            syncActivePromptFlag(intro: intro, nextVisible: nextVisible)
+        }
+        .onChange(of: showNextButton) { _, visible in
             syncActivePromptFlag(intro: currentSkippableChapter, nextVisible: visible)
             if visible {
-                startCountdownIfEnabled()
                 focusedPromptControl = .playNext
-            } else {
-                stopCountdown()
-                if focusedPromptControl == .playNext || focusedPromptControl == .watchCredits {
-                    focusedPromptControl = nil
+            } else if focusedPromptControl == .playNext {
+                focusedPromptControl = nil
+                if currentSkippableChapter == nil {
+                    onReturnFocusToCanvas()
                 }
             }
         }
@@ -68,8 +115,8 @@ struct SeriesFlowOverlays: View {
                 trackedIntroChapterID = newID
                 enteredIntroAtWallTime = Date()
             }
-            syncActivePromptFlag(intro: activeIntro, nextVisible: showNextCard)
-            if newID != nil && !showNextCard {
+            syncActivePromptFlag(intro: activeIntro, nextVisible: showNextButton)
+            if newID != nil && !showNextButton {
                 focusedPromptControl = .skipIntro
             } else if newID == nil && focusedPromptControl == .skipIntro {
                 focusedPromptControl = nil
@@ -85,19 +132,11 @@ struct SeriesFlowOverlays: View {
                 focusedPromptControl = nil
                 onOpenTopDrawer()
             case .left:
-                if focusedPromptControl == .watchCredits {
-                    focusedPromptControl = .playNext
-                } else {
-                    focusedPromptControl = nil
-                    onSeekRelative(-10)
-                }
+                focusedPromptControl = nil
+                onSeekRelative(-10)
             case .right:
-                if focusedPromptControl == .playNext {
-                    focusedPromptControl = .watchCredits
-                } else {
-                    focusedPromptControl = nil
-                    onSeekRelative(30)
-                }
+                focusedPromptControl = nil
+                onSeekRelative(30)
             @unknown default:
                 break
             }
@@ -106,14 +145,12 @@ struct SeriesFlowOverlays: View {
             dismissCurrentPrompt()
         }
         .onChange(of: viewModel.activeSession?.sessionId) { _, _ in
-            stopCountdown()
+            dismissedNextForSessionID = nil
             dismissedIntroChapterIDs.removeAll()
             enteredIntroAtWallTime = nil
             trackedIntroChapterID = nil
             focusedPromptControl = nil
-        }
-        .onDisappear {
-            stopCountdown()
+            hasActivePrompt = false
         }
         .onReceive(viewModel.engine.clock.$currentTime) { t in
             let hasContinuityTargets = viewModel.activeSession?.nextEpisode != nil ||
@@ -150,26 +187,23 @@ struct SeriesFlowOverlays: View {
         return ch
     }
 
-    // MARK: - Next Episode Window (Final 45s or End Credits)
+    // MARK: - Next Episode Window (Final 30s or End Credits)
 
-    private var shouldShowNextEpisodeCard: Bool {
-        guard let session = viewModel.activeSession,
-              session.nextEpisode != nil,
-              dismissedNextForSessionID != session.sessionId else {
+    private var shouldShowNextEpisodeButton: Bool {
+        guard let session = viewModel.activeSession else {
             return false
         }
-        let dur = viewModel.effectiveDurationSeconds
-        guard dur > 90, currentTime > 30 else { return false }
-        let remaining = dur - currentTime
-        if remaining <= 45.0 && (remaining >= 0 || countdownTask != nil) {
-            return true
-        }
-        if remaining <= 95.0,
-           let ch = viewModel.chapters.first(where: { currentTime >= $0.startSeconds && currentTime < $0.endSeconds }),
-           ch.kind == .credits {
-            return true
-        }
-        return false
+        let authoritativeDuration = SeriesFlowEligibility.authoritativeStreamDurationSeconds(
+            engineDurationSeconds: viewModel.durationSeconds,
+            declaredStreamDurationSeconds: session.stream.declaredDurationSeconds
+        )
+        return SeriesFlowEligibility.shouldShowNextEpisodePrompt(
+            hasNextEpisode: session.nextEpisode != nil,
+            isDismissedForCurrentSession: dismissedNextForSessionID == session.sessionId,
+            currentTime: currentTime,
+            authoritativeDurationSeconds: authoritativeDuration,
+            chapters: viewModel.chapters
+        )
     }
 
     // MARK: - Subviews
@@ -189,117 +223,34 @@ struct SeriesFlowOverlays: View {
         .focused($focusedPromptControl, equals: .skipIntro)
     }
 
-    private func nextEpisodeCard(_ next: TvNextEpisodeSummary) -> some View {
+    private func nextEpisodeButton(_ next: TvNextEpisodeSummary) -> some View {
         let epLabel = String(format: "S%02dE%02d", next.season, next.episode)
-        let playLabel: String = {
-            if let rem = autoAdvanceRemaining, comfort.autoPlayNextEpisode {
-                return "Spill nå (\(rem)s)"
-            }
-            return "Spill neste"
-        }()
-
-        return HStack(spacing: 20) {
-            if let rawStill = next.stillUrl, let stillURL = client?.buildAbsoluteURL(rawStill) {
-                CachedArtworkView(
-                    url: stillURL,
-                    client: client,
-                    maxPixelSize: 480,
-                    placeholderSymbol: "tv",
-                    contentMode: .fill
-                )
-                .frame(width: 196, height: 110)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    Text("NESTE EPISODE · \(epLabel)")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(LunaTheme.amber)
-
-                    if viewModel.nextEpisodePrewarmReady {
-                        Text("Klar til avspilling")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(LunaTheme.emerald)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(LunaTheme.emerald.opacity(0.16), in: Capsule())
-                    }
-                }
-
-                Text(next.title ?? epLabel)
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .frame(maxWidth: 360, alignment: .leading)
-
-                HStack(spacing: 12) {
-                    LunaPillButton(playLabel, systemImage: "play.fill", prominence: .primaryAmber) {
-                        stopCountdown()
-                        focusedPromptControl = nil
-                        hasActivePrompt = false
-                        viewModel.playNextEpisode(next)
-                    }
-                    .focused($focusedPromptControl, equals: .playNext)
-
-                    LunaPillButton("Se ferdig", prominence: .subtleChip) {
-                        dismissCurrentPrompt()
-                        onReturnFocusToCanvas()
-                    }
-                    .focused($focusedPromptControl, equals: .watchCredits)
-                }
-            }
+        return LunaPillButton(
+            "Neste episode",
+            systemImage: "play.fill",
+            badgeText: epLabel,
+            prominence: .primaryAmber
+        ) {
+            focusedPromptControl = nil
+            hasActivePrompt = false
+            viewModel.playNextEpisode(next)
         }
-        .padding(18)
-        .background(LunaTheme.cinemaGlass, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(LunaTheme.amber.opacity(0.42), lineWidth: 1.5)
-        )
-        .shadow(color: .black.opacity(0.65), radius: 24, x: 0, y: 10)
+        .focused($focusedPromptControl, equals: .playNext)
     }
 
-    // MARK: - Countdown & Dismissal
+    // MARK: - Dismissal
 
     private func syncActivePromptFlag(intro: PlaybackChapter?, nextVisible: Bool) {
         hasActivePrompt = (intro != nil) || nextVisible
     }
 
     private func dismissCurrentPrompt() {
-        stopCountdown()
         focusedPromptControl = nil
-        if shouldShowNextEpisodeCard, let sid = viewModel.activeSession?.sessionId {
+        if shouldShowNextEpisodeButton, let sid = viewModel.activeSession?.sessionId {
             dismissedNextForSessionID = sid
         } else if let intro = currentSkippableChapter {
             dismissedIntroChapterIDs.insert(intro.id)
         }
         hasActivePrompt = false
-    }
-
-    private func startCountdownIfEnabled() {
-        stopCountdown()
-        guard comfort.autoPlayNextEpisode, let next = viewModel.activeSession?.nextEpisode else { return }
-        var remaining = 10
-        autoAdvanceRemaining = remaining
-        countdownTask = Task { @MainActor in
-            while remaining > 0 && !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard !Task.isCancelled else { return }
-                guard viewModel.playbackPhase == .playing, !viewModel.isScrubbing else {
-                    continue
-                }
-                remaining -= 1
-                autoAdvanceRemaining = remaining
-            }
-            guard !Task.isCancelled else { return }
-            hasActivePrompt = false
-            viewModel.playNextEpisode(next)
-        }
-    }
-
-    private func stopCountdown() {
-        countdownTask?.cancel()
-        countdownTask = nil
-        autoAdvanceRemaining = nil
     }
 }

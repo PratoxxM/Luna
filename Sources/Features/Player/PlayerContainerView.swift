@@ -159,12 +159,10 @@ struct PlayerContainerView: View {
                 .zIndex(3)
             }
 
-            // 4. Series Continuity Overlays («Hopp over intro» & «Spill neste episode»)
+            // 4. Series Continuity Overlays («Hopp over intro» & «Neste episode»)
             if viewModel.isPictureReadyForReveal && !isTopDrawerOpen && !viewModel.isScrubbing && viewModel.fatalError == nil {
                 SeriesFlowOverlays(
                     viewModel: viewModel,
-                    comfort: comfort,
-                    client: client,
                     isBottomBarVisible: showBottomBar || viewModel.playbackPhase == .paused,
                     hasActivePrompt: $hasSeriesPrompt,
                     dismissedNextForSessionID: $dismissedNextForSessionID,
@@ -259,8 +257,7 @@ struct PlayerContainerView: View {
         .onChange(of: viewModel.playbackPhase) { _, phase in
             guard phase == .ended, !viewModel.isResolving, !viewModel.isSwitchingSource else { return }
             if let next = viewModel.activeSession?.nextEpisode,
-               comfort.autoPlayNextEpisode,
-               dismissedNextForSessionID != viewModel.activeSession?.sessionId {
+               comfort.autoPlayNextEpisode {
                 viewModel.playNextEpisode(next)
             } else {
                 closePlayer()

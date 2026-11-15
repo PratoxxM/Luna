@@ -199,7 +199,7 @@ struct SettingsView: View {
                         )
 
                         SettingsToggleRowButton(
-                            title: "Spill neste episode automatisk (10 s nedtelling ved rulletekst)",
+                            title: "Spill neste episode automatisk når episoden er helt ferdig",
                             isOn: $comfort.autoPlayNextEpisode
                         )
 
