@@ -104,12 +104,18 @@ public enum SmartTrackRuleEngine {
             return .clearSubtitles
         }
 
-        // Rule B: Foreign dialogue -> prefer Norwegian, fallback to English
-        if let bestNo = pickBestSubtitle(forLanguage: "nob", in: subtitleTracks) {
-            return .selectTrack(bestNo.id)
+        // Rule B: Foreign dialogue -> prefer full Norwegian, then full English, before forced-only tracks
+        if let fullNo = pickBestSubtitle(forLanguage: "nob", in: subtitleTracks, onlyForced: false) {
+            return .selectTrack(fullNo.id)
         }
-        if let bestEn = pickBestSubtitle(forLanguage: "eng", in: subtitleTracks) {
-            return .selectTrack(bestEn.id)
+        if let fullEn = pickBestSubtitle(forLanguage: "eng", in: subtitleTracks, onlyForced: false) {
+            return .selectTrack(fullEn.id)
+        }
+        if let forcedNo = pickBestSubtitle(forLanguage: "nob", in: subtitleTracks, onlyForced: true) {
+            return .selectTrack(forcedNo.id)
+        }
+        if let forcedEn = pickBestSubtitle(forLanguage: "eng", in: subtitleTracks, onlyForced: true) {
+            return .selectTrack(forcedEn.id)
         }
         return .keepCurrent
     }
@@ -164,9 +170,20 @@ public enum SmartTrackRuleEngine {
         return code.isEmpty ? nil : code
     }
 
-    private static func pickBestSubtitle(forLanguage targetLang: String, in tracks: [SmartTrackDescriptor]) -> SmartTrackDescriptor? {
-        let candidates = tracks.filter {
-            normalizeLanguage($0.language, fallbackName: $0.name) == targetLang && !$0.isCommentary
+    private static func pickBestSubtitle(
+        forLanguage targetLang: String,
+        in tracks: [SmartTrackDescriptor],
+        onlyForced: Bool? = nil
+    ) -> SmartTrackDescriptor? {
+        let candidates = tracks.filter { track in
+            guard normalizeLanguage(track.language, fallbackName: track.name) == targetLang,
+                  !track.isCommentary else {
+                return false
+            }
+            if let onlyForced {
+                return isTrackForced(track) == onlyForced
+            }
+            return true
         }
         guard !candidates.isEmpty else { return nil }
 

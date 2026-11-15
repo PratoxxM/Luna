@@ -540,13 +540,15 @@ public struct LunaCoreClient: Sendable {
         sessionId: String,
         state: String,
         positionSeconds: Double,
-        durationSeconds: Double
+        durationSeconds: Double,
+        completed: Bool? = nil
     ) async throws -> TvHeartbeatResponse {
         struct HeartbeatBody: Encodable {
             let sessionId: String
             let state: String
             let positionSeconds: Double
             let durationSeconds: Double
+            let completed: Bool?
         }
         return try await sendJSON(
             method: "POST",
@@ -555,7 +557,8 @@ public struct LunaCoreClient: Sendable {
                 sessionId: sessionId,
                 state: state,
                 positionSeconds: positionSeconds,
-                durationSeconds: durationSeconds
+                durationSeconds: durationSeconds,
+                completed: completed
             )
         )
     }

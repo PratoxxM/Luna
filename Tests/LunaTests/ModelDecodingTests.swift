@@ -299,4 +299,47 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertTrue(upcomingUrgent.isUrgentUpcoming)
         XCTAssertEqual(upcomingUrgent.cleanUpcomingSubtitle, "S02E06 · Finaleuke")
     }
+
+    func testDetailRatingsAndHeartbeatPrewarmReadyDecoding() throws {
+        let detailJson = """
+        {
+          "itemId": "movie:tmdb:1184918",
+          "mediaType": "movie",
+          "ids": {"tmdb": 1184918, "imdb": "tt29623480"},
+          "title": "Den ville roboten",
+          "voteAverage": 8.3,
+          "rating": 8.6,
+          "imdbRating": 8.5,
+          "imdbVotes": 145000,
+          "rottenTomatoesScore": 97,
+          "metacriticScore": 85,
+          "inWatchlist": false,
+          "watched": false
+        }
+        """.data(using: .utf8)!
+
+        let detail = try JSONDecoder().decode(TvItemDetail.self, from: detailJson)
+        XCTAssertEqual(detail.imdbRating, 8.5)
+        XCTAssertEqual(detail.imdbVotes, 145000)
+        XCTAssertEqual(detail.rottenTomatoesScore, 97)
+        XCTAssertEqual(detail.metacriticScore, 85)
+        XCTAssertEqual(detail.displayRating?.value, 8.5)
+        XCTAssertEqual(detail.displayRating?.isImdb, true)
+
+        let hbJson = """
+        {
+          "ok": true,
+          "sessionId": "sess-1",
+          "state": "playing",
+          "watchCompleted": false,
+          "vfsLockActive": true,
+          "nextEpisodePrewarmStarted": true,
+          "nextEpisodePrewarmReady": false
+        }
+        """.data(using: .utf8)!
+
+        let hb = try JSONDecoder().decode(TvHeartbeatResponse.self, from: hbJson)
+        XCTAssertEqual(hb.nextEpisodePrewarmStarted, true)
+        XCTAssertEqual(hb.nextEpisodePrewarmReady, false)
+    }
 }

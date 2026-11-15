@@ -71,4 +71,26 @@ final class ChapterClassificationTests: XCTestCase {
         XCTAssertEqual(merged[1].endSeconds, 1440, accuracy: 0.1)
         XCTAssertEqual(merged[1].kind, .credits)
     }
+
+    func testDecodeTheIntroDbSegmentAndMergeWithGenericEngineChapters() throws {
+        let json = """
+        [
+          {"id":"theintrodb-intro-0","title":"Intro","startSeconds":45,"endSeconds":118,"type":"intro","source":"theintrodb"},
+          {"id":"theintrodb-credits-1","title":"Rulletekst","startSeconds":2580,"endSeconds":2700,"type":"credits","source":"theintrodb"}
+        ]
+        """.data(using: .utf8)!
+
+        let probes = try JSONDecoder().decode([TvProbeChapter].self, from: json)
+        XCTAssertEqual(probes.count, 2)
+        XCTAssertEqual(probes[0].kind, "intro")
+        XCTAssertEqual(probes[0].source, "theintrodb")
+
+        let genericEngine = [
+            RawEngineChapter(id: 1, name: "Chapter 01", startSeconds: 0, durationSeconds: 2700)
+        ]
+        let merged = PlaybackChapter.mergeRaw(probeChapters: probes, engineChapters: genericEngine, mediaDuration: 2700)
+        XCTAssertEqual(merged.count, 3)
+        XCTAssertEqual(merged.map(\.kind), [.chapter, .intro, .credits])
+        XCTAssertEqual(merged.map(\.index), [0, 1, 2])
+    }
 }

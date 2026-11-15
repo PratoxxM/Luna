@@ -306,6 +306,7 @@ public struct TvHeartbeatResponse: Codable, Equatable, Sendable {
     public let vfsLockActive: Bool
     public let leaseExpiresAt: String?
     public let nextEpisodePrewarmStarted: Bool?
+    public let nextEpisodePrewarmReady: Bool?
     public let pendingCommand: TvPendingCommand?
     public let vfsTelemetry: TvVfsTelemetry?
 }

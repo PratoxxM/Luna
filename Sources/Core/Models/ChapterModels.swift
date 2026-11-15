@@ -79,6 +79,7 @@ public struct TvProbeChapter: Codable, Identifiable, Equatable, Sendable {
     public let startSeconds: Double
     public let endSeconds: Double
     public let kind: String?
+    public let source: String?
 
     public var id: String { idString }
 
@@ -91,6 +92,8 @@ public struct TvProbeChapter: Codable, Identifiable, Equatable, Sendable {
         case endSeconds
         case durationSeconds
         case kind
+        case type
+        case source
     }
 
     public init(
@@ -99,7 +102,8 @@ public struct TvProbeChapter: Codable, Identifiable, Equatable, Sendable {
         title: String,
         startSeconds: Double,
         endSeconds: Double,
-        kind: String?
+        kind: String?,
+        source: String? = nil
     ) {
         self.index = index
         self.idString = idString
@@ -107,6 +111,7 @@ public struct TvProbeChapter: Codable, Identifiable, Equatable, Sendable {
         self.startSeconds = startSeconds
         self.endSeconds = endSeconds
         self.kind = kind
+        self.source = source
     }
 
     public init(from decoder: Decoder) throws {
@@ -136,7 +141,9 @@ public struct TvProbeChapter: Codable, Identifiable, Equatable, Sendable {
         } else {
             self.endSeconds = start + 1
         }
-        self.kind = try? c.decodeIfPresent(String.self, forKey: .kind)
+        self.kind = (try? c.decodeIfPresent(String.self, forKey: .kind))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .type))
+        self.source = try? c.decodeIfPresent(String.self, forKey: .source)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -147,6 +154,7 @@ public struct TvProbeChapter: Codable, Identifiable, Equatable, Sendable {
         try c.encode(startSeconds, forKey: .startSeconds)
         try c.encode(endSeconds, forKey: .endSeconds)
         try c.encodeIfPresent(kind, forKey: .kind)
+        try c.encodeIfPresent(source, forKey: .source)
     }
 }
 
@@ -218,6 +226,7 @@ public struct PlaybackChapter: Identifiable, Equatable, Sendable {
         mediaDuration: Double
     ) -> [PlaybackChapter] {
         // Prefer live container chapters from AetherEngine when available, enriched with probe kind
+        // and supplemented with unmatched semantic external segments (e.g. TheIntroDB intro/recap/credits).
         if !engineChapters.isEmpty {
             let sortedEngine = engineChapters.sorted { a, b in
                 if a.startSeconds != b.startSeconds {
@@ -225,7 +234,7 @@ public struct PlaybackChapter: Identifiable, Equatable, Sendable {
                 }
                 return a.id < b.id
             }
-            return sortedEngine.enumerated().map { idx, ch in
+            var combined = sortedEngine.enumerated().map { idx, ch in
                 let start = max(0, ch.startSeconds)
                 let rawEnd: Double
                 if ch.durationSeconds > 0 {
@@ -257,6 +266,48 @@ public struct PlaybackChapter: Identifiable, Equatable, Sendable {
                     startSeconds: start,
                     endSeconds: end,
                     kind: resolvedKind
+                )
+            }
+
+            let semanticKinds: Set<TvChapterKind> = [.intro, .recap, .credits]
+            for probe in probeChapters {
+                guard let parsedKind = probe.kind.flatMap(TvChapterKind.init(rawValue:)),
+                      semanticKinds.contains(parsedKind) else {
+                    continue
+                }
+                let start = max(0, probe.startSeconds)
+                let nearEngineStart = sortedEngine.contains { abs(max(0, $0.startSeconds) - start) < 1.5 }
+                let nearSameKind = combined.contains { $0.kind == parsedKind && abs($0.startSeconds - start) < 15 }
+                guard !nearEngineStart, !nearSameKind else { continue }
+
+                let rawEnd = max(start + 1, probe.endSeconds)
+                let end = mediaDuration > start ? min(rawEnd, mediaDuration) : rawEnd
+                combined.append(
+                    PlaybackChapter(
+                        id: "probe-\(probe.idString)",
+                        index: 0,
+                        title: probe.title,
+                        startSeconds: start,
+                        endSeconds: end,
+                        kind: parsedKind
+                    )
+                )
+            }
+
+            let sortedCombined = combined.sorted { a, b in
+                if a.startSeconds != b.startSeconds {
+                    return a.startSeconds < b.startSeconds
+                }
+                return a.id < b.id
+            }
+            return sortedCombined.enumerated().map { idx, ch in
+                PlaybackChapter(
+                    id: ch.id,
+                    index: idx,
+                    title: ch.title,
+                    startSeconds: ch.startSeconds,
+                    endSeconds: ch.endSeconds,
+                    kind: ch.kind
                 )
             }
         }

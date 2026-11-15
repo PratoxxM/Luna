@@ -109,6 +109,7 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
     public let dominantColor: String?
     public let blurHash: String?
     public let imdbRating: Double?
+    public let imdbVotes: Int?
     public let badges: [String]?
     public var inWatchlist: Bool?
     public var isFavorite: Bool?
@@ -139,6 +140,7 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         dominantColor: String? = nil,
         blurHash: String? = nil,
         imdbRating: Double? = nil,
+        imdbVotes: Int? = nil,
         badges: [String]? = nil,
         inWatchlist: Bool? = nil,
         isFavorite: Bool? = nil,
@@ -166,6 +168,7 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         self.dominantColor = dominantColor
         self.blurHash = blurHash
         self.imdbRating = imdbRating
+        self.imdbVotes = imdbVotes
         self.badges = badges
         self.inWatchlist = inWatchlist
         self.isFavorite = isFavorite

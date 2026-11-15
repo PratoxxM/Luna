@@ -186,6 +186,8 @@ final class PlayerViewModel: ObservableObject {
         let prevSessionId = current.sessionId
         let finalPos = max(0, engine.currentTime)
         let finalDur = max(0, effectiveDurationSeconds)
+        let inCredits = chapters.contains { $0.kind == .credits && finalPos >= $0.startSeconds }
+        let isCompleted = playbackPhase == .ended || inCredits || (finalDur > 0 && finalPos / finalDur >= 0.75)
         activeSession = nil
         engine.prepareForItemReplacement()
 
@@ -194,7 +196,8 @@ final class PlayerViewModel: ObservableObject {
                 sessionId: prevSessionId,
                 state: "stopped",
                 positionSeconds: finalPos,
-                durationSeconds: finalDur
+                durationSeconds: finalDur,
+                completed: isCompleted ? true : nil
             )
         }
 
@@ -385,12 +388,15 @@ final class PlayerViewModel: ObservableObject {
         }
 
         if let client, let session {
+            let inCredits = chapters.contains { $0.kind == .credits && finalPos >= $0.startSeconds }
+            let isCompleted = playbackPhase == .ended || (inCredits && finalDur > 0 && finalPos / finalDur >= 0.75)
             Task.detached {
                 _ = try? await client.sendHeartbeat(
                     sessionId: session.sessionId,
                     state: "stopped",
                     positionSeconds: finalPos,
-                    durationSeconds: finalDur
+                    durationSeconds: finalDur,
+                    completed: isCompleted ? true : nil
                 )
                 if let onComplete {
                     await onComplete()
@@ -432,7 +438,7 @@ final class PlayerViewModel: ObservableObject {
                     }
                 } else if phase == .paused || phase == .ended {
                     Task { @MainActor [weak self] in
-                        await self?.sendHeartbeatOnce(overrideState: phase == .ended ? "stopped" : "paused")
+                        await self?.sendHeartbeatOnce(overrideState: phase == .ended ? "stopped" : "paused", completed: phase == .ended)
                     }
                 } else if phase == .playing,
                           previousPhase != .playing,

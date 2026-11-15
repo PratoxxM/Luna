@@ -84,4 +84,21 @@ final class SmartTrackRuleEngineTests: XCTestCase {
         XCTAssertTrue(SmartTrackRuleEngine.isNameSDH("Norsk (SDH)"))
         XCTAssertTrue(SmartTrackRuleEngine.isNameSDH("Closed Captions"))
     }
+
+    func testForeignAudioPrefersFullEnglishOverForcedNorwegianWhenFullNorwegianMissing() {
+        let audio = SmartTrackDescriptor(id: 1, name: "English Atmos", codec: "truehd", language: "eng")
+        let forcedNo = SmartTrackDescriptor(id: 60, name: "Norwegian Forced", codec: "srt", language: "nob", isForced: true)
+        let fullEn = SmartTrackDescriptor(id: 61, name: "English", codec: "srt", language: "eng")
+
+        XCTAssertEqual(
+            SmartTrackRuleEngine.evaluate(activeAudio: audio, subtitleTracks: [forcedNo, fullEn]),
+            .selectTrack(61)
+        )
+
+        let fullNo = SmartTrackDescriptor(id: 62, name: "Norwegian", codec: "srt", language: "nob")
+        XCTAssertEqual(
+            SmartTrackRuleEngine.evaluate(activeAudio: audio, subtitleTracks: [forcedNo, fullEn, fullNo]),
+            .selectTrack(62)
+        )
+    }
 }

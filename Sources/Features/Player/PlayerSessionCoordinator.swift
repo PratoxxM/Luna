@@ -325,7 +325,7 @@ extension PlayerViewModel {
         }
     }
 
-    func sendHeartbeatOnce(overrideState: String?) async {
+    func sendHeartbeatOnce(overrideState: String?, completed: Bool = false) async {
         guard let client = activeClient, let session = activeSession else { return }
         let stateString: String
         if let overrideState {
@@ -349,10 +349,13 @@ extension PlayerViewModel {
                 sessionId: session.sessionId,
                 state: stateString,
                 positionSeconds: pos,
-                durationSeconds: dur
+                durationSeconds: dur,
+                completed: completed ? true : nil
             )
             lastReportedServerState = stateString
-            if hb.nextEpisodePrewarmStarted == true {
+            if let ready = hb.nextEpisodePrewarmReady {
+                nextEpisodePrewarmReady = ready
+            } else if hb.nextEpisodePrewarmStarted == true {
                 nextEpisodePrewarmReady = true
             }
             if let vfs = hb.vfsTelemetry {

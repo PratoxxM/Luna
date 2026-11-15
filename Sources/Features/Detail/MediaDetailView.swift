@@ -302,28 +302,31 @@ struct MediaDetailView: View {
     // MARK: - Playback Target & Silent 450ms Pre-Resolve
 
     private func primaryPlayLabel(_ item: TvItemDetail) -> String {
+        let inProgress = (item.progress?.positionSeconds ?? 0) > 30 && (item.progress?.percent ?? 0) < 90
         if item.mediaType == "series" {
             if let next = item.nextUp {
-                if let pos = item.progress?.positionSeconds, pos > 30,
+                if inProgress,
                    item.progress?.season == next.season,
                    item.progress?.episode == next.episode {
                     return String(format: "Fortsett S%02dE%02d", next.season, next.episode)
                 }
                 return String(format: "Spill S%02dE%02d", next.season, next.episode)
             }
-            return "Spill S01E01"
+            return item.watched ? "Spill på nytt S01E01" : "Spill S01E01"
         }
-        if let pos = item.progress?.positionSeconds, pos > 30 {
+        if inProgress {
             return "Fortsett"
         }
         return "Spill av"
     }
 
     private func primaryTargetInfo(_ item: TvItemDetail) -> (itemId: String, title: String, seriesTitle: String?, startPos: Double?) {
+        let itemProgPos: Double? = (item.progress?.percent ?? 0) < 90 ? item.progress?.positionSeconds : 0
         if item.mediaType == "series" {
-            let s = item.nextUp?.season ?? selectedSeasonNumber
+            let rewatchFromStart = item.nextUp == nil && item.watched
+            let s = rewatchFromStart ? 1 : (item.nextUp?.season ?? selectedSeasonNumber)
             let playable = episodes.filter { $0.isUpcoming != true }
-            let e = item.nextUp?.episode ?? playable.first?.episodeNumber ?? 1
+            let e = rewatchFromStart ? 1 : (item.nextUp?.episode ?? playable.first?.episodeNumber ?? 1)
             let epId: String
             if let tmdb = item.ids.tmdb {
                 epId = "episode:tmdb:\(tmdb):s\(s):e\(e)"
@@ -331,10 +334,22 @@ struct MediaDetailView: View {
                 epId = item.itemId
             }
             let matchingEp = episodes.first { $0.seasonNumber == s && $0.episodeNumber == e }
-            let startPos = matchingEp?.progress?.positionSeconds ?? item.progress?.positionSeconds
+            let startPos: Double?
+            if rewatchFromStart {
+                startPos = 0
+            } else if let epProg = matchingEp?.progress {
+                startPos = epProg.percent < 90 ? epProg.positionSeconds : 0
+            } else if let itemProg = item.progress,
+                      itemProg.season == s,
+                      itemProg.episode == e,
+                      itemProg.percent < 90 {
+                startPos = itemProg.positionSeconds
+            } else {
+                startPos = 0
+            }
             return (epId, matchingEp?.title ?? item.title, item.title, startPos)
         }
-        return (item.itemId, item.title, nil, item.progress?.positionSeconds)
+        return (item.itemId, item.title, nil, itemProgPos)
     }
 
     private func launchPrimaryPlayback(_ item: TvItemDetail) {

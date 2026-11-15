@@ -225,8 +225,14 @@ struct DetailHeroHeaderView: View {
         if let runtime = item.formattedRuntime, !runtime.isEmpty {
             parts.append(runtime)
         }
-        if let vote = item.voteAverage, vote > 0 {
-            parts.append(String(format: "★ %.1f", vote))
+        if let disp = item.displayRating {
+            parts.append(String(format: disp.isImdb ? "IMDb ★ %.1f" : "★ %.1f", disp.value))
+        }
+        if let rt = item.rottenTomatoesScore, rt > 0 {
+            parts.append("RT \(rt)%")
+        }
+        if let mc = item.metacriticScore, mc > 0 {
+            parts.append("MC \(mc)")
         }
         if let genres = item.genres, !genres.isEmpty {
             parts.append(genres.prefix(3).joined(separator: ", "))

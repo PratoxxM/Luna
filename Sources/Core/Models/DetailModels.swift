@@ -68,6 +68,11 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
     public let cast: [String]?
     public let castMembers: [TvCastMember]?
     public let voteAverage: Double?
+    public let rating: Double?
+    public let imdbRating: Double?
+    public let imdbVotes: Int?
+    public let rottenTomatoesScore: Int?
+    public let metacriticScore: Int?
     public let posterUrl: String?
     public let backdropUrl: String?
     public let cardBackdropUrl: String?
@@ -88,6 +93,13 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
 
     public var favoriteFlag: Bool {
         isFavorite ?? false
+    }
+
+    public var displayRating: (value: Double, isImdb: Bool)? {
+        if let im = imdbRating, im > 0 { return (im, true) }
+        if let r = rating, r > 0 { return (r, false) }
+        if let v = voteAverage, v > 0 { return (v, false) }
+        return nil
     }
 
     public var preferredOverview: String? {
