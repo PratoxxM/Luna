@@ -183,6 +183,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Select newest Xcode (26.2+ / 27) with tvOS 26+ SDK
         run: |
@@ -230,6 +232,9 @@ jobs:
       - name: Build unsigned Release app for tvOS device (arm64)
         run: |
           set -euo pipefail
+          BUILD_NUM="$(git rev-list --count HEAD)"
+          echo "Resolved monotonic CURRENT_PROJECT_VERSION=${BUILD_NUM}"
+
           run_xcodebuild() {
             set +e
             "$@" 2>&1 | tee xcodebuild.log
@@ -248,6 +253,7 @@ jobs:
             -destination 'generic/platform=tvOS' \
             -derivedDataPath build \
             -clonedSourcePackagesDirPath build/SourcePackages \
+            CURRENT_PROJECT_VERSION="$BUILD_NUM" \
             COMPILER_INDEX_STORE_ENABLE=NO \
             DEBUG_INFORMATION_FORMAT=dwarf \
             COMPILATION_CACHE_ENABLE_CACHING=YES \
@@ -270,9 +276,17 @@ jobs:
 
           ATS_ALLOW=$(/usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity:NSAllowsArbitraryLoads" "$APP_PATH/Info.plist")
           BONJOUR_SVC=$(/usr/libexec/PlistBuddy -c "Print :NSBonjourServices:0" "$APP_PATH/Info.plist")
-          echo "Verified Info.plist: NSAllowsArbitraryLoads=${ATS_ALLOW}, NSBonjourServices[0]=${BONJOUR_SVC}"
+          PRIMARY_ICON=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIcons:CFBundlePrimaryIcon" "$APP_PATH/Info.plist")
+          TOP_SHELF_STD=$(/usr/libexec/PlistBuddy -c "Print :TVTopShelfImage:TVTopShelfPrimaryImage" "$APP_PATH/Info.plist")
+          TOP_SHELF_WIDE=$(/usr/libexec/PlistBuddy -c "Print :TVTopShelfImage:TVTopShelfPrimaryImageWide" "$APP_PATH/Info.plist")
+          BUNDLE_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP_PATH/Info.plist")
+          echo "Verified Info.plist: CFBundleVersion=${BUNDLE_BUILD}, PrimaryIcon=${PRIMARY_ICON}, TopShelf=${TOP_SHELF_STD} / ${TOP_SHELF_WIDE}, ATS=${ATS_ALLOW}, Bonjour=${BONJOUR_SVC}"
           if [ "$ATS_ALLOW" != "true" ] || [ "$BONJOUR_SVC" != "_lunacore._tcp" ]; then
             echo "::error::Compiled Info.plist is missing ATS LAN HTTP or _lunacore._tcp Bonjour keys!"
+            exit 1
+          fi
+          if [ "$PRIMARY_ICON" != "App Icon" ] || [ "$TOP_SHELF_STD" != "Top Shelf Image" ] || [ "$TOP_SHELF_WIDE" != "Top Shelf Image Wide" ]; then
+            echo "::error::Compiled Info.plist is missing App Icon or Top Shelf BrandAsset entries!"
             exit 1
           fi
 
