@@ -3,6 +3,7 @@ import SwiftUI
 public enum BackdropCardVariant: Sendable {
     case continueWatching
     case upcomingEpisode
+    case standard
 }
 
 public struct BackdropCardView: View {
@@ -12,7 +13,9 @@ public struct BackdropCardView: View {
     let client: LunaCoreClient?
     let variant: BackdropCardVariant
     let width: CGFloat
+    let showStorageBadge: Bool
     let onPrimaryAction: () -> Void
+    let onPlayShortcut: (() -> Void)?
 
     @FocusState private var isFocused: Bool
 
@@ -21,13 +24,17 @@ public struct BackdropCardView: View {
         client: LunaCoreClient?,
         variant: BackdropCardVariant,
         width: CGFloat = 468,
-        onPrimaryAction: @escaping () -> Void
+        showStorageBadge: Bool = false,
+        onPrimaryAction: @escaping () -> Void,
+        onPlayShortcut: (() -> Void)? = nil
     ) {
         self.card = card
         self.client = client
         self.variant = variant
         self.width = width
+        self.showStorageBadge = showStorageBadge
         self.onPrimaryAction = onPrimaryAction
+        self.onPlayShortcut = onPlayShortcut
     }
 
     private var height: CGFloat {
@@ -56,10 +63,25 @@ public struct BackdropCardView: View {
                     .clipped()
 
                     VStack(spacing: 0) {
-                        if variant == .upcomingEpisode {
-                            upcomingDatePill
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(14)
+                        if variant == .upcomingEpisode || storageBadgeLabel != nil {
+                            HStack(spacing: 6) {
+                                if variant == .upcomingEpisode {
+                                    upcomingDatePill
+                                }
+                                Spacer(minLength: 4)
+                                if let storageBadge = storageBadgeLabel {
+                                    Text(storageBadge)
+                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .foregroundStyle(storageBadgeForeground)
+                                        .padding(.horizontal, 9)
+                                        .padding(.vertical, 4)
+                                        .background(Color.black.opacity(0.72), in: Capsule())
+                                        .overlay(
+                                            Capsule().strokeBorder(storageBadgeForeground.opacity(0.35), lineWidth: 0.8)
+                                        )
+                                }
+                            }
+                            .padding(14)
                         }
 
                         Spacer(minLength: 0)
@@ -115,6 +137,8 @@ public struct BackdropCardView: View {
             .onPlayPauseCommand {
                 if variant == .continueWatching {
                     onPrimaryAction()
+                } else {
+                    onPlayShortcut?()
                 }
             }
 
@@ -174,9 +198,37 @@ public struct BackdropCardView: View {
     }
 
     private var subtitleLine: String {
-        if variant == .upcomingEpisode {
+        switch variant {
+        case .upcomingEpisode:
             return card.cleanUpcomingSubtitle
+        case .continueWatching:
+            return card.cleanContinueSubtitle
+        case .standard:
+            let meta = card.compactMetaLine
+            if !meta.isEmpty {
+                return meta
+            }
+            if let year = card.year {
+                return String(year)
+            }
+            return ""
         }
-        return card.cleanContinueSubtitle
+    }
+
+    private var storageBadgeLabel: String? {
+        guard showStorageBadge, let avail = card.availability else {
+            return nil
+        }
+        if avail.isPhysicalLocal {
+            return avail.householdBadgeLabel
+        }
+        return nil
+    }
+
+    private var storageBadgeForeground: Color {
+        if let avail = card.availability, avail.isLocalNvme {
+            return LunaTheme.emerald
+        }
+        return LunaTheme.moonlight
     }
 }

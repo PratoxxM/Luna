@@ -29,10 +29,11 @@ struct ShelfRowView: View {
                                 card: card,
                                 client: client,
                                 variant: .continueWatching,
-                                width: 468
-                            ) {
-                                onPlayContinueCard(card)
-                            }
+                                width: 468,
+                                onPrimaryAction: {
+                                    onPlayContinueCard(card)
+                                }
+                            )
                             .prefersDefaultFocus(isFirstRow && idx == 0, in: focusNamespace)
                             .contextMenu {
                                 Button {
@@ -79,10 +80,11 @@ struct ShelfRowView: View {
                                 card: card,
                                 client: client,
                                 variant: .upcomingEpisode,
-                                width: 468
-                            ) {
-                                onSelectCard(card)
-                            }
+                                width: 468,
+                                onPrimaryAction: {
+                                    onSelectCard(card)
+                                }
+                            )
                             .prefersDefaultFocus(isFirstRow && idx == 0, in: focusNamespace)
                             .contextMenu {
                                 Button {
@@ -90,6 +92,56 @@ struct ShelfRowView: View {
                                 } label: {
                                     Label("Åpne serie og sesonger", systemImage: "tv")
                                 }
+                            }
+                        }
+
+                        if row.hasMore == true {
+                            SeeAllShelfCardButton(width: 240, height: 263) {
+                                onSeeAllRow(row)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.vertical, 18)
+                }
+                .scrollClipDisabled()
+            } else if row.rowStyle == "backdrop" {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: 32) {
+                        ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
+                            BackdropCardView(
+                                card: card,
+                                client: client,
+                                variant: .standard,
+                                width: 468,
+                                showStorageBadge: row.sourceKind == "local_library",
+                                onPrimaryAction: {
+                                    onSelectCard(card)
+                                },
+                                onPlayShortcut: {
+                                    onPlayContinueCard(card)
+                                }
+                            )
+                            .prefersDefaultFocus(isFirstRow && idx == 0, in: focusNamespace)
+                            .contextMenu {
+                                StandardPosterContextMenuItems(
+                                    card: card,
+                                    onPlay: {
+                                        onPlayContinueCard(card)
+                                    },
+                                    onOpenDetails: {
+                                        onSelectCard(card)
+                                    },
+                                    onToggleWatched: {
+                                        onMarkWatched(card)
+                                    },
+                                    onToggleWatchlist: {
+                                        onToggleWatchlist(card)
+                                    },
+                                    onToggleFavorite: {
+                                        onToggleFavorite(card)
+                                    }
+                                )
                             }
                         }
 
@@ -111,7 +163,7 @@ struct ShelfRowView: View {
                                 card: card,
                                 client: client,
                                 width: 248,
-                                showStorageBadge: false,
+                                showStorageBadge: row.sourceKind == "local_library",
                                 onSelect: {
                                     onSelectCard(card)
                                 },

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(\.scenePhase) private var scenePhase
 
     let isActiveTab: Bool
 
@@ -11,6 +12,7 @@ struct HomeView: View {
     @State private var errorMessage: String?
     @State private var mutationErrorMessage: String?
     @State private var lastSeenRefreshNonce: Int = -1
+    @State private var lastValidatedAt: Date = .distantPast
 
     @State private var selectedCard: TvMediaCard?
     @State private var selectedSeeAllRow: TvShelfRow?
@@ -19,12 +21,9 @@ struct HomeView: View {
 
     @Namespace private var homeFocusNamespace
 
-    private static let canonicalHomeRowIDs: Set<String> = [
-        "medialogg-continue",
-        "upcoming-episodes",
-        "popular-movies",
-        "popular-series"
-    ]
+    nonisolated static func filterVisibleRows(_ rows: [TvShelfRow]) -> [TvShelfRow] {
+        rows.filter { !$0.items.isEmpty }
+    }
 
     init(
         initialServerHost: String? = nil,
@@ -43,9 +42,7 @@ struct HomeView: View {
     }
 
     private var visibleRows: [TvShelfRow] {
-        (homePayload?.rows ?? []).filter { row in
-            Self.canonicalHomeRowIDs.contains(row.rowId) && !row.items.isEmpty
-        }
+        Self.filterVisibleRows(homePayload?.rows ?? [])
     }
 
     var body: some View {
@@ -119,7 +116,9 @@ struct HomeView: View {
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
         .navigationDestination(item: $selectedSeeAllRow) { row in
-            if row.rowId == "popular-movies"
+            if row.nextPath?.contains("/rows/") == true {
+                CustomRowBrowseView(title: row.title, pathOrRowId: row.nextPath ?? row.rowId)
+            } else if row.rowId == "popular-movies"
                 || row.sourceKind == "system_popular_movies"
                 || row.nextPath?.contains("/catalog/movies") == true {
                 CatalogBrowseView(mediaType: "movie", initialGenre: nil)
@@ -166,9 +165,18 @@ struct HomeView: View {
             Task { await revalidateHome(forceUnconditional: false) }
         }
         .onChange(of: isActiveTab) { _, active in
-            guard active, lastSeenRefreshNonce != sessionStore.homeRefreshNonce else { return }
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            Task { await revalidateHome(forceUnconditional: false) }
+            guard active else { return }
+            let stale = Date().timeIntervalSince(lastValidatedAt) >= 15
+            if lastSeenRefreshNonce != sessionStore.homeRefreshNonce || stale {
+                lastSeenRefreshNonce = sessionStore.homeRefreshNonce
+                Task { await revalidateHome(forceUnconditional: false) }
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, isActiveTab else { return }
+            if Date().timeIntervalSince(lastValidatedAt) >= 10 {
+                Task { await revalidateHome(forceUnconditional: false) }
+            }
         }
         .onDisappear {
             mutationBannerTask?.cancel()
@@ -217,9 +225,10 @@ struct HomeView: View {
             )
             switch result {
             case .notModified:
-                break
+                lastValidatedAt = Date()
             case .updated(let payload, let newEtag, let rawData):
                 cachedEtag = newEtag
+                lastValidatedAt = Date()
                 if !(homePayload?.isSemanticallyEqual(to: payload) ?? false) {
                     withAnimation(.easeOut(duration: 0.22)) {
                         homePayload = payload
