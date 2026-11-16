@@ -387,6 +387,15 @@ final class PlaybackAndNavigationFixesTests: XCTestCase {
         ]
         XCTAssertFalse(check(220, 600, shortChapters))
         XCTAssertTrue(check(500, 600, shortChapters))
+
+        // Overlapping full-episode container chapter must not shadow TheIntroDB .credits
+        let mergedCredits = PlaybackChapter.mergeRaw(
+            probeChapters: [TvProbeChapter(index: 0, idString: "tidb-cr", title: "Rulletekst", startSeconds: 2400, endSeconds: 2700, kind: "credits")],
+            engineChapters: [RawEngineChapter(id: 1, name: "Chapter 01", startSeconds: 0, durationSeconds: 2700)],
+            mediaDuration: 2700
+        )
+        XCTAssertTrue(check(2460, totalDuration, mergedCredits))
+        XCTAssertFalse(check(1450, totalDuration, mergedCredits))
     }
 
     func testForegroundRestoreDecisionAndTransportIntentPreservation() {
@@ -461,6 +470,8 @@ final class PlaybackAndNavigationFixesTests: XCTestCase {
         XCTAssertTrue(PlayerViewModel.isActiveTransportIntent(playbackPhase: .rebuffering, engineState: .playing))
         XCTAssertTrue(PlayerViewModel.isActiveTransportIntent(playbackPhase: .loading, engineState: .playing))
         XCTAssertFalse(PlayerViewModel.isActiveTransportIntent(playbackPhase: .loading, engineState: .paused))
+        XCTAssertFalse(PlayerViewModel.isActiveTransportIntent(playbackPhase: .seeking, engineState: .paused))
+        XCTAssertFalse(PlayerViewModel.isActiveTransportIntent(playbackPhase: .stalled(reconnecting: true), engineState: .paused))
         XCTAssertFalse(PlayerViewModel.isActiveTransportIntent(playbackPhase: .paused, engineState: .paused))
         XCTAssertFalse(PlayerViewModel.isActiveTransportIntent(playbackPhase: .ended, engineState: .ended))
         XCTAssertFalse(PlayerViewModel.isActiveTransportIntent(playbackPhase: .error("x"), engineState: .error("x")))
@@ -693,16 +704,29 @@ final class PlaybackAndNavigationFixesTests: XCTestCase {
         XCTAssertEqual(log.withLock { $0 }, ["activate_start", "activate_end"])
         XCTAssertNil(vm.pausedRestoreResumeTask)
 
-        // 4. Teardown while activation is in flight blocks play and clears flag
+        // 4. Fatal error while activation is in flight blocks play
         log.withLock { $0.removeAll() }
         await gate.reset()
         vm.handleScenePhaseChange(.active)
         vm.togglePlayPause()
         await gate.waitUntilStarted()
         let task4 = vm.pausedRestoreResumeTask
-        vm.teardownAndStop()
+        vm.fatalError = "Stream error"
         await gate.finish()
         await task4?.value
+        XCTAssertEqual(log.withLock { $0 }, ["activate_start", "activate_end"])
+        XCTAssertTrue(vm.needsNativeAudioActivationAfterPausedRestore)
+        vm.fatalError = nil
+
+        // 5. Teardown while activation is in flight blocks play and clears flag
+        log.withLock { $0.removeAll() }
+        await gate.reset()
+        vm.togglePlayPause()
+        await gate.waitUntilStarted()
+        let task5 = vm.pausedRestoreResumeTask
+        vm.teardownAndStop()
+        await gate.finish()
+        await task5?.value
         XCTAssertEqual(log.withLock { $0 }, ["activate_start", "activate_end"])
         XCTAssertFalse(vm.needsNativeAudioActivationAfterPausedRestore)
         XCTAssertNil(vm.pausedRestoreResumeTask)

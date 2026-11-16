@@ -12,6 +12,7 @@ private actor NativeAudioSessionActivator {
     /// is enabled, final stop deactivates the session, so native `AVPlayerLayer` playback ensures
     /// the session is active once `engine.load(...)` completes without mutating category or mode.
     func ensureActiveOffMain() {
+        guard !Task.isCancelled else { return }
         do {
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
@@ -61,7 +62,7 @@ final class PlayerAudioSessionCoordinator {
     }
 
     func activateNativePlaybackIfNeeded(videoRoute: VideoRoute) async {
-        guard Self.shouldActivateNativeAudioSession(for: videoRoute) else {
+        guard !Task.isCancelled, Self.shouldActivateNativeAudioSession(for: videoRoute) else {
             return
         }
         await activator.ensureActiveOffMain()

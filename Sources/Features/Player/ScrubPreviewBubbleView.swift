@@ -113,9 +113,30 @@ private struct CompositorScrubPreviewRepresentable: UIViewRepresentable {
 // MARK: - Velocity-Aware Siri Remote Touch Scrubbing & Preview Worker
 
 extension PlayerViewModel {
+    func cancelPendingScrubCommit() {
+        scrubCommitToken &+= 1
+        scrubCommitTask?.cancel()
+        scrubCommitTask = nil
+    }
+
+    private func canFinishScrubCommit(expectedToken: UInt64, expectedSessionId: String?) -> Bool {
+        !Task.isCancelled &&
+        scrubCommitToken == expectedToken &&
+        !isTeardownCompleted &&
+        fatalError == nil &&
+        !isResolving &&
+        !isSwitchingSource &&
+        !isRestoringFromBackground &&
+        !isScrubbing &&
+        isForegroundActive &&
+        !engine.needsForegroundVideoRestore &&
+        activeSession?.sessionId == expectedSessionId
+    }
+
     func beginTouchScrub() {
         guard !isResolving, effectiveDurationSeconds > 5 else { return }
         cancelPendingPausedRestoreResume()
+        cancelPendingScrubCommit()
         if !isScrubbing {
             let origin = max(0, engine.currentTime)
             wasPlayingBeforeScrub = (playbackPhase == .playing)
@@ -166,31 +187,58 @@ extension PlayerViewModel {
         guard isScrubbing else { return }
         let target = scrubState.targetSeconds
         resetScrubStateOnSessionChange()
-        Task { @MainActor [weak self] in
+        cancelPendingPausedRestoreResume()
+        cancelPendingScrubCommit()
+        scrubCommitToken &+= 1
+        let commitToken = scrubCommitToken
+        let expectedSessionId = activeSession?.sessionId
+        let customSeek = scrubSeekActionForTesting
+
+        scrubCommitTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.engine.seek(to: target, exact: true)
-            guard !Task.isCancelled, !self.isTeardownCompleted else { return }
+            if let customSeek {
+                await customSeek(target)
+            } else {
+                await self.engine.seek(to: target, exact: true)
+            }
+            guard self.canFinishScrubCommit(expectedToken: commitToken, expectedSessionId: expectedSessionId) else {
+                if self.scrubCommitToken == commitToken {
+                    self.scrubCommitTask = nil
+                }
+                return
+            }
             if self.needsNativeAudioActivationAfterPausedRestore {
                 await self.activateNativeAudioForPendingResumeIfNeeded()
-                guard !Task.isCancelled,
-                      !self.isTeardownCompleted,
-                      !self.isResolving,
-                      !self.isSwitchingSource,
-                      !self.isRestoringFromBackground,
-                      self.isForegroundActive,
-                      !self.engine.needsForegroundVideoRestore else {
+                guard self.canFinishScrubCommit(expectedToken: commitToken, expectedSessionId: expectedSessionId) else {
+                    if self.scrubCommitToken == commitToken {
+                        self.scrubCommitTask = nil
+                    }
                     return
                 }
                 self.needsNativeAudioActivationAfterPausedRestore = false
             }
-            if self.engine.state != .playing {
+            if self.scrubCommitToken == commitToken {
+                self.scrubCommitTask = nil
+            }
+            if let customPlay = self.resumePlayActionForTesting {
+                customPlay()
+            } else if self.engine.state == .paused || self.engine.state == .loading {
                 self.engine.play()
+            }
+            if self.isForegroundActive && !self.engine.needsForegroundVideoRestore {
+                self.lastForegroundPlaybackWasPlaying = self.resumePlayActionForTesting != nil
+                    ? true
+                    : Self.isActiveTransportIntent(
+                        playbackPhase: self.engine.playbackPhase,
+                        engineState: self.engine.state
+                    )
             }
         }
     }
 
     func cancelTouchScrub() {
         guard isScrubbing else { return }
+        cancelPendingScrubCommit()
         let shouldResume = wasPlayingBeforeScrub
         resetScrubStateOnSessionChange()
         if shouldResume {

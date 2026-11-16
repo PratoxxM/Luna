@@ -101,6 +101,8 @@ final class PlayerViewModel: ObservableObject {
     var foregroundRestoreTask: Task<Void, Never>?
     private(set) var pausedRestoreResumeTask: Task<Void, Never>?
     private var pausedRestoreResumeToken: UInt64 = 0
+    var scrubCommitTask: Task<Void, Never>?
+    var scrubCommitToken: UInt64 = 0
     private var didTeardown: Bool = false
     private var lastObservedPhase: PlaybackPhase = .idle
     var isForegroundActive: Bool = true
@@ -109,6 +111,7 @@ final class PlayerViewModel: ObservableObject {
     var needsNativeAudioActivationAfterPausedRestore: Bool = false
     var nativeAudioActivatorForTesting: (@Sendable (VideoRoute) async -> Void)?
     var resumePlayActionForTesting: (@MainActor () -> Void)?
+    var scrubSeekActionForTesting: (@MainActor (Double) async -> Void)?
     var lastReportedServerState: String?
     var onUnauthorized: (() -> Void)?
 
@@ -149,6 +152,7 @@ final class PlayerViewModel: ObservableObject {
     func start(request: PlaybackLaunchRequest, client: LunaCoreClient?) {
         PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
         cancelPendingPausedRestoreResume()
+        cancelPendingScrubCommit()
         foregroundRestoreTask?.cancel()
         foregroundRestoreTask = nil
         isRestoringFromBackground = false
@@ -179,6 +183,7 @@ final class PlayerViewModel: ObservableObject {
         guard let client = activeClient, let current = activeSession else { return }
         PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
         cancelPendingPausedRestoreResume()
+        cancelPendingScrubCommit()
         foregroundRestoreTask?.cancel()
         foregroundRestoreTask = nil
         isRestoringFromBackground = false
@@ -264,35 +269,30 @@ final class PlayerViewModel: ObservableObject {
     }
 
     private func beginPausedRestoreResumeWithNativeAudioActivation() {
+        cancelPendingScrubCommit()
         cancelPendingPausedRestoreResume()
         pausedRestoreResumeToken &+= 1
         let resumeToken = pausedRestoreResumeToken
         let expectedSessionId = activeSession?.sessionId
-        let videoRoute = engine.videoRoute
-        let customActivator = nativeAudioActivatorForTesting
 
         if isForegroundActive && !engine.needsForegroundVideoRestore {
             lastForegroundPlaybackWasPlaying = true
         }
 
         pausedRestoreResumeTask = Task { @MainActor [weak self] in
-            if let customActivator {
-                await customActivator(videoRoute)
-            } else {
-                await PlayerAudioSessionCoordinator.shared.activateNativePlaybackIfNeeded(
-                    videoRoute: videoRoute
-                )
-            }
             guard let self else { return }
+            await self.activateNativeAudioForPendingResumeIfNeeded()
             if self.pausedRestoreResumeToken == resumeToken {
                 self.pausedRestoreResumeTask = nil
             }
             guard !Task.isCancelled,
                   self.pausedRestoreResumeToken == resumeToken,
                   !self.isTeardownCompleted,
+                  self.fatalError == nil,
                   !self.isResolving,
                   !self.isSwitchingSource,
                   !self.isRestoringFromBackground,
+                  !self.isScrubbing,
                   self.isForegroundActive,
                   !self.engine.needsForegroundVideoRestore,
                   self.activeSession?.sessionId == expectedSessionId else {
@@ -301,7 +301,7 @@ final class PlayerViewModel: ObservableObject {
             self.needsNativeAudioActivationAfterPausedRestore = false
             if let customPlay = self.resumePlayActionForTesting {
                 customPlay()
-            } else if self.engine.state != .playing {
+            } else if self.engine.state == .paused || self.engine.state == .loading {
                 self.engine.play()
             }
             if self.isForegroundActive && !self.engine.needsForegroundVideoRestore {
@@ -323,8 +323,9 @@ final class PlayerViewModel: ObservableObject {
             lastForegroundPlaybackWasPlaying = nextTarget
             return
         }
-        if pausedRestoreResumeTask != nil {
+        if pausedRestoreResumeTask != nil || scrubCommitTask != nil {
             cancelPendingPausedRestoreResume()
+            cancelPendingScrubCommit()
             if isForegroundActive && !engine.needsForegroundVideoRestore {
                 lastForegroundPlaybackWasPlaying = false
             }
@@ -354,6 +355,7 @@ final class PlayerViewModel: ObservableObject {
         guard activeClient != nil, activeSession != nil else { return }
         PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
         cancelPendingPausedRestoreResume()
+        cancelPendingScrubCommit()
         foregroundRestoreTask?.cancel()
         foregroundRestoreTask = nil
         isRestoringFromBackground = false
@@ -528,6 +530,7 @@ final class PlayerViewModel: ObservableObject {
         guard !didTeardown else { return }
         didTeardown = true
         cancelPendingPausedRestoreResume()
+        cancelPendingScrubCommit()
         foregroundRestoreTask?.cancel()
         foregroundRestoreTask = nil
         isRestoringFromBackground = false

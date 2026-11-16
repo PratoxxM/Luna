@@ -38,8 +38,7 @@ internal enum SeriesFlowEligibility {
         if remaining >= -5.0,
            remaining <= maxNextEpisodeCreditsLeadSeconds,
            currentTime >= authoritativeDurationSeconds * 0.5,
-           let ch = chapters.first(where: { currentTime >= $0.startSeconds && currentTime < $0.endSeconds }),
-           ch.kind == .credits {
+           chapters.contains(where: { $0.kind == .credits && currentTime >= $0.startSeconds && currentTime < $0.endSeconds }) {
             return true
         }
         return false
@@ -149,6 +148,7 @@ struct SeriesFlowOverlays: View {
             dismissCurrentPrompt()
         }
         .onChange(of: viewModel.activeSession?.sessionId) { _, _ in
+            currentTime = max(0, viewModel.engine.currentTime)
             dismissedNextForSessionID = nil
             dismissedIntroChapterIDs.removeAll()
             enteredIntroAtWallTime = nil
