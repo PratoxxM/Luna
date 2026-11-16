@@ -56,7 +56,8 @@ final class PlayerViewModel: ObservableObject {
 
     @Published var audioTracks: [TrackInfo] = []
     @Published var activeAudioTrackIndex: Int?
-    @Published var audioDelaySeconds: Double = 0
+    @Published var audioDelayMs: Int
+    var audioDelaySeconds: Double { Double(audioDelayMs) / 1000.0 }
     @Published var audioEnhancement: AudioEnhancementMode = .reference
 
     @Published var subtitleTracks: [TrackInfo] = []
@@ -94,6 +95,7 @@ final class PlayerViewModel: ObservableObject {
     private var coalescedSeekTask: Task<Void, Never>?
     private var smartRuleTask: Task<Void, Never>?
     var switchSourceTask: Task<Void, Never>?
+    var audioDelayCommitTask: Task<Void, Never>?
     private var didTeardown: Bool = false
     private var lastObservedPhase: PlaybackPhase = .idle
     var lastReportedServerState: String?
@@ -102,6 +104,7 @@ final class PlayerViewModel: ObservableObject {
     init(engine: AetherEngine, comfort: ComfortPreferences) {
         self.engine = engine
         self.comfort = comfort
+        self.audioDelayMs = comfort.audioDelayMs
         bindEnginePublishers()
     }
 
@@ -158,6 +161,8 @@ final class PlayerViewModel: ObservableObject {
         resolveTask?.cancel()
         switchSourceTask?.cancel()
         switchSourceTask = nil
+        audioDelayCommitTask?.cancel()
+        audioDelayCommitTask = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil
         lastReportedServerState = nil
@@ -215,6 +220,8 @@ final class PlayerViewModel: ObservableObject {
         guard activeClient != nil, activeSession != nil else { return }
         fatalError = nil
         isSwitchingSource = true
+        audioDelayCommitTask?.cancel()
+        audioDelayCommitTask = nil
         switchSourceTask?.cancel()
         switchSourceTask = Task { @MainActor [weak self] in
             await self?.switchSource(to: candidateId)
@@ -284,16 +291,37 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    func adjustAudioDelay(by deltaSeconds: Double) {
-        let next = ((audioDelaySeconds + deltaSeconds) * 20).rounded() / 20
-        let clamped = next.clamped(to: -2.0...2.0)
-        engine.setAudioDelay(clamped)
-        audioDelaySeconds = engine.audioDelaySeconds
+    func adjustAudioDelay(byMs deltaMs: Int) {
+        applyAudioDelayMs(audioDelayMs + deltaMs, debounceEngineCommit: true)
     }
 
     func resetAudioDelay() {
-        engine.setAudioDelay(0)
-        audioDelaySeconds = engine.audioDelaySeconds
+        applyAudioDelayMs(0, debounceEngineCommit: false)
+    }
+
+    private func applyAudioDelayMs(_ targetMs: Int, debounceEngineCommit: Bool) {
+        let clamped = ComfortPreferences.clampAudioDelayMs(targetMs)
+        audioDelayMs = clamped
+        comfort.audioDelayMs = clamped
+        audioDelayCommitTask?.cancel()
+        audioDelayCommitTask = nil
+
+        guard !isResolving && !isSwitchingSource else {
+            return
+        }
+
+        let targetSeconds = Double(clamped) / 1000.0
+        if !debounceEngineCommit {
+            engine.setAudioDelay(targetSeconds)
+            return
+        }
+
+        audioDelayCommitTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled, let self, !self.isResolving, !self.isSwitchingSource else { return }
+            self.engine.setAudioDelay(Double(self.audioDelayMs) / 1000.0)
+            self.audioDelayCommitTask = nil
+        }
     }
 
     func setAudioEnhancement(_ mode: AudioEnhancementMode) {
@@ -370,6 +398,8 @@ final class PlayerViewModel: ObservableObject {
         coalescedSeekTask = nil
         smartRuleTask?.cancel()
         smartRuleTask = nil
+        audioDelayCommitTask?.cancel()
+        audioDelayCommitTask = nil
         transientBannerTask?.cancel()
         transientBannerTask = nil
         nowPlayingArtworkTask?.cancel()
@@ -519,6 +549,13 @@ final class PlayerViewModel: ObservableObject {
             }
             .store(in: &cancellables)
         engine.$activeSubtitleTrackIndex.assign(to: &$activeSubtitleTrackIndex)
+
+        comfort.$audioDelayMs
+            .sink { [weak self] updatedMs in
+                guard let self, self.audioDelayMs != updatedMs else { return }
+                self.audioDelayMs = updatedMs
+            }
+            .store(in: &cancellables)
     }
 
     func updateIdleTimer(for phase: PlaybackPhase) {

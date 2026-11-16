@@ -222,12 +222,15 @@ struct PlayerTopDrawerView: View {
 
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 10) {
-                    let ms = Int((viewModel.audioDelaySeconds * 1000).rounded())
-                    sectionHeader(String(format: "Lydsynk (%+d ms)", ms))
+                    let ms = viewModel.audioDelayMs
+                    sectionHeader("Lydsynk (\(ComfortPreferences.formatAudioDelayMs(ms)) · huskes på denne TV-en)")
 
-                    HStack(spacing: 12) {
-                        LunaPillButton("-50 ms", systemImage: "minus", prominence: .subtleChip) {
-                            viewModel.adjustAudioDelay(by: -0.05)
+                    HStack(spacing: 10) {
+                        LunaPillButton("-25 ms", prominence: .subtleChip) {
+                            viewModel.adjustAudioDelay(byMs: -25)
+                        }
+                        LunaPillButton("-10 ms", prominence: .subtleChip) {
+                            viewModel.adjustAudioDelay(byMs: -10)
                         }
                         LunaPillButton(
                             "0 ms",
@@ -236,8 +239,11 @@ struct PlayerTopDrawerView: View {
                         ) {
                             viewModel.resetAudioDelay()
                         }
-                        LunaPillButton("+50 ms", systemImage: "plus", prominence: .subtleChip) {
-                            viewModel.adjustAudioDelay(by: 0.05)
+                        LunaPillButton("+10 ms", prominence: .subtleChip) {
+                            viewModel.adjustAudioDelay(byMs: 10)
+                        }
+                        LunaPillButton("+25 ms", prominence: .subtleChip) {
+                            viewModel.adjustAudioDelay(byMs: 25)
                         }
                     }
                 }
@@ -263,7 +269,7 @@ struct PlayerTopDrawerView: View {
                     fallbackBadge: "\(viewModel.audioFormatBadge) (\(audioChainDetail))"
                 )
             }
-            .frame(width: 640, alignment: .leading)
+            .frame(width: 720, alignment: .leading)
         }
     }
 

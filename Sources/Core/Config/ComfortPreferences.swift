@@ -210,6 +210,16 @@ public enum LowResUpscaleMode: String, CaseIterable, Identifiable, Sendable {
 
 @MainActor
 public final class ComfortPreferences: ObservableObject {
+    public static let audioDelayRangeMs: ClosedRange<Int> = -2000...2000
+
+    public static func clampAudioDelayMs(_ rawMs: Int) -> Int {
+        min(max(rawMs, audioDelayRangeMs.lowerBound), audioDelayRangeMs.upperBound)
+    }
+
+    public static func formatAudioDelayMs(_ ms: Int) -> String {
+        ms == 0 ? "0 ms" : String(format: "%+d ms", ms)
+    }
+
     @Published public var hdrSubtitlePreset: HDRSubtitlePreset {
         didSet {
             guard oldValue != hdrSubtitlePreset else { return }
@@ -280,6 +290,18 @@ public final class ComfortPreferences: ObservableObject {
         }
     }
 
+    @Published public var audioDelayMs: Int {
+        didSet {
+            let clamped = Self.clampAudioDelayMs(audioDelayMs)
+            if clamped != audioDelayMs {
+                audioDelayMs = clamped
+                return
+            }
+            guard oldValue != audioDelayMs else { return }
+            defaults.set(audioDelayMs, forKey: SideloadSafeStorage.audioDelayMsKey)
+        }
+    }
+
     public var onSyncRequested: ((TvDeviceOverrides) -> Void)?
 
     private let defaults: UserDefaults
@@ -312,6 +334,27 @@ public final class ComfortPreferences: ObservableObject {
         self.showNerdHUD = defaults.object(forKey: SideloadSafeStorage.showNerdHUDKey) as? Bool ?? false
         let rawUpscale = defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey) ?? LowResUpscaleMode.off.rawValue
         self.lowResUpscaleMode = LowResUpscaleMode(rawValue: rawUpscale) ?? .off
+        if defaults.object(forKey: SideloadSafeStorage.audioDelayMsKey) != nil {
+            self.audioDelayMs = Self.clampAudioDelayMs(defaults.integer(forKey: SideloadSafeStorage.audioDelayMsKey))
+        } else {
+            self.audioDelayMs = 0
+        }
+    }
+
+    public var audioDelaySeconds: Double {
+        Double(audioDelayMs) / 1000.0
+    }
+
+    public var formattedAudioDelayLabel: String {
+        Self.formatAudioDelayMs(audioDelayMs)
+    }
+
+    public func adjustAudioDelay(byMs deltaMs: Int) {
+        audioDelayMs = Self.clampAudioDelayMs(audioDelayMs + deltaMs)
+    }
+
+    public func resetAudioDelay() {
+        audioDelayMs = 0
     }
 
     public func toDeviceOverrides() -> TvDeviceOverrides {

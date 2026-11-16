@@ -166,12 +166,17 @@ extension PlayerViewModel {
         engine.maximumSubtitleAdvanceSeconds = 0
         engine.maximumSubtitleDelaySeconds = 10
 
+        audioDelayCommitTask?.cancel()
+        audioDelayCommitTask = nil
+        let initialAudioDelayMs = comfort.audioDelayMs
+        audioDelayMs = initialAudioDelayMs
+
         let options = Self.buildLoadOptions(
             session: session,
             client: client,
             comfort: comfort,
             audioEnhancement: audioEnhancement,
-            audioDelaySeconds: audioDelaySeconds
+            audioDelaySeconds: Double(initialAudioDelayMs) / 1000.0
         )
         let startPos = overrideStartPosition ?? session.stream.startPositionSeconds ?? 0
         do {
@@ -197,7 +202,12 @@ extension PlayerViewModel {
         }
 
         subtitleDelaySeconds = engine.softwareSubtitleDelaySeconds
-        audioDelaySeconds = engine.audioDelaySeconds
+        if comfort.audioDelayMs != initialAudioDelayMs {
+            audioDelayMs = comfort.audioDelayMs
+            engine.setAudioDelay(comfort.audioDelaySeconds)
+        } else {
+            audioDelayMs = initialAudioDelayMs
+        }
         rebuildMergedChapters()
         PlayerNowPlayingCoordinator.publish(session: session, client: client, viewModel: self)
 

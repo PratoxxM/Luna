@@ -102,6 +102,48 @@ struct SettingsView: View {
                     Divider().overlay(LunaTheme.moonlight.opacity(0.12))
 
                     VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("Fast lydsynk for denne Apple TV-en (HDMI / eARC)")
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(LunaTheme.moonlight)
+
+                            Spacer()
+
+                            Text(comfort.formattedAudioDelayLabel)
+                                .font(.callout.monospacedDigit().weight(.bold))
+                                .foregroundStyle(comfort.audioDelayMs == 0 ? LunaTheme.muted : LunaTheme.amber)
+                        }
+
+                        HStack(spacing: 12) {
+                            LunaPillButton("-25 ms", prominence: .subtleChip) {
+                                comfort.adjustAudioDelay(byMs: -25)
+                            }
+                            LunaPillButton("-10 ms", prominence: .subtleChip) {
+                                comfort.adjustAudioDelay(byMs: -10)
+                            }
+                            LunaPillButton(
+                                "0 ms",
+                                isSelected: comfort.audioDelayMs == 0,
+                                prominence: comfort.audioDelayMs == 0 ? .glassPill : .subtleChip
+                            ) {
+                                comfort.resetAudioDelay()
+                            }
+                            LunaPillButton("+10 ms", prominence: .subtleChip) {
+                                comfort.adjustAudioDelay(byMs: 10)
+                            }
+                            LunaPillButton("+25 ms", prominence: .subtleChip) {
+                                comfort.adjustAudioDelay(byMs: 25)
+                            }
+                        }
+
+                        Text("Negativ verdi (f.eks. -25 til -75 ms) sender lyden tidligere ut på HDMI for å hente inn eARC- og Dolby MAT/LPCM-forsinkelse i TV og lydplanke.")
+                            .font(.caption)
+                            .foregroundStyle(LunaTheme.muted)
+                    }
+
+                    Divider().overlay(LunaTheme.moonlight.opacity(0.12))
+
+                    VStack(alignment: .leading, spacing: 10) {
                         Text("Lavoppløst oppskalering (SD / 720p / Anime)")
                             .font(.callout.weight(.semibold))
                             .foregroundStyle(LunaTheme.moonlight)

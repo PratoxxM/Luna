@@ -63,7 +63,8 @@ struct NerdHUDView: View {
 
     private var audioSummary: String {
         let aDec = viewModel.activeAudioDecoder ?? viewModel.audioDelivery.rawValue
-        return "\(viewModel.audioFormatBadge) (\(aDec))"
+        let delaySuffix = viewModel.audioDelayMs == 0 ? "" : " · \(ComfortPreferences.formatAudioDelayMs(viewModel.audioDelayMs))"
+        return "\(viewModel.audioFormatBadge) (\(aDec))\(delaySuffix)"
     }
 
     private var bitrateSummary: String {
