@@ -32,7 +32,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var isRestoringFromBackground: Bool = false
 
     // Session, Sources & Next Episode
-    @Published private(set) var currentRequest: PlaybackLaunchRequest?
+    @Published var currentRequest: PlaybackLaunchRequest?
     @Published var activeSession: TvPlaybackSession?
     @Published var alternatives: [TvCandidateInfo] = []
     @Published private(set) var alternativesSessionId: String?
