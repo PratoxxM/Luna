@@ -77,11 +77,13 @@ extension PlayerViewModel {
         client: LunaCoreClient,
         comfort: ComfortPreferences,
         audioEnhancement: AudioEnhancementMode,
-        audioDelaySeconds: Double
+        audioDelaySeconds: Double,
+        autoplay: Bool = true
     ) -> LoadOptions {
         let cfg = session.aetherConfig
         var options = LoadOptions()
 
+        options.autoplay = autoplay
         options.httpHeaders = client.streamHTTPHeaders()
 
         switch comfort.dualLayerOverride {

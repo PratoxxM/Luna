@@ -104,6 +104,7 @@ final class PlayerViewModel: ObservableObject {
     var isForegroundActive: Bool = true
     var lastForegroundPlaybackWasPlaying: Bool = false
     var userDesiredPlayingDuringRestore: Bool?
+    var needsNativeAudioActivationAfterPausedRestore: Bool = false
     var lastReportedServerState: String?
     var onUnauthorized: (() -> Void)?
 
@@ -148,6 +149,7 @@ final class PlayerViewModel: ObservableObject {
         isRestoringFromBackground = false
         userDesiredPlayingDuringRestore = nil
         lastForegroundPlaybackWasPlaying = false
+        needsNativeAudioActivationAfterPausedRestore = false
         didTeardown = false
         fatalError = nil
         firstFrameFallbackUnlocked = false
@@ -175,6 +177,7 @@ final class PlayerViewModel: ObservableObject {
         foregroundRestoreTask = nil
         isRestoringFromBackground = false
         userDesiredPlayingDuringRestore = nil
+        needsNativeAudioActivationAfterPausedRestore = false
         resolveTask?.cancel()
         switchSourceTask?.cancel()
         switchSourceTask = nil
@@ -237,7 +240,20 @@ final class PlayerViewModel: ObservableObject {
             lastForegroundPlaybackWasPlaying = nextTarget
             return
         }
+        let wasPlaying = Self.isActiveTransportIntent(
+            playbackPhase: engine.playbackPhase,
+            engineState: engine.state
+        )
         engine.togglePlayPause()
+        if !wasPlaying && needsNativeAudioActivationAfterPausedRestore {
+            needsNativeAudioActivationAfterPausedRestore = false
+            let videoRoute = engine.videoRoute
+            Task {
+                await PlayerAudioSessionCoordinator.shared.activateNativePlaybackIfNeeded(
+                    videoRoute: videoRoute
+                )
+            }
+        }
         if isForegroundActive && !engine.needsForegroundVideoRestore {
             lastForegroundPlaybackWasPlaying = Self.isActiveTransportIntent(
                 playbackPhase: engine.playbackPhase,
@@ -253,6 +269,7 @@ final class PlayerViewModel: ObservableObject {
         foregroundRestoreTask = nil
         isRestoringFromBackground = false
         userDesiredPlayingDuringRestore = nil
+        needsNativeAudioActivationAfterPausedRestore = false
         fatalError = nil
         isSwitchingSource = true
         audioDelayCommitTask?.cancel()
@@ -425,6 +442,7 @@ final class PlayerViewModel: ObservableObject {
         foregroundRestoreTask = nil
         isRestoringFromBackground = false
         userDesiredPlayingDuringRestore = nil
+        needsNativeAudioActivationAfterPausedRestore = false
         resolveTask?.cancel()
         resolveTask = nil
         switchSourceTask?.cancel()
@@ -509,6 +527,7 @@ final class PlayerViewModel: ObservableObject {
                     )
                 }
                 if case .error(let errMsg) = phase {
+                    guard !self.isRestoringFromBackground else { return }
                     self.heartbeatTask?.cancel()
                     self.heartbeatTask = nil
                     self.isResolving = false
@@ -527,6 +546,15 @@ final class PlayerViewModel: ObservableObject {
                     }
                 } else if phase == .playing, previousPhase != .playing {
                     guard !self.isRestoringFromBackground else { return }
+                    if self.needsNativeAudioActivationAfterPausedRestore {
+                        self.needsNativeAudioActivationAfterPausedRestore = false
+                        let videoRoute = self.engine.videoRoute
+                        Task {
+                            await PlayerAudioSessionCoordinator.shared.activateNativePlaybackIfNeeded(
+                                videoRoute: videoRoute
+                            )
+                        }
+                    }
                     if self.lastReportedServerState != nil,
                        self.lastReportedServerState != "playing" {
                         Task { @MainActor [weak self] in

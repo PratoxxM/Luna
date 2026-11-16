@@ -501,6 +501,134 @@ final class PlaybackAndNavigationFixesTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testBuildLoadOptionsForwardsAutoplayFlag() throws {
+        let suite = "luna.test.loadoptions.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let json = #"""
+        {
+          "sessionId": "sess-autoplay-1",
+          "streamToken": "stream-placeholder-token",
+          "roomName": "Stua",
+          "hardwareProfile": "dv-fel-714",
+          "item": {
+            "itemId": "tmdb:movie:550",
+            "mediaType": "movie",
+            "ids": { "tmdb": 550 },
+            "title": "Eksempelfilm"
+          },
+          "selectedCandidate": {
+            "candidateId": "cand-1",
+            "displayHeadline": "4K DV FEL",
+            "releaseTitle": "Eksempelfilm.2024.2160p.REMUX",
+            "source": "vfs",
+            "tier": "vfs"
+          },
+          "stream": {
+            "url": "/api/tv/v1/streams/sess-autoplay-1/master"
+          },
+          "aetherConfig": {
+            "preferDualLayerDolbyVision": true,
+            "dolbyVisionHandling": "automatic",
+            "matchContentEnabled": true,
+            "audioBridgeMode": "lossless"
+          }
+        }
+        """#
+
+        let session = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(json.utf8))
+        let client = LunaCoreClient(
+            baseURL: try XCTUnwrap(URL(string: "http://lunacore.local:8090")),
+            deviceID: "luna-test-device",
+            deviceToken: nil,
+            roomName: "Stua",
+            hardwareProfile: "dv-fel-714",
+            allowSelfSignedLanTLS: true
+        )
+        let comfort = ComfortPreferences(defaults: defaults)
+
+        let defaultOptions = PlayerViewModel.buildLoadOptions(
+            session: session,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0
+        )
+        XCTAssertTrue(defaultOptions.autoplay)
+
+        let pausedOptions = PlayerViewModel.buildLoadOptions(
+            session: session,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0,
+            autoplay: false
+        )
+        XCTAssertFalse(pausedOptions.autoplay)
+    }
+
+    func testForegroundRestoreNativeAudioActivationPredicate() {
+        XCTAssertFalse(PlayerViewModel.shouldActivateNativeAudioDuringRestore(shouldPlay: false, videoRoute: .loopback))
+        XCTAssertFalse(PlayerViewModel.shouldActivateNativeAudioDuringRestore(shouldPlay: false, videoRoute: .remoteBypass))
+        XCTAssertTrue(PlayerViewModel.shouldActivateNativeAudioDuringRestore(shouldPlay: true, videoRoute: .loopback))
+        XCTAssertTrue(PlayerViewModel.shouldActivateNativeAudioDuringRestore(shouldPlay: true, videoRoute: .remoteBypass))
+        XCTAssertFalse(PlayerViewModel.shouldActivateNativeAudioDuringRestore(shouldPlay: true, videoRoute: .software))
+        XCTAssertFalse(PlayerViewModel.shouldActivateNativeAudioDuringRestore(shouldPlay: true, videoRoute: .audio))
+        XCTAssertFalse(PlayerViewModel.shouldActivateNativeAudioDuringRestore(shouldPlay: true, videoRoute: .none))
+    }
+
+    @MainActor
+    func testForegroundRestoreTogglePlayPauseAndCurtainRevealGate() throws {
+        let suite = "luna.test.restorevm.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let engine = try AetherEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+
+        let comfort = ComfortPreferences(defaults: defaults)
+        let viewModel = PlayerViewModel(engine: engine, comfort: comfort)
+        viewModel.isResolving = false
+        viewModel.hasFirstFrameReadyForDisplay = true
+        viewModel.isAwaitingDisplaySwitch = false
+        viewModel.isRestoringFromBackground = true
+        viewModel.lastForegroundPlaybackWasPlaying = false
+
+        // Curtain stays closed while restore is in flight even if first-frame flag is true.
+        XCTAssertFalse(viewModel.isPictureReadyForReveal)
+
+        // Play/Pause during restore captures user override without dropping intent.
+        viewModel.togglePlayPause()
+        XCTAssertEqual(viewModel.userDesiredPlayingDuringRestore, true)
+        XCTAssertTrue(viewModel.lastForegroundPlaybackWasPlaying)
+
+        viewModel.togglePlayPause()
+        XCTAssertEqual(viewModel.userDesiredPlayingDuringRestore, false)
+        XCTAssertFalse(viewModel.lastForegroundPlaybackWasPlaying)
+
+        // Clearing restore flag before network heartbeat unlocks picture reveal immediately.
+        viewModel.isRestoringFromBackground = false
+        viewModel.userDesiredPlayingDuringRestore = nil
+        XCTAssertTrue(viewModel.isPictureReadyForReveal)
+
+        viewModel.needsNativeAudioActivationAfterPausedRestore = true
+        viewModel.teardownAndStop()
+        XCTAssertFalse(viewModel.needsNativeAudioActivationAfterPausedRestore)
+        XCTAssertFalse(viewModel.isRestoringFromBackground)
+        XCTAssertNil(viewModel.userDesiredPlayingDuringRestore)
+    }
+
     func testAetherBridgePinnedVersionMatchesUpgrade() {
         XCTAssertEqual(AetherBridgeInfo.pinnedAetherEngineVersion, "7.69.0")
     }

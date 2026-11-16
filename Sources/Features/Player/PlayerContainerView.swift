@@ -311,6 +311,11 @@ struct PlayerContainerView: View {
         .onChange(of: scenePhase) { _, phase in
             viewModel.handleScenePhaseChange(phase)
         }
+        .onChange(of: viewModel.isRestoringFromBackground) { _, restoring in
+            if restoring, isTopDrawerOpen, suspendedFatalErrorForDrawer == nil {
+                isTopDrawerOpen = false
+            }
+        }
         .onDisappear {
             hideBottomBarTask?.cancel()
             let store = sessionStore
