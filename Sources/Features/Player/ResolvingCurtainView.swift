@@ -144,6 +144,12 @@ struct ResolvingCurtainView: View {
     }
 
     private var statusLineText: String {
+        if viewModel.isRestoringFromBackground {
+            if viewModel.isAwaitingDisplaySwitch {
+                return "Tilpasser skjermens HDR og bildefrekvens…"
+            }
+            return "Gjenoppretter avspilling…"
+        }
         if !viewModel.isResolving {
             if !viewModel.hasFirstFrameReadyForDisplay {
                 return "Klargjør første bilde…"

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import UIKit
 import AetherBridge
 
@@ -54,8 +55,7 @@ extension PlayerViewModel {
             try await mountSessionInEngine(
                 resolvedSession,
                 client: client,
-                overrideStartPosition: request.startPositionSeconds ?? resolvedSession.stream.startPositionSeconds,
-                isInPlaceReplacement: isReplacement
+                overrideStartPosition: request.startPositionSeconds ?? resolvedSession.stream.startPositionSeconds
             )
             isResolving = false
             armFirstFrameFallbackWatchdog()
@@ -99,8 +99,7 @@ extension PlayerViewModel {
             try await mountSessionInEngine(
                 updatedSession,
                 client: client,
-                overrideStartPosition: updatedSession.stream.startPositionSeconds ?? currentPos,
-                isInPlaceReplacement: true
+                overrideStartPosition: updatedSession.stream.startPositionSeconds ?? currentPos
             )
             isSwitchingSource = false
         } catch LunaCoreError.unauthorized {
@@ -132,8 +131,7 @@ extension PlayerViewModel {
             try await mountSessionInEngine(
                 switchedSession,
                 client: client,
-                overrideStartPosition: switchedSession.stream.startPositionSeconds ?? fallbackPosition,
-                isInPlaceReplacement: true
+                overrideStartPosition: switchedSession.stream.startPositionSeconds ?? fallbackPosition
             )
             isSwitchingSource = false
         } catch {
@@ -145,16 +143,13 @@ extension PlayerViewModel {
     func mountSessionInEngine(
         _ session: TvPlaybackSession,
         client: LunaCoreClient,
-        overrideStartPosition: Double?,
-        isInPlaceReplacement: Bool = false
+        overrideStartPosition: Double?
     ) async throws {
         guard let streamURL = client.buildAbsoluteURL(session.stream.url) else {
             throw LunaCoreError.invalidURL(session.stream.url)
         }
 
-        await PlayerAudioSessionCoordinator.shared.prepareForPlayback(
-            isInPlaceReplacement: isInPlaceReplacement
-        )
+        PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
         try Task.checkCancellation()
 
         let previousToken = registeredStreamToken
@@ -185,6 +180,10 @@ extension PlayerViewModel {
                 startPosition: startPos > 0.5 ? startPos : nil,
                 options: options
             )
+            await PlayerAudioSessionCoordinator.shared.activateNativePlaybackIfNeeded(
+                videoRoute: engine.videoRoute
+            )
+            try Task.checkCancellation()
         } catch {
             if session.streamToken.count >= 8, session.streamToken != previousToken {
                 EngineLog.unregisterSecret(session.streamToken)
@@ -400,6 +399,184 @@ extension PlayerViewModel {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             guard !Task.isCancelled, let self else { return }
             self.transientBannerMessage = nil
+        }
+    }
+
+    // MARK: - Foreground Return Recovery
+
+    nonisolated static func isActiveTransportIntent(
+        playbackPhase: PlaybackPhase,
+        engineState: PlaybackState
+    ) -> Bool {
+        switch playbackPhase {
+        case .playing, .seeking, .rebuffering, .stalled:
+            return true
+        case .loading:
+            return engineState == .playing || engineState == .seeking
+        case .paused, .idle, .ended, .error:
+            return false
+        }
+    }
+
+    nonisolated static func resolvedPostRestorePlayingIntent(
+        defaultShouldPlay: Bool,
+        userOverride: Bool?
+    ) -> Bool {
+        userOverride ?? defaultShouldPlay
+    }
+
+    nonisolated static func shouldAttemptForegroundVideoRestore(
+        needsForegroundVideoRestore: Bool,
+        hasActiveSession: Bool,
+        isResolving: Bool,
+        isSwitchingSource: Bool,
+        isRestoringFromBackground: Bool,
+        hasFatalError: Bool,
+        didTeardown: Bool
+    ) -> Bool {
+        guard needsForegroundVideoRestore,
+              hasActiveSession,
+              !isResolving,
+              !isSwitchingSource,
+              !isRestoringFromBackground,
+              !hasFatalError,
+              !didTeardown else {
+            return false
+        }
+        return true
+    }
+
+    func updateInitialScenePhase(_ phase: ScenePhase) {
+        isForegroundActive = (phase == .active)
+    }
+
+    func handleScenePhaseChange(_ phase: ScenePhase) {
+        if phase == .active {
+            isForegroundActive = true
+            Task { @MainActor [weak self] in
+                await self?.attemptForegroundRecoveryIfNeeded()
+            }
+        } else if phase == .inactive || phase == .background {
+            if isForegroundActive,
+               !isRestoringFromBackground,
+               !isResolving,
+               !isSwitchingSource,
+               !engine.needsForegroundVideoRestore {
+                lastForegroundPlaybackWasPlaying = Self.isActiveTransportIntent(
+                    playbackPhase: playbackPhase,
+                    engineState: engine.state
+                )
+            }
+            isForegroundActive = false
+        }
+    }
+
+    func attemptForegroundRecoveryIfNeeded() async {
+        guard isForegroundActive else { return }
+        guard Self.shouldAttemptForegroundVideoRestore(
+            needsForegroundVideoRestore: engine.needsForegroundVideoRestore,
+            hasActiveSession: activeSession != nil,
+            isResolving: isResolving,
+            isSwitchingSource: isSwitchingSource,
+            isRestoringFromBackground: isRestoringFromBackground,
+            hasFatalError: fatalError != nil,
+            didTeardown: isTeardownCompleted
+        ) else {
+            return
+        }
+
+        PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+        let wasPlayingBeforeBackground = lastForegroundPlaybackWasPlaying
+        let savedResumePosition = max(0, engine.currentTime)
+        userDesiredPlayingDuringRestore = nil
+        isRestoringFromBackground = true
+        hasFirstFrameReadyForDisplay = false
+        firstFrameFallbackUnlocked = false
+        resolveStageKey = "reconnecting"
+        resolveStageLabel = "Gjenoppretter avspilling…"
+        resolvePercent = 90
+        updateIdleTimer(for: playbackPhase)
+
+        foregroundRestoreTask?.cancel()
+        foregroundRestoreTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performForegroundRestore(
+                defaultShouldPlay: wasPlayingBeforeBackground,
+                fallbackPositionSeconds: savedResumePosition
+            )
+        }
+    }
+
+    private func performForegroundRestore(
+        defaultShouldPlay: Bool,
+        fallbackPositionSeconds: Double
+    ) async {
+        defer {
+            isRestoringFromBackground = false
+            userDesiredPlayingDuringRestore = nil
+            updateIdleTimer(for: playbackPhase)
+        }
+
+        do {
+            try await engine.reloadAtCurrentPosition()
+            guard !Task.isCancelled, !isTeardownCompleted else { return }
+
+            await PlayerAudioSessionCoordinator.shared.activateNativePlaybackIfNeeded(
+                videoRoute: engine.videoRoute
+            )
+            guard !Task.isCancelled, !isTeardownCompleted else { return }
+
+            let shouldPlay = Self.resolvedPostRestorePlayingIntent(
+                defaultShouldPlay: defaultShouldPlay,
+                userOverride: userDesiredPlayingDuringRestore
+            )
+            if shouldPlay {
+                if engine.state != .playing {
+                    engine.play()
+                }
+            } else if engine.state != .paused {
+                engine.pause()
+            }
+            lastForegroundPlaybackWasPlaying = shouldPlay
+            armFirstFrameFallbackWatchdog()
+            if activeSession != nil {
+                await sendHeartbeatOnce(overrideState: shouldPlay ? "playing" : "paused")
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled, !isTeardownCompleted else { return }
+            let capturedShouldPlay = Self.resolvedPostRestorePlayingIntent(
+                defaultShouldPlay: defaultShouldPlay,
+                userOverride: userDesiredPlayingDuringRestore
+            )
+            if let client = activeClient, let baseReq = currentRequest {
+                isRestoringFromBackground = false
+                let resumeAt = fallbackPositionSeconds > 0.5 ? fallbackPositionSeconds : baseReq.startPositionSeconds
+                let retryReq = PlaybackLaunchRequest(
+                    itemId: baseReq.itemId,
+                    title: baseReq.title,
+                    seriesTitle: baseReq.seriesTitle,
+                    startPositionSeconds: resumeAt,
+                    candidateId: activeSession?.selectedCandidate.id ?? baseReq.candidateId,
+                    prepareToken: nil,
+                    backdropUrl: baseReq.backdropUrl,
+                    logoUrl: baseReq.logoUrl
+                )
+                currentRequest = retryReq
+                await runResolveAndLoad(request: retryReq, client: client, isReplacement: false)
+                guard !Task.isCancelled, !isTeardownCompleted, fatalError == nil else { return }
+                let finalShouldPlay = Self.resolvedPostRestorePlayingIntent(
+                    defaultShouldPlay: capturedShouldPlay,
+                    userOverride: userDesiredPlayingDuringRestore
+                )
+                if !finalShouldPlay, engine.state != .paused {
+                    engine.pause()
+                }
+                lastForegroundPlaybackWasPlaying = finalShouldPlay
+            } else {
+                fatalError = error.localizedDescription
+            }
         }
     }
 }

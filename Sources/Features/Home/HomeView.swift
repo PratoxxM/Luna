@@ -1,5 +1,20 @@
 import SwiftUI
 
+internal enum HomeRefreshPolicy {
+    nonisolated static func shouldRevalidateOnForeground(
+        isSceneActive: Bool,
+        isActiveTab: Bool,
+        hasActivePlayback: Bool,
+        secondsSinceLastValidation: TimeInterval,
+        minimumIntervalSeconds: TimeInterval = 10
+    ) -> Bool {
+        guard isSceneActive, isActiveTab, !hasActivePlayback else {
+            return false
+        }
+        return secondsSinceLastValidation >= minimumIntervalSeconds
+    }
+}
+
 struct HomeView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.scenePhase) private var scenePhase
@@ -173,10 +188,16 @@ struct HomeView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active, isActiveTab else { return }
-            if Date().timeIntervalSince(lastValidatedAt) >= 10 {
-                Task { await revalidateHome(forceUnconditional: false) }
+            let elapsed = Date().timeIntervalSince(lastValidatedAt)
+            guard HomeRefreshPolicy.shouldRevalidateOnForeground(
+                isSceneActive: phase == .active,
+                isActiveTab: isActiveTab,
+                hasActivePlayback: sessionStore.activePlaybackTarget != nil,
+                secondsSinceLastValidation: elapsed
+            ) else {
+                return
             }
+            Task { await revalidateHome(forceUnconditional: false) }
         }
         .onDisappear {
             mutationBannerTask?.cancel()

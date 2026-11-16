@@ -33,9 +33,10 @@ internal enum SeriesFlowEligibility {
         if remaining <= 30.0 && remaining >= -5.0 {
             return true
         }
-        if remaining <= 120.0,
+        if remaining >= -5.0,
            let ch = chapters.first(where: { currentTime >= $0.startSeconds && currentTime < $0.endSeconds }),
-           ch.kind == .credits {
+           ch.kind == .credits,
+           currentTime >= authoritativeDurationSeconds * 0.5 || remaining <= 120.0 {
             return true
         }
         return false

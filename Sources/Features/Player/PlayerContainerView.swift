@@ -3,6 +3,7 @@ import AetherBridge
 
 struct PlayerContainerView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(\.scenePhase) private var scenePhase
 
     let engine: AetherEngine
     @ObservedObject var comfort: ComfortPreferences
@@ -255,7 +256,12 @@ struct PlayerContainerView: View {
             }
         }
         .onChange(of: viewModel.playbackPhase) { _, phase in
-            guard phase == .ended, !viewModel.isResolving, !viewModel.isSwitchingSource else { return }
+            guard phase == .ended,
+                  !viewModel.isResolving,
+                  !viewModel.isSwitchingSource,
+                  !viewModel.isRestoringFromBackground else {
+                return
+            }
             if let next = viewModel.activeSession?.nextEpisode,
                comfort.autoPlayNextEpisode {
                 viewModel.playNextEpisode(next)
@@ -299,7 +305,11 @@ struct PlayerContainerView: View {
                 store.unpairDevice()
                 onDismiss()
             }
+            viewModel.updateInitialScenePhase(scenePhase)
             viewModel.start(request: initialRequest, client: client)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            viewModel.handleScenePhaseChange(phase)
         }
         .onDisappear {
             hideBottomBarTask?.cancel()

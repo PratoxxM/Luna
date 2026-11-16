@@ -1,4 +1,4 @@
-import AVFoundation
+import AetherBridge
 import Foundation
 import XCTest
 @testable import Luna
@@ -85,42 +85,71 @@ final class PlaybackAndNavigationFixesTests: XCTestCase {
         XCTAssertNil(controller.preparedForItemId)
     }
 
-    func testRapidReentrySettleDelayGuardsRecentDisplayCriteriaReset() {
-        XCTAssertEqual(PlayerAudioSessionCoordinator.rapidReentrySettleDelayMs(elapsedSinceResetMs: nil), 0)
-        XCTAssertEqual(PlayerAudioSessionCoordinator.rapidReentrySettleDelayMs(elapsedSinceResetMs: -5), 0)
-        XCTAssertEqual(PlayerAudioSessionCoordinator.rapidReentrySettleDelayMs(elapsedSinceResetMs: 0), 1100)
-        XCTAssertEqual(PlayerAudioSessionCoordinator.rapidReentrySettleDelayMs(elapsedSinceResetMs: 300), 800)
-        XCTAssertEqual(PlayerAudioSessionCoordinator.rapidReentrySettleDelayMs(elapsedSinceResetMs: 1100), 0)
-        XCTAssertEqual(PlayerAudioSessionCoordinator.rapidReentrySettleDelayMs(elapsedSinceResetMs: 2500), 0)
+    func testNativeAudioSessionActivationOnlyAppliesToNativeRoutes() {
+        XCTAssertTrue(PlayerAudioSessionCoordinator.shouldActivateNativeAudioSession(for: .loopback))
+        XCTAssertTrue(PlayerAudioSessionCoordinator.shouldActivateNativeAudioSession(for: .remoteBypass))
+        XCTAssertFalse(PlayerAudioSessionCoordinator.shouldActivateNativeAudioSession(for: .software))
+        XCTAssertFalse(PlayerAudioSessionCoordinator.shouldActivateNativeAudioSession(for: .audio))
+        XCTAssertFalse(PlayerAudioSessionCoordinator.shouldActivateNativeAudioSession(for: .none))
     }
 
-    func testRouteChangeReactivationFilter() {
-        XCTAssertFalse(PlayerAudioSessionCoordinator.shouldReactivateOnRouteChange(reasonRawValue: nil))
-        XCTAssertTrue(
-            PlayerAudioSessionCoordinator.shouldReactivateOnRouteChange(
-                reasonRawValue: AVAudioSession.RouteChangeReason.newDeviceAvailable.rawValue
-            )
+    func testDeferredDisplayCriteriaResetStatePredicate() {
+        XCTAssertTrue(PlayerAudioSessionCoordinator.shouldExecuteDeferredDisplayCriteriaReset(engineState: .idle))
+        XCTAssertFalse(PlayerAudioSessionCoordinator.shouldExecuteDeferredDisplayCriteriaReset(engineState: .loading))
+        XCTAssertFalse(PlayerAudioSessionCoordinator.shouldExecuteDeferredDisplayCriteriaReset(engineState: .playing))
+        XCTAssertFalse(PlayerAudioSessionCoordinator.shouldExecuteDeferredDisplayCriteriaReset(engineState: .paused))
+        XCTAssertFalse(PlayerAudioSessionCoordinator.shouldExecuteDeferredDisplayCriteriaReset(engineState: .seeking))
+        XCTAssertFalse(PlayerAudioSessionCoordinator.shouldExecuteDeferredDisplayCriteriaReset(engineState: .ended))
+        XCTAssertFalse(PlayerAudioSessionCoordinator.shouldExecuteDeferredDisplayCriteriaReset(engineState: .error("err")))
+    }
+
+    @MainActor
+    func testDeferredDisplayCriteriaResetSchedulesCancelsAndFlushesSafely() async {
+        final class ResetCounter {
+            var count = 0
+        }
+
+        let coordinator = PlayerAudioSessionCoordinator()
+        let counter = ResetCounter()
+
+        // Cancelled deferred reset must never fire
+        coordinator.scheduleDeferredDisplayCriteriaReset(
+            delayNanoseconds: 30_000_000,
+            shouldExecute: { true },
+            performReset: { counter.count += 1 }
         )
-        XCTAssertTrue(
-            PlayerAudioSessionCoordinator.shouldReactivateOnRouteChange(
-                reasonRawValue: AVAudioSession.RouteChangeReason.routeConfigurationChange.rawValue
-            )
+        coordinator.cancelDeferredDisplayCriteriaReset()
+        try? await Task.sleep(nanoseconds: 70_000_000)
+        XCTAssertEqual(counter.count, 0)
+
+        // When engine state is no longer eligible (e.g. resolving/playing), deferred reset skips execution
+        coordinator.scheduleDeferredDisplayCriteriaReset(
+            delayNanoseconds: 25_000_000,
+            shouldExecute: { false },
+            performReset: { counter.count += 1 }
         )
-        XCTAssertTrue(
-            PlayerAudioSessionCoordinator.shouldReactivateOnRouteChange(
-                reasonRawValue: AVAudioSession.RouteChangeReason.override.rawValue
-            )
+        try? await Task.sleep(nanoseconds: 70_000_000)
+        XCTAssertEqual(counter.count, 0)
+
+        // Eligible idle reset executes cleanly after delay
+        coordinator.scheduleDeferredDisplayCriteriaReset(
+            delayNanoseconds: 25_000_000,
+            shouldExecute: { true },
+            performReset: { counter.count += 1 }
         )
-        XCTAssertTrue(
-            PlayerAudioSessionCoordinator.shouldReactivateOnRouteChange(
-                reasonRawValue: AVAudioSession.RouteChangeReason.categoryChange.rawValue
-            )
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertEqual(counter.count, 1)
+
+        // Immediate flush executes pending eligible reset once
+        coordinator.scheduleDeferredDisplayCriteriaReset(
+            delayNanoseconds: 1_000_000_000,
+            shouldExecute: { true },
+            performReset: { counter.count += 1 }
         )
-        XCTAssertFalse(
-            PlayerAudioSessionCoordinator.shouldReactivateOnRouteChange(
-                reasonRawValue: AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue
-            )
-        )
+        coordinator.flushPendingDeferredResetIfEligibleForTesting()
+        XCTAssertEqual(counter.count, 2)
+        coordinator.flushPendingDeferredResetIfEligibleForTesting()
+        XCTAssertEqual(counter.count, 2)
     }
 
     func testAuthoritativeStreamDurationIgnoresFallbackMetadataRuntime() {
@@ -281,5 +310,198 @@ final class PlaybackAndNavigationFixesTests: XCTestCase {
                 chapters: []
             )
         )
+    }
+
+    func testNextEpisodePromptShowsAcrossLongMultiMinuteCreditsChapters() {
+        let totalDuration: Double = 2700 // 45-minute episode
+        let longCredits: [PlaybackChapter] = [
+            PlaybackChapter(
+                id: "false-early",
+                index: 0,
+                title: "Outro",
+                startSeconds: 45,
+                endSeconds: 90,
+                kind: .credits
+            ),
+            PlaybackChapter(
+                id: "main-credits",
+                index: 1,
+                title: "End Credits",
+                startSeconds: 2340, // 6 minutes before end
+                endSeconds: 2640,
+                kind: .credits
+            ),
+            PlaybackChapter(
+                id: "stinger",
+                index: 2,
+                title: "Preview",
+                startSeconds: 2640,
+                endSeconds: 2700,
+                kind: .chapter
+            ),
+        ]
+
+        // 5.5 minutes remaining inside genuine multi-minute credits MUST show Next Episode pill
+        XCTAssertTrue(
+            SeriesFlowEligibility.shouldShowNextEpisodePrompt(
+                hasNextEpisode: true,
+                isDismissedForCurrentSession: false,
+                currentTime: 2370,
+                authoritativeDurationSeconds: totalDuration,
+                chapters: longCredits
+            )
+        )
+
+        // Post-credits non-credits chapter with 50s remaining still hides until final 30s
+        XCTAssertFalse(
+            SeriesFlowEligibility.shouldShowNextEpisodePrompt(
+                hasNextEpisode: true,
+                isDismissedForCurrentSession: false,
+                currentTime: 2650,
+                authoritativeDurationSeconds: totalDuration,
+                chapters: longCredits
+            )
+        )
+
+        // Erroneous early chapter in first half (> 120s remaining) stays suppressed
+        XCTAssertFalse(
+            SeriesFlowEligibility.shouldShowNextEpisodePrompt(
+                hasNextEpisode: true,
+                isDismissedForCurrentSession: false,
+                currentTime: 60,
+                authoritativeDurationSeconds: totalDuration,
+                chapters: longCredits
+            )
+        )
+    }
+
+    func testForegroundRestoreDecisionAndTransportIntentPreservation() {
+        XCTAssertTrue(
+            PlayerViewModel.shouldAttemptForegroundVideoRestore(
+                needsForegroundVideoRestore: true,
+                hasActiveSession: true,
+                isResolving: false,
+                isSwitchingSource: false,
+                isRestoringFromBackground: false,
+                hasFatalError: false,
+                didTeardown: false
+            )
+        )
+        XCTAssertFalse(
+            PlayerViewModel.shouldAttemptForegroundVideoRestore(
+                needsForegroundVideoRestore: false,
+                hasActiveSession: true,
+                isResolving: false,
+                isSwitchingSource: false,
+                isRestoringFromBackground: false,
+                hasFatalError: false,
+                didTeardown: false
+            )
+        )
+        XCTAssertFalse(
+            PlayerViewModel.shouldAttemptForegroundVideoRestore(
+                needsForegroundVideoRestore: true,
+                hasActiveSession: false,
+                isResolving: false,
+                isSwitchingSource: false,
+                isRestoringFromBackground: false,
+                hasFatalError: false,
+                didTeardown: false
+            )
+        )
+        XCTAssertFalse(
+            PlayerViewModel.shouldAttemptForegroundVideoRestore(
+                needsForegroundVideoRestore: true,
+                hasActiveSession: true,
+                isResolving: false,
+                isSwitchingSource: false,
+                isRestoringFromBackground: true,
+                hasFatalError: false,
+                didTeardown: false
+            )
+        )
+        XCTAssertFalse(
+            PlayerViewModel.shouldAttemptForegroundVideoRestore(
+                needsForegroundVideoRestore: true,
+                hasActiveSession: true,
+                isResolving: false,
+                isSwitchingSource: false,
+                isRestoringFromBackground: false,
+                hasFatalError: true,
+                didTeardown: false
+            )
+        )
+        XCTAssertFalse(
+            PlayerViewModel.shouldAttemptForegroundVideoRestore(
+                needsForegroundVideoRestore: true,
+                hasActiveSession: true,
+                isResolving: false,
+                isSwitchingSource: false,
+                isRestoringFromBackground: false,
+                hasFatalError: false,
+                didTeardown: true
+            )
+        )
+
+        XCTAssertTrue(PlayerViewModel.isActiveTransportIntent(playbackPhase: .playing, engineState: .playing))
+        XCTAssertTrue(PlayerViewModel.isActiveTransportIntent(playbackPhase: .rebuffering, engineState: .playing))
+        XCTAssertTrue(PlayerViewModel.isActiveTransportIntent(playbackPhase: .loading, engineState: .playing))
+        XCTAssertFalse(PlayerViewModel.isActiveTransportIntent(playbackPhase: .loading, engineState: .paused))
+        XCTAssertFalse(PlayerViewModel.isActiveTransportIntent(playbackPhase: .paused, engineState: .paused))
+        XCTAssertFalse(PlayerViewModel.isActiveTransportIntent(playbackPhase: .ended, engineState: .ended))
+        XCTAssertFalse(PlayerViewModel.isActiveTransportIntent(playbackPhase: .error("x"), engineState: .error("x")))
+
+        // Preserves paused vs playing across restore, and lets explicit user toggle win
+        XCTAssertFalse(PlayerViewModel.resolvedPostRestorePlayingIntent(defaultShouldPlay: false, userOverride: nil))
+        XCTAssertTrue(PlayerViewModel.resolvedPostRestorePlayingIntent(defaultShouldPlay: true, userOverride: nil))
+        XCTAssertTrue(PlayerViewModel.resolvedPostRestorePlayingIntent(defaultShouldPlay: false, userOverride: true))
+        XCTAssertFalse(PlayerViewModel.resolvedPostRestorePlayingIntent(defaultShouldPlay: true, userOverride: false))
+    }
+
+    func testHomeRefreshPolicySkipsRevalidationDuringActivePlayback() {
+        XCTAssertFalse(
+            HomeRefreshPolicy.shouldRevalidateOnForeground(
+                isSceneActive: true,
+                isActiveTab: true,
+                hasActivePlayback: true,
+                secondsSinceLastValidation: 120
+            )
+        )
+        XCTAssertFalse(
+            HomeRefreshPolicy.shouldRevalidateOnForeground(
+                isSceneActive: false,
+                isActiveTab: true,
+                hasActivePlayback: false,
+                secondsSinceLastValidation: 120
+            )
+        )
+        XCTAssertFalse(
+            HomeRefreshPolicy.shouldRevalidateOnForeground(
+                isSceneActive: true,
+                isActiveTab: false,
+                hasActivePlayback: false,
+                secondsSinceLastValidation: 120
+            )
+        )
+        XCTAssertFalse(
+            HomeRefreshPolicy.shouldRevalidateOnForeground(
+                isSceneActive: true,
+                isActiveTab: true,
+                hasActivePlayback: false,
+                secondsSinceLastValidation: 9.9
+            )
+        )
+        XCTAssertTrue(
+            HomeRefreshPolicy.shouldRevalidateOnForeground(
+                isSceneActive: true,
+                isActiveTab: true,
+                hasActivePlayback: false,
+                secondsSinceLastValidation: 10.0
+            )
+        )
+    }
+
+    func testAetherBridgePinnedVersionMatchesUpgrade() {
+        XCTAssertEqual(AetherBridgeInfo.pinnedAetherEngineVersion, "7.69.0")
     }
 }

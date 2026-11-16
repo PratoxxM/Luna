@@ -18,6 +18,9 @@ struct LunaApp: App {
             created.ownsSoftwareNowPlaying = true
             created.ownsVideoNowPlayingSession = true
             created.ownsVideoNowPlayingCommands = true
+            // Luna plays no competing audio outside AetherEngine; let final teardown deactivate
+            // the shared AVAudioSession off-main to release any HDMI Atmos/EAC3 passthrough ring.
+            created.deactivatesAudioSessionOnStop = true
             return created
         } catch {
             fatalError("AetherEngine initialization failed: \(error)")

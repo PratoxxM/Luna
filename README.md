@@ -1,10 +1,10 @@
 # Luna for tvOS
 
-**Luna** (`v2.3.0`) is a native SwiftUI tvOS media player built on [AetherEngine](https://github.com/superuser404notfound/AetherEngine) (`7.65.0`) for the **LunaCore** `/api/tv/v1` native TV engine.
+**Luna** (`v2.3.6`) is a native SwiftUI tvOS media player built on [AetherEngine](https://github.com/superuser404notfound/AetherEngine) (`7.69.0`) for the **LunaCore** `/api/tv/v1` native TV engine.
 
 ## Highlights
 
-- **Dual-Layer Dolby Vision & Spatial Object Audio**: Linked against `AetherEngine 7.65.0` via `Packages/AetherBridge` with `DualLayerDolbyVision`, `DolbyVisionFelCurves`, `DolbyVisionStillReshaping`, `TrueHDObjectAudio`, and `DTSXObjectAudio` enabled.
+- **Dual-Layer Dolby Vision & Spatial Object Audio**: Linked against `AetherEngine 7.69.0` via `Packages/AetherBridge` with `DualLayerDolbyVision`, `DolbyVisionFelCurves`, `DolbyVisionStillReshaping`, `TrueHDObjectAudio`, and `DTSXObjectAudio` enabled.
 - **Room & Hardware Profiles**:
   - `dv-fel-714` (*Kjellerstua*): Prioritizes 4K UHD BluRay Remuxes with Dolby Vision Profile 7 FEL / Profile 8 and renders TrueHD Atmos / DTS:X into a `7.1.4` spatial bed.
   - `hdr10-512` (*Stua*): Prioritizes 4K HDR10+ / HDR10 streams with `baseLayerOnly` DV handling and renders spatial audio into a `5.1.2` bed.

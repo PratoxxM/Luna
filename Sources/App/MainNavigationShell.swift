@@ -108,6 +108,10 @@ struct MainNavigationShell: View {
             await refreshBootstrapProfile()
         }
         .onChange(of: scenePhase) { _, phase in
+            if phase == .background && sessionStore.activePlaybackTarget == nil {
+                PlayerAudioSessionCoordinator.shared.flushDeferredDisplayCriteriaResetIfIdle(engine: engine)
+                return
+            }
             guard phase == .active,
                   sessionStore.activePlaybackTarget == nil,
                   Date().timeIntervalSince(lastBootstrapRefreshAt) >= 30 else {

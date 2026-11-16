@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import UIKit
+import SwiftUI
 import Combine
 import AetherBridge
 
@@ -28,6 +29,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var isAwaitingDisplaySwitch: Bool = false
     @Published var startupProgress: StartupProgress?
     @Published var firstFrameFallbackUnlocked: Bool = false
+    @Published var isRestoringFromBackground: Bool = false
 
     // Session, Sources & Next Episode
     @Published private(set) var currentRequest: PlaybackLaunchRequest?
@@ -96,8 +98,12 @@ final class PlayerViewModel: ObservableObject {
     private var smartRuleTask: Task<Void, Never>?
     var switchSourceTask: Task<Void, Never>?
     var audioDelayCommitTask: Task<Void, Never>?
+    var foregroundRestoreTask: Task<Void, Never>?
     private var didTeardown: Bool = false
     private var lastObservedPhase: PlaybackPhase = .idle
+    var isForegroundActive: Bool = true
+    var lastForegroundPlaybackWasPlaying: Bool = false
+    var userDesiredPlayingDuringRestore: Bool?
     var lastReportedServerState: String?
     var onUnauthorized: (() -> Void)?
 
@@ -117,7 +123,7 @@ final class PlayerViewModel: ObservableObject {
         if isSwitchingSource {
             return true
         }
-        if isResolving {
+        if isResolving || isRestoringFromBackground || engine.needsForegroundVideoRestore {
             return false
         }
         if firstFrameFallbackUnlocked {
@@ -136,6 +142,12 @@ final class PlayerViewModel: ObservableObject {
     // MARK: - Lifecycle & Commands
 
     func start(request: PlaybackLaunchRequest, client: LunaCoreClient?) {
+        PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+        foregroundRestoreTask?.cancel()
+        foregroundRestoreTask = nil
+        isRestoringFromBackground = false
+        userDesiredPlayingDuringRestore = nil
+        lastForegroundPlaybackWasPlaying = false
         didTeardown = false
         fatalError = nil
         firstFrameFallbackUnlocked = false
@@ -158,6 +170,11 @@ final class PlayerViewModel: ObservableObject {
 
     func playNextEpisode(_ next: TvNextEpisodeSummary) {
         guard let client = activeClient, let current = activeSession else { return }
+        PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+        foregroundRestoreTask?.cancel()
+        foregroundRestoreTask = nil
+        isRestoringFromBackground = false
+        userDesiredPlayingDuringRestore = nil
         resolveTask?.cancel()
         switchSourceTask?.cancel()
         switchSourceTask = nil
@@ -213,11 +230,29 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func togglePlayPause() {
-        PlayerAudioSessionCoordinator.shared.togglePlayPause(engine: engine, phase: playbackPhase)
+        if isRestoringFromBackground {
+            let currentTarget = userDesiredPlayingDuringRestore ?? lastForegroundPlaybackWasPlaying
+            let nextTarget = !currentTarget
+            userDesiredPlayingDuringRestore = nextTarget
+            lastForegroundPlaybackWasPlaying = nextTarget
+            return
+        }
+        engine.togglePlayPause()
+        if isForegroundActive && !engine.needsForegroundVideoRestore {
+            lastForegroundPlaybackWasPlaying = Self.isActiveTransportIntent(
+                playbackPhase: engine.playbackPhase,
+                engineState: engine.state
+            )
+        }
     }
 
     func triggerSourceSwitch(to candidateId: String) {
         guard activeClient != nil, activeSession != nil else { return }
+        PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+        foregroundRestoreTask?.cancel()
+        foregroundRestoreTask = nil
+        isRestoringFromBackground = false
+        userDesiredPlayingDuringRestore = nil
         fatalError = nil
         isSwitchingSource = true
         audioDelayCommitTask?.cancel()
@@ -386,6 +421,10 @@ final class PlayerViewModel: ObservableObject {
     func teardownAndStop(onComplete: (@MainActor @Sendable () -> Void)? = nil) {
         guard !didTeardown else { return }
         didTeardown = true
+        foregroundRestoreTask?.cancel()
+        foregroundRestoreTask = nil
+        isRestoringFromBackground = false
+        userDesiredPlayingDuringRestore = nil
         resolveTask?.cancel()
         resolveTask = nil
         switchSourceTask?.cancel()
@@ -414,9 +453,8 @@ final class PlayerViewModel: ObservableObject {
 
         PlayerNowPlayingCoordinator.clear(engine: engine)
         cancellables.removeAll()
-        PlayerAudioSessionCoordinator.shared.notePlaybackStopped()
-        engine.stop(resetDisplayCriteria: true)
-        PlayerAudioSessionCoordinator.shared.noteDisplayCriteriaReset()
+        engine.stop(resetDisplayCriteria: false, finalTeardown: true)
+        PlayerAudioSessionCoordinator.shared.scheduleDeferredDisplayCriteriaReset(engine: engine)
 
         if let tok = registeredStreamToken, tok.count >= 8 {
             EngineLog.unregisterSecret(tok)
@@ -460,6 +498,16 @@ final class PlayerViewModel: ObservableObject {
                 self.lastObservedPhase = phase
                 self.playbackPhase = phase
                 self.updateIdleTimer(for: phase)
+                if self.isForegroundActive,
+                   !self.isRestoringFromBackground,
+                   !self.isResolving,
+                   !self.isSwitchingSource,
+                   !self.engine.needsForegroundVideoRestore {
+                    self.lastForegroundPlaybackWasPlaying = Self.isActiveTransportIntent(
+                        playbackPhase: phase,
+                        engineState: self.engine.state
+                    )
+                }
                 if case .error(let errMsg) = phase {
                     self.heartbeatTask?.cancel()
                     self.heartbeatTask = nil
@@ -473,11 +521,12 @@ final class PlayerViewModel: ObservableObject {
                         await self?.sendHeartbeatOnce(overrideState: "stopped")
                     }
                 } else if phase == .paused || phase == .ended {
+                    guard !self.isRestoringFromBackground else { return }
                     Task { @MainActor [weak self] in
                         await self?.sendHeartbeatOnce(overrideState: phase == .ended ? "stopped" : "paused", completed: phase == .ended)
                     }
                 } else if phase == .playing, previousPhase != .playing {
-                    PlayerAudioSessionCoordinator.shared.ensureActiveAfterDisplaySwitch()
+                    guard !self.isRestoringFromBackground else { return }
                     if self.lastReportedServerState != nil,
                        self.lastReportedServerState != "playing" {
                         Task { @MainActor [weak self] in
@@ -489,16 +538,7 @@ final class PlayerViewModel: ObservableObject {
             .store(in: &cancellables)
 
         engine.$hasFirstFrameReadyForDisplay.assign(to: &$hasFirstFrameReadyForDisplay)
-        engine.$isAwaitingDisplaySwitch
-            .sink { [weak self] awaiting in
-                guard let self else { return }
-                let wasAwaiting = self.isAwaitingDisplaySwitch
-                self.isAwaitingDisplaySwitch = awaiting
-                if wasAwaiting, !awaiting, self.activeSession != nil {
-                    PlayerAudioSessionCoordinator.shared.ensureActiveAfterDisplaySwitch()
-                }
-            }
-            .store(in: &cancellables)
+        engine.$isAwaitingDisplaySwitch.assign(to: &$isAwaitingDisplaySwitch)
         engine.$startupProgress.assign(to: &$startupProgress)
 
         engine.$duration
@@ -563,8 +603,12 @@ final class PlayerViewModel: ObservableObject {
         case .playing, .loading, .seeking, .rebuffering, .stalled:
             UIApplication.shared.isIdleTimerDisabled = true
         case .paused, .idle, .ended, .error:
-            UIApplication.shared.isIdleTimerDisabled = isResolving || isScrubbing
+            UIApplication.shared.isIdleTimerDisabled = isResolving || isScrubbing || isRestoringFromBackground
         }
+    }
+
+    var isTeardownCompleted: Bool {
+        didTeardown
     }
 }
 

@@ -21,7 +21,7 @@ enum NowPlayingArtworkFactory {
 }
 
 /// Publishes tvOS Control Center / iPhone Remote Now Playing metadata, chapter/next-episode
-/// command handlers, and decoded poster/backdrop artwork via `AetherEngine 7.65.0`.
+/// command handlers, and decoded poster/backdrop artwork via `AetherEngine 7.69.0`.
 @MainActor
 enum PlayerNowPlayingCoordinator {
     static func publish(
