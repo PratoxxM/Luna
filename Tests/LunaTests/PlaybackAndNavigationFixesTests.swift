@@ -1,5 +1,6 @@
 import AetherBridge
 import Foundation
+import os
 import XCTest
 @testable import Luna
 
@@ -107,7 +108,28 @@ final class PlaybackAndNavigationFixesTests: XCTestCase {
     func testDeferredDisplayCriteriaResetSchedulesCancelsAndFlushesSafely() async {
         final class ResetCounter {
             var count = 0
+            var eligible = true
         }
+
+        XCTAssertGreaterThanOrEqual(PlayerAudioSessionCoordinator.defaultDisplayCriteriaResetDelayNs, 15_000_000_000)
+        XCTAssertTrue(
+            PlayerAudioSessionCoordinator.shouldFlushDeferredResetOnDetailDisappear(
+                isLaunchingPlayback: false,
+                isShowingSourcePicker: false
+            )
+        )
+        XCTAssertFalse(
+            PlayerAudioSessionCoordinator.shouldFlushDeferredResetOnDetailDisappear(
+                isLaunchingPlayback: true,
+                isShowingSourcePicker: false
+            )
+        )
+        XCTAssertFalse(
+            PlayerAudioSessionCoordinator.shouldFlushDeferredResetOnDetailDisappear(
+                isLaunchingPlayback: false,
+                isShowingSourcePicker: true
+            )
+        )
 
         let coordinator = PlayerAudioSessionCoordinator()
         let counter = ResetCounter()
@@ -140,15 +162,24 @@ final class PlaybackAndNavigationFixesTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 80_000_000)
         XCTAssertEqual(counter.count, 1)
 
-        // Immediate flush executes pending eligible reset once
+        // Detail disappear flushes pending idle reset only when leaving without launching playback or source picker
+        counter.eligible = false
         coordinator.scheduleDeferredDisplayCriteriaReset(
             delayNanoseconds: 1_000_000_000,
-            shouldExecute: { true },
+            shouldExecute: { counter.eligible },
             performReset: { counter.count += 1 }
         )
-        coordinator.flushPendingDeferredResetIfEligibleForTesting()
+        coordinator.handleDetailDisappear(isLaunchingPlayback: false, isShowingSourcePicker: false)
+        XCTAssertEqual(counter.count, 1)
+
+        counter.eligible = true
+        coordinator.handleDetailDisappear(isLaunchingPlayback: true, isShowingSourcePicker: false)
+        coordinator.handleDetailDisappear(isLaunchingPlayback: false, isShowingSourcePicker: true)
+        XCTAssertEqual(counter.count, 1)
+
+        coordinator.handleDetailDisappear(isLaunchingPlayback: false, isShowingSourcePicker: false)
         XCTAssertEqual(counter.count, 2)
-        coordinator.flushPendingDeferredResetIfEligibleForTesting()
+        coordinator.handleDetailDisappear(isLaunchingPlayback: false, isShowingSourcePicker: false)
         XCTAssertEqual(counter.count, 2)
     }
 
@@ -315,64 +346,47 @@ final class PlaybackAndNavigationFixesTests: XCTestCase {
     func testNextEpisodePromptShowsAcrossLongMultiMinuteCreditsChapters() {
         let totalDuration: Double = 2700 // 45-minute episode
         let longCredits: [PlaybackChapter] = [
-            PlaybackChapter(
-                id: "false-early",
-                index: 0,
-                title: "Outro",
-                startSeconds: 45,
-                endSeconds: 90,
-                kind: .credits
-            ),
-            PlaybackChapter(
-                id: "main-credits",
-                index: 1,
-                title: "End Credits",
-                startSeconds: 2340, // 6 minutes before end
-                endSeconds: 2640,
-                kind: .credits
-            ),
-            PlaybackChapter(
-                id: "stinger",
-                index: 2,
-                title: "Preview",
-                startSeconds: 2640,
-                endSeconds: 2700,
-                kind: .chapter
-            ),
+            PlaybackChapter(id: "false-early", index: 0, title: "Outro", startSeconds: 45, endSeconds: 90, kind: .credits),
+            PlaybackChapter(id: "bogus-mid", index: 1, title: "Outro", startSeconds: 1400, endSeconds: 1500, kind: .credits),
+            PlaybackChapter(id: "main-credits", index: 2, title: "End Credits", startSeconds: 2280, endSeconds: 2640, kind: .credits),
+            PlaybackChapter(id: "stinger", index: 3, title: "Preview", startSeconds: 2640, endSeconds: 2700, kind: .chapter),
         ]
-
-        // 5.5 minutes remaining inside genuine multi-minute credits MUST show Next Episode pill
-        XCTAssertTrue(
+        let check: (Double, Double, [PlaybackChapter]) -> Bool = { t, dur, ch in
             SeriesFlowEligibility.shouldShowNextEpisodePrompt(
                 hasNextEpisode: true,
                 isDismissedForCurrentSession: false,
-                currentTime: 2370,
-                authoritativeDurationSeconds: totalDuration,
-                chapters: longCredits
+                currentTime: t,
+                authoritativeDurationSeconds: dur,
+                chapters: ch
             )
-        )
+        }
+
+        // Up to 420s (7m) remaining inside genuine multi-minute credits MUST show Next Episode pill
+        XCTAssertTrue(check(2280, totalDuration, longCredits)) // exact 420s boundary
+        XCTAssertTrue(check(2370, totalDuration, longCredits))
+
+        // Just before 420s remaining (e.g. 421s left) stays suppressed
+        let extendedCredits = [
+            PlaybackChapter(id: "too-early-credits", index: 0, title: "End Credits", startSeconds: 2200, endSeconds: 2640, kind: .credits)
+        ]
+        XCTAssertFalse(check(2279, totalDuration, extendedCredits))
+
+        // Mid-episode >50% bogus .credits marker (>420s remaining) MUST stay suppressed
+        XCTAssertFalse(check(1450, totalDuration, longCredits))
 
         // Post-credits non-credits chapter with 50s remaining still hides until final 30s
-        XCTAssertFalse(
-            SeriesFlowEligibility.shouldShowNextEpisodePrompt(
-                hasNextEpisode: true,
-                isDismissedForCurrentSession: false,
-                currentTime: 2650,
-                authoritativeDurationSeconds: totalDuration,
-                chapters: longCredits
-            )
-        )
+        XCTAssertFalse(check(2650, totalDuration, longCredits))
 
-        // Erroneous early chapter in first half (> 120s remaining) stays suppressed
-        XCTAssertFalse(
-            SeriesFlowEligibility.shouldShowNextEpisodePrompt(
-                hasNextEpisode: true,
-                isDismissedForCurrentSession: false,
-                currentTime: 60,
-                authoritativeDurationSeconds: totalDuration,
-                chapters: longCredits
-            )
-        )
+        // Erroneous early chapter in first half stays suppressed
+        XCTAssertFalse(check(60, totalDuration, longCredits))
+
+        // Short 10-minute episode: .credits before 50% stays suppressed even within 420s remaining
+        let shortChapters = [
+            PlaybackChapter(id: "short-bogus", index: 0, title: "Credits", startSeconds: 200, endSeconds: 260, kind: .credits),
+            PlaybackChapter(id: "short-real", index: 1, title: "End Credits", startSeconds: 480, endSeconds: 590, kind: .credits),
+        ]
+        XCTAssertFalse(check(220, 600, shortChapters))
+        XCTAssertTrue(check(500, 600, shortChapters))
     }
 
     func testForegroundRestoreDecisionAndTransportIntentPreservation() {
@@ -580,6 +594,118 @@ final class PlaybackAndNavigationFixesTests: XCTestCase {
         XCTAssertFalse(PlayerViewModel.shouldActivateNativeAudioDuringRestore(shouldPlay: true, videoRoute: .software))
         XCTAssertFalse(PlayerViewModel.shouldActivateNativeAudioDuringRestore(shouldPlay: true, videoRoute: .audio))
         XCTAssertFalse(PlayerViewModel.shouldActivateNativeAudioDuringRestore(shouldPlay: true, videoRoute: .none))
+        XCTAssertTrue(PlayerViewModel.shouldActivateNativeAudioBeforePlayOnResume(wasPlaying: false, needsNativeAudioActivationAfterPausedRestore: true))
+        XCTAssertFalse(PlayerViewModel.shouldActivateNativeAudioBeforePlayOnResume(wasPlaying: true, needsNativeAudioActivationAfterPausedRestore: true))
+        XCTAssertFalse(PlayerViewModel.shouldActivateNativeAudioBeforePlayOnResume(wasPlaying: false, needsNativeAudioActivationAfterPausedRestore: false))
+    }
+
+    @MainActor
+    func testPausedRestoreResumeActivatesNativeAudioBeforePlayAndGuardsCancellation() async throws {
+        actor ActivationGate {
+            private var startWaiter: CheckedContinuation<Void, Never>?
+            private var releaseGate: CheckedContinuation<Void, Never>?
+            private var started = false
+
+            func reset() {
+                startWaiter = nil
+                releaseGate = nil
+                started = false
+            }
+
+            func waitForGate(log: OSAllocatedUnfairLock<[String]>) async {
+                log.withLock { $0.append("activate_start") }
+                started = true
+                startWaiter?.resume()
+                startWaiter = nil
+                await withCheckedContinuation { releaseGate = $0 }
+                log.withLock { $0.append("activate_end") }
+            }
+
+            func waitUntilStarted() async {
+                if started { return }
+                await withCheckedContinuation { startWaiter = $0 }
+            }
+
+            func finish() {
+                releaseGate?.resume()
+                releaseGate = nil
+            }
+        }
+
+        let suite = "luna.test.resumepaused.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let engine = try AetherEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+
+        let log = OSAllocatedUnfairLock(initialState: [String]())
+        let gate = ActivationGate()
+        let comfort = ComfortPreferences(defaults: defaults)
+        let vm = PlayerViewModel(engine: engine, comfort: comfort)
+        vm.isResolving = false
+        vm.nativeAudioActivatorForTesting = { _ in await gate.waitForGate(log: log) }
+        vm.resumePlayActionForTesting = { log.withLock { $0.append("play") } }
+
+        // 1. Happy path: off-main activation finishes strictly before play runs
+        vm.needsNativeAudioActivationAfterPausedRestore = true
+        vm.togglePlayPause()
+        await gate.waitUntilStarted()
+        XCTAssertEqual(log.withLock { $0 }, ["activate_start"])
+        let task1 = vm.pausedRestoreResumeTask
+        XCTAssertNotNil(task1)
+        await gate.finish()
+        await task1?.value
+        XCTAssertEqual(log.withLock { $0 }, ["activate_start", "activate_end", "play"])
+        XCTAssertFalse(vm.needsNativeAudioActivationAfterPausedRestore)
+        XCTAssertNil(vm.pausedRestoreResumeTask)
+
+        // 2. Second togglePlayPause while activation is in flight cancels resume before play
+        log.withLock { $0.removeAll() }
+        await gate.reset()
+        vm.needsNativeAudioActivationAfterPausedRestore = true
+        vm.togglePlayPause()
+        await gate.waitUntilStarted()
+        let task2 = vm.pausedRestoreResumeTask
+        vm.togglePlayPause()
+        XCTAssertNil(vm.pausedRestoreResumeTask)
+        XCTAssertFalse(vm.lastForegroundPlaybackWasPlaying)
+        await gate.finish()
+        await task2?.value
+        XCTAssertEqual(log.withLock { $0 }, ["activate_start", "activate_end"])
+        XCTAssertTrue(vm.needsNativeAudioActivationAfterPausedRestore)
+
+        // 3. Backgrounding while activation is in flight prevents delayed play
+        log.withLock { $0.removeAll() }
+        await gate.reset()
+        vm.togglePlayPause()
+        await gate.waitUntilStarted()
+        let task3 = vm.pausedRestoreResumeTask
+        vm.handleScenePhaseChange(.background)
+        await gate.finish()
+        await task3?.value
+        XCTAssertEqual(log.withLock { $0 }, ["activate_start", "activate_end"])
+        XCTAssertNil(vm.pausedRestoreResumeTask)
+
+        // 4. Teardown while activation is in flight blocks play and clears flag
+        log.withLock { $0.removeAll() }
+        await gate.reset()
+        vm.handleScenePhaseChange(.active)
+        vm.togglePlayPause()
+        await gate.waitUntilStarted()
+        let task4 = vm.pausedRestoreResumeTask
+        vm.teardownAndStop()
+        await gate.finish()
+        await task4?.value
+        XCTAssertEqual(log.withLock { $0 }, ["activate_start", "activate_end"])
+        XCTAssertFalse(vm.needsNativeAudioActivationAfterPausedRestore)
+        XCTAssertNil(vm.pausedRestoreResumeTask)
     }
 
     @MainActor

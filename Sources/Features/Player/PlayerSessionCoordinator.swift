@@ -157,6 +157,7 @@ extension PlayerViewModel {
         }
 
         PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+        cancelPendingPausedRestoreResume()
         needsNativeAudioActivationAfterPausedRestore = false
         try Task.checkCancellation()
 
@@ -483,6 +484,9 @@ extension PlayerViewModel {
                 await self?.attemptForegroundRecoveryIfNeeded()
             }
         } else if phase == .inactive || phase == .background {
+            if phase == .background {
+                cancelPendingPausedRestoreResume()
+            }
             if isForegroundActive,
                !isRestoringFromBackground,
                !isResolving,
@@ -512,6 +516,7 @@ extension PlayerViewModel {
         }
 
         PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+        cancelPendingPausedRestoreResume()
         let wasPlayingBeforeBackground = lastForegroundPlaybackWasPlaying
         let savedResumePosition = max(0, engine.currentTime)
         userDesiredPlayingDuringRestore = nil

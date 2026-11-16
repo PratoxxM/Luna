@@ -99,12 +99,16 @@ final class PlayerViewModel: ObservableObject {
     var switchSourceTask: Task<Void, Never>?
     var audioDelayCommitTask: Task<Void, Never>?
     var foregroundRestoreTask: Task<Void, Never>?
+    private(set) var pausedRestoreResumeTask: Task<Void, Never>?
+    private var pausedRestoreResumeToken: UInt64 = 0
     private var didTeardown: Bool = false
     private var lastObservedPhase: PlaybackPhase = .idle
     var isForegroundActive: Bool = true
     var lastForegroundPlaybackWasPlaying: Bool = false
     var userDesiredPlayingDuringRestore: Bool?
     var needsNativeAudioActivationAfterPausedRestore: Bool = false
+    var nativeAudioActivatorForTesting: (@Sendable (VideoRoute) async -> Void)?
+    var resumePlayActionForTesting: (@MainActor () -> Void)?
     var lastReportedServerState: String?
     var onUnauthorized: (() -> Void)?
 
@@ -144,6 +148,7 @@ final class PlayerViewModel: ObservableObject {
 
     func start(request: PlaybackLaunchRequest, client: LunaCoreClient?) {
         PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+        cancelPendingPausedRestoreResume()
         foregroundRestoreTask?.cancel()
         foregroundRestoreTask = nil
         isRestoringFromBackground = false
@@ -173,6 +178,7 @@ final class PlayerViewModel: ObservableObject {
     func playNextEpisode(_ next: TvNextEpisodeSummary) {
         guard let client = activeClient, let current = activeSession else { return }
         PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+        cancelPendingPausedRestoreResume()
         foregroundRestoreTask?.cancel()
         foregroundRestoreTask = nil
         isRestoringFromBackground = false
@@ -232,6 +238,83 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
+    nonisolated static func shouldActivateNativeAudioBeforePlayOnResume(
+        wasPlaying: Bool,
+        needsNativeAudioActivationAfterPausedRestore: Bool
+    ) -> Bool {
+        !wasPlaying && needsNativeAudioActivationAfterPausedRestore
+    }
+
+    func cancelPendingPausedRestoreResume() {
+        pausedRestoreResumeToken &+= 1
+        pausedRestoreResumeTask?.cancel()
+        pausedRestoreResumeTask = nil
+    }
+
+    func activateNativeAudioForPendingResumeIfNeeded() async {
+        guard needsNativeAudioActivationAfterPausedRestore else { return }
+        let videoRoute = engine.videoRoute
+        if let customActivator = nativeAudioActivatorForTesting {
+            await customActivator(videoRoute)
+        } else {
+            await PlayerAudioSessionCoordinator.shared.activateNativePlaybackIfNeeded(
+                videoRoute: videoRoute
+            )
+        }
+    }
+
+    private func beginPausedRestoreResumeWithNativeAudioActivation() {
+        cancelPendingPausedRestoreResume()
+        pausedRestoreResumeToken &+= 1
+        let resumeToken = pausedRestoreResumeToken
+        let expectedSessionId = activeSession?.sessionId
+        let videoRoute = engine.videoRoute
+        let customActivator = nativeAudioActivatorForTesting
+
+        if isForegroundActive && !engine.needsForegroundVideoRestore {
+            lastForegroundPlaybackWasPlaying = true
+        }
+
+        pausedRestoreResumeTask = Task { @MainActor [weak self] in
+            if let customActivator {
+                await customActivator(videoRoute)
+            } else {
+                await PlayerAudioSessionCoordinator.shared.activateNativePlaybackIfNeeded(
+                    videoRoute: videoRoute
+                )
+            }
+            guard let self else { return }
+            if self.pausedRestoreResumeToken == resumeToken {
+                self.pausedRestoreResumeTask = nil
+            }
+            guard !Task.isCancelled,
+                  self.pausedRestoreResumeToken == resumeToken,
+                  !self.isTeardownCompleted,
+                  !self.isResolving,
+                  !self.isSwitchingSource,
+                  !self.isRestoringFromBackground,
+                  self.isForegroundActive,
+                  !self.engine.needsForegroundVideoRestore,
+                  self.activeSession?.sessionId == expectedSessionId else {
+                return
+            }
+            self.needsNativeAudioActivationAfterPausedRestore = false
+            if let customPlay = self.resumePlayActionForTesting {
+                customPlay()
+            } else if self.engine.state != .playing {
+                self.engine.play()
+            }
+            if self.isForegroundActive && !self.engine.needsForegroundVideoRestore {
+                self.lastForegroundPlaybackWasPlaying = self.resumePlayActionForTesting != nil
+                    ? true
+                    : Self.isActiveTransportIntent(
+                        playbackPhase: self.engine.playbackPhase,
+                        engineState: self.engine.state
+                    )
+            }
+        }
+    }
+
     func togglePlayPause() {
         if isRestoringFromBackground {
             let currentTarget = userDesiredPlayingDuringRestore ?? lastForegroundPlaybackWasPlaying
@@ -240,20 +323,25 @@ final class PlayerViewModel: ObservableObject {
             lastForegroundPlaybackWasPlaying = nextTarget
             return
         }
+        if pausedRestoreResumeTask != nil {
+            cancelPendingPausedRestoreResume()
+            if isForegroundActive && !engine.needsForegroundVideoRestore {
+                lastForegroundPlaybackWasPlaying = false
+            }
+            return
+        }
         let wasPlaying = Self.isActiveTransportIntent(
             playbackPhase: engine.playbackPhase,
             engineState: engine.state
         )
-        engine.togglePlayPause()
-        if !wasPlaying && needsNativeAudioActivationAfterPausedRestore {
-            needsNativeAudioActivationAfterPausedRestore = false
-            let videoRoute = engine.videoRoute
-            Task {
-                await PlayerAudioSessionCoordinator.shared.activateNativePlaybackIfNeeded(
-                    videoRoute: videoRoute
-                )
-            }
+        if Self.shouldActivateNativeAudioBeforePlayOnResume(
+            wasPlaying: wasPlaying,
+            needsNativeAudioActivationAfterPausedRestore: needsNativeAudioActivationAfterPausedRestore
+        ) {
+            beginPausedRestoreResumeWithNativeAudioActivation()
+            return
         }
+        engine.togglePlayPause()
         if isForegroundActive && !engine.needsForegroundVideoRestore {
             lastForegroundPlaybackWasPlaying = Self.isActiveTransportIntent(
                 playbackPhase: engine.playbackPhase,
@@ -265,6 +353,7 @@ final class PlayerViewModel: ObservableObject {
     func triggerSourceSwitch(to candidateId: String) {
         guard activeClient != nil, activeSession != nil else { return }
         PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+        cancelPendingPausedRestoreResume()
         foregroundRestoreTask?.cancel()
         foregroundRestoreTask = nil
         isRestoringFromBackground = false
@@ -438,6 +527,7 @@ final class PlayerViewModel: ObservableObject {
     func teardownAndStop(onComplete: (@MainActor @Sendable () -> Void)? = nil) {
         guard !didTeardown else { return }
         didTeardown = true
+        cancelPendingPausedRestoreResume()
         foregroundRestoreTask?.cancel()
         foregroundRestoreTask = nil
         isRestoringFromBackground = false

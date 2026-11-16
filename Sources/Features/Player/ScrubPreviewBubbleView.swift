@@ -115,6 +115,7 @@ private struct CompositorScrubPreviewRepresentable: UIViewRepresentable {
 extension PlayerViewModel {
     func beginTouchScrub() {
         guard !isResolving, effectiveDurationSeconds > 5 else { return }
+        cancelPendingPausedRestoreResume()
         if !isScrubbing {
             let origin = max(0, engine.currentTime)
             wasPlayingBeforeScrub = (playbackPhase == .playing)
@@ -168,7 +169,23 @@ extension PlayerViewModel {
         Task { @MainActor [weak self] in
             guard let self else { return }
             await self.engine.seek(to: target, exact: true)
-            self.engine.play()
+            guard !Task.isCancelled, !self.isTeardownCompleted else { return }
+            if self.needsNativeAudioActivationAfterPausedRestore {
+                await self.activateNativeAudioForPendingResumeIfNeeded()
+                guard !Task.isCancelled,
+                      !self.isTeardownCompleted,
+                      !self.isResolving,
+                      !self.isSwitchingSource,
+                      !self.isRestoringFromBackground,
+                      self.isForegroundActive,
+                      !self.engine.needsForegroundVideoRestore else {
+                    return
+                }
+                self.needsNativeAudioActivationAfterPausedRestore = false
+            }
+            if self.engine.state != .playing {
+                self.engine.play()
+            }
         }
     }
 

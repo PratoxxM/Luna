@@ -3,6 +3,8 @@ import AetherBridge
 
 /// Pure visibility & duration rules for series continuity overlays, isolated for unit testing.
 internal enum SeriesFlowEligibility {
+    static let maxNextEpisodeCreditsLeadSeconds: Double = 420.0
+
     static func authoritativeStreamDurationSeconds(
         engineDurationSeconds: Double,
         declaredStreamDurationSeconds: Double?
@@ -34,9 +36,10 @@ internal enum SeriesFlowEligibility {
             return true
         }
         if remaining >= -5.0,
+           remaining <= maxNextEpisodeCreditsLeadSeconds,
+           currentTime >= authoritativeDurationSeconds * 0.5,
            let ch = chapters.first(where: { currentTime >= $0.startSeconds && currentTime < $0.endSeconds }),
-           ch.kind == .credits,
-           currentTime >= authoritativeDurationSeconds * 0.5 || remaining <= 120.0 {
+           ch.kind == .credits {
             return true
         }
         return false

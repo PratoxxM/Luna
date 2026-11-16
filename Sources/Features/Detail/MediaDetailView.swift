@@ -184,10 +184,16 @@ struct MediaDetailView: View {
         }
         .onDisappear {
             bannerClearTask?.cancel()
+            let isLaunchingPlayback = sessionStore.activePlaybackTarget != nil
+            let isShowingSourcePicker = sourcePickerContext != nil
             preResolve.handleDisappear(
-                isLaunchingPlayback: sessionStore.activePlaybackTarget != nil,
-                isShowingSourcePicker: sourcePickerContext != nil,
+                isLaunchingPlayback: isLaunchingPlayback,
+                isShowingSourcePicker: isShowingSourcePicker,
                 client: sessionStore.makeClient()
+            )
+            PlayerAudioSessionCoordinator.shared.handleDetailDisappear(
+                isLaunchingPlayback: isLaunchingPlayback,
+                isShowingSourcePicker: isShowingSourcePicker
             )
         }
     }

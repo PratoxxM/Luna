@@ -26,7 +26,7 @@ private actor NativeAudioSessionActivator {
 final class PlayerAudioSessionCoordinator {
     static let shared = PlayerAudioSessionCoordinator()
 
-    nonisolated static let defaultDisplayCriteriaResetDelayNs: UInt64 = 4_000_000_000
+    nonisolated static let defaultDisplayCriteriaResetDelayNs: UInt64 = 20_000_000_000
 
     private let activator = NativeAudioSessionActivator()
     private var deferredResetTask: Task<Void, Never>?
@@ -51,6 +51,13 @@ final class PlayerAudioSessionCoordinator {
     /// never interrupts a follow-up playback load or active session.
     nonisolated static func shouldExecuteDeferredDisplayCriteriaReset(engineState: PlaybackState) -> Bool {
         engineState == .idle
+    }
+
+    nonisolated static func shouldFlushDeferredResetOnDetailDisappear(
+        isLaunchingPlayback: Bool,
+        isShowingSourcePicker: Bool
+    ) -> Bool {
+        !isLaunchingPlayback && !isShowingSourcePicker
     }
 
     func activateNativePlaybackIfNeeded(videoRoute: VideoRoute) async {
@@ -103,6 +110,26 @@ final class PlayerAudioSessionCoordinator {
                 return
             }
             self.executePendingResetIfEligible()
+        }
+    }
+
+    func handleDetailDisappear(
+        isLaunchingPlayback: Bool,
+        isShowingSourcePicker: Bool
+    ) {
+        guard Self.shouldFlushDeferredResetOnDetailDisappear(
+            isLaunchingPlayback: isLaunchingPlayback,
+            isShowingSourcePicker: isShowingSourcePicker
+        ) else {
+            return
+        }
+        flushDeferredDisplayCriteriaResetIfIdle()
+    }
+
+    func flushDeferredDisplayCriteriaResetIfIdle() {
+        guard deferredResetTask != nil else { return }
+        if pendingResetCheck?() == true {
+            executePendingResetIfEligible()
         }
     }
 
