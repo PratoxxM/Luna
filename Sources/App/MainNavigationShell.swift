@@ -106,7 +106,7 @@ struct MainNavigationShell: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 112)
+            .frame(height: 140)
             .ignoresSafeArea(edges: .top)
             .opacity(hideTopBar ? 0 : 1)
             .allowsHitTesting(false)
@@ -115,14 +115,13 @@ struct MainNavigationShell: View {
 
             LunaTopBarView(
                 selectedTab: $selectedTab,
-                roomBadge: sessionStore.roomName,
                 focusRequestNonce: navBarVisibility.focusRequestNonce,
                 onFocusPresenceChanged: { isFocused in
                     navBarVisibility.updateTopBarFocused(isFocused)
                 }
             )
             .opacity(hideTopBar ? 0 : 1)
-            .offset(y: hideTopBar ? -18 : 0)
+            .offset(y: hideTopBar ? -24 : 0)
             .allowsHitTesting(!hideTopBar)
             .disabled(hideTopBar)
             .animation(.spring(response: 0.26, dampingFraction: 0.88), value: hideTopBar)

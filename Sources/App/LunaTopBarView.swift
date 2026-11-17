@@ -39,7 +39,7 @@ public enum ScrollTopZone: Equatable, Sendable {
     case scrolledDown
 
     public nonisolated static let revealThreshold: CGFloat = 36
-    public nonisolated static let collapseThreshold: CGFloat = 88
+    public nonisolated static let collapseThreshold: CGFloat = 104
 
     public nonisolated static func classify(scrolledOffsetY: CGFloat) -> ScrollTopZone {
         if scrolledOffsetY <= revealThreshold {
@@ -296,11 +296,10 @@ private struct LunaRootScrollTopBarModifier: ViewModifier {
 }
 
 struct LunaTopBarView: View {
-    static let contentTopPadding: CGFloat = 84
+    static let contentTopPadding: CGFloat = 108
     static let focusDebounceNanoseconds: UInt64 = 180_000_000
 
     @Binding var selectedTab: MainNavigationTab
-    let roomBadge: String?
     var focusRequestNonce: Int = 0
     var onFocusPresenceChanged: (Bool) -> Void = { _ in }
 
@@ -314,7 +313,12 @@ struct LunaTopBarView: View {
         HStack(spacing: 18) {
             emblemView
 
-            HStack(spacing: 6) {
+            Rectangle()
+                .fill(LunaTheme.warmBorder)
+                .frame(width: 1, height: 28)
+                .allowsHitTesting(false)
+
+            HStack(spacing: 10) {
                 ForEach(MainNavigationTab.allCases) { tab in
                     TopBarTabPillButton(
                         tab: tab,
@@ -332,35 +336,17 @@ struct LunaTopBarView: View {
                     .prefersDefaultFocus(selectedTab == tab, in: topBarFocusNamespace)
                 }
             }
-
-            Spacer(minLength: 16)
-
-            if let roomBadge, !roomBadge.isEmpty {
-                HStack(spacing: 7) {
-                    Circle()
-                        .fill(LunaTheme.amber)
-                        .frame(width: 7, height: 7)
-                    Text(roomBadge)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(LunaTheme.muted)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 7)
-                .background(Capsule().fill(LunaTheme.surfaceRaised))
-                .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
-                .allowsHitTesting(false)
-            }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 26)
+        .padding(.vertical, 12)
         .background(Capsule().fill(LunaTheme.cinemaGlass))
         .overlay(
             Capsule()
                 .strokeBorder(LunaTheme.warmBorder, lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.42), radius: 18, x: 0, y: 8)
         .padding(.horizontal, LunaTheme.horizontalGutter)
-        .padding(.top, 4)
+        .padding(.top, 8)
         .defaultFocus($focusedTab, selectedTab as MainNavigationTab?)
         .focusScope(topBarFocusNamespace)
         .focusSection()
@@ -430,57 +416,78 @@ struct LunaTopBarView: View {
     }
 
     private var emblemView: some View {
-        HStack(spacing: 10) {
-            LunaCrescentMarkView(size: 26, color: LunaTheme.amber)
+        HStack(spacing: 11) {
+            LunaCrescentMarkView(size: 34, color: LunaTheme.amber)
 
             Text("Luna")
-                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                .font(.system(size: 29, weight: .bold, design: .rounded))
                 .foregroundStyle(LunaTheme.linen)
         }
         .padding(.leading, 4)
-        .padding(.trailing, 8)
+        .padding(.trailing, 2)
         .allowsHitTesting(false)
     }
 }
 
-private struct TopBarTabPillButton: View {
+struct TopBarTabPillButton: View {
     let tab: MainNavigationTab
     let isActive: Bool
     let isFocused: Bool
     let action: () -> Void
 
+    nonisolated static func resolveIconColor(isActive: Bool, isFocused: Bool) -> Color {
+        if isFocused { return LunaTheme.canvas }
+        if isActive { return LunaTheme.linen }
+        return LunaTheme.muted
+    }
+
+    nonisolated static func resolveTextColor(isActive: Bool, isFocused: Bool) -> Color {
+        if isFocused { return LunaTheme.canvas }
+        if isActive { return LunaTheme.linen }
+        return LunaTheme.moonlight
+    }
+
+    nonisolated static func resolveBorderColor(isActive: Bool, isFocused: Bool) -> Color {
+        if isFocused { return LunaTheme.focusGoldBorder }
+        if isActive { return LunaTheme.warmBorderStrong }
+        return Color.clear
+    }
+
     var body: some View {
         Button(action: action) {
-            Text(tab.title)
-                .font(.system(size: 22, weight: isActive || isFocused ? .semibold : .medium))
-                .foregroundStyle(textColor)
-                .lineLimit(1)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 9)
-                .background(pillBackground)
-                .overlay(
-                    Capsule()
-                        .strokeBorder(borderColor, lineWidth: isFocused ? 2.0 : 1.0)
-                )
-                .shadow(
-                    color: isFocused ? LunaTheme.amber.opacity(0.35) : .clear,
-                    radius: isFocused ? 14 : 0,
-                    x: 0,
-                    y: isFocused ? 5 : 0
-                )
-                .scaleEffect(isFocused ? 1.04 : 1.0)
-                .animation(.spring(response: 0.22, dampingFraction: 0.80), value: isFocused)
-                .animation(.easeOut(duration: 0.16), value: isActive)
+            HStack(spacing: 9) {
+                Image(systemName: tab.systemImage)
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(Self.resolveIconColor(isActive: isActive, isFocused: isFocused))
+
+                Text(tab.title)
+                    .font(.system(size: 26, weight: isActive || isFocused ? .semibold : .medium))
+                    .foregroundStyle(Self.resolveTextColor(isActive: isActive, isFocused: isFocused))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 13)
+            .background(pillBackground)
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        Self.resolveBorderColor(isActive: isActive, isFocused: isFocused),
+                        lineWidth: isFocused ? 2.0 : 1.0
+                    )
+            )
+            .shadow(
+                color: isFocused ? LunaTheme.amber.opacity(0.35) : .clear,
+                radius: isFocused ? 14 : 0,
+                x: 0,
+                y: isFocused ? 5 : 0
+            )
+            .scaleEffect(isFocused ? 1.04 : 1.0)
+            .animation(.spring(response: 0.22, dampingFraction: 0.80), value: isFocused)
+            .animation(.easeOut(duration: 0.16), value: isActive)
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(Capsule())
         .focusEffectDisabled(true)
-    }
-
-    private var textColor: Color {
-        if isFocused { return LunaTheme.canvas }
-        if isActive { return LunaTheme.linen }
-        return LunaTheme.moonlight
     }
 
     @ViewBuilder
@@ -492,11 +499,5 @@ private struct TopBarTabPillButton: View {
         } else {
             Capsule().fill(Color.clear)
         }
-    }
-
-    private var borderColor: Color {
-        if isFocused { return LunaTheme.focusGoldBorder }
-        if isActive { return LunaTheme.warmBorderStrong }
-        return Color.clear
     }
 }

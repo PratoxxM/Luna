@@ -215,6 +215,14 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         try assertRGB(LunaTheme.cardSubtitleColor(isFocused: false), r: 160, g: 150, b: 140)
         try assertRGB(LunaTheme.cardSubtitleColor(isFocused: true), r: 229, g: 169, b: 60)
 
+        // Centered top-dock tab pills keep calm warm espresso resting tokens & dark ink on brass focus
+        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: false), r: 160, g: 150, b: 140)
+        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: false), r: 200, g: 191, b: 182)
+        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: false), r: 245, g: 240, b: 232)
+        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: false), r: 245, g: 240, b: 232)
+        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: true), r: 10, g: 9, b: 8)
+        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: true), r: 10, g: 9, b: 8)
+
         // Card views construct cleanly with warm linen titles
         let sampleCard = TvMediaCard(
             itemId: "movie:tmdb:550",
