@@ -3,6 +3,14 @@ import SwiftUI
 import UIKit
 import AetherBridge
 
+struct PendingStopSnapshot {
+    let client: LunaCoreClient?
+    let sessionId: String?
+    let finalPos: Double
+    let finalDur: Double
+    let isCompleted: Bool
+}
+
 extension PlayerViewModel {
     // MARK: - Resolve & Engine Load Pipeline
 
@@ -192,7 +200,7 @@ extension PlayerViewModel {
                 options: options
             )
             try Task.checkCancellation()
-            guard !isTeardownCompleted else {
+            guard !isTeardownCompleted, !isDismissing else {
                 throw CancellationError()
             }
             if autoplay {
@@ -652,6 +660,89 @@ extension PlayerViewModel {
                 isRestoringFromBackground = false
                 userDesiredPlayingDuringRestore = nil
                 fatalError = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: - Two-Phase Dismissal & Teardown Helpers
+
+    nonisolated static func shouldPauseEngineOnDismiss(
+        engineState: PlaybackState,
+        playbackPhase: PlaybackPhase
+    ) -> Bool {
+        switch engineState {
+        case .playing, .loading, .seeking:
+            return true
+        case .paused, .idle, .ended, .error:
+            break
+        }
+        switch playbackPhase {
+        case .playing, .loading, .seeking, .rebuffering, .stalled:
+            return true
+        case .paused, .idle, .ended, .error:
+            return false
+        }
+    }
+
+    func cancelAllSessionTasks() {
+        cancelPendingPausedRestoreResume()
+        cancelPendingScrubCommit()
+        foregroundRestoreTask?.cancel()
+        foregroundRestoreTask = nil
+        isRestoringFromBackground = false
+        userDesiredPlayingDuringRestore = nil
+        needsNativeAudioActivationAfterPausedRestore = false
+        resolveTask?.cancel()
+        resolveTask = nil
+        switchSourceTask?.cancel()
+        switchSourceTask = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        firstFrameFallbackTask?.cancel()
+        firstFrameFallbackTask = nil
+        coalescedSeekTask?.cancel()
+        coalescedSeekTask = nil
+        smartRuleTask?.cancel()
+        smartRuleTask = nil
+        audioDelayCommitTask?.cancel()
+        audioDelayCommitTask = nil
+        transientBannerTask?.cancel()
+        transientBannerTask = nil
+        nowPlayingArtworkTask?.cancel()
+        nowPlayingArtworkTask = nil
+    }
+
+    func captureStopSnapshot() -> PendingStopSnapshot {
+        let finalPos = max(0, engine.currentTime)
+        let finalDur = max(0, effectiveDurationSeconds)
+        let inCredits = chapters.contains { $0.kind == .credits && finalPos >= $0.startSeconds }
+        let isCompleted = playbackPhase == .ended || (inCredits && finalDur > 0 && finalPos / finalDur >= 0.75)
+        return PendingStopSnapshot(
+            client: activeClient,
+            sessionId: activeSession?.sessionId,
+            finalPos: finalPos,
+            finalDur: finalDur,
+            isCompleted: isCompleted
+        )
+    }
+
+    /// Silence audio and freeze the last video frame while `fullScreenCover` dismisses,
+    /// deferring `engine.stop(...)` and `notifyContentMutated()` until `.onDisappear`.
+    func prepareForDismissal() {
+        guard !isTeardownCompleted, !isDismissing else { return }
+        isDismissing = true
+        cancelAllSessionTasks()
+        resetScrubStateOnSessionChange()
+        UIApplication.shared.isIdleTimerDisabled = false
+        pendingStopSnapshot = captureStopSnapshot()
+        // Disconnect Combine sinks first so pausing does not publish `.paused` and flash the bottom bar.
+        cancellables.removeAll()
+
+        if PlayerAudioSessionCoordinator.shared.isCurrentEngineOwner(engineOwnerToken) {
+            if let pauseOverride = pauseActionForTesting {
+                pauseOverride()
+            } else if Self.shouldPauseEngineOnDismiss(engineState: engine.state, playbackPhase: playbackPhase) {
+                engine.pause()
             }
         }
     }

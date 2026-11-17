@@ -66,6 +66,9 @@ public final class AmbientBackdropController: ObservableObject {
     public func setImmediate(dominantColor: String?, backdropURL: URL? = nil, blurHash: String?) {
         _ = backdropURL
         debounceTask?.cancel()
+        if self.dominantHex == dominantColor && self.blurHash == blurHash {
+            return
+        }
         withAnimation(.easeOut(duration: 0.30)) {
             self.dominantHex = dominantColor
             self.blurHash = blurHash

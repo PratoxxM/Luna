@@ -93,9 +93,9 @@ final class PlayerViewModel: ObservableObject {
     var userManuallySelectedSubtitle: Bool = false
     var didApplyInitialSmartRule: Bool = false
 
-    private var cancellables = Set<AnyCancellable>()
-    private var coalescedSeekTask: Task<Void, Never>?
-    private var smartRuleTask: Task<Void, Never>?
+    var cancellables = Set<AnyCancellable>()
+    var coalescedSeekTask: Task<Void, Never>?
+    var smartRuleTask: Task<Void, Never>?
     var switchSourceTask: Task<Void, Never>?
     var audioDelayCommitTask: Task<Void, Never>?
     var foregroundRestoreTask: Task<Void, Never>?
@@ -104,6 +104,9 @@ final class PlayerViewModel: ObservableObject {
     var scrubCommitTask: Task<Void, Never>?
     var scrubCommitToken: UInt64 = 0
     private var didTeardown: Bool = false
+    var engineOwnerToken: UInt64 = 0
+    var isDismissing: Bool = false
+    var pendingStopSnapshot: PendingStopSnapshot?
     private var lastObservedPhase: PlaybackPhase = .idle
     var isForegroundActive: Bool = true
     var lastForegroundPlaybackWasPlaying: Bool = false
@@ -112,6 +115,8 @@ final class PlayerViewModel: ObservableObject {
     var nativeAudioActivatorForTesting: (@Sendable (VideoRoute) async -> Void)?
     var resumePlayActionForTesting: (@MainActor () -> Void)?
     var scrubSeekActionForTesting: (@MainActor (Double) async -> Void)?
+    var pauseActionForTesting: (@MainActor () -> Void)?
+    var stopActionForTesting: (@MainActor (_ resetDisplayCriteria: Bool, _ finalTeardown: Bool) -> Void)?
     var lastReportedServerState: String?
     var onUnauthorized: (() -> Void)?
 
@@ -150,6 +155,7 @@ final class PlayerViewModel: ObservableObject {
     // MARK: - Lifecycle & Commands
 
     func start(request: PlaybackLaunchRequest, client: LunaCoreClient?) {
+        engineOwnerToken = PlayerAudioSessionCoordinator.shared.claimEngineOwnership()
         PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
         cancelPendingPausedRestoreResume()
         cancelPendingScrubCommit()
@@ -159,6 +165,8 @@ final class PlayerViewModel: ObservableObject {
         userDesiredPlayingDuringRestore = nil
         lastForegroundPlaybackWasPlaying = false
         needsNativeAudioActivationAfterPausedRestore = false
+        isDismissing = false
+        pendingStopSnapshot = nil
         didTeardown = false
         fatalError = nil
         firstFrameFallbackUnlocked = false
@@ -538,55 +546,36 @@ final class PlayerViewModel: ObservableObject {
     func teardownAndStop(onComplete: (@MainActor @Sendable () -> Void)? = nil) {
         guard !didTeardown else { return }
         didTeardown = true
-        cancelPendingPausedRestoreResume()
-        cancelPendingScrubCommit()
-        foregroundRestoreTask?.cancel()
-        foregroundRestoreTask = nil
-        isRestoringFromBackground = false
-        userDesiredPlayingDuringRestore = nil
-        needsNativeAudioActivationAfterPausedRestore = false
-        resolveTask?.cancel()
-        resolveTask = nil
-        switchSourceTask?.cancel()
-        switchSourceTask = nil
-        heartbeatTask?.cancel()
-        heartbeatTask = nil
-        firstFrameFallbackTask?.cancel()
-        firstFrameFallbackTask = nil
-        coalescedSeekTask?.cancel()
-        coalescedSeekTask = nil
-        smartRuleTask?.cancel()
-        smartRuleTask = nil
-        audioDelayCommitTask?.cancel()
-        audioDelayCommitTask = nil
-        transientBannerTask?.cancel()
-        transientBannerTask = nil
-        nowPlayingArtworkTask?.cancel()
-        nowPlayingArtworkTask = nil
+        cancelAllSessionTasks()
         resetScrubStateOnSessionChange()
         UIApplication.shared.isIdleTimerDisabled = false
 
-        let client = activeClient
-        let session = activeSession
-        let finalPos = max(0, engine.currentTime)
-        let finalDur = max(0, effectiveDurationSeconds)
-
-        PlayerNowPlayingCoordinator.clear(engine: engine)
+        let snapshot = pendingStopSnapshot ?? captureStopSnapshot()
+        pendingStopSnapshot = nil
         cancellables.removeAll()
-        engine.stop(resetDisplayCriteria: false, finalTeardown: true)
-        PlayerAudioSessionCoordinator.shared.scheduleDeferredDisplayCriteriaReset(engine: engine)
+
+        if PlayerAudioSessionCoordinator.shared.isCurrentEngineOwner(engineOwnerToken) {
+            PlayerNowPlayingCoordinator.clear(engine: engine)
+            if let stopOverride = stopActionForTesting {
+                stopOverride(false, true)
+            } else {
+                engine.stop(resetDisplayCriteria: false, finalTeardown: true)
+            }
+            PlayerAudioSessionCoordinator.shared.scheduleDeferredDisplayCriteriaReset(engine: engine)
+        }
 
         if let tok = registeredStreamToken, tok.count >= 8 {
             EngineLog.unregisterSecret(tok)
             registeredStreamToken = nil
         }
 
-        if let client, let session {
-            let inCredits = chapters.contains { $0.kind == .credits && finalPos >= $0.startSeconds }
-            let isCompleted = playbackPhase == .ended || (inCredits && finalDur > 0 && finalPos / finalDur >= 0.75)
+        if let client = snapshot.client, let sessionId = snapshot.sessionId {
+            let finalPos = snapshot.finalPos
+            let finalDur = snapshot.finalDur
+            let isCompleted = snapshot.isCompleted
             Task.detached {
                 _ = try? await client.sendHeartbeat(
-                    sessionId: session.sessionId,
+                    sessionId: sessionId,
                     state: "stopped",
                     positionSeconds: finalPos,
                     durationSeconds: finalDur,
@@ -642,7 +631,7 @@ final class PlayerViewModel: ObservableObject {
                         await self?.sendHeartbeatOnce(overrideState: "stopped")
                     }
                 } else if phase == .paused || phase == .ended {
-                    guard !self.isRestoringFromBackground else { return }
+                    guard !self.isRestoringFromBackground, !self.isDismissing else { return }
                     Task { @MainActor [weak self] in
                         await self?.sendHeartbeatOnce(overrideState: phase == .ended ? "stopped" : "paused", completed: phase == .ended)
                     }

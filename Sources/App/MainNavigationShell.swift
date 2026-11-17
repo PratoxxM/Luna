@@ -21,9 +21,7 @@ struct MainNavigationShell: View {
 
     var body: some View {
         ZStack {
-            if sessionStore.activePlaybackTarget == nil {
-                AmbientBackdropView(controller: ambientController)
-            }
+            AmbientBackdropView(controller: ambientController)
 
             TabView(selection: $selectedTab) {
                 NavigationStack {

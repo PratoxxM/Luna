@@ -232,7 +232,7 @@ struct MediaDetailView: View {
             }
             .scrollClipDisabled()
 
-            if isLoadingEpisodes {
+            if isLoadingEpisodes && episodes.isEmpty {
                 HStack(spacing: 14) {
                     ProgressView()
                     Text("Henter episoder…")

@@ -304,7 +304,9 @@ struct PlayerContainerView: View {
         }
         .onAppear {
             let store = sessionStore
-            viewModel.onUnauthorized = {
+            let vm = viewModel
+            viewModel.onUnauthorized = { [weak vm] in
+                vm?.prepareForDismissal()
                 store.unpairDevice()
                 onDismiss()
             }
@@ -382,10 +384,7 @@ struct PlayerContainerView: View {
 
     private func closePlayer() {
         hideBottomBarTask?.cancel()
-        let store = sessionStore
-        viewModel.teardownAndStop {
-            store.notifyContentMutated()
-        }
+        viewModel.prepareForDismissal()
         onDismiss()
     }
 

@@ -30,12 +30,26 @@ final class PlayerAudioSessionCoordinator {
     nonisolated static let defaultDisplayCriteriaResetDelayNs: UInt64 = 20_000_000_000
 
     private let activator = NativeAudioSessionActivator()
+    private var activeEngineOwnerToken: UInt64 = 0
     private var deferredResetTask: Task<Void, Never>?
     private var deferredResetToken: UInt64 = 0
     private var pendingResetCheck: (@MainActor () -> Bool)?
     private var pendingResetAction: (@MainActor () -> Void)?
 
     init() {}
+
+    @discardableResult
+    func claimEngineOwnership() -> UInt64 {
+        activeEngineOwnerToken &+= 1
+        if activeEngineOwnerToken == 0 {
+            activeEngineOwnerToken = 1
+        }
+        return activeEngineOwnerToken
+    }
+
+    func isCurrentEngineOwner(_ token: UInt64) -> Bool {
+        token == 0 || activeEngineOwnerToken == token
+    }
 
     /// Only native `AVPlayerLayer` routes (`.loopback`, `.remoteBypass`) bypass `AVPlayerViewController`
     /// and `AetherEngine`'s renderer activation. `.software` and `.audio` are activated by the engine.
