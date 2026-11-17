@@ -543,61 +543,68 @@ struct ProwlingSourceCatView: View {
             }
         } else {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                let t = context.date.timeIntervalSinceReferenceDate
-                let cycle = t.truncatingRemainder(dividingBy: 5.2) / 5.2
-                // Walk right -> sniff -> walk left -> sniff
-                let pos: Double
-                let facingRight: Bool
-                let sniff: Double
-
-                if cycle < 0.34 {
-                    let p = cycle / 0.34
-                    pos = -80 + 160 * p
-                    facingRight = true
-                    sniff = 0
-                } else if cycle < 0.50 {
-                    pos = 80
-                    facingRight = true
-                    let p = (cycle - 0.34) / 0.16
-                    sniff = sin(p * Double.pi)
-                } else if cycle < 0.84 {
-                    let p = (cycle - 0.50) / 0.34
-                    pos = 80 - 160 * p
-                    facingRight = false
-                    sniff = 0
-                } else {
-                    pos = -80
-                    facingRight = false
-                    let p = (cycle - 0.84) / 0.16
-                    sniff = sin(p * Double.pi)
-                }
-
-                let stride = (t * 1.4).truncatingRemainder(dividingBy: 1.0)
-                VStack(spacing: 8) {
-                    ZStack {
-                        Capsule()
-                            .fill(LunaTheme.moonlight.opacity(0.08))
-                            .frame(width: 240, height: 3)
-                            .offset(y: 19)
-
-                        if sniff > 0.15 {
-                            Image(systemName: "sparkle")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(LunaTheme.amber.opacity(sniff * 0.85))
-                                .offset(x: CGFloat(pos + (facingRight ? 34 : -34)), y: 12)
-                        }
-
-                        CatMascotCanvasView(
-                            kind: .blackNightFury,
-                            pose: .prowling(stridePhase: stride, sniffProgress: sniff),
-                            facingRight: facingRight
-                        )
-                        .frame(width: 66, height: 46)
-                        .offset(x: CGFloat(pos))
-                    }
-                    .frame(width: 260, height: 48)
-                }
+                prowlingContent(at: context.date.timeIntervalSinceReferenceDate)
             }
+        }
+    }
+
+    private func prowlingContent(at now: TimeInterval) -> some View {
+        let cycleDuration = 5.2
+        let rawRem = now.truncatingRemainder(dividingBy: cycleDuration)
+        let rem = rawRem < 0 ? rawRem + cycleDuration : rawRem
+        let cycle = rem / cycleDuration
+        // Walk right -> sniff -> walk left -> sniff
+        let pos: Double
+        let facingRight: Bool
+        let sniff: Double
+
+        if cycle < 0.34 {
+            let p = cycle / 0.34
+            pos = -80 + 160 * p
+            facingRight = true
+            sniff = 0
+        } else if cycle < 0.50 {
+            pos = 80
+            facingRight = true
+            let p = (cycle - 0.34) / 0.16
+            sniff = sin(p * Double.pi)
+        } else if cycle < 0.84 {
+            let p = (cycle - 0.50) / 0.34
+            pos = 80 - 160 * p
+            facingRight = false
+            sniff = 0
+        } else {
+            pos = -80
+            facingRight = false
+            let p = (cycle - 0.84) / 0.16
+            sniff = sin(p * Double.pi)
+        }
+
+        let rawStride = (now * 1.4).truncatingRemainder(dividingBy: 1.0)
+        let stride = rawStride < 0 ? rawStride + 1.0 : rawStride
+        return VStack(spacing: 8) {
+            ZStack {
+                Capsule()
+                    .fill(LunaTheme.moonlight.opacity(0.08))
+                    .frame(width: 240, height: 3)
+                    .offset(y: 19)
+
+                if sniff > 0.15 {
+                    Image(systemName: "sparkle")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(LunaTheme.amber.opacity(sniff * 0.85))
+                        .offset(x: CGFloat(pos + (facingRight ? 34 : -34)), y: 12)
+                }
+
+                CatMascotCanvasView(
+                    kind: .blackNightFury,
+                    pose: .prowling(stridePhase: stride, sniffProgress: sniff),
+                    facingRight: facingRight
+                )
+                .frame(width: 66, height: 46)
+                .offset(x: CGFloat(pos))
+            }
+            .frame(width: 260, height: 48)
         }
     }
 }
