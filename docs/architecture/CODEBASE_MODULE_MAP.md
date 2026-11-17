@@ -7,7 +7,8 @@ Quick lookup mapping relative repository paths to their responsibilities, **Luna
 | Module Path | Responsibility | `/api/tv/v1` Endpoints & Protocols | Unit Test Coverage |
 | :--- | :--- | :--- | :--- |
 | `Sources/App/LunaApp.swift` | Owns single `@MainActor AetherEngine`, root `AppSessionStore`, `ComfortPreferences` | — | — |
-| `Sources/App/MainNavigationShell.swift` | Top tab bar, server bootstrap sync (`fetchBootstrap`), playback presentation | `GET /api/tv/v1/bootstrap` | `PlayerOverlayAndCacheTests.swift` |
+| `Sources/App/MainNavigationShell.swift` | Custom top bar (`LunaTopBarView`) + hidden stock tab bar, server bootstrap sync (`fetchBootstrap`), background display-criteria reset, playback presentation | `GET /api/tv/v1/bootstrap` | `PlayerOverlayAndCacheTests.swift`, `LunaNavigationAndDetailRaceTests.swift` |
+| `Sources/App/LunaTopBarView.swift` | Focus-safe cinema-glass top navigation dock with moon/cat emblem & golden focus glow | — | `LunaNavigationAndDetailRaceTests.swift` |
 | `Sources/Core/Discovery/BonjourServerBrowser.swift` | `NWBrowser` discovery for `_lunacore._tcp`, publishes `DiscoveredLunaCoreServer` | mDNS `_lunacore._tcp` (`api`, `https_port`) | — |
 | `Sources/Core/Config/SideloadSafeStorage.swift` | Bundle-ID-independent `UserDefaults` + Keychain persistence (`luna.v1.*`) | — | — |
 | `Sources/Core/Config/ServerConfiguration.swift` | `AppSessionStore`, URL normalization, LAN TLS evaluator, `LunaCoreClient` factory | — | `ClientOriginAndBlurHashTests.swift`, `PlayerOverlayAndCacheTests.swift` |
@@ -24,22 +25,23 @@ Quick lookup mapping relative repository paths to their responsibilities, **Luna
 
 | Module Path | Responsibility | `/api/tv/v1` Endpoints | Unit Test Coverage |
 | :--- | :--- | :--- | :--- |
-| `Sources/DesignSystem/LunaTheme.swift` | OLED/HDR palette, cinema glass surfaces, reusable pill/focus styles | — | — |
+| `Sources/DesignSystem/LunaTheme.swift` | OLED/HDR palette, cinema glass surfaces, reusable pill/focus styles | — | `CatScaleAndButtonThemeTests.swift` |
+| `Sources/DesignSystem/Cats/` | Modular mascot companion state machines, anatomical vector runner/prowler (`CatMascotCanvasView`), and illustrated pause/moon duo (`CatCompanionViews`) | — | `CatScaleAndButtonThemeTests.swift`, `EpisodeFormattingAndCatCompanionTests.swift` |
 | `Sources/DesignSystem/Cards/` | `PosterCardView`, `BackdropCardView`, isolated `@FocusState`, context menus | Artwork pipeline loading | — |
 | `Sources/DesignSystem/AmbientBackdropView.swift` | Blurred hero/detail ambient backdrop renderer | — | — |
 | `Sources/Features/Shared/MediaCardComponents.swift` | `TransientErrorBanner`, `MediaCardMutator`, shared poster context-menu actions | `POST /api/tv/v1/{watchlist,favorite,watched}` | — |
 | `Sources/Features/Onboarding/PairingOnboardingView.swift` | `_lunacore._tcp` auto-discovery & 6-digit pairing code flow (`lunacore.local`) | `POST /api/tv/v1/pair/request`, `GET /pair/poll/:code` | `ClientOriginAndBlurHashTests.swift` |
 | `Sources/Features/Home/` | `HomeView`, `ShelfRowView` (4-row evening home with SWR instant paint) | `GET /api/tv/v1/home` | `PlaybackAndNavigationFixesTests.swift` |
 | `Sources/Features/Browse/` | `CatalogBrowseView`, `CustomRowBrowseView` (paginated genres & shelves) | `GET /api/tv/v1/catalog/*`, `/api/tv/v1/rows/*` | `PlaybackAndNavigationFixesTests.swift` |
-| `Sources/Features/Library/LibraryHubView.swift` | *Mitt bibliotek*: *Ønsker å se*, *Favoritter*, and *Lokalt på NAS* | `GET /api/tv/v1/library` | — |
+| `Sources/Features/Library/LibraryHubView.swift` | *Mitt bibliotek*: *Huskeliste*, *Favoritter & Lister*, and *Lokalt på NAS* | `GET /api/tv/v1/library` | — |
 | `Sources/Features/Search/SearchView.swift` | Instant search across local library and TMDB catalog | `GET /api/tv/v1/search` | — |
-| `Sources/Features/Detail/` | `MediaDetailView`, `DetailHeroHeaderView`, `DetailPreResolveController`, `SourcePickerSheetView`, `EpisodeCardView`, `DetailCastStripView` | `GET /items/*`, `POST /playback/prepare`, `GET /playback/:id/alternatives` | `PlaybackAndNavigationFixesTests.swift`, `ModelDecodingTests.swift` |
+| `Sources/Features/Detail/` | `MediaDetailView`, `DetailHeroHeaderView`, `DetailPreResolveController`, `SourcePickerSheetView`, `EpisodeCardView`, `DetailCastStripView` | `GET /items/*`, `POST /monitor`, `POST /playback/prepare`, `GET /playback/:id/alternatives` | `PlaybackAndNavigationFixesTests.swift`, `ModelDecodingTests.swift`, `LunaNavigationAndDetailRaceTests.swift` |
 | `Sources/Features/Settings/SettingsView.swift` | Room/hardware profiles, DV/speaker/MetalFX overrides, subtitle comfort, cache/pairing reset | `PATCH /api/tv/v1/device/profile`, `GET /bootstrap` | `PlayerOverlayAndCacheTests.swift` |
 | `Sources/Features/Player/` | `PlayerViewModel`, `PlayerSessionCoordinator`, `PlayerAudioSessionCoordinator`, `PlayerContainerView`, `PlayerEngineConfigurator`, `PlayerNowPlayingCoordinator`, `SiriRemoteTouchSurface`, `ResolvingCurtainView`, `PlayerBottomBarView`, `PlayerTopDrawerView`, `ScrubPreviewBubbleView`, `SubtitleOverlayView`, `SeriesFlowOverlays`, `NerdHUDView` | `POST /playback/resolve`, `POST /heartbeat`, `POST /playback/:id/switch` | `ChapterClassificationTests.swift`, `SmartTrackRuleEngineTests.swift`, `PlayerOverlayAndCacheTests.swift`, `PlaybackAndNavigationFixesTests.swift`, `PausedScrubCommitTests.swift`, `PlayerExitBlinkRegressionTests.swift` |
 
 ## 3. Build Configuration & Cloud CI
 
-- `project.yml`: XcodeGen specification (`MARKETING_VERSION: "2.3.6"`, `CURRENT_PROJECT_VERSION: "43"`, `bundleIdPrefix: local.lunacore`, `PRODUCT_BUNDLE_IDENTIFIER: local.lunacore.luna`).
+- `project.yml`: XcodeGen specification (`MARKETING_VERSION: "2.3.6"`, `CURRENT_PROJECT_VERSION: "48"`, `bundleIdPrefix: local.lunacore`, `PRODUCT_BUNDLE_IDENTIFIER: local.lunacore.luna`).
 - `Config/Info.plist`: App Transport Security (`NSAllowsArbitraryLoads`) & Bonjour service type (`_lunacore._tcp`).
 - `Packages/AetherBridge/Package.swift`: Local SwiftPM wrapper pinning `AetherEngine` `7.69.0` and its 5 media/audio/DV traits.
 - `.github/workflows/build-tvos.yml`: Static guardrails (800 LOC, `0644`, no `Bundle.main.bundleIdentifier`, zero private infra leaks, zero retired legacy brand references), `LunaTests`, unsigned tvOS Release archive, and publishing `Luna-unsigned.ipa` to the rolling `latest` release.

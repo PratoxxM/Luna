@@ -9,8 +9,6 @@ struct PlayerBottomBarView: View {
     @ObservedObject var viewModel: PlayerViewModel
     let fallbackRequest: PlaybackLaunchRequest
 
-    @State private var isPauseCatVisible: Bool = false
-
     private var isPaused: Bool {
         viewModel.playbackPhase == .paused
     }
@@ -84,18 +82,14 @@ struct PlayerBottomBarView: View {
                     )
                 }
 
-                let showPauseBreathingRoom = viewModel.comfort.showCatCompanions && (isPaused || isPauseCatVisible)
                 TimelineScrubberLeafView(
                     viewModel: viewModel,
                     scrubState: viewModel.scrubState,
                     comfort: viewModel.comfort,
                     engine: viewModel.engine,
                     duration: duration,
-                    isPaused: isPaused,
-                    onPauseCatActivityChanged: { isPauseCatVisible = $0 }
+                    isPaused: isPaused
                 )
-                .padding(.top, showPauseBreathingRoom ? 60 : 0)
-                .animation(.easeOut(duration: 0.24), value: showPauseBreathingRoom)
             }
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.top, 56)
@@ -277,6 +271,7 @@ struct TimelineScrubberLeafView: View {
                         isPaused: isPaused,
                         isScrubbing: isScrubbing,
                         trackWidth: totalWidth,
+                        playheadX: playheadX,
                         onVisualActivityChanged: onPauseCatActivityChanged
                     )
                 }

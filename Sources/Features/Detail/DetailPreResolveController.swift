@@ -8,11 +8,29 @@ final class DetailPreResolveController: ObservableObject {
     @Published private(set) var preparedToken: String?
     @Published private(set) var preparedSessionId: String?
     @Published private(set) var preparedForItemId: String?
+    @Published private(set) var preparedStartPosition: Double?
     @Published private(set) var isPreResolvedReady: Bool = false
 
     private var prewarmedStreamToken: String?
     private var preResolveTask: Task<Void, Never>?
     private var consumedItemId: String?
+
+    nonisolated static func canReusePreparedSession(
+        preparedItemId: String?,
+        preparedToken: String?,
+        preparedStartPosition: Double?,
+        requestedItemId: String,
+        requestedStartPosition: Double?
+    ) -> Bool {
+        guard preparedItemId == requestedItemId,
+              let token = preparedToken,
+              !token.isEmpty else {
+            return false
+        }
+        let existingStart = max(0, preparedStartPosition ?? 0)
+        let requestedStart = max(0, requestedStartPosition ?? 0)
+        return abs(existingStart - requestedStart) <= 1.0
+    }
 
     func matchingToken(for itemId: String) -> String? {
         guard preparedForItemId == itemId, let tok = preparedToken, !tok.isEmpty else {
@@ -21,22 +39,58 @@ final class DetailPreResolveController: ObservableObject {
         return tok
     }
 
+    func matchingToken(for itemId: String, startPosition: Double?) -> String? {
+        guard Self.canReusePreparedSession(
+            preparedItemId: preparedForItemId,
+            preparedToken: preparedToken,
+            preparedStartPosition: preparedStartPosition,
+            requestedItemId: itemId,
+            requestedStartPosition: startPosition
+        ) else {
+            return nil
+        }
+        return preparedToken
+    }
+
     func consumeForPlayback(itemId: String, client: LunaCoreClient?) -> String? {
+        consumeForPlaybackInternal(itemId: itemId, startPosition: nil, enforceStartPosition: false, client: client)
+    }
+
+    func consumeForPlayback(itemId: String, startPosition: Double?, client: LunaCoreClient?) -> String? {
+        consumeForPlaybackInternal(itemId: itemId, startPosition: startPosition, enforceStartPosition: true, client: client)
+    }
+
+    private func consumeForPlaybackInternal(
+        itemId: String,
+        startPosition: Double?,
+        enforceStartPosition: Bool,
+        client: LunaCoreClient?
+    ) -> String? {
         consumedItemId = itemId
         preResolveTask?.cancel()
         preResolveTask = nil
 
-        if preparedForItemId == itemId, let token = preparedToken, !token.isEmpty {
+        let matchesItem = preparedForItemId == itemId
+        let matchesStart = !enforceStartPosition || Self.canReusePreparedSession(
+            preparedItemId: preparedForItemId,
+            preparedToken: preparedToken,
+            preparedStartPosition: preparedStartPosition,
+            requestedItemId: itemId,
+            requestedStartPosition: startPosition
+        )
+
+        if matchesItem, matchesStart, let token = preparedToken, !token.isEmpty {
             preparedToken = nil
             preparedSessionId = nil
             preparedForItemId = nil
+            preparedStartPosition = nil
             isPreResolvedReady = false
             // Ownership of streamToken masking transfers to PlayerViewModel.
             prewarmedStreamToken = nil
             return token
         }
 
-        if preparedForItemId != itemId {
+        if preparedForItemId != nil || preparedSessionId != nil {
             cleanupPreparedSession(client: client)
         }
         return nil
@@ -56,15 +110,19 @@ final class DetailPreResolveController: ObservableObject {
         startPos: Double?,
         client: LunaCoreClient?
     ) {
-        if preparedForItemId == targetItemId,
-           let existingToken = preparedToken,
-           !existingToken.isEmpty {
+        if Self.canReusePreparedSession(
+            preparedItemId: preparedForItemId,
+            preparedToken: preparedToken,
+            preparedStartPosition: preparedStartPosition,
+            requestedItemId: targetItemId,
+            requestedStartPosition: startPos
+        ) {
             return
         }
 
         consumedItemId = nil
         preResolveTask?.cancel()
-        if preparedForItemId != targetItemId {
+        if preparedForItemId != nil || preparedSessionId != nil {
             cleanupPreparedSession(client: client)
         }
 
@@ -104,6 +162,7 @@ final class DetailPreResolveController: ObservableObject {
                 self.preparedToken = token
                 self.preparedSessionId = prep.playbackSession?.sessionId
                 self.preparedForItemId = targetItemId
+                self.preparedStartPosition = startPos
                 self.isPreResolvedReady = true
             }
 
@@ -158,6 +217,7 @@ final class DetailPreResolveController: ObservableObject {
         preparedToken = nil
         preparedSessionId = nil
         preparedForItemId = nil
+        preparedStartPosition = nil
         isPreResolvedReady = false
     }
 

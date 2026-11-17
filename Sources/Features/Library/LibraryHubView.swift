@@ -9,7 +9,7 @@ private enum LibrarySectionTab: String, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
-        case .watchlist: return "Ønsker å se"
+        case .watchlist: return "Huskeliste"
         case .favorites: return "Favoritter & Lister"
         case .local: return "Lokalt på NAS"
         }
@@ -161,6 +161,7 @@ struct LibraryHubView: View {
             }
             .padding(.bottom, 72)
         }
+        .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
@@ -363,7 +364,7 @@ struct LibraryHubView: View {
     private var emptyStateHeadline: String {
         switch activeSection {
         case .watchlist:
-            return "Ingen titler i «Ønsker å se» akkurat nå."
+            return "Ingen titler i «Huskeliste» akkurat nå."
         case .favorites:
             return "Ingen lagrede favoritter ennå."
         case .local:
@@ -376,7 +377,7 @@ struct LibraryHubView: View {
         case .watchlist:
             return "Trykk på «Huskeliste» inne på en film eller serie for å samle det dere vil se her."
         case .favorites:
-            return "Trykk på stjerne-knappen på favorittfilmer og -serier for rask tilgang."
+            return "Trykk på «Favoritt» inne på favorittfilmer og -serier for rask tilgang."
         case .local:
             return "Lokal filoversikt leses rett fra NVMe-indeksen uten å vekke arkivdiskene."
         }

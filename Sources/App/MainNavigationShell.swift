@@ -1,26 +1,18 @@
 import SwiftUI
 import AetherBridge
 
-public enum MainNavigationTab: Hashable, Sendable {
-    case home
-    case movies
-    case series
-    case library
-    case search
-    case settings
-}
-
 struct MainNavigationShell: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var ambientController = AmbientBackdropController()
+    @StateObject private var navBarVisibility = LunaNavigationBarVisibility()
 
     let engine: AetherEngine
     @State private var selectedTab: MainNavigationTab = .home
     @State private var lastBootstrapRefreshAt: Date = .distantPast
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             AmbientBackdropView(controller: ambientController)
 
             TabView(selection: $selectedTab) {
@@ -31,9 +23,11 @@ struct MainNavigationShell: View {
                         initialHardwareProfile: sessionStore.effectiveHardwareProfile,
                         isActiveTab: selectedTab == .home
                     )
+                    .toolbar(.hidden, for: .tabBar)
                 }
+                .toolbar(.hidden, for: .tabBar)
                 .tabItem {
-                    Label("Hjem", systemImage: "sparkles.tv")
+                    Label(MainNavigationTab.home.title, systemImage: MainNavigationTab.home.systemImage)
                 }
                 .tag(MainNavigationTab.home)
 
@@ -41,11 +35,14 @@ struct MainNavigationShell: View {
                     CatalogBrowseView(
                         mediaType: "movie",
                         initialGenre: nil,
-                        isActiveTab: selectedTab == .movies
+                        isActiveTab: selectedTab == .movies,
+                        isRootTab: true
                     )
+                    .toolbar(.hidden, for: .tabBar)
                 }
+                .toolbar(.hidden, for: .tabBar)
                 .tabItem {
-                    Label("Filmer", systemImage: "film")
+                    Label(MainNavigationTab.movies.title, systemImage: MainNavigationTab.movies.systemImage)
                 }
                 .tag(MainNavigationTab.movies)
 
@@ -53,40 +50,61 @@ struct MainNavigationShell: View {
                     CatalogBrowseView(
                         mediaType: "series",
                         initialGenre: nil,
-                        isActiveTab: selectedTab == .series
+                        isActiveTab: selectedTab == .series,
+                        isRootTab: true
                     )
+                    .toolbar(.hidden, for: .tabBar)
                 }
+                .toolbar(.hidden, for: .tabBar)
                 .tabItem {
-                    Label("Serier", systemImage: "tv")
+                    Label(MainNavigationTab.series.title, systemImage: MainNavigationTab.series.systemImage)
                 }
                 .tag(MainNavigationTab.series)
 
                 NavigationStack {
                     LibraryHubView(isActiveTab: selectedTab == .library)
+                        .toolbar(.hidden, for: .tabBar)
                 }
+                .toolbar(.hidden, for: .tabBar)
                 .tabItem {
-                    Label("Mitt bibliotek", systemImage: "books.vertical.fill")
+                    Label(MainNavigationTab.library.title, systemImage: MainNavigationTab.library.systemImage)
                 }
                 .tag(MainNavigationTab.library)
 
                 NavigationStack {
-                    SearchView()
+                    SearchView(isRootTab: true)
+                        .toolbar(.hidden, for: .tabBar)
                 }
+                .toolbar(.hidden, for: .tabBar)
                 .tabItem {
-                    Label("Søk", systemImage: "magnifyingglass")
+                    Label(MainNavigationTab.search.title, systemImage: MainNavigationTab.search.systemImage)
                 }
                 .tag(MainNavigationTab.search)
 
                 NavigationStack {
                     SettingsView()
+                        .toolbar(.hidden, for: .tabBar)
                 }
+                .toolbar(.hidden, for: .tabBar)
                 .tabItem {
-                    Label("Innstillinger", systemImage: "gearshape.fill")
+                    Label(MainNavigationTab.settings.title, systemImage: MainNavigationTab.settings.systemImage)
                 }
                 .tag(MainNavigationTab.settings)
             }
+            .toolbar(.hidden, for: .tabBar)
+
+            if !navBarVisibility.isTopBarHidden {
+                LunaTopBarView(
+                    selectedTab: $selectedTab,
+                    showCatCompanions: sessionStore.comfort.showCatCompanions,
+                    roomBadge: sessionStore.roomName
+                )
+                .transition(.opacity)
+                .zIndex(10)
+            }
         }
         .environment(\.ambientFocusSink, ambientController.focusSink)
+        .environment(\.lunaSubpageVisibility, navBarVisibility.sink)
         .environmentObject(sessionStore.comfort)
         .fullScreenCover(item: $sessionStore.activePlaybackTarget) { launchRequest in
             PlayerContainerView(
@@ -105,16 +123,26 @@ struct MainNavigationShell: View {
             await refreshBootstrapProfile()
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background && sessionStore.activePlaybackTarget == nil {
+            if PlayerAudioSessionCoordinator.shouldResetHeldDisplayCriteriaOnScenePhase(
+                isActiveScene: phase == .active,
+                hasActivePlayback: sessionStore.activePlaybackTarget != nil,
+                engineState: engine.state
+            ) {
                 PlayerAudioSessionCoordinator.shared.flushDeferredDisplayCriteriaResetIfIdle(engine: engine)
+            }
+            if phase != .active {
                 return
             }
-            guard phase == .active,
-                  sessionStore.activePlaybackTarget == nil,
+            guard sessionStore.activePlaybackTarget == nil,
                   Date().timeIntervalSince(lastBootstrapRefreshAt) >= 30 else {
                 return
             }
             Task { await refreshBootstrapProfile() }
+        }
+        .onChange(of: sessionStore.comfort.keepDisplayModeInMenuAfterPlayback) { _, keepInMenu in
+            if !keepInMenu && sessionStore.activePlaybackTarget == nil {
+                PlayerAudioSessionCoordinator.shared.flushDeferredDisplayCriteriaResetIfIdle(engine: engine)
+            }
         }
     }
 

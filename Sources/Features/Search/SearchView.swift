@@ -2,8 +2,12 @@ import SwiftUI
 
 struct SearchView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(\.lunaSubpageVisibility) private var subpageVisibility
 
     let initialQuery: String
+    let isRootTab: Bool
+
+    @State private var subpageToken = UUID()
 
     @State private var query: String
     @State private var results: [TvMediaCard] = []
@@ -20,8 +24,9 @@ struct SearchView: View {
         GridItem(.adaptive(minimum: 236, maximum: 272), spacing: 34)
     ]
 
-    init(initialQuery: String = "") {
+    init(initialQuery: String = "", isRootTab: Bool = false) {
         self.initialQuery = initialQuery
+        self.isRootTab = isRootTab
         _query = State(initialValue: initialQuery)
     }
 
@@ -164,8 +169,14 @@ struct SearchView: View {
                 }
             }
         }
+        .safeAreaPadding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 0)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
+        }
+        .onAppear {
+            if !isRootTab {
+                subpageVisibility.enterSubpage(subpageToken)
+            }
         }
         .task(id: initialQuery) {
             loadRecentSearches()
@@ -189,6 +200,9 @@ struct SearchView: View {
         .onDisappear {
             searchTask?.cancel()
             bannerClearTask?.cancel()
+            if !isRootTab && selectedCard == nil {
+                subpageVisibility.leaveSubpage(subpageToken)
+            }
         }
     }
 

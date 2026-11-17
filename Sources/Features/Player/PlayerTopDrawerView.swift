@@ -45,7 +45,7 @@ struct PlayerTopDrawerView: View {
                             tab.title,
                             systemImage: tab.icon,
                             isSelected: selectedTab == tab,
-                            prominence: selectedTab == tab ? .primaryAmber : .subtleChip
+                            prominence: selectedTab == tab ? .glassPill : .subtleChip
                         ) {
                             withAnimation(.easeOut(duration: 0.16)) {
                                 selectedTab = tab
@@ -540,32 +540,38 @@ private struct DrawerTrackRowButton: View {
             .background {
                 if isFocused {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(LunaTheme.pearlFocusGradient)
+                        .fill(LunaTheme.focusGoldGradient)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(LunaTheme.buttonRestGradient)
+                            .fill(isSelected ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonRestGradient)
                         if isSelected {
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(LunaTheme.amber.opacity(0.16))
+                                .fill(LunaTheme.amber.opacity(0.30))
                         }
                     }
                 }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(
                         isFocused
-                            ? Color.white.opacity(0.95)
-                            : (isSelected ? LunaTheme.amber.opacity(0.76) : LunaTheme.moonlight.opacity(0.24)),
-                        lineWidth: isFocused ? 2.2 : (isSelected ? 1.5 : 1.0)
+                            ? LunaTheme.focusGoldBorder
+                            : (isSelected ? LunaTheme.amber.opacity(0.92) : LunaTheme.moonlight.opacity(0.38)),
+                        lineWidth: isFocused ? 2.3 : (isSelected ? 1.75 : 1.2)
                     )
             )
             .shadow(
-                color: isFocused ? LunaTheme.pearlFocusBottom.opacity(0.36) : .black.opacity(0.28),
-                radius: isFocused ? 16 : 6,
+                color: isFocused
+                    ? LunaTheme.amber.opacity(0.50)
+                    : (isSelected ? LunaTheme.amber.opacity(0.28) : .black.opacity(0.34)),
+                radius: isFocused ? 18 : (isSelected ? 12 : 7),
                 x: 0,
-                y: isFocused ? 6 : 3
+                y: isFocused ? 7 : 3
             )
             .scaleEffect(isFocused ? 1.015 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isFocused)
@@ -626,32 +632,38 @@ private struct ChapterPillCardButton: View {
             .background {
                 if isFocused {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(LunaTheme.pearlFocusGradient)
+                        .fill(LunaTheme.focusGoldGradient)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(LunaTheme.buttonRestGradient)
+                            .fill(isActive ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonRestGradient)
                         if isActive {
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(LunaTheme.amber.opacity(0.18))
+                                .fill(LunaTheme.amber.opacity(0.30))
                         }
                     }
                 }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(
                         isFocused
-                            ? Color.white.opacity(0.95)
-                            : (isActive ? LunaTheme.amber.opacity(0.78) : LunaTheme.moonlight.opacity(0.24)),
-                        lineWidth: isFocused ? 2.2 : (isActive ? 1.5 : 1.0)
+                            ? LunaTheme.focusGoldBorder
+                            : (isActive ? LunaTheme.amber.opacity(0.92) : LunaTheme.moonlight.opacity(0.38)),
+                        lineWidth: isFocused ? 2.3 : (isActive ? 1.75 : 1.2)
                     )
             )
             .shadow(
-                color: isFocused ? LunaTheme.pearlFocusBottom.opacity(0.36) : .black.opacity(0.28),
-                radius: isFocused ? 16 : 6,
+                color: isFocused
+                    ? LunaTheme.amber.opacity(0.50)
+                    : (isActive ? LunaTheme.amber.opacity(0.28) : .black.opacity(0.34)),
+                radius: isFocused ? 18 : (isActive ? 12 : 7),
                 x: 0,
-                y: isFocused ? 6 : 3
+                y: isFocused ? 7 : 3
             )
             .scaleEffect(isFocused ? 1.03 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isFocused)

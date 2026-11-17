@@ -6,18 +6,21 @@ import XCTest
 @testable import Luna
 
 final class CatScaleAndButtonThemeTests: XCTestCase {
-    func testCatCompanionTenFootLayoutScalesAndInitialSprintFloor() {
+    func testCatCompanionTenFootLayoutScalesAndClampedStartupTrack() {
         XCTAssertEqual(CatCompanionLayout.loadingTrackWidth, 640)
         XCTAssertEqual(CatCompanionLayout.loadingTrackHeight, 7)
         XCTAssertGreaterThanOrEqual(CatCompanionLayout.loadingContainerHeight, 84)
-        XCTAssertEqual(CatCompanionLayout.loadingBlackCatSize, CGSize(width: 94, height: 66))
-        XCTAssertEqual(CatCompanionLayout.loadingTabbyCatSize, CGSize(width: 90, height: 63))
+        XCTAssertEqual(CatCompanionLayout.loadingBlackCatSize, CGSize(width: 96, height: 67))
+        XCTAssertEqual(CatCompanionLayout.loadingTabbyCatSize, CGSize(width: 92, height: 64))
         XCTAssertGreaterThanOrEqual(CatCompanionLayout.loadingBlackOffset, 54)
         XCTAssertGreaterThanOrEqual(CatCompanionLayout.loadingTabbySpacing, 88)
-        XCTAssertEqual(CatCompanionLayout.pauseCatSize, CGSize(width: 96, height: 68))
-        XCTAssertEqual(CatCompanionLayout.prowlingCatSize, CGSize(width: 116, height: 81))
-        XCTAssertEqual(CatCompanionLayout.moonSceneSize, CGSize(width: 216, height: 216))
-        XCTAssertEqual(CatCompanionLayout.moonCatSize, CGSize(width: 114, height: 80))
+        XCTAssertGreaterThanOrEqual(CatCompanionLayout.pauseCatSize.width, 190)
+        XCTAssertGreaterThanOrEqual(CatCompanionLayout.pauseCatSize.height, 190)
+        XCTAssertEqual(CatCompanionLayout.pauseCatSize, CGSize(width: 204, height: 194))
+        XCTAssertEqual(CatCompanionLayout.prowlingCatSize, CGSize(width: 122, height: 85))
+        XCTAssertGreaterThanOrEqual(CatCompanionLayout.moonSceneSize.width, 225)
+        XCTAssertEqual(CatCompanionLayout.moonSceneSize, CGSize(width: 232, height: 232))
+        XCTAssertEqual(CatCompanionLayout.moonCatSize, CGSize(width: 152, height: 144))
         XCTAssertEqual(CatCompanionLayout.playheadDiameter, 24)
         XCTAssertEqual(CatCompanionLayout.playheadEarsSize, CGSize(width: 28, height: 14))
 
@@ -33,23 +36,59 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(initial.goalFraction, 0.14)
         XCTAssertGreaterThanOrEqual(initial.duration, 0.32)
         XCTAssertGreaterThanOrEqual(initial.fraction(at: 50.0), 0.12)
+
+        // Startup positions at low fractions MUST NOT clip off the left edge of the 640pt track
+        for frac in [0.0, 0.08, 0.12, 0.16, 0.50, 0.99] {
+            let pos = LoadingTrackPositions.compute(fraction: frac)
+            let tabbyLeft = pos.tabbyCatX - CatCompanionLayout.loadingTabbyCatSize.width * 0.5
+            let blackLeft = pos.blackCatX - CatCompanionLayout.loadingBlackCatSize.width * 0.5
+            let blackRight = pos.blackCatX + CatCompanionLayout.loadingBlackCatSize.width * 0.5
+            XCTAssertGreaterThanOrEqual(tabbyLeft, 0.0, "Tabby clipped left at fraction \(frac)")
+            XCTAssertGreaterThanOrEqual(blackLeft, 0.0, "Black cat clipped left at fraction \(frac)")
+            XCTAssertLessThanOrEqual(blackRight, CatCompanionLayout.loadingTrackWidth)
+            XCTAssertLessThanOrEqual(pos.sparkX, CatCompanionLayout.loadingTrackWidth)
+            XCTAssertGreaterThanOrEqual(pos.sparkX, pos.blackCatX + 36.0 - 0.01)
+        }
     }
 
-    func testPauseCatFasterIdleThresholdAndCenteredSafeAnchor() {
+    func testPauseCatFasterIdleThresholdAndPlayheadCollisionAvoidance() {
         XCTAssertEqual(PauseCatLifecycle.idleThresholdSeconds, 6.0, accuracy: 0.001)
 
         // Typical 4K 1080p-point tvOS bottom track (1920 - 128 = 1792 pt)
-        let wideAnchor = PauseCatLifecycle.centeredAnchorX(trackWidth: 1792)
-        let expectedCenter = (1792.0 - 96.0) * 0.5
+        let catW = CatCompanionLayout.pauseCatSize.width
+        let wideAnchor = PauseCatLifecycle.centeredAnchorX(trackWidth: 1792, catWidth: catW)
+        let expectedCenter = (1792.0 - catW) * 0.5
         XCTAssertEqual(wideAnchor, expectedCenter, accuracy: 0.5)
-        // Leaves ample room on the left for long titles and on the right for «Ferdig kl. …» + scamper-off
-        XCTAssertGreaterThan(wideAnchor, 600)
-        XCTAssertLessThan(wideAnchor + 96 + 145, 1792 - 450)
+
+        // When playhead is far from center, cats stay centered
+        XCTAssertEqual(
+            PauseCatLifecycle.safeAnchorX(trackWidth: 1792, playheadX: 140, catWidth: catW),
+            expectedCenter,
+            accuracy: 0.5
+        )
+        XCTAssertEqual(
+            PauseCatLifecycle.safeAnchorX(trackWidth: 1792, playheadX: 1650, catWidth: catW),
+            expectedCenter,
+            accuracy: 0.5
+        )
+
+        // When playhead is anywhere near center, cats shift cleanly away without colliding
+        for centerPlayheadX in [780.0, 896.0, 960.0, 1020.0] {
+            let shifted = PauseCatLifecycle.safeAnchorX(
+                trackWidth: 1792,
+                playheadX: centerPlayheadX,
+                catWidth: catW
+            )
+            XCTAssertGreaterThanOrEqual(shifted, 0)
+            XCTAssertLessThanOrEqual(shifted + catW, 1792)
+            let overlapsPlayhead = (shifted + catW) > (centerPlayheadX - 30) && shifted < (centerPlayheadX + 30)
+            XCTAssertFalse(overlapsPlayhead, "Cats overlapped playhead at x=\(centerPlayheadX): anchor=\(shifted)")
+        }
 
         // Narrower width still stays cleanly within bounds
-        let compactAnchor = PauseCatLifecycle.centeredAnchorX(trackWidth: 480)
+        let compactAnchor = PauseCatLifecycle.safeAnchorX(trackWidth: 480, playheadX: 240, catWidth: catW)
         XCTAssertGreaterThanOrEqual(compactAnchor, 0)
-        XCTAssertLessThanOrEqual(compactAnchor + 96, 480)
+        XCTAssertLessThanOrEqual(compactAnchor + catW, 480)
     }
 
     func testActiveCatPosesStayUnclippedInside80x56Canvas() {
@@ -73,7 +112,7 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         }
     }
 
-    func testCatMascotPalettesMatchAppIconFidelityAndVisibility() throws {
+    func testCatMascotPalettesAndAssetCatalogMascotImagesLoad() throws {
         let blackPalette = CatMascotCanvasView.palette(for: .blackNightFury)
         let blackCoat = try rgbComponents(blackPalette.coat)
         XCTAssertEqual(blackCoat.r, 56.0 / 255.0, accuracy: 0.01)
@@ -95,21 +134,31 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         XCTAssertEqual(tabbyIris.r, 133.0 / 255.0, accuracy: 0.01)
         XCTAssertEqual(tabbyIris.g, 166.0 / 255.0, accuracy: 0.01)
         XCTAssertEqual(tabbyIris.b, 87.0 / 255.0, accuracy: 0.01)
+
+        // Genuine extracted illustrations must compile cleanly into Assets.car
+        XCTAssertNotNil(UIImage(named: "MascotCatsDuo"))
+        XCTAssertNotNil(UIImage(named: "LunaMoonCrescent"))
+        XCTAssertNotNil(UIImage(named: "LunaMoonCatsEmblem"))
     }
 
     func testLunaButtonThemeColorsContrastAndSemanticTokens() throws {
-        // Focus platter (#F4F7FC -> #F3E0B8) vs midnight #07090E text must exceed 13.8:1
-        let pearlTopContrast = try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.pearlFocusTop)
-        let pearlBotContrast = try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.pearlFocusBottom)
-        XCTAssertGreaterThan(pearlTopContrast, 13.8)
-        XCTAssertGreaterThan(pearlBotContrast, 13.8)
+        // Warm golden Luna focus glow (#FCE19E -> #F2B544) & Play sheen vs midnight #07090E
+        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.focusGoldTop), 10.0)
+        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.focusGoldBottom), 10.0)
+        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.playFocusTop), 10.0)
+        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.playFocusBottom), 9.0)
 
-        // Resting .glassPill (#24324F -> #1A253B) must clearly stand out against Settings panel (#0E131D)
+        // Resting .glassPill (#34466C -> #293858) achieves elevated starry-blue L* ≈ 24–30 above #0E131D
+        let restTopLStar = try cieLStar(LunaTheme.buttonGlassTop)
+        let restBotLStar = try cieLStar(LunaTheme.buttonGlassBottom)
+        XCTAssertGreaterThanOrEqual(restTopLStar, 26.0)
+        XCTAssertLessThanOrEqual(restTopLStar, 32.0)
+        XCTAssertGreaterThanOrEqual(restBotLStar, 22.0)
+
         let restTopLum = try relativeLuminance(LunaTheme.buttonGlassTop)
-        let restBottomLum = try relativeLuminance(LunaTheme.buttonGlassBottom)
         let panelLum = try relativeLuminance(LunaTheme.surface)
-        XCTAssertGreaterThan(restTopLum, panelLum * 2.0)
-        XCTAssertGreaterThan(restBottomLum, panelLum * 1.4)
+        XCTAssertGreaterThan(restTopLum, panelLum * 5.0)
+        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.moonlight, background: LunaTheme.buttonGlassTop), 7.0)
 
         // Semantic accent hex values
         let periwinkle = try rgbComponents(LunaTheme.periwinkle)
@@ -122,17 +171,17 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         XCTAssertEqual(coral.g, 113.0 / 255.0, accuracy: 0.01)
         XCTAssertEqual(coral.b, 103.0 / 255.0, accuracy: 0.01)
 
-        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.moonlight, background: LunaTheme.buttonGlassTop), 9.0)
-
-        // Selected periwinkle tint (11% wash over #24324F) maintains >= 4.5:1 WCAG AA contrast
-        let pRgb = try rgbComponents(LunaTheme.periwinkle)
-        let gRgb = try rgbComponents(LunaTheme.buttonGlassTop)
-        let selectedBg = Color(
-            red: pRgb.r * 0.11 + gRgb.r * 0.89,
-            green: pRgb.g * 0.11 + gRgb.g * 0.89,
-            blue: pRgb.b * 0.11 + gRgb.b * 0.89
-        )
-        XCTAssertGreaterThanOrEqual(try contrastRatio(foreground: LunaTheme.periwinkle, background: selectedBg), 4.5)
+        // Selected 30% semantic tint over buttonSelectedBaseTop maintains >= 6.5:1 crisp white text contrast
+        let baseRgb = try rgbComponents(LunaTheme.buttonSelectedBaseTop)
+        for accentColor in [LunaTheme.amber, LunaTheme.emerald, LunaTheme.periwinkle, LunaTheme.coral] {
+            let aRgb = try rgbComponents(accentColor)
+            let selectedBg = Color(
+                red: aRgb.r * 0.30 + baseRgb.r * 0.70,
+                green: aRgb.g * 0.30 + baseRgb.g * 0.70,
+                blue: aRgb.b * 0.30 + baseRgb.b * 0.70
+            )
+            XCTAssertGreaterThanOrEqual(try contrastRatio(foreground: .white, background: selectedBg), 6.5)
+        }
     }
 
     @MainActor
@@ -188,6 +237,11 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
             c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
         }
         return 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
+    }
+
+    private func cieLStar(_ color: Color) throws -> Double {
+        let y = try relativeLuminance(color)
+        return y > 0.008856 ? 116.0 * pow(y, 1.0 / 3.0) - 16.0 : 903.3 * y
     }
 
     private func contrastRatio(foreground: Color, background: Color) throws -> Double {

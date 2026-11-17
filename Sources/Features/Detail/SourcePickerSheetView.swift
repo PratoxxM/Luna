@@ -300,32 +300,38 @@ private struct CandidateRowButton: View {
             .background {
                 if isFocused {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(LunaTheme.pearlFocusGradient)
+                        .fill(LunaTheme.focusGoldGradient)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(LunaTheme.buttonRestGradient)
+                            .fill(isCurrentWinner ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonRestGradient)
                         if isCurrentWinner {
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(LunaTheme.amber.opacity(0.14))
+                                .fill(LunaTheme.amber.opacity(0.30))
                         }
                     }
                 }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(
                         isFocused
-                            ? Color.white.opacity(0.95)
-                            : (isCurrentWinner ? LunaTheme.amber.opacity(0.75) : LunaTheme.moonlight.opacity(0.24)),
-                        lineWidth: isFocused ? 2.2 : (isCurrentWinner ? 1.5 : 1.0)
+                            ? LunaTheme.focusGoldBorder
+                            : (isCurrentWinner ? LunaTheme.amber.opacity(0.92) : LunaTheme.moonlight.opacity(0.38)),
+                        lineWidth: isFocused ? 2.3 : (isCurrentWinner ? 1.75 : 1.2)
                     )
             )
             .shadow(
-                color: isFocused ? LunaTheme.pearlFocusBottom.opacity(0.38) : .black.opacity(0.28),
-                radius: isFocused ? 18 : 8,
+                color: isFocused
+                    ? LunaTheme.amber.opacity(0.52)
+                    : (isCurrentWinner ? LunaTheme.amber.opacity(0.28) : .black.opacity(0.36)),
+                radius: isFocused ? 20 : (isCurrentWinner ? 12 : 8),
                 x: 0,
-                y: isFocused ? 6 : 3
+                y: isFocused ? 8 : 4
             )
             .scaleEffect(isFocused ? 1.015 : 1.0)
             .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)

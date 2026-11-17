@@ -32,6 +32,7 @@ final class PlayerAudioSessionCoordinator {
     private let activator = NativeAudioSessionActivator()
     private var activeEngineOwnerToken: UInt64 = 0
     private var deferredResetTask: Task<Void, Never>?
+    private var isHoldingDisplayCriteriaReset: Bool = false
     private var deferredResetToken: UInt64 = 0
     private var pendingResetCheck: (@MainActor () -> Bool)?
     private var pendingResetAction: (@MainActor () -> Void)?
@@ -70,9 +71,24 @@ final class PlayerAudioSessionCoordinator {
 
     nonisolated static func shouldFlushDeferredResetOnDetailDisappear(
         isLaunchingPlayback: Bool,
-        isShowingSourcePicker: Bool
+        isShowingSourcePicker: Bool,
+        keepDisplayModeInMenu: Bool = false
     ) -> Bool {
-        !isLaunchingPlayback && !isShowingSourcePicker
+        !keepDisplayModeInMenu && !isLaunchingPlayback && !isShowingSourcePicker
+    }
+
+    nonisolated static func shouldResetDisplayCriteriaOnPlayerExit(
+        keepDisplayModeInMenuAfterPlayback: Bool
+    ) -> Bool {
+        !keepDisplayModeInMenuAfterPlayback
+    }
+
+    nonisolated static func shouldResetHeldDisplayCriteriaOnScenePhase(
+        isActiveScene: Bool,
+        hasActivePlayback: Bool,
+        engineState: PlaybackState
+    ) -> Bool {
+        !isActiveScene && !hasActivePlayback && engineState == .idle
     }
 
     func activateNativePlaybackIfNeeded(videoRoute: VideoRoute) async {
@@ -86,8 +102,32 @@ final class PlayerAudioSessionCoordinator {
         deferredResetToken &+= 1
         deferredResetTask?.cancel()
         deferredResetTask = nil
+        isHoldingDisplayCriteriaReset = false
         pendingResetCheck = nil
         pendingResetAction = nil
+    }
+
+    func holdDisplayCriteriaUntilBackground(engine: AetherEngine) {
+        holdDisplayCriteriaUntilBackground(
+            shouldExecute: { [weak engine] in
+                guard let engine else { return false }
+                return Self.shouldExecuteDeferredDisplayCriteriaReset(engineState: engine.state)
+            },
+            performReset: { [weak engine] in
+                engine?.stop(resetDisplayCriteria: true)
+            }
+        )
+    }
+
+    func holdDisplayCriteriaUntilBackground(
+        shouldExecute: @escaping @MainActor () -> Bool,
+        performReset: @escaping @MainActor () -> Void
+    ) {
+        cancelDeferredDisplayCriteriaReset()
+        deferredResetToken &+= 1
+        isHoldingDisplayCriteriaReset = true
+        pendingResetCheck = shouldExecute
+        pendingResetAction = performReset
     }
 
     func scheduleDeferredDisplayCriteriaReset(
@@ -130,11 +170,13 @@ final class PlayerAudioSessionCoordinator {
 
     func handleDetailDisappear(
         isLaunchingPlayback: Bool,
-        isShowingSourcePicker: Bool
+        isShowingSourcePicker: Bool,
+        keepDisplayModeInMenu: Bool = false
     ) {
         guard Self.shouldFlushDeferredResetOnDetailDisappear(
             isLaunchingPlayback: isLaunchingPlayback,
-            isShowingSourcePicker: isShowingSourcePicker
+            isShowingSourcePicker: isShowingSourcePicker,
+            keepDisplayModeInMenu: keepDisplayModeInMenu
         ) else {
             return
         }
@@ -142,21 +184,21 @@ final class PlayerAudioSessionCoordinator {
     }
 
     func flushDeferredDisplayCriteriaResetIfIdle() {
-        guard deferredResetTask != nil else { return }
+        guard deferredResetTask != nil || isHoldingDisplayCriteriaReset else { return }
         if pendingResetCheck?() == true {
             executePendingResetIfEligible()
         }
     }
 
     func flushDeferredDisplayCriteriaResetIfIdle(engine: AetherEngine) {
-        guard deferredResetTask != nil else { return }
+        guard deferredResetTask != nil || isHoldingDisplayCriteriaReset else { return }
         if Self.shouldExecuteDeferredDisplayCriteriaReset(engineState: engine.state) {
             executePendingResetIfEligible()
         }
     }
 
     func flushPendingDeferredResetIfEligibleForTesting() {
-        guard deferredResetTask != nil else { return }
+        guard deferredResetTask != nil || isHoldingDisplayCriteriaReset else { return }
         executePendingResetIfEligible()
     }
 
@@ -166,6 +208,7 @@ final class PlayerAudioSessionCoordinator {
         deferredResetToken &+= 1
         deferredResetTask?.cancel()
         deferredResetTask = nil
+        isHoldingDisplayCriteriaReset = false
         pendingResetCheck = nil
         pendingResetAction = nil
         if shouldExecute?() == true {

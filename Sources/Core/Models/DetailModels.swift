@@ -97,6 +97,8 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
     public var inWatchlist: Bool
     public var isFavorite: Bool?
     public var watched: Bool
+    public var monitored: Bool?
+    public var monitorMode: String?
     public let availability: TvAvailabilityInfo?
     public let progress: TvWatchProgress?
     public let selectedSeason: Int?
@@ -106,6 +108,10 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
 
     public var favoriteFlag: Bool {
         isFavorite ?? false
+    }
+
+    public var isMonitoredFlag: Bool {
+        monitored ?? false
     }
 
     public var displayRating: (value: Double, isImdb: Bool)? {
@@ -158,4 +164,11 @@ public struct TvSearchResponse: Codable, Equatable, Sendable {
 
 public struct TvMutationAckResponse: Codable, Equatable, Sendable {
     public let ok: Bool
+}
+
+public struct TvMonitorResponse: Codable, Equatable, Sendable {
+    public let ok: Bool
+    public let monitored: Bool?
+    public let monitorMode: String?
+    public let profileId: String?
 }

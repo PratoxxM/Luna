@@ -290,6 +290,16 @@ public final class ComfortPreferences: ObservableObject {
         }
     }
 
+    @Published public var keepDisplayModeInMenuAfterPlayback: Bool {
+        didSet {
+            guard oldValue != keepDisplayModeInMenuAfterPlayback else { return }
+            defaults.set(
+                keepDisplayModeInMenuAfterPlayback,
+                forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey
+            )
+        }
+    }
+
     @Published public var lowResUpscaleMode: LowResUpscaleMode {
         didSet {
             guard oldValue != lowResUpscaleMode else { return }
@@ -340,6 +350,9 @@ public final class ComfortPreferences: ObservableObject {
         self.smartNordicSubtitleRule = defaults.object(forKey: SideloadSafeStorage.smartNordicSubtitleRuleKey) as? Bool ?? true
         self.showNerdHUD = defaults.object(forKey: SideloadSafeStorage.showNerdHUDKey) as? Bool ?? false
         self.showCatCompanions = defaults.object(forKey: SideloadSafeStorage.showCatCompanionsKey) as? Bool ?? true
+        self.keepDisplayModeInMenuAfterPlayback = defaults.object(
+            forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey
+        ) as? Bool ?? true
         let rawUpscale = defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey) ?? LowResUpscaleMode.off.rawValue
         self.lowResUpscaleMode = LowResUpscaleMode(rawValue: rawUpscale) ?? .off
         if defaults.object(forKey: SideloadSafeStorage.audioDelayMsKey) != nil {

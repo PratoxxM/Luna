@@ -40,10 +40,14 @@ private final class CatalogBrowseMemoryCache {
 
 struct CatalogBrowseView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(\.lunaSubpageVisibility) private var subpageVisibility
 
     let mediaType: String
     let initialGenre: TvGenreChip?
     let isActiveTab: Bool
+    let isRootTab: Bool
+
+    @State private var subpageToken = UUID()
 
     @State private var selectedGenreSlug: String?
     @State private var selectedGenreLabel: String?
@@ -75,10 +79,16 @@ struct CatalogBrowseView: View {
         ("local_recent", "Lokalt hos oss", "internaldrive.fill")
     ]
 
-    init(mediaType: String, initialGenre: TvGenreChip?, isActiveTab: Bool = true) {
+    init(
+        mediaType: String,
+        initialGenre: TvGenreChip?,
+        isActiveTab: Bool = true,
+        isRootTab: Bool = false
+    ) {
         self.mediaType = mediaType
         self.initialGenre = initialGenre
         self.isActiveTab = isActiveTab
+        self.isRootTab = isRootTab
         _selectedGenreSlug = State(initialValue: initialGenre?.slug)
         _selectedGenreLabel = State(initialValue: initialGenre?.label)
     }
@@ -282,8 +292,14 @@ struct CatalogBrowseView: View {
             }
             .padding(.bottom, 64)
         }
+        .safeAreaPadding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 0)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
+        }
+        .onAppear {
+            if !isRootTab {
+                subpageVisibility.enterSubpage(subpageToken)
+            }
         }
         .task(id: reloadTriggerKey) {
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
@@ -301,6 +317,9 @@ struct CatalogBrowseView: View {
         }
         .onDisappear {
             mutationBannerTask?.cancel()
+            if !isRootTab && selectedCard == nil {
+                subpageVisibility.leaveSubpage(subpageToken)
+            }
         }
     }
 

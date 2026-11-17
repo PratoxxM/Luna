@@ -123,9 +123,10 @@ struct HomeView: View {
                     )
                 }
             }
-            .padding(.top, 22)
+            .padding(.top, 16)
             .padding(.bottom, 84)
         }
+        .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
         .focusScope(homeFocusNamespace)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
@@ -136,11 +137,11 @@ struct HomeView: View {
             } else if row.rowId == "popular-movies"
                 || row.sourceKind == "system_popular_movies"
                 || row.nextPath?.contains("/catalog/movies") == true {
-                CatalogBrowseView(mediaType: "movie", initialGenre: nil)
+                CatalogBrowseView(mediaType: "movie", initialGenre: nil, isRootTab: false)
             } else if row.rowId == "popular-series"
                 || row.sourceKind == "system_popular_series"
                 || row.nextPath?.contains("/catalog/series") == true {
-                CatalogBrowseView(mediaType: "series", initialGenre: nil)
+                CatalogBrowseView(mediaType: "series", initialGenre: nil, isRootTab: false)
             } else {
                 CustomRowBrowseView(title: row.title, pathOrRowId: row.nextPath ?? row.rowId)
             }

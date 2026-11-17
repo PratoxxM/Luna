@@ -146,4 +146,111 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
         XCTAssertTrue(vm2.isTeardownCompleted)
         XCTAssertEqual(vm2Stops, 1)
     }
+
+    @MainActor
+    func testKeepDisplayModeInMenuPreferenceControlsPlayerExitAndBackgroundReset() async throws {
+        let suite = "luna.test.displayhold.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let comfort = ComfortPreferences(defaults: defaults)
+        XCTAssertTrue(comfort.keepDisplayModeInMenuAfterPlayback)
+
+        var syncCalls = 0
+        comfort.onSyncRequested = { _ in syncCalls += 1 }
+        comfort.keepDisplayModeInMenuAfterPlayback = false
+        XCTAssertEqual(syncCalls, 0)
+        XCTAssertEqual(
+            defaults.object(forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey) as? Bool,
+            false
+        )
+        let reloaded = ComfortPreferences(defaults: defaults)
+        XCTAssertFalse(reloaded.keepDisplayModeInMenuAfterPlayback)
+
+        XCTAssertFalse(
+            PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
+                keepDisplayModeInMenuAfterPlayback: true
+            )
+        )
+        XCTAssertTrue(
+            PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
+                keepDisplayModeInMenuAfterPlayback: false
+            )
+        )
+
+        XCTAssertFalse(
+            PlayerAudioSessionCoordinator.shouldFlushDeferredResetOnDetailDisappear(
+                isLaunchingPlayback: false,
+                isShowingSourcePicker: false,
+                keepDisplayModeInMenu: true
+            )
+        )
+        XCTAssertTrue(
+            PlayerAudioSessionCoordinator.shouldResetHeldDisplayCriteriaOnScenePhase(
+                isActiveScene: false,
+                hasActivePlayback: false,
+                engineState: .idle
+            )
+        )
+        XCTAssertFalse(
+            PlayerAudioSessionCoordinator.shouldResetHeldDisplayCriteriaOnScenePhase(
+                isActiveScene: true,
+                hasActivePlayback: false,
+                engineState: .idle
+            )
+        )
+        XCTAssertFalse(
+            PlayerAudioSessionCoordinator.shouldResetHeldDisplayCriteriaOnScenePhase(
+                isActiveScene: false,
+                hasActivePlayback: true,
+                engineState: .idle
+            )
+        )
+        XCTAssertFalse(
+            PlayerAudioSessionCoordinator.shouldResetHeldDisplayCriteriaOnScenePhase(
+                isActiveScene: false,
+                hasActivePlayback: false,
+                engineState: .playing
+            )
+        )
+
+        // Held display criteria survives detail disappear and only resets on explicit flush (scenePhase != .active)
+        let coordinator = PlayerAudioSessionCoordinator()
+        var resetCount = 0
+        coordinator.holdDisplayCriteriaUntilBackground(
+            shouldExecute: { true },
+            performReset: { resetCount += 1 }
+        )
+        coordinator.handleDetailDisappear(
+            isLaunchingPlayback: false,
+            isShowingSourcePicker: false,
+            keepDisplayModeInMenu: true
+        )
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(resetCount, 0)
+
+        coordinator.flushDeferredDisplayCriteriaResetIfIdle()
+        XCTAssertEqual(resetCount, 1)
+        coordinator.flushDeferredDisplayCriteriaResetIfIdle()
+        XCTAssertEqual(resetCount, 1)
+
+        // When user disables keepDisplayModeInMenuAfterPlayback, teardownAndStop passes resetDisplayCriteria: true
+        let engine = try AetherEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+        let vm = PlayerViewModel(engine: engine, comfort: reloaded)
+        var capturedStops: [(Bool, Bool)] = []
+        vm.stopActionForTesting = { resetCriteria, finalTeardown in
+            capturedStops.append((resetCriteria, finalTeardown))
+        }
+        vm.teardownAndStop()
+        XCTAssertEqual(capturedStops.count, 1)
+        XCTAssertEqual(capturedStops.first?.0, true)
+        XCTAssertEqual(capturedStops.first?.1, true)
+    }
 }

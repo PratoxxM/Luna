@@ -168,6 +168,11 @@ struct SettingsView: View {
 
                     Divider().overlay(LunaTheme.moonlight.opacity(0.12))
 
+                    SettingsToggleRowButton(
+                        title: "Behold skjermens HDR-modus i menyen etter avspilling (unngår svart skjerm-blink)",
+                        isOn: $comfort.keepDisplayModeInMenuAfterPlayback
+                    )
+
                     infoRow(
                         "HDMI & Avspillingsmotor",
                         value: hdmiSummary(caps)
@@ -260,6 +265,7 @@ struct SettingsView: View {
 
                 // 3. System & Tilkobling
                 settingsPanel("System & Tilkobling") {
+                    infoRow("App-versjon", value: "Luna \(AppSessionStore.currentAppVersionDisplayString())")
                     infoRow("LunaCore-server", value: sessionStore.serverBaseURL?.absoluteString ?? "Ikke tilkoblet")
                     infoRow("Aktivt rom", value: "\(sessionStore.roomName) (\(sessionStore.effectiveHardwareProfile))")
                     infoRow("Bilde- og kataloghurtigbuffer", value: formattedCacheSize)
@@ -300,6 +306,7 @@ struct SettingsView: View {
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.bottom, 56)
         }
+        .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
         .confirmationDialog(
             "Par denne Apple TV-en på nytt?",
             isPresented: $showUnpairConfirm,
@@ -335,7 +342,7 @@ struct SettingsView: View {
         if caps.supportsHDR10 { modes.append("HDR10") }
         if caps.supportsHLG { modes.append("HLG") }
         if modes.isEmpty { modes.append("SDR") }
-        let appVer = AppSessionStore.currentAppVersionString()
+        let appVer = AppSessionStore.currentAppVersionDisplayString()
         return "Luna \(appVer) · AetherEngine \(AetherBridgeInfo.pinnedAetherEngineVersion) · \(modes.joined(separator: " / "))"
     }
 
@@ -421,32 +428,38 @@ private struct SettingsRoomRowButton: View {
             .background {
                 if isFocused {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(LunaTheme.pearlFocusGradient)
+                        .fill(LunaTheme.focusGoldGradient)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(LunaTheme.buttonRestGradient)
+                            .fill(isSelected ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonRestGradient)
                         if isSelected {
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(LunaTheme.amber.opacity(0.16))
+                                .fill(LunaTheme.amber.opacity(0.30))
                         }
                     }
                 }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(
                         isFocused
-                            ? Color.white.opacity(0.95)
-                            : (isSelected ? LunaTheme.amber.opacity(0.78) : LunaTheme.moonlight.opacity(0.24)),
-                        lineWidth: isFocused ? 2.2 : (isSelected ? 1.5 : 1.0)
+                            ? LunaTheme.focusGoldBorder
+                            : (isSelected ? LunaTheme.amber.opacity(0.92) : LunaTheme.moonlight.opacity(0.38)),
+                        lineWidth: isFocused ? 2.3 : (isSelected ? 1.75 : 1.2)
                     )
             )
             .shadow(
-                color: isFocused ? LunaTheme.pearlFocusBottom.opacity(0.35) : .black.opacity(0.25),
-                radius: isFocused ? 16 : 6,
+                color: isFocused
+                    ? LunaTheme.amber.opacity(0.50)
+                    : (isSelected ? LunaTheme.amber.opacity(0.28) : .black.opacity(0.34)),
+                radius: isFocused ? 18 : (isSelected ? 12 : 7),
                 x: 0,
-                y: isFocused ? 6 : 3
+                y: isFocused ? 7 : 3
             )
             .scaleEffect(isFocused ? 1.015 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.82), value: isFocused)
@@ -497,32 +510,38 @@ private struct SettingsToggleRowButton: View {
             .background {
                 if isFocused {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(LunaTheme.pearlFocusGradient)
+                        .fill(LunaTheme.focusGoldGradient)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(LunaTheme.buttonRestGradient)
+                            .fill(isOn ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonRestGradient)
                         if isOn {
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(LunaTheme.emerald.opacity(0.08))
+                                .fill(LunaTheme.emerald.opacity(0.28))
                         }
                     }
                 }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(
                         isFocused
-                            ? Color.white.opacity(0.95)
-                            : (isOn ? LunaTheme.emerald.opacity(0.45) : LunaTheme.moonlight.opacity(0.24)),
-                        lineWidth: isFocused ? 2.2 : 1.0
+                            ? LunaTheme.focusGoldBorder
+                            : (isOn ? LunaTheme.emerald.opacity(0.88) : LunaTheme.moonlight.opacity(0.38)),
+                        lineWidth: isFocused ? 2.3 : (isOn ? 1.65 : 1.2)
                     )
             )
             .shadow(
-                color: isFocused ? LunaTheme.pearlFocusBottom.opacity(0.35) : .black.opacity(0.25),
-                radius: isFocused ? 16 : 6,
+                color: isFocused
+                    ? LunaTheme.amber.opacity(0.50)
+                    : (isOn ? LunaTheme.emerald.opacity(0.24) : .black.opacity(0.34)),
+                radius: isFocused ? 18 : (isOn ? 11 : 7),
                 x: 0,
-                y: isFocused ? 6 : 3
+                y: isFocused ? 7 : 3
             )
             .scaleEffect(isFocused ? 1.015 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.82), value: isFocused)

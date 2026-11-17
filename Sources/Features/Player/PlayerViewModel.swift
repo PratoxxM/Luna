@@ -556,12 +556,19 @@ final class PlayerViewModel: ObservableObject {
 
         if PlayerAudioSessionCoordinator.shared.isCurrentEngineOwner(engineOwnerToken) {
             PlayerNowPlayingCoordinator.clear(engine: engine)
+            let resetOnExit = PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
+                keepDisplayModeInMenuAfterPlayback: comfort.keepDisplayModeInMenuAfterPlayback
+            )
             if let stopOverride = stopActionForTesting {
-                stopOverride(false, true)
+                stopOverride(resetOnExit, true)
             } else {
-                engine.stop(resetDisplayCriteria: false, finalTeardown: true)
+                engine.stop(resetDisplayCriteria: resetOnExit, finalTeardown: true)
             }
-            PlayerAudioSessionCoordinator.shared.scheduleDeferredDisplayCriteriaReset(engine: engine)
+            if resetOnExit {
+                PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            } else {
+                PlayerAudioSessionCoordinator.shared.holdDisplayCriteriaUntilBackground(engine: engine)
+            }
         }
 
         if let tok = registeredStreamToken, tok.count >= 8 {

@@ -12,8 +12,28 @@ struct DetailHeroHeaderView: View {
     let onPlay: () -> Void
     let onToggleWatchlist: () -> Void
     let onToggleWatched: () -> Void
+    let onToggleMonitor: () -> Void
     let onPickSource: () -> Void
     let onToggleFavorite: () -> Void
+
+    private var monitorButtonTitle: String {
+        if item.mediaType == "series" {
+            return item.isMonitoredFlag ? "Følger serie" : "Følg serie"
+        }
+        return item.isMonitoredFlag ? "Henter til NAS" : "Last ned"
+    }
+
+    private var monitorButtonIcon: String {
+        if item.mediaType == "series" {
+            return item.isMonitoredFlag ? "bell.fill" : "bell"
+        }
+        return item.isMonitoredFlag ? "arrow.down.circle.fill" : "arrow.down.circle"
+    }
+
+    private var shouldShowMonitorButton: Bool {
+        if item.mediaType == "series" { return true }
+        return item.availability?.isPhysicalLocal != true
+    }
 
     private let heroMinHeight: CGFloat = 770
 
@@ -105,7 +125,7 @@ struct DetailHeroHeaderView: View {
                 .prefersDefaultFocus(true, in: focusNamespace)
 
                 LunaPillButton(
-                    item.inWatchlist ? "I huskeliste" : "Huskeliste",
+                    "Huskeliste",
                     systemImage: item.inWatchlist ? "bookmark.fill" : "bookmark",
                     isSelected: item.inWatchlist,
                     accent: .periwinkle,
@@ -122,6 +142,17 @@ struct DetailHeroHeaderView: View {
                     action: onToggleWatched
                 )
 
+                if shouldShowMonitorButton {
+                    LunaPillButton(
+                        monitorButtonTitle,
+                        systemImage: monitorButtonIcon,
+                        isSelected: item.isMonitoredFlag,
+                        accent: .periwinkle,
+                        size: .compact,
+                        action: onToggleMonitor
+                    )
+                }
+
                 LunaPillButton(
                     "Bytt kilde",
                     systemImage: "arrow.triangle.2.circlepath",
@@ -130,7 +161,7 @@ struct DetailHeroHeaderView: View {
                 )
 
                 LunaPillButton(
-                    "",
+                    "Favoritt",
                     systemImage: item.favoriteFlag ? "star.fill" : "star",
                     isSelected: item.favoriteFlag,
                     accent: .amber,
@@ -289,37 +320,44 @@ private struct PrimaryPlayLabel: View {
     let isWarmReady: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: "play.fill")
-                .font(.system(size: 30, weight: .black))
+                .font(.system(size: 31, weight: .black))
             Text(title)
-                .font(.system(size: 34, weight: .bold))
+                .font(.system(size: 35, weight: .bold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.86)
             if isWarmReady {
                 Circle()
-                    .fill(LunaTheme.canvas.opacity(0.65))
-                    .frame(width: 7, height: 7)
+                    .fill(LunaTheme.canvas.opacity(0.68))
+                    .frame(width: 8, height: 8)
             }
         }
         .foregroundStyle(LunaTheme.canvas)
-        .padding(.horizontal, 28)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 32)
+        .padding(.vertical, 15)
         .background(
             Capsule()
-                .fill(focused ? LunaTheme.pearlFocusGradient : LunaTheme.primaryAmberGradient)
+                .fill(focused ? LunaTheme.playFocusGradient : LunaTheme.primaryAmberGradient)
         )
         .overlay(
             Capsule()
-                .strokeBorder(Color.white.opacity(focused ? 0.95 : 0.35), lineWidth: focused ? 2.5 : 1.0)
+                .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: focused), lineWidth: 1.2)
+        )
+        .overlay(
+            Capsule()
+                .strokeBorder(
+                    focused ? LunaTheme.playFocusTop : LunaTheme.focusGoldBorder.opacity(0.55),
+                    lineWidth: focused ? 2.8 : 1.2
+                )
         )
         .shadow(
-            color: (focused ? LunaTheme.pearlFocusBottom : LunaTheme.amber).opacity(focused ? 0.50 : 0.24),
-            radius: focused ? 22 : 10,
+            color: LunaTheme.amber.opacity(focused ? 0.70 : 0.32),
+            radius: focused ? 28 : 12,
             x: 0,
-            y: focused ? 8 : 4
+            y: focused ? 10 : 5
         )
-        .scaleEffect(focused ? 1.055 : 1.0)
-        .animation(.spring(response: 0.22, dampingFraction: 0.78), value: focused)
+        .scaleEffect(focused ? 1.075 : 1.0)
+        .animation(.spring(response: 0.22, dampingFraction: 0.76), value: focused)
     }
 }

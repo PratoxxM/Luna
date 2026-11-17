@@ -230,18 +230,22 @@ private struct SeeAllShelfCardButton: View {
             .frame(width: width, height: height)
             .background(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(isFocused ? LunaTheme.pearlFocusGradient : LunaTheme.buttonRestGradient)
+                    .fill(isFocused ? LunaTheme.focusGoldGradient : LunaTheme.buttonRestGradient)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .strokeBorder(
-                        isFocused ? Color.white.opacity(0.95) : LunaTheme.moonlight.opacity(0.26),
-                        lineWidth: isFocused ? 2.5 : 1.2
+                        isFocused ? LunaTheme.focusGoldBorder : LunaTheme.moonlight.opacity(0.38),
+                        lineWidth: isFocused ? 2.5 : 1.25
                     )
             )
             .shadow(
-                color: isFocused ? LunaTheme.pearlFocusBottom.opacity(0.42) : .black.opacity(0.30),
-                radius: isFocused ? 20 : 8,
+                color: isFocused ? LunaTheme.amber.opacity(0.52) : .black.opacity(0.36),
+                radius: isFocused ? 22 : 10,
                 x: 0,
                 y: isFocused ? 8 : 4
             )

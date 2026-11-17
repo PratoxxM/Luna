@@ -429,6 +429,36 @@ public struct LunaCoreClient: Sendable {
         )
     }
 
+    public func toggleMonitor(
+        monitored: Bool? = nil,
+        monitorMode: String? = nil,
+        mediaType: String,
+        ids: TvMediaIds,
+        title: String,
+        year: Int?
+    ) async throws -> TvMonitorResponse {
+        struct ItemPayload: Encodable {
+            let kind: String
+            let title: String
+            let year: Int?
+            let ids: TvMediaIds
+        }
+        struct BodyPayload: Encodable {
+            let monitored: Bool?
+            let monitorMode: String?
+            let item: ItemPayload
+        }
+        return try await sendJSON(
+            method: "POST",
+            path: "/api/tv/v1/monitor",
+            body: BodyPayload(
+                monitored: monitored,
+                monitorMode: monitorMode,
+                item: ItemPayload(kind: mediaType, title: title, year: year, ids: ids)
+            )
+        )
+    }
+
     public func setWatched(
         watched: Bool,
         mediaType: String,

@@ -28,15 +28,22 @@ public enum LunaTheme {
     /// Night-Fury coral (`#F07167`) for clear, reset, and unpair actions.
     public static let coral = Color(red: 240.0 / 255.0, green: 113.0 / 255.0, blue: 103.0 / 255.0)
 
-    /// Elevated Twilight Indigo-Slate resting button fill (`#24324F -> #1A253B`).
-    public static let buttonGlassTop = Color(red: 36.0 / 255.0, green: 50.0 / 255.0, blue: 79.0 / 255.0)
-    public static let buttonGlassBottom = Color(red: 26.0 / 255.0, green: 37.0 / 255.0, blue: 59.0 / 255.0)
-    /// Translucent Celestial Slate lift for secondary chips above `#0E131D` / `#0D111A` panels.
-    public static let buttonSubtleTop = Color(red: 44.0 / 255.0, green: 59.0 / 255.0, blue: 92.0 / 255.0).opacity(0.72)
-    public static let buttonSubtleBottom = Color(red: 30.0 / 255.0, green: 42.0 / 255.0, blue: 68.0 / 255.0).opacity(0.68)
-    /// HDR-comfortable Moonlit Pearl / Warm Champagne focused platter (`#F4F7FC -> #F3E0B8`).
-    public static let pearlFocusTop = Color(red: 244.0 / 255.0, green: 247.0 / 255.0, blue: 252.0 / 255.0)
-    public static let pearlFocusBottom = Color(red: 243.0 / 255.0, green: 224.0 / 255.0, blue: 184.0 / 255.0)
+    /// Elevated Twilight Starry-Blue resting button fill (`#34466C -> #293858`, `L* ≈ 24–30`).
+    public static let buttonGlassTop = Color(red: 52.0 / 255.0, green: 70.0 / 255.0, blue: 108.0 / 255.0)
+    public static let buttonGlassBottom = Color(red: 41.0 / 255.0, green: 56.0 / 255.0, blue: 88.0 / 255.0)
+    /// Elevated Celestial Indigo lift for secondary filter & genre chips (`#2F4063 -> #253351`).
+    public static let buttonSubtleTop = Color(red: 47.0 / 255.0, green: 64.0 / 255.0, blue: 99.0 / 255.0).opacity(0.94)
+    public static let buttonSubtleBottom = Color(red: 37.0 / 255.0, green: 51.0 / 255.0, blue: 81.0 / 255.0).opacity(0.92)
+    /// Deep Starry-Indigo anchor base underneath rich 28–32% semantic selected tints.
+    public static let buttonSelectedBaseTop = Color(red: 31.0 / 255.0, green: 44.0 / 255.0, blue: 71.0 / 255.0)
+    public static let buttonSelectedBaseBottom = Color(red: 23.0 / 255.0, green: 33.0 / 255.0, blue: 55.0 / 255.0)
+    /// Warm golden Luna Siri Remote focus glow (`#FCE19E -> #F2B544` champagne-amber gradient).
+    public static let focusGoldTop = Color(red: 252.0 / 255.0, green: 225.0 / 255.0, blue: 158.0 / 255.0)
+    public static let focusGoldBottom = Color(red: 242.0 / 255.0, green: 181.0 / 255.0, blue: 68.0 / 255.0)
+    public static let focusGoldBorder = Color(red: 255.0 / 255.0, green: 243.0 / 255.0, blue: 206.0 / 255.0)
+    /// Brighter platinum-gold sheen reserved for focused `PrimaryPlayButton` («Spill av»).
+    public static let playFocusTop = Color(red: 255.0 / 255.0, green: 245.0 / 255.0, blue: 214.0 / 255.0)
+    public static let playFocusBottom = Color(red: 234.0 / 255.0, green: 167.0 / 255.0, blue: 59.0 / 255.0)
 
     public static let horizontalGutter: CGFloat = 64
 
@@ -56,9 +63,29 @@ public enum LunaTheme {
         )
     }
 
-    public static var pearlFocusGradient: LinearGradient {
+    public static var buttonSelectedBaseGradient: LinearGradient {
         LinearGradient(
-            colors: [pearlFocusTop, pearlFocusBottom],
+            colors: [buttonSelectedBaseTop, buttonSelectedBaseBottom],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    public static var focusGoldGradient: LinearGradient {
+        LinearGradient(
+            colors: [focusGoldTop, focusGoldBottom],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    public static var playFocusGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                playFocusTop,
+                Color(red: 249.0 / 255.0, green: 206.0 / 255.0, blue: 110.0 / 255.0),
+                playFocusBottom,
+            ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -66,9 +93,24 @@ public enum LunaTheme {
 
     public static var primaryAmberGradient: LinearGradient {
         LinearGradient(
-            colors: [amber, amberDeep],
+            colors: [
+                Color(red: 248.0 / 255.0, green: 203.0 / 255.0, blue: 114.0 / 255.0),
+                amberDeep,
+            ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
+        )
+    }
+
+    public static func topInnerHighlightGradient(isFocused: Bool) -> LinearGradient {
+        LinearGradient(
+            colors: [
+                Color.white.opacity(isFocused ? 0.65 : 0.26),
+                Color.white.opacity(isFocused ? 0.16 : 0.05),
+                Color.clear,
+            ],
+            startPoint: .top,
+            endPoint: .bottom
         )
     }
 
@@ -251,15 +293,19 @@ private struct LunaPillLabel: View {
         .background(backgroundView)
         .overlay(
             Capsule()
+                .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
+        )
+        .overlay(
+            Capsule()
                 .strokeBorder(borderColor, lineWidth: borderWidth)
         )
         .shadow(
             color: shadowColor,
-            radius: isFocused ? 18 : 8,
+            radius: isFocused ? 20 : (isSelected ? 12 : 8),
             x: 0,
             y: isFocused ? 8 : 4
         )
-        .scaleEffect(isFocused ? 1.05 : 1.0)
+        .scaleEffect(isFocused ? 1.055 : 1.0)
         .animation(.spring(response: 0.22, dampingFraction: 0.78), value: isFocused)
     }
 
@@ -278,7 +324,7 @@ private struct LunaPillLabel: View {
             return LunaTheme.canvas
         }
         if isSelected {
-            return accent.color
+            return .white
         }
         return LunaTheme.moonlight
     }
@@ -288,7 +334,7 @@ private struct LunaPillLabel: View {
             return LunaTheme.canvas
         }
         if isSelected {
-            return accent.color
+            return .white
         }
         return LunaTheme.moonlight
     }
@@ -296,27 +342,27 @@ private struct LunaPillLabel: View {
     @ViewBuilder
     private var backgroundView: some View {
         if isFocused {
-            Capsule().fill(LunaTheme.pearlFocusGradient)
+            Capsule().fill(LunaTheme.focusGoldGradient)
         } else {
             switch prominence {
             case .primaryAmber:
                 Capsule().fill(LunaTheme.primaryAmberGradient)
             case .glassPill:
                 ZStack {
-                    Capsule().fill(LunaTheme.buttonRestGradient)
+                    Capsule().fill(isSelected ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonRestGradient)
                     if isSelected {
-                        Capsule().fill(accent.color.opacity(0.11))
+                        Capsule().fill(accent.color.opacity(0.30))
                     } else if accent == .coral {
-                        Capsule().fill(LunaTheme.coral.opacity(0.11))
+                        Capsule().fill(LunaTheme.coral.opacity(0.16))
                     }
                 }
             case .subtleChip:
                 ZStack {
-                    Capsule().fill(LunaTheme.buttonSubtleGradient)
+                    Capsule().fill(isSelected ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonSubtleGradient)
                     if isSelected {
-                        Capsule().fill(accent.color.opacity(0.11))
+                        Capsule().fill(accent.color.opacity(0.28))
                     } else if accent == .coral {
-                        Capsule().fill(LunaTheme.coral.opacity(0.11))
+                        Capsule().fill(LunaTheme.coral.opacity(0.15))
                     }
                 }
             }
@@ -325,57 +371,57 @@ private struct LunaPillLabel: View {
 
     private var borderColor: Color {
         if isFocused {
-            return Color.white.opacity(0.95)
+            return LunaTheme.focusGoldBorder
         }
         switch prominence {
         case .primaryAmber:
-            return Color.white.opacity(0.32)
+            return LunaTheme.focusGoldBorder.opacity(0.55)
         case .glassPill:
             if isSelected {
-                return accent.color.opacity(0.84)
+                return accent.color.opacity(0.92)
             }
             if accent == .coral {
-                return LunaTheme.coral.opacity(0.58)
+                return LunaTheme.coral.opacity(0.68)
             }
-            return LunaTheme.moonlight.opacity(0.30)
+            return LunaTheme.moonlight.opacity(0.38)
         case .subtleChip:
             if isSelected {
-                return accent.color.opacity(0.82)
+                return accent.color.opacity(0.90)
             }
             if accent == .coral {
-                return LunaTheme.coral.opacity(0.55)
+                return LunaTheme.coral.opacity(0.62)
             }
-            return LunaTheme.moonlight.opacity(0.24)
+            return LunaTheme.moonlight.opacity(0.30)
         }
     }
 
     private var borderWidth: CGFloat {
-        if isFocused { return 2.2 }
-        if isSelected { return 1.5 }
-        return prominence == .glassPill ? 1.15 : 1.0
+        if isFocused { return 2.3 }
+        if isSelected { return 1.75 }
+        return prominence == .glassPill ? 1.2 : 1.05
     }
 
     private var shadowColor: Color {
         if isFocused {
-            return LunaTheme.pearlFocusBottom.opacity(0.42)
+            return LunaTheme.amber.opacity(0.54)
         }
         if prominence == .primaryAmber {
-            return LunaTheme.amber.opacity(0.24)
+            return LunaTheme.amber.opacity(0.30)
         }
         if isSelected {
-            return accent.color.opacity(0.22)
+            return accent.color.opacity(0.30)
         }
-        return Color.black.opacity(0.32)
+        return Color.black.opacity(0.36)
     }
 
     private var badgeBackground: Color {
         if isFocused || prominence == .primaryAmber {
-            return Color.black.opacity(0.15)
+            return Color.black.opacity(0.18)
         }
         if isSelected {
-            return accent.color.opacity(0.24)
+            return accent.color.opacity(0.34)
         }
-        return Color.white.opacity(0.14)
+        return Color.white.opacity(0.16)
     }
 }
 

@@ -284,13 +284,46 @@ public final class AppSessionStore: ObservableObject {
     }
 
     public nonisolated static func currentAppVersionString() -> String {
-        if let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+        currentAppVersionString(infoDictionary: Bundle.main.infoDictionary)
+    }
+
+    public nonisolated static func currentAppVersionString(infoDictionary: [String: Any]?) -> String {
+        if let ver = infoDictionary?["CFBundleShortVersionString"] as? String {
             let trimmed = ver.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
                 return trimmed
             }
         }
         return "2.3.6"
+    }
+
+    public nonisolated static func currentBuildNumberString() -> String? {
+        currentBuildNumberString(infoDictionary: Bundle.main.infoDictionary)
+    }
+
+    public nonisolated static func currentBuildNumberString(infoDictionary: [String: Any]?) -> String? {
+        if let build = infoDictionary?["CFBundleVersion"] as? String {
+            let trimmed = build.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        if let num = infoDictionary?["CFBundleVersion"] as? Int, num > 0 {
+            return String(num)
+        }
+        return nil
+    }
+
+    public nonisolated static func currentAppVersionDisplayString() -> String {
+        currentAppVersionDisplayString(infoDictionary: Bundle.main.infoDictionary)
+    }
+
+    public nonisolated static func currentAppVersionDisplayString(infoDictionary: [String: Any]?) -> String {
+        let version = currentAppVersionString(infoDictionary: infoDictionary)
+        if let build = currentBuildNumberString(infoDictionary: infoDictionary) {
+            return "\(version) (bygg \(build))"
+        }
+        return version
     }
 
     public func unpairDevice() {

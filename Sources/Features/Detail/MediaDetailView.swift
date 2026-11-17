@@ -4,6 +4,7 @@ import AetherBridge
 struct MediaDetailView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.ambientFocusSink) private var ambientFocus
+    @Environment(\.lunaSubpageVisibility) private var subpageVisibility
 
     let mediaType: String
     let itemId: String
@@ -23,6 +24,8 @@ struct MediaDetailView: View {
     @StateObject private var preResolve = DetailPreResolveController()
     @State private var sourcePickerContext: SourcePickerContext?
     @State private var bannerClearTask: Task<Void, Never>?
+    @State private var postPlaybackReloadFallbackTask: Task<Void, Never>?
+    @State private var subpageToken = UUID()
 
     @Namespace private var detailFocusNamespace
 
@@ -54,6 +57,9 @@ struct MediaDetailView: View {
                             onToggleWatched: {
                                 Task { await handleHeroWatchedTap(detail) }
                             },
+                            onToggleMonitor: {
+                                Task { await toggleMonitor(detail) }
+                            },
                             onPickSource: {
                                 let target = primaryTargetInfo(detail)
                                 sourcePickerContext = SourcePickerContext(
@@ -63,7 +69,10 @@ struct MediaDetailView: View {
                                     season: target.season,
                                     episode: target.episode,
                                     startPositionSeconds: target.startPos,
-                                    existingPrepareToken: preResolve.matchingToken(for: target.itemId),
+                                    existingPrepareToken: preResolve.matchingToken(
+                                        for: target.itemId,
+                                        startPosition: target.startPos
+                                    ),
                                     backdropUrl: detail.backdropUrl ?? detail.cardBackdropUrl,
                                     logoUrl: detail.logoUrl
                                 )
@@ -173,22 +182,39 @@ struct MediaDetailView: View {
                 }
             }
         }
+        .onAppear {
+            subpageVisibility.enterSubpage(subpageToken)
+        }
         .task(id: "\(mediaType)#\(itemId)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)") {
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
             await loadDetail()
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
             guard newNonce != lastSeenRefreshNonce else { return }
+            postPlaybackReloadFallbackTask?.cancel()
+            postPlaybackReloadFallbackTask = nil
             lastSeenRefreshNonce = newNonce
             Task { await loadDetail(preserveSeason: true) }
         }
         .onChange(of: sessionStore.activePlaybackTarget) { oldTarget, newTarget in
-            if oldTarget != nil, newTarget == nil, let detail {
-                schedulePreResolve(for: detail)
+            if newTarget != nil {
+                postPlaybackReloadFallbackTask?.cancel()
+                postPlaybackReloadFallbackTask = nil
+            } else if oldTarget != nil {
+                // Wait for PlayerViewModel.teardownAndStop()'s stopped heartbeat and notifyContentMutated()
+                // so loadDetail(preserveSeason: true) pre-resolves with the fresh resume position & nextUp.
+                postPlaybackReloadFallbackTask?.cancel()
+                postPlaybackReloadFallbackTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    guard !Task.isCancelled, sessionStore.activePlaybackTarget == nil else { return }
+                    await loadDetail(preserveSeason: true)
+                }
             }
         }
         .onDisappear {
             bannerClearTask?.cancel()
+            postPlaybackReloadFallbackTask?.cancel()
+            postPlaybackReloadFallbackTask = nil
             let isLaunchingPlayback = sessionStore.activePlaybackTarget != nil
             let isShowingSourcePicker = sourcePickerContext != nil
             preResolve.handleDisappear(
@@ -198,8 +224,12 @@ struct MediaDetailView: View {
             )
             PlayerAudioSessionCoordinator.shared.handleDetailDisappear(
                 isLaunchingPlayback: isLaunchingPlayback,
-                isShowingSourcePicker: isShowingSourcePicker
+                isShowingSourcePicker: isShowingSourcePicker,
+                keepDisplayModeInMenu: sessionStore.comfort.keepDisplayModeInMenuAfterPlayback
             )
+            if !isLaunchingPlayback && !isShowingSourcePicker && selectedActorQuery == nil {
+                subpageVisibility.leaveSubpage(subpageToken)
+            }
         }
     }
 
@@ -253,6 +283,7 @@ struct MediaDetailView: View {
                                         guard ep.isUpcoming != true else { return }
                                         let usePrep = preResolve.consumeForPlayback(
                                             itemId: ep.itemId,
+                                            startPosition: ep.progress?.positionSeconds,
                                             client: sessionStore.makeClient()
                                         )
                                         let cleanEpisodeTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
@@ -290,7 +321,10 @@ struct MediaDetailView: View {
                                             season: ep.seasonNumber,
                                             episode: ep.episodeNumber,
                                             startPositionSeconds: ep.progress?.positionSeconds,
-                                            existingPrepareToken: preResolve.matchingToken(for: ep.itemId),
+                                            existingPrepareToken: preResolve.matchingToken(
+                                                for: ep.itemId,
+                                                startPosition: ep.progress?.positionSeconds
+                                            ),
                                             backdropUrl: ep.stillUrl ?? detail.backdropUrl,
                                             logoUrl: detail.logoUrl
                                         )
@@ -402,6 +436,7 @@ struct MediaDetailView: View {
         let target = primaryTargetInfo(item)
         let matchingToken = preResolve.consumeForPlayback(
             itemId: target.itemId,
+            startPosition: target.startPos,
             client: sessionStore.makeClient()
         )
         sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
@@ -553,6 +588,31 @@ struct MediaDetailView: View {
             await markLocalMutationAndReload()
         } catch {
             detail?.isFavorite = item.isFavorite
+            showMutationError(error)
+        }
+    }
+
+    private func toggleMonitor(_ item: TvItemDetail) async {
+        guard let client = sessionStore.makeClient() else { return }
+        let nextMonitored = !item.isMonitoredFlag
+        let nextMode = nextMonitored ? (item.mediaType == "series" ? "unwatched" : "all") : "off"
+        detail?.monitored = nextMonitored
+        detail?.monitorMode = nextMode
+        do {
+            let res = try await client.toggleMonitor(
+                monitored: nextMonitored,
+                monitorMode: nextMode,
+                mediaType: item.mediaType,
+                ids: item.ids,
+                title: item.title,
+                year: item.year
+            )
+            detail?.monitored = res.monitored ?? nextMonitored
+            detail?.monitorMode = res.monitorMode ?? nextMode
+            await markLocalMutationAndReload()
+        } catch {
+            detail?.monitored = item.monitored
+            detail?.monitorMode = item.monitorMode
             showMutationError(error)
         }
     }

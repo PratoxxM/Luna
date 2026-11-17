@@ -3,9 +3,12 @@ import SwiftUI
 /// Full-grid explorer for custom MediaLogg shelves or "Se alle" row links.
 struct CustomRowBrowseView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(\.lunaSubpageVisibility) private var subpageVisibility
 
     let title: String
     let pathOrRowId: String
+
+    @State private var subpageToken = UUID()
 
     @State private var items: [TvMediaCard] = []
     @State private var hasMore: Bool = false
@@ -116,6 +119,9 @@ struct CustomRowBrowseView: View {
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
+        .onAppear {
+            subpageVisibility.enterSubpage(subpageToken)
+        }
         .task {
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
             await loadInitial()
@@ -127,6 +133,9 @@ struct CustomRowBrowseView: View {
         }
         .onDisappear {
             mutationBannerTask?.cancel()
+            if selectedCard == nil {
+                subpageVisibility.leaveSubpage(subpageToken)
+            }
         }
     }
 
