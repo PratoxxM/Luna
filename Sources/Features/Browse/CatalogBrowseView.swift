@@ -293,6 +293,7 @@ struct CatalogBrowseView: View {
             .padding(.bottom, 64)
         }
         .safeAreaPadding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 0)
+        .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }

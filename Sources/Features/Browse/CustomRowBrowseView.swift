@@ -116,6 +116,7 @@ struct CustomRowBrowseView: View {
             }
             .padding(.bottom, 72)
         }
+        .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }

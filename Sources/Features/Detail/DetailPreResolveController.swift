@@ -1,6 +1,34 @@
 import Foundation
 import AetherBridge
 
+enum DetailReloadAction: Equatable, Sendable {
+    case skip
+    case loadInitial
+    case reloadPreservingSeason
+}
+
+enum DetailReloadPolicy: Sendable {
+    static func actionForTaskAppearance(
+        hasLoadedDetail: Bool,
+        loadedScopeKey: String?,
+        currentScopeKey: String,
+        lastSeenRefreshNonce: Int,
+        currentRefreshNonce: Int,
+        awaitingPostPlaybackRefresh: Bool
+    ) -> DetailReloadAction {
+        if !hasLoadedDetail || loadedScopeKey != currentScopeKey {
+            return .loadInitial
+        }
+        if currentRefreshNonce != lastSeenRefreshNonce {
+            return .reloadPreservingSeason
+        }
+        if awaitingPostPlaybackRefresh {
+            return .skip
+        }
+        return .skip
+    }
+}
+
 /// Coordinates debounced 180ms `/api/tv/v1/playback/prepare` + strict NVMe/VFS-only
 /// 8 MiB `AetherEngine.prewarm` on detail views without waking mechanical archive drives.
 @MainActor

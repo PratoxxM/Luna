@@ -172,12 +172,20 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
 
         XCTAssertFalse(
             PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
-                keepDisplayModeInMenuAfterPlayback: true
+                keepDisplayModeInMenuAfterPlayback: true,
+                isForegroundActive: true
             )
         )
         XCTAssertTrue(
             PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
-                keepDisplayModeInMenuAfterPlayback: false
+                keepDisplayModeInMenuAfterPlayback: true,
+                isForegroundActive: false
+            )
+        )
+        XCTAssertTrue(
+            PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
+                keepDisplayModeInMenuAfterPlayback: false,
+                isForegroundActive: true
             )
         )
 

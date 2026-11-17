@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import AetherBridge
 
 struct MainNavigationShell: View {
@@ -94,6 +95,20 @@ struct MainNavigationShell: View {
             .toolbar(.hidden, for: .tabBar)
 
             if !navBarVisibility.isTopBarHidden {
+                LinearGradient(
+                    stops: [
+                        .init(color: LunaTheme.canvas.opacity(0.92), location: 0.0),
+                        .init(color: LunaTheme.canvas.opacity(0.56), location: 0.58),
+                        .init(color: .clear, location: 1.0),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 120)
+                .ignoresSafeArea(edges: .top)
+                .allowsHitTesting(false)
+                .zIndex(9)
+
                 LunaTopBarView(
                     selectedTab: $selectedTab,
                     showCatCompanions: sessionStore.comfort.showCatCompanions,
@@ -139,7 +154,7 @@ struct MainNavigationShell: View {
             }
             Task { await refreshBootstrapProfile() }
         }
-        .onChange(of: sessionStore.comfort.keepDisplayModeInMenuAfterPlayback) { _, keepInMenu in
+        .onReceive(sessionStore.comfort.$keepDisplayModeInMenuAfterPlayback.dropFirst()) { keepInMenu in
             if !keepInMenu && sessionStore.activePlaybackTarget == nil {
                 PlayerAudioSessionCoordinator.shared.flushDeferredDisplayCriteriaResetIfIdle(engine: engine)
             }

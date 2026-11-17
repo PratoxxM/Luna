@@ -170,6 +170,7 @@ struct SearchView: View {
             }
         }
         .safeAreaPadding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 0)
+        .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }

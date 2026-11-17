@@ -177,8 +177,8 @@ struct MascotCatsAnimatedDuoView: View {
     let blinkProgress: Double
     let shimmerPhase: Double
 
-    private static let tabbyEyelidColor = Color(red: 132.0 / 255.0, green: 96.0 / 255.0, blue: 72.0 / 255.0)
-    private static let blackEyelidColor = Color(red: 60.0 / 255.0, green: 52.0 / 255.0, blue: 65.0 / 255.0)
+    private static let tabbyEyelidColor = Color(red: 136.0 / 255.0, green: 97.0 / 255.0, blue: 73.0 / 255.0)
+    private static let blackEyelidColor = Color(red: 60.0 / 255.0, green: 53.0 / 255.0, blue: 64.0 / 255.0)
 
     var body: some View {
         let breath = sin(breathPhase)
@@ -230,10 +230,10 @@ struct MascotCatsAnimatedDuoView: View {
     private func eyeGlintOverlay(opacity: Double) -> some View {
         Canvas { context, sz in
             let points = [
-                CGPoint(x: sz.width * 0.292, y: sz.height * 0.220),
-                CGPoint(x: sz.width * 0.402, y: sz.height * 0.220),
-                CGPoint(x: sz.width * 0.546, y: sz.height * 0.181),
-                CGPoint(x: sz.width * 0.665, y: sz.height * 0.183),
+                CGPoint(x: sz.width * 0.312, y: sz.height * 0.220),
+                CGPoint(x: sz.width * 0.414, y: sz.height * 0.218),
+                CGPoint(x: sz.width * 0.562, y: sz.height * 0.180),
+                CGPoint(x: sz.width * 0.672, y: sz.height * 0.183),
             ]
             for pt in points {
                 let r = sz.width * 0.011
@@ -246,10 +246,10 @@ struct MascotCatsAnimatedDuoView: View {
     private func blinkEyelidsOverlay(blink: Double) -> some View {
         Canvas { context, sz in
             let lids: [(nx: Double, ny: Double, nw: Double, nh: Double, color: Color)] = [
-                (0.298, 0.229, 0.058, 0.042, Self.tabbyEyelidColor),
-                (0.409, 0.229, 0.058, 0.042, Self.tabbyEyelidColor),
-                (0.553, 0.189, 0.058, 0.046, Self.blackEyelidColor),
-                (0.672, 0.191, 0.058, 0.042, Self.blackEyelidColor),
+                (0.300, 0.229, 0.058, 0.042, Self.tabbyEyelidColor),
+                (0.414, 0.230, 0.058, 0.042, Self.tabbyEyelidColor),
+                (0.555, 0.189, 0.058, 0.046, Self.blackEyelidColor),
+                (0.666, 0.193, 0.058, 0.042, Self.blackEyelidColor),
             ]
             for lid in lids {
                 let w = sz.width * lid.nw

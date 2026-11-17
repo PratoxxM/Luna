@@ -557,7 +557,8 @@ final class PlayerViewModel: ObservableObject {
         if PlayerAudioSessionCoordinator.shared.isCurrentEngineOwner(engineOwnerToken) {
             PlayerNowPlayingCoordinator.clear(engine: engine)
             let resetOnExit = PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
-                keepDisplayModeInMenuAfterPlayback: comfort.keepDisplayModeInMenuAfterPlayback
+                keepDisplayModeInMenuAfterPlayback: comfort.keepDisplayModeInMenuAfterPlayback,
+                isForegroundActive: isForegroundActive
             )
             if let stopOverride = stopActionForTesting {
                 stopOverride(resetOnExit, true)

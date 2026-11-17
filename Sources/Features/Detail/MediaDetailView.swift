@@ -25,7 +25,15 @@ struct MediaDetailView: View {
     @State private var sourcePickerContext: SourcePickerContext?
     @State private var bannerClearTask: Task<Void, Never>?
     @State private var postPlaybackReloadFallbackTask: Task<Void, Never>?
+    @State private var detailLoadTask: Task<Void, Never>?
+    @State private var detailLoadGeneration: UInt64 = 0
+    @State private var loadedScopeKey: String?
+    @State private var awaitingPostPlaybackRefresh: Bool = false
     @State private var subpageToken = UUID()
+
+    private var scopeKey: String {
+        "\(mediaType)#\(itemId)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
+    }
 
     @Namespace private var detailFocusNamespace
 
@@ -108,7 +116,7 @@ struct MediaDetailView: View {
                             Text(errorMessage)
                                 .foregroundStyle(LunaTheme.amber)
                             LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                                Task { await loadDetail() }
+                                Task { await runSerializedDetailLoad(preserveSeason: false) }
                             }
                         }
                         .padding(.horizontal, detailGutter)
@@ -127,6 +135,7 @@ struct MediaDetailView: View {
             }
         }
         .focusScope(detailFocusNamespace)
+        .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedActorQuery) { actorName in
             SearchView(initialQuery: actorName)
         }
@@ -136,7 +145,11 @@ struct MediaDetailView: View {
                 onSelectCandidate: { picked, reusedToken in
                     let target = ctx
                     if reusedToken != nil {
-                        _ = preResolve.consumeForPlayback(itemId: target.itemId, client: sessionStore.makeClient())
+                        _ = preResolve.consumeForPlayback(
+                            itemId: target.itemId,
+                            startPosition: target.startPositionSeconds,
+                            client: sessionStore.makeClient()
+                        )
                     } else {
                         preResolve.discardPreparedSession(client: sessionStore.makeClient())
                     }
@@ -185,29 +198,58 @@ struct MediaDetailView: View {
         .onAppear {
             subpageVisibility.enterSubpage(subpageToken)
         }
-        .task(id: "\(mediaType)#\(itemId)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)") {
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            await loadDetail()
+        .task(id: scopeKey) {
+            let currentScope = scopeKey
+            let action = DetailReloadPolicy.actionForTaskAppearance(
+                hasLoadedDetail: detail != nil,
+                loadedScopeKey: loadedScopeKey,
+                currentScopeKey: currentScope,
+                lastSeenRefreshNonce: lastSeenRefreshNonce,
+                currentRefreshNonce: sessionStore.homeRefreshNonce,
+                awaitingPostPlaybackRefresh: awaitingPostPlaybackRefresh
+            )
+            switch action {
+            case .skip:
+                return
+            case .loadInitial:
+                awaitingPostPlaybackRefresh = false
+                postPlaybackReloadFallbackTask?.cancel()
+                postPlaybackReloadFallbackTask = nil
+                lastSeenRefreshNonce = sessionStore.homeRefreshNonce
+                await runSerializedDetailLoad(preserveSeason: false, expectedScope: currentScope)
+            case .reloadPreservingSeason:
+                awaitingPostPlaybackRefresh = false
+                postPlaybackReloadFallbackTask?.cancel()
+                postPlaybackReloadFallbackTask = nil
+                lastSeenRefreshNonce = sessionStore.homeRefreshNonce
+                await runSerializedDetailLoad(preserveSeason: true, expectedScope: currentScope)
+            }
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
             guard newNonce != lastSeenRefreshNonce else { return }
+            awaitingPostPlaybackRefresh = false
             postPlaybackReloadFallbackTask?.cancel()
             postPlaybackReloadFallbackTask = nil
             lastSeenRefreshNonce = newNonce
-            Task { await loadDetail(preserveSeason: true) }
+            launchSerializedDetailLoad(preserveSeason: true)
         }
         .onChange(of: sessionStore.activePlaybackTarget) { oldTarget, newTarget in
             if newTarget != nil {
+                awaitingPostPlaybackRefresh = false
                 postPlaybackReloadFallbackTask?.cancel()
                 postPlaybackReloadFallbackTask = nil
+                detailLoadTask?.cancel()
+                detailLoadTask = nil
             } else if oldTarget != nil {
                 // Wait for PlayerViewModel.teardownAndStop()'s stopped heartbeat and notifyContentMutated()
                 // so loadDetail(preserveSeason: true) pre-resolves with the fresh resume position & nextUp.
+                awaitingPostPlaybackRefresh = true
                 postPlaybackReloadFallbackTask?.cancel()
                 postPlaybackReloadFallbackTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    try? await Task.sleep(nanoseconds: 2_200_000_000)
                     guard !Task.isCancelled, sessionStore.activePlaybackTarget == nil else { return }
-                    await loadDetail(preserveSeason: true)
+                    awaitingPostPlaybackRefresh = false
+                    await runSerializedDetailLoad(preserveSeason: true)
                 }
             }
         }
@@ -215,6 +257,8 @@ struct MediaDetailView: View {
             bannerClearTask?.cancel()
             postPlaybackReloadFallbackTask?.cancel()
             postPlaybackReloadFallbackTask = nil
+            detailLoadTask?.cancel()
+            detailLoadTask = nil
             let isLaunchingPlayback = sessionStore.activePlaybackTarget != nil
             let isShowingSourcePicker = sourcePickerContext != nil
             preResolve.handleDisappear(
@@ -472,7 +516,22 @@ struct MediaDetailView: View {
         return "Sett"
     }
 
-    private func loadDetail(preserveSeason: Bool = false) async {
+    private func launchSerializedDetailLoad(preserveSeason: Bool, expectedScope: String? = nil) {
+        detailLoadTask?.cancel()
+        detailLoadGeneration &+= 1
+        let generation = detailLoadGeneration
+        let targetScope = expectedScope ?? scopeKey
+        detailLoadTask = Task { @MainActor in
+            await loadDetail(preserveSeason: preserveSeason, generation: generation, expectedScope: targetScope)
+        }
+    }
+
+    private func runSerializedDetailLoad(preserveSeason: Bool, expectedScope: String? = nil) async {
+        launchSerializedDetailLoad(preserveSeason: preserveSeason, expectedScope: expectedScope)
+        await detailLoadTask?.value
+    }
+
+    private func loadDetail(preserveSeason: Bool = false, generation: UInt64, expectedScope: String) async {
         guard let client = sessionStore.makeClient() else { return }
         if detail == nil {
             isLoading = true
@@ -487,6 +546,8 @@ struct MediaDetailView: View {
                 itemId: itemId,
                 seasonNumber: requestedSeason
             )
+            guard !Task.isCancelled, generation == detailLoadGeneration, scopeKey == expectedScope else { return }
+            loadedScopeKey = expectedScope
             detail = loaded
             ambientFocus.setImmediate(
                 loaded.dominantColor,
@@ -494,7 +555,10 @@ struct MediaDetailView: View {
                 loaded.blurHash
             )
 
-            if loaded.mediaType == "movie", !Task.isCancelled {
+            if loaded.mediaType == "movie",
+               !Task.isCancelled,
+               generation == detailLoadGeneration,
+               sessionStore.activePlaybackTarget == nil {
                 schedulePreResolve(for: loaded)
             }
 
@@ -516,23 +580,37 @@ struct MediaDetailView: View {
                 } else {
                     await loadSeasonEpisodes(detail: loaded, seasonNumber: targetSeason)
                 }
-                if !Task.isCancelled {
-                    schedulePreResolve(for: loaded)
+                guard !Task.isCancelled,
+                      generation == detailLoadGeneration,
+                      scopeKey == expectedScope,
+                      sessionStore.activePlaybackTarget == nil else {
+                    if generation == detailLoadGeneration {
+                        isLoading = false
+                    }
+                    return
                 }
+                schedulePreResolve(for: loaded)
             }
+        } catch is CancellationError {
+            return
         } catch LunaCoreError.unauthorized {
+            guard generation == detailLoadGeneration else { return }
             sessionStore.unpairDevice()
         } catch {
+            guard generation == detailLoadGeneration else { return }
             errorMessage = error.localizedDescription
         }
-        isLoading = false
+        if generation == detailLoadGeneration {
+            isLoading = false
+        }
     }
 
     private func loadSeasonEpisodes(detail: TvItemDetail, seasonNumber: Int) async {
         guard let client = sessionStore.makeClient(),
               let tmdbId = detail.ids.tmdb else { return }
         isLoadingEpisodes = true
-        if let seasonRes = try? await client.fetchSeasonEpisodes(tmdbId: tmdbId, seasonNumber: seasonNumber) {
+        if let seasonRes = try? await client.fetchSeasonEpisodes(tmdbId: tmdbId, seasonNumber: seasonNumber),
+           !Task.isCancelled {
             episodes = seasonRes.episodes
         }
         isLoadingEpisodes = false
@@ -551,7 +629,7 @@ struct MediaDetailView: View {
     private func markLocalMutationAndReload() async {
         lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
         sessionStore.notifyContentMutated()
-        await loadDetail(preserveSeason: true)
+        await runSerializedDetailLoad(preserveSeason: true)
     }
 
     private func toggleWatchlist(_ item: TvItemDetail) async {

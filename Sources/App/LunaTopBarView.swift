@@ -53,10 +53,12 @@ final class LunaNavigationBarVisibility: ObservableObject {
     }
 
     func enterSubpage(_ token: UUID) {
+        guard !activeSubpageTokens.contains(token) else { return }
         activeSubpageTokens.insert(token)
     }
 
     func leaveSubpage(_ token: UUID) {
+        guard activeSubpageTokens.contains(token) else { return }
         activeSubpageTokens.remove(token)
     }
 }
@@ -151,6 +153,7 @@ struct LunaTopBarView: View {
         .shadow(color: Color.black.opacity(0.62), radius: 22, x: 0, y: 10)
         .padding(.horizontal, LunaTheme.horizontalGutter)
         .padding(.top, 4)
+        .defaultFocus($focusedTab, selectedTab as MainNavigationTab?)
         .focusScope(topBarFocusNamespace)
         .focusSection()
         .onChange(of: focusedTab) { _, newFocus in
@@ -161,7 +164,12 @@ struct LunaTopBarView: View {
             if !wasBarFocused {
                 wasBarFocused = true
                 if newTab != selectedTab {
-                    focusedTab = selectedTab
+                    let targetTab = selectedTab
+                    Task { @MainActor in
+                        if wasBarFocused && focusedTab == newTab && selectedTab == targetTab {
+                            focusedTab = targetTab
+                        }
+                    }
                 }
             } else if selectedTab != newTab {
                 selectedTab = newTab

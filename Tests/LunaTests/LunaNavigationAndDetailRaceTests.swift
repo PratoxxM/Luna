@@ -58,9 +58,12 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
 
         visibility.enterSubpage(detailToken)
         XCTAssertTrue(visibility.isTopBarHidden)
+        visibility.enterSubpage(detailToken)
+        XCTAssertEqual(visibility.activeSubpageTokens.count, 1)
 
         visibility.enterSubpage(actorSearchToken)
         XCTAssertTrue(visibility.isTopBarHidden)
+        XCTAssertEqual(visibility.activeSubpageTokens.count, 2)
 
         visibility.leaveSubpage(actorSearchToken)
         XCTAssertTrue(visibility.isTopBarHidden)
@@ -71,6 +74,87 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
         // Idempotent leave never underflows
         visibility.leaveSubpage(detailToken)
         XCTAssertFalse(visibility.isTopBarHidden)
+    }
+
+    func testDetailReloadPolicyPreventsPrematurePostPlaybackPreResolveRace() {
+        let scopeA = "movie#movie:tmdb:550#Kjellerstua#dv-fel-714"
+        let scopeB = "movie#movie:tmdb:550#Stua#hdr10-512"
+
+        // First appearance always loads initially
+        XCTAssertEqual(
+            DetailReloadPolicy.actionForTaskAppearance(
+                hasLoadedDetail: false,
+                loadedScopeKey: nil,
+                currentScopeKey: scopeA,
+                lastSeenRefreshNonce: 0,
+                currentRefreshNonce: 0,
+                awaitingPostPlaybackRefresh: false
+            ),
+            .loadInitial
+        )
+
+        // Room/profile change triggers fresh load
+        XCTAssertEqual(
+            DetailReloadPolicy.actionForTaskAppearance(
+                hasLoadedDetail: true,
+                loadedScopeKey: scopeA,
+                currentScopeKey: scopeB,
+                lastSeenRefreshNonce: 3,
+                currentRefreshNonce: 3,
+                awaitingPostPlaybackRefresh: false
+            ),
+            .loadInitial
+        )
+
+        // Returning from player BEFORE stop heartbeat advances homeRefreshNonce MUST skip premature fetch
+        XCTAssertEqual(
+            DetailReloadPolicy.actionForTaskAppearance(
+                hasLoadedDetail: true,
+                loadedScopeKey: scopeA,
+                currentScopeKey: scopeA,
+                lastSeenRefreshNonce: 3,
+                currentRefreshNonce: 3,
+                awaitingPostPlaybackRefresh: true
+            ),
+            .skip
+        )
+
+        // Returning AFTER stop heartbeat or subpage mutation bumped homeRefreshNonce reloads preserving season
+        XCTAssertEqual(
+            DetailReloadPolicy.actionForTaskAppearance(
+                hasLoadedDetail: true,
+                loadedScopeKey: scopeA,
+                currentScopeKey: scopeA,
+                lastSeenRefreshNonce: 3,
+                currentRefreshNonce: 4,
+                awaitingPostPlaybackRefresh: true
+            ),
+            .reloadPreservingSeason
+        )
+        XCTAssertEqual(
+            DetailReloadPolicy.actionForTaskAppearance(
+                hasLoadedDetail: true,
+                loadedScopeKey: scopeA,
+                currentScopeKey: scopeA,
+                lastSeenRefreshNonce: 3,
+                currentRefreshNonce: 4,
+                awaitingPostPlaybackRefresh: false
+            ),
+            .reloadPreservingSeason
+        )
+
+        // Unmutated subpage pop skips redundant network reload
+        XCTAssertEqual(
+            DetailReloadPolicy.actionForTaskAppearance(
+                hasLoadedDetail: true,
+                loadedScopeKey: scopeA,
+                currentScopeKey: scopeA,
+                lastSeenRefreshNonce: 4,
+                currentRefreshNonce: 4,
+                awaitingPostPlaybackRefresh: false
+            ),
+            .skip
+        )
     }
 
     func testDetailPreResolveStartPositionAwarenessPreventsStaleResumeTokenReuse() {

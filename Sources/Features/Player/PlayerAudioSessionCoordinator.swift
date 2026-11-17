@@ -78,9 +78,10 @@ final class PlayerAudioSessionCoordinator {
     }
 
     nonisolated static func shouldResetDisplayCriteriaOnPlayerExit(
-        keepDisplayModeInMenuAfterPlayback: Bool
+        keepDisplayModeInMenuAfterPlayback: Bool,
+        isForegroundActive: Bool = true
     ) -> Bool {
-        !keepDisplayModeInMenuAfterPlayback
+        !keepDisplayModeInMenuAfterPlayback || !isForegroundActive
     }
 
     nonisolated static func shouldResetHeldDisplayCriteriaOnScenePhase(
