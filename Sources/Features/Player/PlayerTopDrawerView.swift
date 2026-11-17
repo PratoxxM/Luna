@@ -71,7 +71,7 @@ struct PlayerTopDrawerView: View {
                 }
 
                 Divider()
-                    .overlay(LunaTheme.moonlight.opacity(0.12))
+                    .overlay(LunaTheme.warmBorderSubtle)
 
                 Group {
                     switch selectedTab {
@@ -88,22 +88,12 @@ struct PlayerTopDrawerView: View {
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.top, 38)
             .padding(.bottom, 30)
-            .background(
-                LinearGradient(
-                    colors: [
-                        Color(red: 9.0 / 255.0, green: 12.0 / 255.0, blue: 19.0 / 255.0).opacity(0.96),
-                        Color(red: 13.0 / 255.0, green: 17.0 / 255.0, blue: 26.0 / 255.0).opacity(0.94),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+            .background(LunaTheme.cinemaGlass)
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(LunaTheme.amber.opacity(0.28))
+                    .fill(LunaTheme.warmBorder)
                     .frame(height: 1)
             }
-            .shadow(color: .black.opacity(0.72), radius: 28, x: 0, y: 14)
 
             Spacer()
         }
@@ -397,9 +387,8 @@ struct PlayerTopDrawerView: View {
     // MARK: - Formatting Helpers
 
     private func sectionHeader(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.caption.weight(.bold))
-            .tracking(0.8)
+        Text(text)
+            .font(.caption.weight(.semibold))
             .foregroundStyle(LunaTheme.muted)
     }
 
@@ -505,17 +494,17 @@ private struct DrawerTrackRowButton: View {
                     .foregroundStyle(
                         isFocused
                             ? LunaTheme.canvas
-                            : (isSelected ? LunaTheme.amber : LunaTheme.moonlight.opacity(0.64))
+                            : (isSelected ? LunaTheme.amber : LunaTheme.muted)
                     )
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.callout.weight(.semibold))
-                        .foregroundStyle(isFocused ? LunaTheme.canvas : .white)
+                        .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.linen)
                         .lineLimit(1)
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.76) : LunaTheme.moonlight.opacity(0.76))
+                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.78) : LunaTheme.muted)
                         .lineLimit(1)
                 }
 
@@ -525,11 +514,11 @@ private struct DrawerTrackRowButton: View {
                     ForEach(badges, id: \.self) { badge in
                         Text(badge)
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(LunaTheme.amber)
+                            .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.moonlight)
                             .padding(.horizontal, 9)
                             .padding(.vertical, 4)
                             .background(
-                                isFocused ? LunaTheme.canvas.opacity(0.88) : Color.white.opacity(0.12),
+                                isFocused ? LunaTheme.canvas.opacity(0.88) : LunaTheme.warmBorderBase.opacity(0.09),
                                 in: Capsule()
                             )
                     }
@@ -539,45 +528,33 @@ private struct DrawerTrackRowButton: View {
             .padding(.vertical, 12)
             .background {
                 if isFocused {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(LunaTheme.focusGoldGradient)
                 } else {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(isSelected ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonRestGradient)
-                        if isSelected {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(LunaTheme.amber.opacity(0.30))
-                        }
-                    }
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
                 }
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(
                         isFocused
                             ? LunaTheme.focusGoldBorder
-                            : (isSelected ? LunaTheme.amber.opacity(0.92) : LunaTheme.moonlight.opacity(0.38)),
-                        lineWidth: isFocused ? 2.3 : (isSelected ? 1.75 : 1.2)
+                            : (isSelected ? LunaTheme.warmBorderStrong : LunaTheme.warmBorderSubtle),
+                        lineWidth: isFocused ? 2.0 : 1.0
                     )
             )
             .shadow(
-                color: isFocused
-                    ? LunaTheme.amber.opacity(0.50)
-                    : (isSelected ? LunaTheme.amber.opacity(0.28) : .black.opacity(0.34)),
-                radius: isFocused ? 18 : (isSelected ? 12 : 7),
+                color: isFocused ? LunaTheme.amber.opacity(0.36) : .clear,
+                radius: isFocused ? 16 : 0,
                 x: 0,
-                y: isFocused ? 7 : 3
+                y: isFocused ? 5 : 0
             )
-            .scaleEffect(isFocused ? 1.015 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isFocused)
+            .scaleEffect(isFocused ? 1.012 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.82), value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .focusEffectDisabled(true)
         .focused($isFocused)
     }
@@ -623,7 +600,7 @@ private struct ChapterPillCardButton: View {
 
                 Text(chapter.title)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(isFocused ? LunaTheme.canvas : .white)
+                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.linen)
                     .lineLimit(1)
             }
             .padding(.horizontal, 20)
@@ -631,45 +608,33 @@ private struct ChapterPillCardButton: View {
             .frame(minWidth: 204, alignment: .leading)
             .background {
                 if isFocused {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(LunaTheme.focusGoldGradient)
                 } else {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(isActive ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonRestGradient)
-                        if isActive {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(LunaTheme.amber.opacity(0.30))
-                        }
-                    }
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(isActive ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
                 }
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(
                         isFocused
                             ? LunaTheme.focusGoldBorder
-                            : (isActive ? LunaTheme.amber.opacity(0.92) : LunaTheme.moonlight.opacity(0.38)),
-                        lineWidth: isFocused ? 2.3 : (isActive ? 1.75 : 1.2)
+                            : (isActive ? LunaTheme.warmBorderStrong : LunaTheme.warmBorderSubtle),
+                        lineWidth: isFocused ? 2.0 : 1.0
                     )
             )
             .shadow(
-                color: isFocused
-                    ? LunaTheme.amber.opacity(0.50)
-                    : (isActive ? LunaTheme.amber.opacity(0.28) : .black.opacity(0.34)),
-                radius: isFocused ? 18 : (isActive ? 12 : 7),
+                color: isFocused ? LunaTheme.amber.opacity(0.36) : .clear,
+                radius: isFocused ? 16 : 0,
                 x: 0,
-                y: isFocused ? 7 : 3
+                y: isFocused ? 5 : 0
             )
-            .scaleEffect(isFocused ? 1.03 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isFocused)
+            .scaleEffect(isFocused ? 1.025 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.82), value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .focusEffectDisabled(true)
         .focused($isFocused)
     }
@@ -684,10 +649,11 @@ private struct ObjectAudioStatusLeafView: View {
                 .foregroundStyle(LunaTheme.amber)
             Text("Aktiv lydkjede: \(fallbackBadge)")
                 .font(.caption.weight(.medium))
-                .foregroundStyle(LunaTheme.moonlight.opacity(0.85))
+                .foregroundStyle(LunaTheme.moonlight)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color.white.opacity(0.06), in: Capsule())
+        .background(LunaTheme.surfaceRaised, in: Capsule())
+        .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
     }
 }

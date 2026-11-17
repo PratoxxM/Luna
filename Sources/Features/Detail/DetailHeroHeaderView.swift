@@ -56,7 +56,7 @@ struct DetailHeroHeaderView: View {
             } else {
                 Text(item.title)
                     .font(.system(size: 52, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(LunaTheme.linen)
                     .lineLimit(2)
                     .frame(maxWidth: 980, alignment: .leading)
             }
@@ -65,7 +65,7 @@ struct DetailHeroHeaderView: View {
                !tagline.isEmpty {
                 Text(tagline)
                     .font(.callout.italic().weight(.medium))
-                    .foregroundStyle(LunaTheme.moonlight.opacity(0.76))
+                    .foregroundStyle(LunaTheme.muted)
                     .lineLimit(1)
                     .frame(maxWidth: 980, alignment: .leading)
             }
@@ -74,7 +74,7 @@ struct DetailHeroHeaderView: View {
             HStack(spacing: 12) {
                 Text(detailMetadataLine)
                     .font(.callout.weight(.medium))
-                    .foregroundStyle(LunaTheme.moonlight.opacity(0.88))
+                    .foregroundStyle(LunaTheme.moonlight)
 
                 if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
                     HStack(spacing: 5) {
@@ -93,16 +93,18 @@ struct DetailHeroHeaderView: View {
                         .foregroundStyle(avail.isLocalNvme ? LunaTheme.emerald : LunaTheme.moonlight)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 5)
-                        .background(Color.white.opacity(0.10), in: Capsule())
+                        .background(LunaTheme.surfaceRaised, in: Capsule())
+                        .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
                 }
 
                 ForEach(displayedBadges, id: \.self) { badge in
                     Text(badge)
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(LunaTheme.moonlight.opacity(0.92))
+                        .foregroundStyle(LunaTheme.moonlight)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(Color.white.opacity(0.08), in: Capsule())
+                        .background(LunaTheme.surfaceRaised, in: Capsule())
+                        .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
                 }
             }
 
@@ -110,12 +112,12 @@ struct DetailHeroHeaderView: View {
             if let overview = item.preferredOverview {
                 Text(overview)
                     .font(.callout)
-                    .foregroundStyle(LunaTheme.moonlight.opacity(0.88))
+                    .foregroundStyle(LunaTheme.moonlight)
                     .lineLimit(3)
                     .frame(maxWidth: 1020, alignment: .leading)
             }
 
-            // Streamlined Action Bar: Focus lands directly on Primary Play!
+            // Streamlined Action Bar: Only «Spill av» shines in brass-gold; secondary actions stay warm matte espresso
             HStack(spacing: 12) {
                 PrimaryPlayButton(
                     title: primaryPlayTitle,
@@ -128,7 +130,6 @@ struct DetailHeroHeaderView: View {
                     "Huskeliste",
                     systemImage: item.inWatchlist ? "bookmark.fill" : "bookmark",
                     isSelected: item.inWatchlist,
-                    accent: .periwinkle,
                     size: .compact,
                     action: onToggleWatchlist
                 )
@@ -147,7 +148,6 @@ struct DetailHeroHeaderView: View {
                         monitorButtonTitle,
                         systemImage: monitorButtonIcon,
                         isSelected: item.isMonitoredFlag,
-                        accent: .periwinkle,
                         size: .compact,
                         action: onToggleMonitor
                     )
@@ -164,7 +164,6 @@ struct DetailHeroHeaderView: View {
                     "Favoritt",
                     systemImage: item.favoriteFlag ? "star.fill" : "star",
                     isSelected: item.favoriteFlag,
-                    accent: .amber,
                     size: .compact,
                     action: onToggleFavorite
                 )
@@ -199,15 +198,14 @@ struct DetailHeroHeaderView: View {
                         CachedArtworkView(
                             url: fallbackPosterURL,
                             client: client,
-                            maxPixelSize: 640,
+                            maxPixelSize: 320,
                             blurHash: item.blurHash,
                             dominantColor: item.dominantColor,
                             placeholderSymbol: "film.stack",
                             contentMode: .fill
                         )
                         .frame(width: geo.size.width, height: geo.size.height)
-                        .blur(radius: 42)
-                        .opacity(0.55)
+                        .opacity(0.22)
                         .clipped()
                     }
 
@@ -342,22 +340,18 @@ private struct PrimaryPlayLabel: View {
         )
         .overlay(
             Capsule()
-                .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: focused), lineWidth: 1.2)
-        )
-        .overlay(
-            Capsule()
                 .strokeBorder(
-                    focused ? LunaTheme.playFocusTop : LunaTheme.focusGoldBorder.opacity(0.55),
-                    lineWidth: focused ? 2.8 : 1.2
+                    focused ? LunaTheme.focusGoldBorder : LunaTheme.focusGoldBorder.opacity(0.45),
+                    lineWidth: focused ? 2.4 : 1.0
                 )
         )
         .shadow(
-            color: LunaTheme.amber.opacity(focused ? 0.70 : 0.32),
-            radius: focused ? 28 : 12,
+            color: focused ? LunaTheme.amber.opacity(0.56) : .clear,
+            radius: focused ? 24 : 0,
             x: 0,
-            y: focused ? 10 : 5
+            y: focused ? 8 : 0
         )
-        .scaleEffect(focused ? 1.075 : 1.0)
-        .animation(.spring(response: 0.22, dampingFraction: 0.76), value: focused)
+        .scaleEffect(focused ? 1.065 : 1.0)
+        .animation(.spring(response: 0.22, dampingFraction: 0.78), value: focused)
     }
 }

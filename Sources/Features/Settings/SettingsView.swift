@@ -2,13 +2,20 @@ import SwiftUI
 import AetherBridge
 
 struct SettingsView: View {
+    static let keepDisplayModeToggleTitle =
+        "Behold filmens skjerm- og HDR-modus i menyen etter avspilling"
+    static let keepDisplayModeExplanationText =
+        "Av (standard) gir jevne 60 Hz-menyer umiddelbart etter avspilling. På unngår HDMI-skifte ut av spilleren på denne TV-en, men låser menyene til 24 Hz etter 24p-film frem til du forlater appen."
+
     @EnvironmentObject private var sessionStore: AppSessionStore
     @EnvironmentObject private var comfort: ComfortPreferences
+    @Environment(\.lunaSubpageVisibility) private var subpageVisibility
 
     @State private var cacheBytes: Int64 = 0
     @State private var cacheClearedNotice: Bool = false
     @State private var showUnpairConfirm: Bool = false
     @State private var showResetConfirm: Bool = false
+    @State private var modalToken = UUID()
 
     var body: some View {
         let caps = AetherEngine.displayCapabilities
@@ -17,12 +24,12 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 28) {
                 Text("Innstillinger")
                     .font(.title2.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(LunaTheme.linen)
                     .padding(.top, 14)
 
                 // 1. Rom & Lyd/Bilde
                 settingsPanel("Rom & Lyd/Bilde") {
-                    VStack(spacing: 10) {
+                    VStack(spacing: 8) {
                         let matchingProfileCount = Dictionary(
                             grouping: sessionStore.availableRooms,
                             by: \.hardwareProfile
@@ -50,8 +57,7 @@ struct SettingsView: View {
                         LunaPillButton(
                             "Bruk rom valgt i LunaCore Web",
                             systemImage: "arrow.uturn.backward",
-                            prominence: .glassPill,
-                            accent: .periwinkle
+                            prominence: .glassPill
                         ) {
                             Task {
                                 await sessionStore.restoreServerManagedRoomAndProfile()
@@ -59,7 +65,7 @@ struct SettingsView: View {
                         }
                     }
 
-                    Divider().overlay(LunaTheme.moonlight.opacity(0.12))
+                    Divider().overlay(LunaTheme.warmBorderSubtle)
 
                     VStack(alignment: .leading, spacing: 18) {
                         VStack(alignment: .leading, spacing: 10) {
@@ -100,7 +106,7 @@ struct SettingsView: View {
                     }
                     .padding(.top, 4)
 
-                    Divider().overlay(LunaTheme.moonlight.opacity(0.12))
+                    Divider().overlay(LunaTheme.warmBorderSubtle)
 
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
@@ -142,7 +148,7 @@ struct SettingsView: View {
                             .foregroundStyle(LunaTheme.muted)
                     }
 
-                    Divider().overlay(LunaTheme.moonlight.opacity(0.12))
+                    Divider().overlay(LunaTheme.warmBorderSubtle)
 
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Lavoppløst oppskalering (SD / 720p / Anime)")
@@ -166,12 +172,19 @@ struct SettingsView: View {
                             .foregroundStyle(LunaTheme.muted)
                     }
 
-                    Divider().overlay(LunaTheme.moonlight.opacity(0.12))
+                    Divider().overlay(LunaTheme.warmBorderSubtle)
 
-                    SettingsToggleRowButton(
-                        title: "Behold skjermens HDR-modus i menyen etter avspilling (unngår svart skjerm-blink)",
-                        isOn: $comfort.keepDisplayModeInMenuAfterPlayback
-                    )
+                    VStack(alignment: .leading, spacing: 10) {
+                        SettingsToggleRowButton(
+                            title: Self.keepDisplayModeToggleTitle,
+                            isOn: $comfort.keepDisplayModeInMenuAfterPlayback
+                        )
+
+                        Text(Self.keepDisplayModeExplanationText)
+                            .font(.caption)
+                            .foregroundStyle(LunaTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
                     infoRow(
                         "HDMI & Avspillingsmotor",
@@ -238,9 +251,9 @@ struct SettingsView: View {
                     }
                     .padding(.top, 4)
 
-                    Divider().overlay(LunaTheme.moonlight.opacity(0.12))
+                    Divider().overlay(LunaTheme.warmBorderSubtle)
 
-                    VStack(spacing: 10) {
+                    VStack(spacing: 8) {
                         SettingsToggleRowButton(
                             title: "Smarte språkregler (norsk tale uten tekst · utenlandsk tale med norsk/engelsk tekst)",
                             isOn: $comfort.smartNordicSubtitleRule
@@ -249,11 +262,6 @@ struct SettingsView: View {
                         SettingsToggleRowButton(
                             title: "Spill neste episode automatisk når episoden er helt ferdig",
                             isOn: $comfort.autoPlayNextEpisode
-                        )
-
-                        SettingsToggleRowButton(
-                            title: "Vis animerte kattefølgesvenner ved innlasting og pause",
-                            isOn: $comfort.showCatCompanions
                         )
 
                         SettingsToggleRowButton(
@@ -275,12 +283,15 @@ struct SettingsView: View {
                         isOn: $sessionStore.allowSelfSignedLanTLS
                     )
 
-                    HStack(spacing: 18) {
+                    HStack(spacing: 16) {
                         LunaPillButton("Tøm hurtigbuffer", systemImage: "trash", prominence: .subtleChip, accent: .coral) {
                             Task {
+                                CatalogBrowseMemoryCache.shared.clear()
+                                LibraryBrowseMemoryCache.shared.clear()
                                 await DiskSWRStore.clearAllAsync()
                                 await ArtworkPipeline.shared.clearAll()
                                 AetherEngine.discardPrewarmedSources()
+                                sessionStore.notifyContentMutated()
                                 await refreshCacheMetricsAsync()
                                 cacheClearedNotice = true
                             }
@@ -297,7 +308,7 @@ struct SettingsView: View {
                         if cacheClearedNotice {
                             Text("Hurtigbuffer tømt")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(LunaTheme.emerald)
+                                .foregroundStyle(LunaTheme.amber)
                         }
                     }
                     .padding(.top, 6)
@@ -306,6 +317,7 @@ struct SettingsView: View {
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.bottom, 56)
         }
+        .lunaRootScrollTopBarTracking(tab: .settings)
         .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
         .confirmationDialog(
             "Par denne Apple TV-en på nytt?",
@@ -333,6 +345,18 @@ struct SettingsView: View {
         }
         .task {
             await refreshCacheMetricsAsync()
+        }
+        .onChange(of: showUnpairConfirm || showResetConfirm) { _, isShowingDialog in
+            if isShowingDialog {
+                subpageVisibility.enterModal(modalToken)
+            } else {
+                subpageVisibility.leaveModal(modalToken)
+            }
+        }
+        .onDisappear {
+            if !showUnpairConfirm && !showResetConfirm {
+                subpageVisibility.leaveModal(modalToken)
+            }
         }
     }
 
@@ -364,19 +388,19 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(title)
                 .font(.title3.weight(.bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(LunaTheme.linen)
 
             content()
         }
         .padding(28)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(LunaTheme.surface.opacity(0.86))
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(LunaTheme.surface)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(LunaTheme.moonlight.opacity(0.10), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1)
         )
     }
 
@@ -389,7 +413,7 @@ struct SettingsView: View {
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(LunaTheme.moonlight)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 4)
     }
 }
 
@@ -409,16 +433,16 @@ private struct SettingsRoomRowButton: View {
                     .foregroundStyle(
                         isFocused
                             ? LunaTheme.canvas
-                            : (isSelected ? LunaTheme.amber : LunaTheme.moonlight.opacity(0.62))
+                            : (isSelected ? LunaTheme.amber : LunaTheme.muted)
                     )
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.headline)
-                        .foregroundStyle(isFocused ? LunaTheme.canvas : .white)
+                        .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.linen)
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.76) : LunaTheme.moonlight.opacity(0.76))
+                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.78) : LunaTheme.muted)
                 }
 
                 Spacer()
@@ -427,45 +451,33 @@ private struct SettingsRoomRowButton: View {
             .padding(.vertical, 14)
             .background {
                 if isFocused {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(LunaTheme.focusGoldGradient)
                 } else {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(isSelected ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonRestGradient)
-                        if isSelected {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(LunaTheme.amber.opacity(0.30))
-                        }
-                    }
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
                 }
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(
                         isFocused
                             ? LunaTheme.focusGoldBorder
-                            : (isSelected ? LunaTheme.amber.opacity(0.92) : LunaTheme.moonlight.opacity(0.38)),
-                        lineWidth: isFocused ? 2.3 : (isSelected ? 1.75 : 1.2)
+                            : (isSelected ? LunaTheme.warmBorderStrong : LunaTheme.warmBorderSubtle),
+                        lineWidth: isFocused ? 2.0 : 1.0
                     )
             )
             .shadow(
-                color: isFocused
-                    ? LunaTheme.amber.opacity(0.50)
-                    : (isSelected ? LunaTheme.amber.opacity(0.28) : .black.opacity(0.34)),
-                radius: isFocused ? 18 : (isSelected ? 12 : 7),
+                color: isFocused ? LunaTheme.amber.opacity(0.36) : .clear,
+                radius: isFocused ? 16 : 0,
                 x: 0,
-                y: isFocused ? 7 : 3
+                y: isFocused ? 5 : 0
             )
-            .scaleEffect(isFocused ? 1.015 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.82), value: isFocused)
+            .scaleEffect(isFocused ? 1.012 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.84), value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .focusEffectDisabled(true)
         .focused($isFocused)
     }
@@ -484,25 +496,23 @@ private struct SettingsToggleRowButton: View {
             HStack(spacing: 18) {
                 Text(title)
                     .font(.callout.weight(.medium))
-                    .foregroundStyle(isFocused ? LunaTheme.canvas : .white)
+                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.linen)
                     .lineLimit(2)
 
                 Spacer(minLength: 16)
 
                 Text(isOn ? "På" : "Av")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(
-                        isFocused
-                            ? (isOn ? LunaTheme.emerald : LunaTheme.canvas)
-                            : (isOn ? LunaTheme.canvas : LunaTheme.moonlight)
-                    )
+                    .foregroundStyle(badgeForegroundColor)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
-                    .background(
-                        isFocused
-                            ? (isOn ? LunaTheme.canvas : LunaTheme.canvas.opacity(0.14))
-                            : (isOn ? LunaTheme.emerald : Color.white.opacity(0.16)),
-                        in: Capsule()
+                    .background(badgeBackgroundColor, in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(
+                                !isFocused && !isOn ? LunaTheme.warmBorderSubtle : Color.clear,
+                                lineWidth: 1
+                            )
                     )
             }
             .padding(.horizontal, 20)
@@ -512,43 +522,43 @@ private struct SettingsToggleRowButton: View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(LunaTheme.focusGoldGradient)
                 } else {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(isOn ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonRestGradient)
-                        if isOn {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(LunaTheme.emerald.opacity(0.28))
-                        }
-                    }
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(LunaTheme.surfaceRaised)
                 }
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(
-                        isFocused
-                            ? LunaTheme.focusGoldBorder
-                            : (isOn ? LunaTheme.emerald.opacity(0.88) : LunaTheme.moonlight.opacity(0.38)),
-                        lineWidth: isFocused ? 2.3 : (isOn ? 1.65 : 1.2)
+                        isFocused ? LunaTheme.focusGoldBorder : LunaTheme.warmBorderSubtle,
+                        lineWidth: isFocused ? 2.0 : 1.0
                     )
             )
             .shadow(
-                color: isFocused
-                    ? LunaTheme.amber.opacity(0.50)
-                    : (isOn ? LunaTheme.emerald.opacity(0.24) : .black.opacity(0.34)),
-                radius: isFocused ? 18 : (isOn ? 11 : 7),
+                color: isFocused ? LunaTheme.amber.opacity(0.36) : .clear,
+                radius: isFocused ? 16 : 0,
                 x: 0,
-                y: isFocused ? 7 : 3
+                y: isFocused ? 5 : 0
             )
-            .scaleEffect(isFocused ? 1.015 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.82), value: isFocused)
+            .scaleEffect(isFocused ? 1.012 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.84), value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .focusEffectDisabled(true)
         .focused($isFocused)
+    }
+
+    private var badgeForegroundColor: Color {
+        if isFocused {
+            return isOn ? LunaTheme.amber : LunaTheme.canvas
+        }
+        return isOn ? LunaTheme.canvas : LunaTheme.muted
+    }
+
+    private var badgeBackgroundColor: Color {
+        if isFocused {
+            return isOn ? LunaTheme.canvas : LunaTheme.canvas.opacity(0.14)
+        }
+        return isOn ? LunaTheme.amber : LunaTheme.surface
     }
 }

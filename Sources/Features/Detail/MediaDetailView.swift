@@ -3,7 +3,6 @@ import AetherBridge
 
 struct MediaDetailView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
-    @Environment(\.ambientFocusSink) private var ambientFocus
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
 
     let mediaType: String
@@ -30,6 +29,7 @@ struct MediaDetailView: View {
     @State private var loadedScopeKey: String?
     @State private var awaitingPostPlaybackRefresh: Bool = false
     @State private var subpageToken = UUID()
+    @State private var modalToken = UUID()
 
     private var scopeKey: String {
         "\(mediaType)#\(itemId)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
@@ -198,6 +198,14 @@ struct MediaDetailView: View {
         .onAppear {
             subpageVisibility.enterSubpage(subpageToken)
         }
+        .onChange(of: sourcePickerContext != nil || pendingSeriesWatchedItem != nil) { _, isShowingModal in
+            if isShowingModal {
+                subpageVisibility.enterModal(modalToken)
+            } else {
+                subpageVisibility.leaveModal(modalToken)
+                subpageVisibility.enterSubpage(subpageToken)
+            }
+        }
         .task(id: scopeKey) {
             let currentScope = scopeKey
             let action = DetailReloadPolicy.actionForTaskAppearance(
@@ -260,18 +268,25 @@ struct MediaDetailView: View {
             detailLoadTask?.cancel()
             detailLoadTask = nil
             let isLaunchingPlayback = sessionStore.activePlaybackTarget != nil
-            let isShowingSourcePicker = sourcePickerContext != nil
+            let isShowingModal = sourcePickerContext != nil || pendingSeriesWatchedItem != nil
             preResolve.handleDisappear(
                 isLaunchingPlayback: isLaunchingPlayback,
-                isShowingSourcePicker: isShowingSourcePicker,
+                isShowingSourcePicker: isShowingModal,
                 client: sessionStore.makeClient()
             )
             PlayerAudioSessionCoordinator.shared.handleDetailDisappear(
                 isLaunchingPlayback: isLaunchingPlayback,
-                isShowingSourcePicker: isShowingSourcePicker,
+                isShowingSourcePicker: isShowingModal,
                 keepDisplayModeInMenu: sessionStore.comfort.keepDisplayModeInMenuAfterPlayback
             )
-            if !isLaunchingPlayback && !isShowingSourcePicker && selectedActorQuery == nil {
+            if !isShowingModal {
+                subpageVisibility.leaveModal(modalToken)
+            }
+            if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
+                hasPushedChildDestination: selectedActorQuery != nil,
+                hasActivePlayback: isLaunchingPlayback,
+                isShowingModalSheet: isShowingModal
+            ) {
                 subpageVisibility.leaveSubpage(subpageToken)
             }
         }
@@ -549,11 +564,6 @@ struct MediaDetailView: View {
             guard !Task.isCancelled, generation == detailLoadGeneration, scopeKey == expectedScope else { return }
             loadedScopeKey = expectedScope
             detail = loaded
-            ambientFocus.setImmediate(
-                loaded.dominantColor,
-                nil,
-                loaded.blurHash
-            )
 
             if loaded.mediaType == "movie",
                !Task.isCancelled,

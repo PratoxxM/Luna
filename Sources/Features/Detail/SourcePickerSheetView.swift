@@ -85,7 +85,7 @@ struct SourcePickerSheetView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Velg avspillingskilde")
                             .font(.title2.weight(.bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(LunaTheme.linen)
 
                         Text("\(context.displaySubject) · Rangert for \(sessionStore.roomName) (\(sessionStore.activePreset.shortBadgeLabel))")
                             .font(.callout)
@@ -102,7 +102,7 @@ struct SourcePickerSheetView: View {
                 if isLoading {
                     Spacer()
                     VStack(spacing: 16) {
-                        ProwlingSourceCatView(comfort: sessionStore.comfort)
+                        ProgressView()
                         Text("Søker etter beste lokale og Usenet-kilder…")
                             .font(.headline)
                             .foregroundStyle(LunaTheme.moonlight)
@@ -161,6 +161,9 @@ struct SourcePickerSheetView: View {
                 }
             }
             .padding(56)
+        }
+        .onExitCommand {
+            onCancel()
         }
         .task {
             await loadCandidates()
@@ -252,8 +255,8 @@ private struct CandidateRowButton: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 10) {
                         Text(candidate.displayHeadline)
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(isFocused ? LunaTheme.canvas : .white)
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.linen)
                             .lineLimit(1)
 
                         if isRecommended {
@@ -271,7 +274,7 @@ private struct CandidateRowButton: View {
 
                     Text(candidate.releaseTitle)
                         .font(.caption.monospaced())
-                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.76) : LunaTheme.moonlight.opacity(0.76))
+                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.78) : LunaTheme.muted)
                         .lineLimit(1)
                 }
 
@@ -290,7 +293,7 @@ private struct CandidateRowButton: View {
                         .padding(.horizontal, 11)
                         .padding(.vertical, 5)
                         .background(
-                            isFocused ? LunaTheme.canvas.opacity(0.88) : Color.white.opacity(0.14),
+                            isFocused ? LunaTheme.canvas.opacity(0.88) : LunaTheme.warmBorderBase.opacity(0.09),
                             in: Capsule()
                         )
                 }
@@ -299,45 +302,33 @@ private struct CandidateRowButton: View {
             .padding(.vertical, 18)
             .background {
                 if isFocused {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
                         .fill(LunaTheme.focusGoldGradient)
                 } else {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(isCurrentWinner ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonRestGradient)
-                        if isCurrentWinner {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(LunaTheme.amber.opacity(0.30))
-                        }
-                    }
+                    RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
+                        .fill(isCurrentWinner ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
                 }
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
                     .strokeBorder(
                         isFocused
                             ? LunaTheme.focusGoldBorder
-                            : (isCurrentWinner ? LunaTheme.amber.opacity(0.92) : LunaTheme.moonlight.opacity(0.38)),
-                        lineWidth: isFocused ? 2.3 : (isCurrentWinner ? 1.75 : 1.2)
+                            : (isCurrentWinner ? LunaTheme.warmBorderStrong : LunaTheme.warmBorder),
+                        lineWidth: isFocused ? 2.0 : 1.0
                     )
             )
             .shadow(
-                color: isFocused
-                    ? LunaTheme.amber.opacity(0.52)
-                    : (isCurrentWinner ? LunaTheme.amber.opacity(0.28) : .black.opacity(0.36)),
-                radius: isFocused ? 20 : (isCurrentWinner ? 12 : 8),
+                color: isFocused ? LunaTheme.amber.opacity(0.38) : .clear,
+                radius: isFocused ? 18 : 0,
                 x: 0,
-                y: isFocused ? 8 : 4
+                y: isFocused ? 6 : 0
             )
             .scaleEffect(isFocused ? 1.015 : 1.0)
             .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
         .focusEffectDisabled(true)
         .focused($isFocused)
     }

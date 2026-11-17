@@ -6,39 +6,39 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
     func testAppVersionDisplayStringIncludesBuildNumberWhenAvailable() {
         XCTAssertEqual(
             AppSessionStore.currentAppVersionString(infoDictionary: [
-                "CFBundleShortVersionString": "2.3.6",
-                "CFBundleVersion": "49",
+                "CFBundleShortVersionString": "2.4.0",
+                "CFBundleVersion": "50",
             ]),
-            "2.3.6"
+            "2.4.0"
         )
 
         XCTAssertEqual(
             AppSessionStore.currentAppVersionDisplayString(infoDictionary: [
-                "CFBundleShortVersionString": "2.3.6",
-                "CFBundleVersion": "49",
+                "CFBundleShortVersionString": "2.4.0",
+                "CFBundleVersion": "50",
             ]),
-            "2.3.6 (bygg 49)"
+            "2.4.0 (bygg 50)"
         )
 
         XCTAssertEqual(
             AppSessionStore.currentAppVersionDisplayString(infoDictionary: [
-                "CFBundleShortVersionString": "2.3.6",
+                "CFBundleShortVersionString": "2.4.0",
                 "CFBundleVersion": 52,
             ]),
-            "2.3.6 (bygg 52)"
+            "2.4.0 (bygg 52)"
         )
 
         XCTAssertEqual(
             AppSessionStore.currentAppVersionDisplayString(infoDictionary: [
-                "CFBundleShortVersionString": "2.3.6",
+                "CFBundleShortVersionString": "2.4.0",
                 "CFBundleVersion": "   ",
             ]),
-            "2.3.6"
+            "2.4.0"
         )
 
         XCTAssertEqual(
             AppSessionStore.currentAppVersionDisplayString(infoDictionary: nil),
-            "2.3.6"
+            "2.4.0"
         )
     }
 
@@ -265,10 +265,241 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
         XCTAssertEqual(monitorAck.profileId, "uhd-bluray")
     }
 
-    func testPeriodicBlinkCadenceIsBoundedInUnitInterval() {
-        XCTAssertEqual(PauseCatLifecycle.periodicBlinkProgress(elapsed: 0.0), 0.0, accuracy: 0.001)
-        XCTAssertGreaterThan(PauseCatLifecycle.periodicBlinkProgress(elapsed: 0.12), 0.9)
-        XCTAssertEqual(PauseCatLifecycle.periodicBlinkProgress(elapsed: 2.0), 0.0, accuracy: 0.001)
-        XCTAssertGreaterThan(PauseCatLifecycle.periodicBlinkProgress(elapsed: 4.52), 0.9)
+    @MainActor
+    func testTopBarScrollCollapseMenuWakeupTabFreshnessAndSubpagePlaybackGuard() {
+        // 1. ~180 ms top bar focus debounce & scroll zone hysteresis deadband
+        XCTAssertEqual(LunaTopBarView.focusDebounceNanoseconds, 180_000_000)
+        XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: -12), .atTop)
+        XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: 36), .atTop)
+        XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: 54), .midBand)
+        XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: 88), .scrolledDown)
+        XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: 420), .scrolledDown)
+
+        // 2. Siri Remote «Menu/Tilbake» from root-tab content (both un-scrolled & scrolled) vs top bar exit
+        let visibility = LunaNavigationBarVisibility()
+        visibility.syncActiveTab(.home)
+        XCTAssertFalse(visibility.isTopBarHidden)
+        XCTAssertFalse(visibility.isCollapsedByScroll)
+        XCTAssertFalse(visibility.isTopBarFocused)
+        // Un-scrolled root-tab content (e.g. Home row 1 on launch) intercepts Menu to focus LunaTopBarView
+        XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+        XCTAssertFalse(visibility.shouldInterceptMenuPress(hasActivePlayback: true))
+
+        // Pressing Menu from un-scrolled content requests focus in LunaTopBarView
+        let topPressAt = Date(timeIntervalSinceReferenceDate: 500)
+        visibility.handleMenuPressToRevealTopBar(now: topPressAt)
+        XCTAssertFalse(visibility.isCollapsedByScroll)
+        XCTAssertFalse(visibility.isTopBarHidden)
+        XCTAssertEqual(visibility.focusRequestNonce, 1)
+        // Immediate second Menu press before focus lands exits to Apple TV Home Screen (never traps)
+        XCTAssertFalse(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+        // Once focus is in LunaTopBarView, Menu exits to Apple TV Home Screen
+        visibility.updateTopBarFocused(true, now: topPressAt.addingTimeInterval(0.02))
+        XCTAssertTrue(visibility.isTopBarFocused)
+        XCTAssertFalse(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+        // Across all 6 root tabs at top (scrolledOffsetY < 88): top-bar focus -> exit, content focus -> focus top bar
+        for tab in MainNavigationTab.allCases {
+            visibility.syncActiveTab(tab)
+            XCTAssertFalse(visibility.isCollapsedByScroll)
+            XCTAssertFalse(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+            visibility.updateTopBarFocused(false, now: topPressAt.addingTimeInterval(0.30))
+            XCTAssertFalse(visibility.isCollapsedByScroll)
+            XCTAssertTrue(
+                visibility.shouldInterceptMenuPress(hasActivePlayback: false),
+                "Un-scrolled content on \(tab) must intercept Menu to focus LunaTopBarView"
+            )
+
+            // Subpage & modal guards also suppress Menu interception when un-scrolled
+            let unscrollSubToken = UUID()
+            visibility.enterSubpage(unscrollSubToken)
+            XCTAssertFalse(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+            visibility.leaveSubpage(unscrollSubToken)
+            XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+            let unscrollModalToken = UUID()
+            visibility.enterModal(unscrollModalToken)
+            XCTAssertFalse(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+            visibility.leaveModal(unscrollModalToken)
+            XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+            visibility.updateTopBarFocused(true, now: topPressAt.addingTimeInterval(0.40))
+        }
+
+        // Return focus to Home content at top before testing scroll collapse
+        visibility.syncActiveTab(.home)
+        visibility.updateTopBarFocused(false, now: topPressAt.addingTimeInterval(0.60))
+        XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+        // Mid-band jitter at top does NOT hide bar, while Menu still moves focus up to top bar
+        visibility.reportScrollZone(.midBand, for: .home)
+        XCTAssertFalse(visibility.isTopBarHidden)
+        XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+        // Downward scroll past 88 pt hides top bar and arms Menu wakeup
+        visibility.reportScrollZone(.scrolledDown, for: .home)
+        XCTAssertTrue(visibility.isCollapsedByScroll)
+        XCTAssertTrue(visibility.isTopBarHidden)
+        XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+        XCTAssertFalse(visibility.shouldInterceptMenuPress(hasActivePlayback: true))
+
+        // Inside a subpage or modal sheet/dialog, Menu press MUST NOT be intercepted
+        let subToken = UUID()
+        visibility.enterSubpage(subToken)
+        XCTAssertFalse(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+        visibility.leaveSubpage(subToken)
+        XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+        let modalToken = UUID()
+        visibility.enterModal(modalToken)
+        XCTAssertFalse(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+        visibility.leaveModal(modalToken)
+        XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+        // Pressing Menu springs top bar back into view & requests focus, with 140 ms Frame-0 bounce grace
+        let pressAt = Date(timeIntervalSinceReferenceDate: 1_000)
+        visibility.handleMenuPressToRevealTopBar(now: pressAt)
+        XCTAssertFalse(visibility.isCollapsedByScroll)
+        XCTAssertFalse(visibility.isTopBarHidden)
+        XCTAssertEqual(visibility.focusRequestNonce, 2)
+        // Second immediate Menu press passes through to tvOS Home Screen (never traps user)
+        XCTAssertFalse(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+        // Frame-0 focus bounce within 140 ms grace window neither re-collapses top bar nor re-traps Menu
+        visibility.updateTopBarFocused(true, now: pressAt.addingTimeInterval(0.01))
+        visibility.updateTopBarFocused(false, now: pressAt.addingTimeInterval(0.05))
+        XCTAssertFalse(visibility.isCollapsedByScroll)
+        XCTAssertFalse(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+        // Quick human Down-swipe at 250 ms MUST immediately re-collapse top bar and re-arm Menu wakeup
+        visibility.updateTopBarFocused(true, now: pressAt.addingTimeInterval(0.08))
+        visibility.updateTopBarFocused(false, now: pressAt.addingTimeInterval(0.25))
+        XCTAssertTrue(visibility.isCollapsedByScroll)
+        XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+        // Even if focus never entered the top bar after Menu-reveal, neither background-tab scroll samples
+        // nor grace-window (<140 ms) layout scroll jitter may clear pendingMenuBypassExit (preventing a Menu trap).
+        let secondPressAt = Date(timeIntervalSinceReferenceDate: 2_000)
+        visibility.handleMenuPressToRevealTopBar(now: secondPressAt)
+        XCTAssertFalse(visibility.isCollapsedByScroll)
+        XCTAssertFalse(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+        let s0 = ScrollTopSample.capture(scrolledOffsetY: 0)
+        let s420 = ScrollTopSample.capture(scrolledOffsetY: 420)
+        let s360 = ScrollTopSample.capture(scrolledOffsetY: 360)
+        let s490 = ScrollTopSample.capture(scrolledOffsetY: 490)
+
+        // Inactive tab (.movies) emitting scroll sample after Menu press MUST NOT clobber active tab's bypass guard
+        visibility.reportScrollSample(s0, s420, for: .movies, now: secondPressAt.addingTimeInterval(0.30))
+        XCTAssertFalse(
+            visibility.shouldInterceptMenuPress(hasActivePlayback: false),
+            "Inactive tab scroll sample must not clear pendingMenuBypassExit on active tab"
+        )
+
+        // Active tab (.home) emitting layout scroll jitter within 140 ms grace window MUST NOT trap Menu either
+        visibility.reportScrollSample(s420, s490, for: .home, now: secondPressAt.addingTimeInterval(0.04))
+        XCTAssertFalse(visibility.isCollapsedByScroll)
+        XCTAssertFalse(
+            visibility.shouldInterceptMenuPress(hasActivePlayback: false),
+            "Active-tab scroll jitter inside menuFocusBounceGraceSeconds must preserve anti-trap exit bypass"
+        )
+
+        // Reset movies back to top for subsequent tab-switch assertion
+        visibility.reportScrollZone(.atTop, for: .movies, now: secondPressAt.addingTimeInterval(0.30))
+
+        // After 140 ms grace window, scrolling UP keeps the revealed bar & re-arms Menu, while scrolling DOWN collapses
+        visibility.reportScrollSample(s420, s360, for: .home, now: secondPressAt.addingTimeInterval(0.30))
+        XCTAssertFalse(visibility.isCollapsedByScroll, "Scrolling up after Menu reveal must keep top bar visible")
+        XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+        visibility.reportScrollSample(s420, s490, for: .home, now: secondPressAt.addingTimeInterval(0.35))
+        XCTAssertTrue(visibility.isCollapsedByScroll, "Continuing downward scroll must re-collapse top bar")
+
+        // Switching to an un-scrolled tab (.movies) reveals top bar; scrolling back to top reveals top bar
+        visibility.syncActiveTab(.movies)
+        XCTAssertFalse(visibility.isCollapsedByScroll)
+        visibility.syncActiveTab(.home)
+        XCTAssertTrue(visibility.isCollapsedByScroll)
+        visibility.reportScrollZone(.atTop, for: .home)
+        XCTAssertFalse(visibility.isCollapsedByScroll)
+
+        // 3. Subpage disappear guard when direct playback launches (`activePlaybackTarget != nil`)
+        XCTAssertTrue(
+            SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
+                isRootTab: false,
+                hasPushedChildDestination: false,
+                hasActivePlayback: false
+            )
+        )
+        XCTAssertFalse(
+            SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
+                isRootTab: false,
+                hasPushedChildDestination: false,
+                hasActivePlayback: true
+            )
+        )
+        XCTAssertFalse(
+            SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
+                isRootTab: false,
+                hasPushedChildDestination: true,
+                hasActivePlayback: false
+            )
+        )
+        XCTAssertFalse(
+            SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
+                isRootTab: false,
+                hasPushedChildDestination: false,
+                hasActivePlayback: false,
+                isShowingModalSheet: true
+            )
+        )
+        XCTAssertFalse(
+            SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
+                isRootTab: true,
+                hasPushedChildDestination: false,
+                hasActivePlayback: false
+            )
+        )
+
+        // 4. Tab in-memory freshness policy prevents redundant re-fetching on tab switch
+        let t0 = Date(timeIntervalSinceReferenceDate: 5_000)
+        XCTAssertTrue(
+            TabContentFreshnessPolicy.isCacheFresh(
+                hasCachedContent: true,
+                lastValidatedAt: t0,
+                now: t0.addingTimeInterval(45),
+                cachedRefreshNonce: 7,
+                currentRefreshNonce: 7
+            )
+        )
+        XCTAssertFalse(
+            TabContentFreshnessPolicy.isCacheFresh(
+                hasCachedContent: true,
+                lastValidatedAt: t0,
+                now: t0.addingTimeInterval(45),
+                cachedRefreshNonce: 7,
+                currentRefreshNonce: 8
+            )
+        )
+        XCTAssertFalse(
+            TabContentFreshnessPolicy.isCacheFresh(
+                hasCachedContent: true,
+                lastValidatedAt: t0,
+                now: t0.addingTimeInterval(125),
+                cachedRefreshNonce: 7,
+                currentRefreshNonce: 7
+            )
+        )
+        XCTAssertFalse(
+            TabContentFreshnessPolicy.isCacheFresh(
+                hasCachedContent: false,
+                lastValidatedAt: t0,
+                now: t0.addingTimeInterval(5),
+                cachedRefreshNonce: 7,
+                currentRefreshNonce: 7
+            )
+        )
     }
 }

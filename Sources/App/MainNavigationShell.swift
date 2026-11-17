@@ -5,7 +5,6 @@ import AetherBridge
 struct MainNavigationShell: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var ambientController = AmbientBackdropController()
     @StateObject private var navBarVisibility = LunaNavigationBarVisibility()
 
     let engine: AetherEngine
@@ -13,8 +12,12 @@ struct MainNavigationShell: View {
     @State private var lastBootstrapRefreshAt: Date = .distantPast
 
     var body: some View {
+        let isPlaybackActive = sessionStore.activePlaybackTarget != nil
+        let hideTopBar = navBarVisibility.isTopBarHidden
+        let interceptMenu = navBarVisibility.shouldInterceptMenuPress(hasActivePlayback: isPlaybackActive)
+
         ZStack(alignment: .top) {
-            AmbientBackdropView(controller: ambientController)
+            AmbientBackdropView(isPaused: isPlaybackActive)
 
             TabView(selection: $selectedTab) {
                 NavigationStack {
@@ -94,33 +97,45 @@ struct MainNavigationShell: View {
             }
             .toolbar(.hidden, for: .tabBar)
 
-            if !navBarVisibility.isTopBarHidden {
-                LinearGradient(
-                    stops: [
-                        .init(color: LunaTheme.canvas.opacity(0.92), location: 0.0),
-                        .init(color: LunaTheme.canvas.opacity(0.56), location: 0.58),
-                        .init(color: .clear, location: 1.0),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .frame(height: 120)
-                .ignoresSafeArea(edges: .top)
-                .allowsHitTesting(false)
-                .zIndex(9)
+            LinearGradient(
+                stops: [
+                    .init(color: LunaTheme.canvas.opacity(0.94), location: 0.0),
+                    .init(color: LunaTheme.canvas.opacity(0.54), location: 0.58),
+                    .init(color: .clear, location: 1.0),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 112)
+            .ignoresSafeArea(edges: .top)
+            .opacity(hideTopBar ? 0 : 1)
+            .allowsHitTesting(false)
+            .animation(.easeOut(duration: 0.22), value: hideTopBar)
+            .zIndex(9)
 
-                LunaTopBarView(
-                    selectedTab: $selectedTab,
-                    showCatCompanions: sessionStore.comfort.showCatCompanions,
-                    roomBadge: sessionStore.roomName
-                )
-                .transition(.opacity)
-                .zIndex(10)
-            }
+            LunaTopBarView(
+                selectedTab: $selectedTab,
+                roomBadge: sessionStore.roomName,
+                focusRequestNonce: navBarVisibility.focusRequestNonce,
+                onFocusPresenceChanged: { isFocused in
+                    navBarVisibility.updateTopBarFocused(isFocused)
+                }
+            )
+            .opacity(hideTopBar ? 0 : 1)
+            .offset(y: hideTopBar ? -18 : 0)
+            .allowsHitTesting(!hideTopBar)
+            .disabled(hideTopBar)
+            .animation(.spring(response: 0.26, dampingFraction: 0.88), value: hideTopBar)
+            .zIndex(10)
         }
-        .environment(\.ambientFocusSink, ambientController.focusSink)
         .environment(\.lunaSubpageVisibility, navBarVisibility.sink)
         .environmentObject(sessionStore.comfort)
+        .onChange(of: selectedTab) { _, newTab in
+            navBarVisibility.syncActiveTab(newTab)
+        }
+        .onExitCommand(perform: interceptMenu ? {
+            navBarVisibility.handleMenuPressToRevealTopBar()
+        } : nil)
         .fullScreenCover(item: $sessionStore.activePlaybackTarget) { launchRequest in
             PlayerContainerView(
                 engine: engine,

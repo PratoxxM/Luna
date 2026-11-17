@@ -283,13 +283,6 @@ public final class ComfortPreferences: ObservableObject {
         }
     }
 
-    @Published public var showCatCompanions: Bool {
-        didSet {
-            guard oldValue != showCatCompanions else { return }
-            defaults.set(showCatCompanions, forKey: SideloadSafeStorage.showCatCompanionsKey)
-        }
-    }
-
     @Published public var keepDisplayModeInMenuAfterPlayback: Bool {
         didSet {
             guard oldValue != keepDisplayModeInMenuAfterPlayback else { return }
@@ -298,6 +291,13 @@ public final class ComfortPreferences: ObservableObject {
                 forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey
             )
         }
+    }
+
+    /// True (default on v2.4.0+) when exiting the video player immediately restores 60 Hz tvOS menus.
+    /// Turning `keepDisplayModeInMenuAfterPlayback` on ("På" per TV in Settings) holds the video's display mode in menus until backgrounding.
+    public var returnTo60HzInMenuAfterPlayback: Bool {
+        get { !keepDisplayModeInMenuAfterPlayback }
+        set { keepDisplayModeInMenuAfterPlayback = !newValue }
     }
 
     @Published public var lowResUpscaleMode: LowResUpscaleMode {
@@ -349,10 +349,13 @@ public final class ComfortPreferences: ObservableObject {
         self.autoPlayNextEpisode = defaults.object(forKey: SideloadSafeStorage.autoPlayNextEpisodeKey) as? Bool ?? true
         self.smartNordicSubtitleRule = defaults.object(forKey: SideloadSafeStorage.smartNordicSubtitleRuleKey) as? Bool ?? true
         self.showNerdHUD = defaults.object(forKey: SideloadSafeStorage.showNerdHUDKey) as? Bool ?? false
-        self.showCatCompanions = defaults.object(forKey: SideloadSafeStorage.showCatCompanionsKey) as? Bool ?? true
+        if !defaults.bool(forKey: SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key) {
+            defaults.set(false, forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey)
+            defaults.set(true, forKey: SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key)
+        }
         self.keepDisplayModeInMenuAfterPlayback = defaults.object(
             forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey
-        ) as? Bool ?? true
+        ) as? Bool ?? false
         let rawUpscale = defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey) ?? LowResUpscaleMode.off.rawValue
         self.lowResUpscaleMode = LowResUpscaleMode(rawValue: rawUpscale) ?? .off
         if defaults.object(forKey: SideloadSafeStorage.audioDelayMsKey) != nil {

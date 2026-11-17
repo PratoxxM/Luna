@@ -18,18 +18,31 @@ final class PlayerScrubState: ObservableObject {
 final class PlayerViewModel: ObservableObject {
     // Resolve & First-Frame Reveal State
     @Published var isResolving: Bool = true
-    @Published var resolveStageKey: String = "searching"
-    @Published var resolveStageLabel: String = "Klargjør strøm…"
-    @Published var resolvePercent: Int = 12
-    @Published var resolveHeadline: String?
+    let startupState = PlayerStartupState()
     @Published var fatalError: String?
     @Published var transientBannerMessage: String?
 
     @Published var hasFirstFrameReadyForDisplay: Bool = false
     @Published var isAwaitingDisplaySwitch: Bool = false
-    @Published var startupProgress: StartupProgress?
     @Published var firstFrameFallbackUnlocked: Bool = false
     @Published var isRestoringFromBackground: Bool = false
+
+    var resolveStageKey: String {
+        get { startupState.resolveStageKey }
+        set { if startupState.resolveStageKey != newValue { startupState.resolveStageKey = newValue } }
+    }
+    var resolveStageLabel: String {
+        get { startupState.resolveStageLabel }
+        set { if startupState.resolveStageLabel != newValue { startupState.resolveStageLabel = newValue } }
+    }
+    var resolvePercent: Int {
+        get { startupState.resolvePercent }
+        set { if startupState.resolvePercent != newValue { startupState.resolvePercent = newValue } }
+    }
+    var resolveHeadline: String? {
+        get { startupState.resolveHeadline }
+        set { if startupState.resolveHeadline != newValue { startupState.resolveHeadline = newValue } }
+    }
 
     // Session, Sources & Next Episode
     @Published var currentRequest: PlaybackLaunchRequest?
@@ -666,7 +679,11 @@ final class PlayerViewModel: ObservableObject {
 
         engine.$hasFirstFrameReadyForDisplay.assign(to: &$hasFirstFrameReadyForDisplay)
         engine.$isAwaitingDisplaySwitch.assign(to: &$isAwaitingDisplaySwitch)
-        engine.$startupProgress.assign(to: &$startupProgress)
+        engine.$startupProgress
+            .sink { [weak self] progress in
+                self?.startupState.updateEngineStartupFraction(progress?.fraction)
+            }
+            .store(in: &cancellables)
 
         engine.$duration
             .sink { [weak self] dur in

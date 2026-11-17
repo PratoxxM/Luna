@@ -39,7 +39,7 @@ struct CustomRowBrowseView: View {
 
                 Text(title)
                     .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(LunaTheme.linen)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.top, 28)
 
@@ -134,7 +134,10 @@ struct CustomRowBrowseView: View {
         }
         .onDisappear {
             mutationBannerTask?.cancel()
-            if selectedCard == nil {
+            if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
+                hasPushedChildDestination: selectedCard != nil,
+                hasActivePlayback: sessionStore.activePlaybackTarget != nil
+            ) {
                 subpageVisibility.leaveSubpage(subpageToken)
             }
         }

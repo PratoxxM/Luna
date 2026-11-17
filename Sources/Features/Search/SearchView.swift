@@ -17,6 +17,7 @@ struct SearchView: View {
     @State private var mutationErrorBanner: String?
     @State private var recentSearches: [String] = []
     @State private var selectedCard: TvMediaCard?
+    @State private var lastCompletedQuery: String = ""
     @State private var searchTask: Task<Void, Never>?
     @State private var bannerClearTask: Task<Void, Never>?
 
@@ -40,7 +41,7 @@ struct SearchView: View {
                     TextField("Søk etter film, serie, person eller originaltittel…", text: $query)
 
                     if !query.isEmpty {
-                        LunaPillButton("Tøm", systemImage: "xmark.circle", prominence: .subtleChip, accent: .coral) {
+                        LunaPillButton("Tøm", systemImage: "xmark.circle", prominence: .subtleChip) {
                             query = ""
                         }
                     }
@@ -90,11 +91,12 @@ struct SearchView: View {
                         HStack(spacing: 12) {
                             if localCount > 0 {
                                 Text("\(localCount) i lokalt bibliotek")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(LunaTheme.emerald)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(LunaTheme.moonlight)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 5)
-                                    .background(LunaTheme.emerald.opacity(0.14), in: Capsule())
+                                    .background(LunaTheme.surfaceRaised, in: Capsule())
+                                    .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
                             }
                             Text("\(results.count) treff totalt")
                                 .font(.caption)
@@ -169,6 +171,7 @@ struct SearchView: View {
                 }
             }
         }
+        .lunaRootScrollTopBarTracking(tab: .search, isEnabled: isRootTab)
         .safeAreaPadding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 0)
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in
@@ -182,7 +185,7 @@ struct SearchView: View {
         .task(id: initialQuery) {
             loadRecentSearches()
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.count >= 2 {
+            if trimmed.count >= 2, trimmed != lastCompletedQuery || results.isEmpty {
                 triggerSearch(trimmed, debounceNanoseconds: 0)
             }
         }
@@ -192,6 +195,7 @@ struct SearchView: View {
                 searchTask?.cancel()
                 results = []
                 localCount = 0
+                lastCompletedQuery = ""
                 errorMessage = nil
                 isSearching = false
                 return
@@ -201,7 +205,11 @@ struct SearchView: View {
         .onDisappear {
             searchTask?.cancel()
             bannerClearTask?.cancel()
-            if !isRootTab && selectedCard == nil {
+            if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
+                isRootTab: isRootTab,
+                hasPushedChildDestination: selectedCard != nil,
+                hasActivePlayback: sessionStore.activePlaybackTarget != nil
+            ) {
                 subpageVisibility.leaveSubpage(subpageToken)
             }
         }
@@ -222,6 +230,7 @@ struct SearchView: View {
                 guard !Task.isCancelled else { return }
                 results = res.items
                 localCount = res.localCount ?? 0
+                lastCompletedQuery = trimmed
                 if !res.items.isEmpty {
                     recordRecentSearch(trimmed)
                 }

@@ -18,7 +18,7 @@ struct ShelfRowView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(row.title)
                 .font(.title3.weight(.bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(LunaTheme.linen)
                 .padding(.horizontal, LunaTheme.horizontalGutter)
 
             if row.rowStyle == "continue_backdrop" {
@@ -219,41 +219,41 @@ private struct SeeAllShelfCardButton: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 14) {
-                Image(systemName: "arrow.right.circle.fill")
-                    .font(.system(size: 42, weight: .semibold))
-                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.amber)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.moonlight)
 
                 Text("Se alle")
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(isFocused ? LunaTheme.canvas : .white)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.linen)
             }
             .frame(width: width, height: height)
             .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(isFocused ? LunaTheme.focusGoldGradient : LunaTheme.buttonRestGradient)
+                RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
+                    .fill(
+                        isFocused
+                            ? AnyShapeStyle(LunaTheme.focusGoldGradient)
+                            : AnyShapeStyle(LunaTheme.surface)
+                    )
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
                     .strokeBorder(
-                        isFocused ? LunaTheme.focusGoldBorder : LunaTheme.moonlight.opacity(0.38),
-                        lineWidth: isFocused ? 2.5 : 1.25
+                        isFocused ? LunaTheme.focusGoldBorder : LunaTheme.warmBorder,
+                        lineWidth: isFocused ? 2.0 : 1.0
                     )
             )
             .shadow(
-                color: isFocused ? LunaTheme.amber.opacity(0.52) : .black.opacity(0.36),
-                radius: isFocused ? 22 : 10,
+                color: isFocused ? LunaTheme.amber.opacity(0.38) : .clear,
+                radius: isFocused ? 18 : 0,
                 x: 0,
-                y: isFocused ? 8 : 4
+                y: isFocused ? 6 : 0
             )
             .scaleEffect(isFocused ? 1.04 : 1.0)
             .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
         .focusEffectDisabled(true)
         .focused($isFocused)
     }

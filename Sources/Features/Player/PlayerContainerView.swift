@@ -1,6 +1,38 @@
 import SwiftUI
 import AetherBridge
 
+internal enum PlayerOSDVisibilityPolicy {
+    nonisolated static let playingAutoHideSeconds: TimeInterval = 4.0
+    nonisolated static let pausedIdleRestSeconds: TimeInterval = 12.0
+
+    nonisolated static func shouldShowBottomBar(
+        isPictureReadyForReveal: Bool,
+        isTopDrawerOpen: Bool,
+        hasFatalError: Bool,
+        isScrubbing: Bool,
+        showBottomBar: Bool,
+        playbackPhase: PlaybackPhase,
+        isPausedOSDResting: Bool
+    ) -> Bool {
+        guard isPictureReadyForReveal, !isTopDrawerOpen, !hasFatalError else {
+            return false
+        }
+        if isScrubbing || showBottomBar {
+            return true
+        }
+        return playbackPhase == .paused && !isPausedOSDResting
+    }
+
+    nonisolated static func shouldRestAmbientPlayerHUD(
+        playbackPhase: PlaybackPhase,
+        isPausedOSDResting: Bool,
+        isScrubbing: Bool,
+        isTopDrawerOpen: Bool
+    ) -> Bool {
+        playbackPhase == .paused && isPausedOSDResting && !isScrubbing && !isTopDrawerOpen
+    }
+}
+
 struct PlayerContainerView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.scenePhase) private var scenePhase
@@ -12,12 +44,14 @@ struct PlayerContainerView: View {
 
     @StateObject private var viewModel: PlayerViewModel
     @State private var showBottomBar: Bool = false
+    @State private var isPausedOSDResting: Bool = false
     @State private var isTopDrawerOpen: Bool = false
     @State private var selectedDrawerTab: PlayerTopDrawerTab = .subtitles
     @State private var hasSeriesPrompt: Bool = false
     @State private var seriesPromptDismissNonce: Int = 0
     @State private var dismissedNextForSessionID: String?
     @State private var hideBottomBarTask: Task<Void, Never>?
+    @State private var pauseRestTask: Task<Void, Never>?
     @State private var suspendedFatalErrorForDrawer: String? = nil
 
     @FocusState private var isCanvasFocused: Bool
@@ -44,9 +78,22 @@ struct PlayerContainerView: View {
 
     var body: some View {
         let client = sessionStore.makeClient()
-
         let effectiveRequest = viewModel.currentRequest ?? initialRequest
-        let isBottomBarShown = showBottomBar || viewModel.playbackPhase == .paused || viewModel.isScrubbing
+        let isBottomBarShown = PlayerOSDVisibilityPolicy.shouldShowBottomBar(
+            isPictureReadyForReveal: viewModel.isPictureReadyForReveal,
+            isTopDrawerOpen: isTopDrawerOpen,
+            hasFatalError: viewModel.fatalError != nil,
+            isScrubbing: viewModel.isScrubbing,
+            showBottomBar: showBottomBar,
+            playbackPhase: viewModel.playbackPhase,
+            isPausedOSDResting: isPausedOSDResting
+        )
+        let isHUDResting = PlayerOSDVisibilityPolicy.shouldRestAmbientPlayerHUD(
+            playbackPhase: viewModel.playbackPhase,
+            isPausedOSDResting: isPausedOSDResting,
+            isScrubbing: viewModel.isScrubbing,
+            isTopDrawerOpen: isTopDrawerOpen
+        )
 
         ZStack {
             LunaTheme.pureBlack.ignoresSafeArea()
@@ -60,7 +107,7 @@ struct PlayerContainerView: View {
             SubtitleOverlayView(
                 engine: engine,
                 comfort: comfort,
-                isBottomBarVisible: viewModel.isPictureReadyForReveal && !isTopDrawerOpen && viewModel.fatalError == nil && isBottomBarShown
+                isBottomBarVisible: isBottomBarShown
             )
             .ignoresSafeArea()
             .zIndex(1)
@@ -75,7 +122,9 @@ struct PlayerContainerView: View {
                     },
                     onScrubBegan: {
                         hideBottomBarTask?.cancel()
+                        pauseRestTask?.cancel()
                         withAnimation(.easeOut(duration: 0.16)) {
+                            isPausedOSDResting = false
                             showBottomBar = true
                         }
                         viewModel.beginTouchScrub()
@@ -145,8 +194,8 @@ struct PlayerContainerView: View {
                 .zIndex(2)
             }
 
-            // 3. Optional 1 Hz Isolated Nerd-HUD (top-left)
-            if comfort.showNerdHUD && viewModel.isPictureReadyForReveal && !isTopDrawerOpen {
+            // 3. Optional 1 Hz Isolated Nerd-HUD (top-left, also dims during 12s OLED pause rest)
+            if comfort.showNerdHUD && viewModel.isPictureReadyForReveal && !isTopDrawerOpen && !isHUDResting {
                 VStack {
                     HStack {
                         NerdHUDView(engine: engine, viewModel: viewModel)
@@ -164,7 +213,8 @@ struct PlayerContainerView: View {
             if viewModel.isPictureReadyForReveal && !isTopDrawerOpen && !viewModel.isScrubbing && viewModel.fatalError == nil {
                 SeriesFlowOverlays(
                     viewModel: viewModel,
-                    isBottomBarVisible: showBottomBar || viewModel.playbackPhase == .paused,
+                    isBottomBarVisible: isBottomBarShown,
+                    isResting: isHUDResting,
                     hasActivePrompt: $hasSeriesPrompt,
                     dismissedNextForSessionID: $dismissedNextForSessionID,
                     dismissNonce: seriesPromptDismissNonce,
@@ -208,13 +258,13 @@ struct PlayerContainerView: View {
                                 .foregroundStyle(LunaTheme.amber)
                             Text(banner)
                                 .font(.callout.weight(.semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(LunaTheme.linen)
                                 .lineLimit(2)
                         }
                         .padding(.horizontal, 22)
                         .padding(.vertical, 12)
                         .background(LunaTheme.cinemaGlass, in: Capsule())
-                        .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.55), lineWidth: 1))
+                        .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.50), lineWidth: 1))
                         .padding(.top, 42)
                         Spacer()
                     }
@@ -256,8 +306,18 @@ struct PlayerContainerView: View {
             }
         }
         .onChange(of: viewModel.playbackPhase) { oldPhase, phase in
-            if oldPhase == .paused && phase == .playing && viewModel.isPictureReadyForReveal && !isTopDrawerOpen {
-                revealBottomBarTemporarily()
+            if phase == .paused {
+                isPausedOSDResting = false
+                schedulePausedIdleRestTimer()
+            } else {
+                pauseRestTask?.cancel()
+                pauseRestTask = nil
+                if isPausedOSDResting {
+                    isPausedOSDResting = false
+                }
+                if oldPhase == .paused && phase == .playing && viewModel.isPictureReadyForReveal && !isTopDrawerOpen {
+                    revealBottomBarTemporarily()
+                }
             }
             guard phase == .ended,
                   !viewModel.isResolving,
@@ -290,7 +350,7 @@ struct PlayerContainerView: View {
             } else if viewModel.isScrubbing {
                 viewModel.cancelTouchScrub()
                 revealBottomBarTemporarily()
-            } else if hasSeriesPrompt {
+            } else if hasSeriesPrompt && !isHUDResting {
                 seriesPromptDismissNonce &+= 1
                 restoreCanvasFocusSoon()
             } else if showBottomBar && viewModel.playbackPhase == .playing {
@@ -323,6 +383,7 @@ struct PlayerContainerView: View {
         }
         .onDisappear {
             hideBottomBarTask?.cancel()
+            pauseRestTask?.cancel()
             let store = sessionStore
             viewModel.teardownAndStop {
                 store.notifyContentMutated()
@@ -330,10 +391,12 @@ struct PlayerContainerView: View {
         }
     }
 
-    // MARK: - Focus & OSD Timing
+    // MARK: - Focus, 4s Playing Auto-Hide & ~12s OLED/Gallery Pause Rest
 
     private func openTopDrawer(tab: PlayerTopDrawerTab? = nil) {
         hideBottomBarTask?.cancel()
+        pauseRestTask?.cancel()
+        isPausedOSDResting = false
         if let tab {
             selectedDrawerTab = tab
         }
@@ -354,21 +417,45 @@ struct PlayerContainerView: View {
                 return
             }
         }
+        if viewModel.playbackPhase == .paused {
+            revealBottomBarTemporarily()
+        }
         restoreCanvasFocusSoon()
     }
 
     private func revealBottomBarTemporarily() {
-        withAnimation(.easeOut(duration: 0.2)) {
+        withAnimation(.easeOut(duration: 0.16)) {
+            isPausedOSDResting = false
             showBottomBar = true
         }
         hideBottomBarTask?.cancel()
+        let autoHideNs = UInt64(PlayerOSDVisibilityPolicy.playingAutoHideSeconds * 1_000_000_000)
         hideBottomBarTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            try? await Task.sleep(nanoseconds: autoHideNs)
             guard !Task.isCancelled else { return }
             if viewModel.playbackPhase == .playing && !viewModel.isScrubbing && !isTopDrawerOpen {
                 withAnimation(.easeOut(duration: 0.28)) {
                     showBottomBar = false
                 }
+            }
+        }
+        if viewModel.playbackPhase == .paused && !viewModel.isScrubbing && !isTopDrawerOpen {
+            schedulePausedIdleRestTimer()
+        }
+    }
+
+    private func schedulePausedIdleRestTimer() {
+        pauseRestTask?.cancel()
+        let restNs = UInt64(PlayerOSDVisibilityPolicy.pausedIdleRestSeconds * 1_000_000_000)
+        pauseRestTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: restNs)
+            guard !Task.isCancelled else { return }
+            if viewModel.playbackPhase == .paused && !viewModel.isScrubbing && !isTopDrawerOpen {
+                withAnimation(.easeInOut(duration: 0.65)) {
+                    showBottomBar = false
+                    isPausedOSDResting = true
+                }
+                restoreCanvasFocusSoon()
             }
         }
     }
@@ -384,6 +471,7 @@ struct PlayerContainerView: View {
 
     private func closePlayer() {
         hideBottomBarTask?.cancel()
+        pauseRestTask?.cancel()
         viewModel.prepareForDismissal()
         onDismiss()
     }
@@ -401,24 +489,18 @@ struct PlayerContainerView: View {
                 .foregroundStyle(LunaTheme.amber)
             Text("\(sign)\(secs) s")
                 .font(.title2.monospacedDigit().weight(.bold))
-                .foregroundStyle(.white)
-            if comfort.showCatCompanions {
-                Image(systemName: "pawprint.fill")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(LunaTheme.amber.opacity(0.90))
-            }
+                .foregroundStyle(LunaTheme.linen)
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 16)
         .background(LunaTheme.cinemaGlass, in: Capsule())
-        .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.55), lineWidth: 1.5))
-        .shadow(color: .black.opacity(0.65), radius: 20, x: 0, y: 8)
+        .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.48), lineWidth: 1))
         .allowsHitTesting(false)
     }
 
     private func fatalErrorOverlay(_ message: String) -> some View {
         ZStack {
-            LunaTheme.pureBlack.opacity(0.92).ignoresSafeArea()
+            LunaTheme.pureBlack.opacity(0.94).ignoresSafeArea()
 
             VStack(spacing: 24) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -427,7 +509,7 @@ struct PlayerContainerView: View {
 
                 Text("Avspilling kunne ikke starte")
                     .font(.title2.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(LunaTheme.linen)
 
                 Text(message)
                     .font(.callout)

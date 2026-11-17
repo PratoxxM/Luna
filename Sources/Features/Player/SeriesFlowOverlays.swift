@@ -54,6 +54,7 @@ struct SeriesFlowOverlays: View {
 
     @ObservedObject var viewModel: PlayerViewModel
     let isBottomBarVisible: Bool
+    var isResting: Bool = false
     @Binding var hasActivePrompt: Bool
     @Binding var dismissedNextForSessionID: String?
     let dismissNonce: Int
@@ -89,6 +90,9 @@ struct SeriesFlowOverlays: View {
             .animation(.spring(response: 0.28, dampingFraction: 0.82), value: showNextButton)
             .animation(.spring(response: 0.26, dampingFraction: 0.82), value: activeIntro?.id)
         }
+        .opacity(isResting ? 0 : 1)
+        .allowsHitTesting(!isResting)
+        .disabled(isResting)
         .onAppear {
             currentTime = viewModel.engine.currentTime
             let intro = currentSkippableChapter
@@ -96,17 +100,28 @@ struct SeriesFlowOverlays: View {
             if let intro, !nextVisible {
                 trackedIntroChapterID = intro.id
                 enteredIntroAtWallTime = Date()
-                focusedPromptControl = .skipIntro
-            } else if nextVisible {
+                if !isResting {
+                    focusedPromptControl = .skipIntro
+                }
+            } else if nextVisible, !isResting {
                 focusedPromptControl = .playNext
             }
             syncActivePromptFlag(intro: intro, nextVisible: nextVisible)
         }
+        .onChange(of: isResting) { _, resting in
+            if resting {
+                focusedPromptControl = nil
+            } else if shouldShowNextEpisodeButton {
+                focusedPromptControl = .playNext
+            } else if currentSkippableChapter != nil {
+                focusedPromptControl = .skipIntro
+            }
+        }
         .onChange(of: showNextButton) { _, visible in
             syncActivePromptFlag(intro: currentSkippableChapter, nextVisible: visible)
-            if visible {
+            if visible && !isResting {
                 focusedPromptControl = .playNext
-            } else if focusedPromptControl == .playNext {
+            } else if !visible, focusedPromptControl == .playNext {
                 focusedPromptControl = nil
                 if currentSkippableChapter == nil {
                     onReturnFocusToCanvas()
@@ -119,7 +134,7 @@ struct SeriesFlowOverlays: View {
                 enteredIntroAtWallTime = Date()
             }
             syncActivePromptFlag(intro: activeIntro, nextVisible: showNextButton)
-            if newID != nil && !showNextButton {
+            if newID != nil && !showNextButton && !isResting {
                 focusedPromptControl = .skipIntro
             } else if newID == nil && focusedPromptControl == .skipIntro {
                 focusedPromptControl = nil
@@ -168,6 +183,10 @@ struct SeriesFlowOverlays: View {
                 trackedIntroChapterID = nil
                 enteredIntroAtWallTime = nil
             }
+        }
+        .onDisappear {
+            focusedPromptControl = nil
+            hasActivePrompt = false
         }
     }
 

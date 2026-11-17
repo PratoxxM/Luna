@@ -15,7 +15,6 @@ struct ScrubPreviewBubbleView: View {
     let chapterTitle: String?
     let previewImage: CGImage?
     let drawsInCompositorView: Bool
-    var showCatCompanion: Bool = false
     let onMountCompositorView: (AetherScrubPreviewView?) -> Void
 
     static let frameWidth: CGFloat = 236
@@ -45,15 +44,9 @@ struct ScrubPreviewBubbleView: View {
             }
 
             HStack(spacing: 6) {
-                if showCatCompanion {
-                    Image(systemName: "pawprint.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(LunaTheme.amber.opacity(0.86))
-                }
-
                 Text(TimelineScrubberLeafView.formatSeconds(targetSeconds))
                     .font(.callout.monospacedDigit().weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(LunaTheme.linen)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
 
@@ -70,7 +63,7 @@ struct ScrubPreviewBubbleView: View {
             if let chapterTitle, !chapterTitle.isEmpty {
                 Text(chapterTitle)
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(LunaTheme.moonlight.opacity(0.86))
+                    .foregroundStyle(LunaTheme.muted)
                     .lineLimit(1)
                     .frame(maxWidth: preferredWidth - 20)
             }
@@ -84,9 +77,8 @@ struct ScrubPreviewBubbleView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(LunaTheme.amber.opacity(0.55), lineWidth: 1.2)
+                .strokeBorder(LunaTheme.amber.opacity(0.45), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.72), radius: 18, x: 0, y: 8)
         .allowsHitTesting(false)
     }
 

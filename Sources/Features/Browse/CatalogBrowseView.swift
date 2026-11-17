@@ -1,19 +1,23 @@
 import SwiftUI
 
-private struct CatalogBrowseSnapshot {
+internal struct CatalogBrowseSnapshot {
     var items: [TvMediaCard]
     var availableGenres: [TvGenreChip]
     var selectedGenreLabel: String?
     var hasMore: Bool
     var currentPage: Int
+    var fetchedAt: Date
+    var refreshNonce: Int
 }
 
 @MainActor
-private final class CatalogBrowseMemoryCache {
+internal final class CatalogBrowseMemoryCache {
     static let shared = CatalogBrowseMemoryCache()
     private let maxEntries = 16
     private var entries: [String: CatalogBrowseSnapshot] = [:]
     private var order: [String] = []
+
+    var entryCount: Int { entries.count }
 
     func snapshot(for key: String) -> CatalogBrowseSnapshot? {
         guard let hit = entries[key] else { return nil }
@@ -72,11 +76,11 @@ struct CatalogBrowseView: View {
         GridItem(.adaptive(minimum: 236, maximum: 272), spacing: 34)
     ]
 
-    private let sortOptions: [(id: String, label: String, icon: String)] = [
-        ("popular", "Mest populære", "flame.fill"),
-        ("top_rated", "Høyest rangert", "star.fill"),
-        ("newest", "Nyeste", "sparkles"),
-        ("local_recent", "Lokalt hos oss", "internaldrive.fill")
+    private let sortOptions: [(id: String, label: String)] = [
+        ("popular", "Mest populære"),
+        ("top_rated", "Høyest rangert"),
+        ("newest", "Nyeste"),
+        ("local_recent", "Lokalt hos oss"),
     ]
 
     init(
@@ -93,6 +97,10 @@ struct CatalogBrowseView: View {
         _selectedGenreLabel = State(initialValue: initialGenre?.label)
     }
 
+    private var rootNavigationTab: MainNavigationTab {
+        (mediaType == "series" || mediaType == "tv") ? .series : .movies
+    }
+
     private var headerTitle: String {
         let kindLabel = (mediaType == "series" || mediaType == "tv") ? "Serier" : "Filmer"
         if let label = selectedGenreLabel, !label.isEmpty {
@@ -102,7 +110,7 @@ struct CatalogBrowseView: View {
     }
 
     private var reloadTriggerKey: String {
-        "\(mediaType)#\(selectedGenreSlug ?? "all")#\(selectedSort)#\(localOnly)#\(unwatchedOnly)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
+        "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(mediaType)#\(selectedGenreSlug ?? "all")#\(selectedSort)#\(localOnly)#\(unwatchedOnly)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
     }
 
     var body: some View {
@@ -118,17 +126,16 @@ struct CatalogBrowseView: View {
 
                 Text(headerTitle)
                     .font(.title2.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(LunaTheme.linen)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.top, 14)
 
-                // Sort & quick filter bar
+                // Sort & quick filter bar (uniform warm espresso pills)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 14) {
+                    HStack(spacing: 12) {
                         ForEach(sortOptions, id: \.id) { opt in
                             LunaPillButton(
                                 opt.label,
-                                systemImage: opt.icon,
                                 isSelected: selectedSort == opt.id
                             ) {
                                 guard selectedSort != opt.id else { return }
@@ -137,24 +144,22 @@ struct CatalogBrowseView: View {
                         }
 
                         Rectangle()
-                            .fill(LunaTheme.moonlight.opacity(0.16))
-                            .frame(width: 1, height: 28)
+                            .fill(LunaTheme.warmBorder)
+                            .frame(width: 1, height: 26)
                             .padding(.horizontal, 6)
 
                         LunaPillButton(
                             "Kun lokalt",
-                            systemImage: localOnly ? "checkmark.circle.fill" : "internaldrive",
-                            isSelected: localOnly,
-                            accent: .emerald
+                            systemImage: localOnly ? "checkmark" : nil,
+                            isSelected: localOnly
                         ) {
                             localOnly.toggle()
                         }
 
                         LunaPillButton(
                             "Skjul sette",
-                            systemImage: unwatchedOnly ? "eye.slash.fill" : "eye.slash",
-                            isSelected: unwatchedOnly,
-                            accent: .periwinkle
+                            systemImage: unwatchedOnly ? "checkmark" : nil,
+                            isSelected: unwatchedOnly
                         ) {
                             unwatchedOnly.toggle()
                         }
@@ -164,13 +169,12 @@ struct CatalogBrowseView: View {
                 }
                 .scrollClipDisabled()
 
-                // Genre strip
+                // Pure text genre strip (zero icon clutter)
                 if !availableGenres.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
+                        HStack(spacing: 10) {
                             LunaPillButton(
                                 "Alle sjangre",
-                                systemImage: "square.grid.2x2",
                                 isSelected: selectedGenreSlug == nil,
                                 prominence: .subtleChip
                             ) {
@@ -182,7 +186,6 @@ struct CatalogBrowseView: View {
                                 let active = selectedGenreSlug == chip.slug
                                 LunaPillButton(
                                     chip.label,
-                                    systemImage: LunaTheme.symbolForGenre(slug: chip.slug, serverIcon: chip.icon),
                                     isSelected: active,
                                     prominence: .subtleChip
                                 ) {
@@ -217,7 +220,7 @@ struct CatalogBrowseView: View {
                         Text(errorMessage)
                             .foregroundStyle(LunaTheme.amber)
                         LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                            Task { await loadFirstPage() }
+                            Task { await loadFirstPage(forceNetwork: true) }
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -225,9 +228,9 @@ struct CatalogBrowseView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Ingen treff med valgte filtre.")
                             .font(.title3.weight(.semibold))
-                            .foregroundStyle(LunaTheme.moonlight)
+                            .foregroundStyle(LunaTheme.linen)
                         if localOnly || unwatchedOnly {
-                            LunaPillButton("Nullstill hurtigfiltre", systemImage: "xmark.circle", prominence: .subtleChip, accent: .coral) {
+                            LunaPillButton("Nullstill hurtigfiltre", systemImage: "xmark.circle", prominence: .subtleChip) {
                                 localOnly = false
                                 unwatchedOnly = false
                             }
@@ -292,6 +295,7 @@ struct CatalogBrowseView: View {
             }
             .padding(.bottom, 64)
         }
+        .lunaRootScrollTopBarTracking(tab: rootNavigationTab, isEnabled: isRootTab)
         .safeAreaPadding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 0)
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in
@@ -304,42 +308,59 @@ struct CatalogBrowseView: View {
         }
         .task(id: reloadTriggerKey) {
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            await loadFirstPage()
+            await loadFirstPage(forceNetwork: false)
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
             guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
             lastSeenRefreshNonce = newNonce
-            Task { await loadFirstPage() }
+            Task { await loadFirstPage(forceNetwork: true) }
         }
         .onChange(of: isActiveTab) { _, active in
-            guard active, lastSeenRefreshNonce != sessionStore.homeRefreshNonce else { return }
+            guard active else { return }
+            let cached = CatalogBrowseMemoryCache.shared.snapshot(for: reloadTriggerKey)
+            let isFresh = TabContentFreshnessPolicy.isCacheFresh(
+                hasCachedContent: !(cached?.items.isEmpty ?? items.isEmpty),
+                lastValidatedAt: cached?.fetchedAt ?? .distantPast,
+                cachedRefreshNonce: cached?.refreshNonce ?? lastSeenRefreshNonce,
+                currentRefreshNonce: sessionStore.homeRefreshNonce
+            )
+            guard !isFresh else { return }
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            Task { await loadFirstPage() }
+            Task { await loadFirstPage(forceNetwork: true) }
         }
         .onDisappear {
             mutationBannerTask?.cancel()
-            if !isRootTab && selectedCard == nil {
+            if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
+                isRootTab: isRootTab,
+                hasPushedChildDestination: selectedCard != nil,
+                hasActivePlayback: sessionStore.activePlaybackTarget != nil
+            ) {
                 subpageVisibility.leaveSubpage(subpageToken)
             }
         }
     }
 
-    private func persistSnapshot(for triggerKey: String) {
+    private func persistSnapshot(for triggerKey: String, fetchedAt: Date? = nil, refreshNonce: Int? = nil) {
+        let existing = CatalogBrowseMemoryCache.shared.snapshot(for: triggerKey)
         CatalogBrowseMemoryCache.shared.store(
             CatalogBrowseSnapshot(
                 items: items,
                 availableGenres: availableGenres,
                 selectedGenreLabel: selectedGenreLabel,
                 hasMore: hasMore,
-                currentPage: currentPage
+                currentPage: currentPage,
+                fetchedAt: fetchedAt ?? existing?.fetchedAt ?? Date(),
+                refreshNonce: refreshNonce ?? existing?.refreshNonce ?? sessionStore.homeRefreshNonce
             ),
             for: triggerKey
         )
     }
 
-    private func loadFirstPage() async {
+    private func loadFirstPage(forceNetwork: Bool = false) async {
         guard let client = sessionStore.makeClient() else { return }
         let triggerKey = reloadTriggerKey
+        let currentNonce = sessionStore.homeRefreshNonce
+
         if let cached = CatalogBrowseMemoryCache.shared.snapshot(for: triggerKey) {
             items = cached.items
             if availableGenres.isEmpty && !cached.availableGenres.isEmpty {
@@ -351,6 +372,18 @@ struct CatalogBrowseView: View {
             hasMore = cached.hasMore
             currentPage = max(1, cached.currentPage)
             isLoading = cached.items.isEmpty
+
+            if !forceNetwork,
+               TabContentFreshnessPolicy.isCacheFresh(
+                   hasCachedContent: !cached.items.isEmpty,
+                   lastValidatedAt: cached.fetchedAt,
+                   cachedRefreshNonce: cached.refreshNonce,
+                   currentRefreshNonce: currentNonce
+               ) {
+                errorMessage = nil
+                isLoading = false
+                return
+            }
         } else {
             isLoading = true
         }
@@ -376,7 +409,7 @@ struct CatalogBrowseView: View {
             if let serverGenre = res.genre {
                 selectedGenreLabel = serverGenre.label
             }
-            persistSnapshot(for: triggerKey)
+            persistSnapshot(for: triggerKey, fetchedAt: Date(), refreshNonce: sessionStore.homeRefreshNonce)
         } catch LunaCoreError.unauthorized {
             CatalogBrowseMemoryCache.shared.clear()
             sessionStore.unpairDevice()
@@ -434,8 +467,10 @@ struct CatalogBrowseView: View {
         }
         do {
             if try await MediaCardMutator.setWatchlist(for: card, listed: nextListed, sessionStore: sessionStore) {
-                lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+                let bumped = sessionStore.homeRefreshNonce &+ 1
+                lastSeenRefreshNonce = bumped
                 sessionStore.notifyContentMutated()
+                persistSnapshot(for: triggerKey, refreshNonce: sessionStore.homeRefreshNonce)
             }
         } catch {
             if let idx = items.firstIndex(where: { $0.id == card.id }) {
@@ -455,8 +490,10 @@ struct CatalogBrowseView: View {
         }
         do {
             if try await MediaCardMutator.setFavorite(for: card, favorite: nextFavorite, sessionStore: sessionStore) {
-                lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+                let bumped = sessionStore.homeRefreshNonce &+ 1
+                lastSeenRefreshNonce = bumped
                 sessionStore.notifyContentMutated()
+                persistSnapshot(for: triggerKey, refreshNonce: sessionStore.homeRefreshNonce)
             }
         } catch {
             if let idx = items.firstIndex(where: { $0.id == card.id }) {
@@ -482,9 +519,10 @@ struct CatalogBrowseView: View {
                 if unwatchedOnly && nextWatched {
                     items.removeAll { $0.id == card.id }
                 }
-                persistSnapshot(for: triggerKey)
-                lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+                let bumped = sessionStore.homeRefreshNonce &+ 1
+                lastSeenRefreshNonce = bumped
                 sessionStore.notifyContentMutated()
+                persistSnapshot(for: triggerKey, refreshNonce: sessionStore.homeRefreshNonce)
             }
         } catch {
             if let idx = items.firstIndex(where: { $0.id == card.id }) {

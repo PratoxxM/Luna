@@ -1,8 +1,6 @@
 import SwiftUI
 
 public struct PosterCardView: View {
-    @Environment(\.ambientFocusSink) private var ambientFocus
-
     let card: TvMediaCard
     let client: LunaCoreClient?
     let width: CGFloat
@@ -60,13 +58,13 @@ public struct PosterCardView: View {
                                     .font(.caption2.weight(.bold))
                                     .foregroundStyle(LunaTheme.amber)
                                     .padding(7)
-                                    .background(Color.black.opacity(0.66), in: Circle())
+                                    .background(LunaTheme.cinemaGlass, in: Circle())
                             } else if card.progress?.watched == true {
                                 Image(systemName: "checkmark.circle.fill")
                                     .font(.caption.weight(.bold))
                                     .foregroundStyle(LunaTheme.emerald)
                                     .padding(6)
-                                    .background(Color.black.opacity(0.66), in: Circle())
+                                    .background(LunaTheme.cinemaGlass, in: Circle())
                             }
 
                             Spacer(minLength: 4)
@@ -77,9 +75,9 @@ public struct PosterCardView: View {
                                     .foregroundStyle(storageBadgeForeground)
                                     .padding(.horizontal, 9)
                                     .padding(.vertical, 4)
-                                    .background(Color.black.opacity(0.72), in: Capsule())
+                                    .background(LunaTheme.cinemaGlass, in: Capsule())
                                     .overlay(
-                                        Capsule().strokeBorder(storageBadgeForeground.opacity(0.35), lineWidth: 0.8)
+                                        Capsule().strokeBorder(storageBadgeForeground.opacity(0.32), lineWidth: 1)
                                     )
                             }
                         }
@@ -102,10 +100,10 @@ public struct PosterCardView: View {
                     }
                 }
                 .frame(width: width, height: height)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(Color.white.opacity(isFocused ? 0.28 : 0.08), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
+                        .strokeBorder(LunaTheme.cardBorderColor(isFocused: isFocused), lineWidth: 1)
                 )
             }
             .buttonStyle(.card)
@@ -117,7 +115,7 @@ public struct PosterCardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(card.title)
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(isFocused ? .white : LunaTheme.moonlight)
+                    .foregroundStyle(LunaTheme.cardTitleColor(isFocused: isFocused))
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
                     .multilineTextAlignment(.leading)
@@ -125,21 +123,12 @@ public struct PosterCardView: View {
 
                 Text(subtitleText)
                     .font(.system(size: 19, weight: .medium))
-                    .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.muted)
+                    .foregroundStyle(LunaTheme.cardSubtitleColor(isFocused: isFocused))
                     .lineLimit(1)
             }
             .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: 92, alignment: .topLeading)
             .offset(y: isFocused ? 6 : 0)
             .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
-        }
-        .onChange(of: isFocused) { _, focused in
-            if focused {
-                ambientFocus.reportFocus(
-                    card.dominantColor,
-                    nil,
-                    card.blurHash
-                )
-            }
         }
     }
 

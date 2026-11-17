@@ -14,10 +14,10 @@ struct NerdHUDView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(LunaTheme.emerald)
-                    .frame(width: 8, height: 8)
-                Text("LUNA NERDE-HUD · \(viewModel.activeSession?.roomName.uppercased() ?? "TV")")
-                    .font(.caption2.weight(.bold).monospaced())
+                    .fill(LunaTheme.amber)
+                    .frame(width: 7, height: 7)
+                Text("Luna teknisk status · \(viewModel.activeSession?.roomName ?? "TV")")
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(LunaTheme.amber)
             }
 
@@ -38,7 +38,7 @@ struct NerdHUDView: View {
         .background(LunaTheme.cinemaGlass, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(LunaTheme.moonlight.opacity(0.16), lineWidth: 1)
+                .strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1)
         )
         .allowsHitTesting(false)
         .onReceive(engine.diagnostics.$liveTelemetry) { telemetry = $0 }

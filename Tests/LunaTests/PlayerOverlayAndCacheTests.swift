@@ -1,3 +1,4 @@
+import Combine
 import CoreGraphics
 import Foundation
 import MediaPlayer
@@ -213,5 +214,236 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
             audioDelaySeconds: comfort.audioDelaySeconds
         )
         XCTAssertEqual(options.audioDelaySeconds, -0.045, accuracy: 0.0001)
+    }
+
+    func testPausedTwelveSecondOledRestPolicyAndTimelineClockBucketing() {
+        XCTAssertEqual(PlayerOSDVisibilityPolicy.playingAutoHideSeconds, 4.0, accuracy: 0.001)
+        XCTAssertEqual(PlayerOSDVisibilityPolicy.pausedIdleRestSeconds, 12.0, accuracy: 0.001)
+
+        XCTAssertFalse(
+            PlayerOSDVisibilityPolicy.shouldShowBottomBar(
+                isPictureReadyForReveal: false,
+                isTopDrawerOpen: false,
+                hasFatalError: false,
+                isScrubbing: false,
+                showBottomBar: true,
+                playbackPhase: .paused,
+                isPausedOSDResting: false
+            )
+        )
+        XCTAssertFalse(
+            PlayerOSDVisibilityPolicy.shouldShowBottomBar(
+                isPictureReadyForReveal: true,
+                isTopDrawerOpen: true,
+                hasFatalError: false,
+                isScrubbing: false,
+                showBottomBar: true,
+                playbackPhase: .paused,
+                isPausedOSDResting: false
+            )
+        )
+
+        // Paused before 12s idle -> bottom bar visible
+        XCTAssertTrue(
+            PlayerOSDVisibilityPolicy.shouldShowBottomBar(
+                isPictureReadyForReveal: true,
+                isTopDrawerOpen: false,
+                hasFatalError: false,
+                isScrubbing: false,
+                showBottomBar: false,
+                playbackPhase: .paused,
+                isPausedOSDResting: false
+            )
+        )
+        XCTAssertFalse(
+            PlayerOSDVisibilityPolicy.shouldRestAmbientPlayerHUD(
+                playbackPhase: .paused,
+                isPausedOSDResting: false,
+                isScrubbing: false,
+                isTopDrawerOpen: false
+            )
+        )
+
+        // Paused after ~12s without remote touch -> UI rests completely on LG OLED / Frame Pro
+        XCTAssertFalse(
+            PlayerOSDVisibilityPolicy.shouldShowBottomBar(
+                isPictureReadyForReveal: true,
+                isTopDrawerOpen: false,
+                hasFatalError: false,
+                isScrubbing: false,
+                showBottomBar: false,
+                playbackPhase: .paused,
+                isPausedOSDResting: true
+            )
+        )
+        XCTAssertTrue(
+            PlayerOSDVisibilityPolicy.shouldRestAmbientPlayerHUD(
+                playbackPhase: .paused,
+                isPausedOSDResting: true,
+                isScrubbing: false,
+                isTopDrawerOpen: false
+            )
+        )
+
+        // Scrubbing or remote touch immediately wakes bottom bar
+        XCTAssertTrue(
+            PlayerOSDVisibilityPolicy.shouldShowBottomBar(
+                isPictureReadyForReveal: true,
+                isTopDrawerOpen: false,
+                hasFatalError: false,
+                isScrubbing: true,
+                showBottomBar: false,
+                playbackPhase: .paused,
+                isPausedOSDResting: true
+            )
+        )
+        XCTAssertTrue(
+            PlayerOSDVisibilityPolicy.shouldShowBottomBar(
+                isPictureReadyForReveal: true,
+                isTopDrawerOpen: false,
+                hasFatalError: false,
+                isScrubbing: false,
+                showBottomBar: true,
+                playbackPhase: .paused,
+                isPausedOSDResting: false
+            )
+        )
+
+        // 0.5 s time buckets & 2.0 s buffer buckets
+        XCTAssertEqual(TimelineClockBucketer.timeBucket(-1.0), -1)
+        XCTAssertEqual(TimelineClockBucketer.timeBucket(.nan), -1)
+        XCTAssertEqual(TimelineClockBucketer.timeBucket(0.0), 0)
+        XCTAssertEqual(TimelineClockBucketer.timeBucket(0.49), 0)
+        XCTAssertEqual(TimelineClockBucketer.timeBucket(0.50), 1)
+        XCTAssertEqual(TimelineClockBucketer.timeBucket(10.99), 21)
+        XCTAssertEqual(TimelineClockBucketer.timeBucket(11.00), 22)
+
+        XCTAssertEqual(TimelineClockBucketer.bufferBucket(-0.5), -1)
+        XCTAssertEqual(TimelineClockBucketer.bufferBucket(0.0), 0)
+        XCTAssertEqual(TimelineClockBucketer.bufferBucket(1.95), 0)
+        XCTAssertEqual(TimelineClockBucketer.bufferBucket(2.00), 1)
+        XCTAssertEqual(TimelineClockBucketer.bufferBucket(15.9), 7)
+    }
+
+    @MainActor
+    func testIsolatedPlayerStartupStateDoesNotInvalidatePlayerViewModelAndPreservesLunaV1Keys() throws {
+        XCTAssertEqual(SideloadSafeStorage.serverURLKey, "luna.v1.server_url")
+        XCTAssertEqual(SideloadSafeStorage.deviceIDKey, "luna.v1.device_id")
+        XCTAssertEqual(SideloadSafeStorage.showCatCompanionsKey, "luna.v1.comfort.show_cat_companions")
+        XCTAssertEqual(SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey, "luna.v1.comfort.keep_display_mode_in_menu")
+        XCTAssertEqual(SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key, "luna.v1.comfort.migrated_menu_60hz_v240")
+
+        let suite = "luna.test.startup.isolation.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let engine = try LunaApp.makeSharedEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+
+        let comfort = ComfortPreferences(defaults: defaults)
+        let vm = PlayerViewModel(engine: engine, comfort: comfort)
+
+        var vmInvalidations = 0
+        var startupInvalidations = 0
+        let c1 = vm.objectWillChange.sink { _ in vmInvalidations += 1 }
+        let c2 = vm.startupState.objectWillChange.sink { _ in startupInvalidations += 1 }
+        defer {
+            c1.cancel()
+            c2.cancel()
+        }
+
+        vm.resolvePercent = 45
+        vm.resolveStageLabel = "Buffrer segmenter…"
+        vm.resolveHeadline = "4K DV P7 FEL · NVMe"
+        vm.startupState.updateEngineStartupFraction(0.642)
+        vm.startupState.updateEngineStartupFraction(0.644)
+
+        XCTAssertEqual(vmInvalidations, 0, "Startup progress ticks must not invalidate PlayerViewModel")
+        XCTAssertEqual(startupInvalidations, 4)
+        XCTAssertEqual(vm.startupState.engineStartupPercentBucket, 64)
+        XCTAssertEqual(vm.startupState.engineStartupFraction, 0.64, accuracy: 0.001)
+    }
+
+    @MainActor
+    func testUnpairAndArtworkClearInvalidateAllInMemoryTabAndBlurHashCaches() async throws {
+        let suite = "luna.test.tabcache.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer {
+            CatalogBrowseMemoryCache.shared.clear()
+            LibraryBrowseMemoryCache.shared.clear()
+            BlurHashDecoder.clearCache()
+            defaults.removePersistentDomain(forName: suite)
+        }
+
+        CatalogBrowseMemoryCache.shared.store(
+            CatalogBrowseSnapshot(
+                items: [TvMediaCard(itemId: "movie:tmdb:550", mediaType: "movie", ids: TvMediaIds(tmdb: 550), title: "Test")],
+                availableGenres: [],
+                selectedGenreLabel: nil,
+                hasMore: false,
+                currentPage: 1,
+                fetchedAt: Date(),
+                refreshNonce: 1
+            ),
+            for: "http://lunacore.local:8090#movie#all#popular#false#false#Stua#hdr10-512"
+        )
+
+        let libJson = #"""
+        {
+          "ok": true,
+          "section": "watchlist",
+          "counts": {
+            "watchlist": 1,
+            "favorites": 0,
+            "localTotal": 0,
+            "nvme": 0,
+            "archive": 0,
+            "vfs": 0,
+            "customLists": 0
+          },
+          "favorites": [],
+          "watchlist": [],
+          "localItems": []
+        }
+        """#
+        let libPayload = try JSONDecoder().decode(TvLibraryResponse.self, from: Data(libJson.utf8))
+        LibraryBrowseMemoryCache.shared.store(
+            LibraryBrowseSnapshot(
+                payload: libPayload,
+                localItems: [],
+                localOffset: 0,
+                localHasMore: false,
+                fetchedAt: Date(),
+                refreshNonce: 1
+            ),
+            for: "http://lunacore.local:8090#watchlist#all#all#recent#Stua#hdr10-512"
+        )
+
+        XCTAssertEqual(CatalogBrowseMemoryCache.shared.entryCount, 1)
+        XCTAssertEqual(LibraryBrowseMemoryCache.shared.entryCount, 1)
+
+        let store = AppSessionStore(defaults: defaults)
+        let prevNonce = store.homeRefreshNonce
+        store.unpairDevice()
+
+        XCTAssertEqual(CatalogBrowseMemoryCache.shared.entryCount, 0)
+        XCTAssertEqual(LibraryBrowseMemoryCache.shared.entryCount, 0)
+        XCTAssertNotEqual(store.homeRefreshNonce, prevNonce)
+
+        // Verify ArtworkPipeline.clearAll() also clears BlurHashDecoder's RAM cache
+        let sampleHash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj"
+        XCTAssertNotNil(BlurHashDecoder.decode(sampleHash, width: 32, height: 24))
+        XCTAssertNotNil(BlurHashDecoder.cachedImage(sampleHash, width: 32, height: 24))
+        await ArtworkPipeline.shared.clearAll()
+        XCTAssertNil(BlurHashDecoder.cachedImage(sampleHash, width: 32, height: 24))
     }
 }

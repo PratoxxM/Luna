@@ -1,9 +1,33 @@
 import SwiftUI
 import AetherBridge
 
+/// Isolated startup & WebSocket resolution progress state observed exclusively by
+/// `ResolvingProgressClusterLeafView` so progress ticks never re-render `PlayerContainerView`
+/// or `ResolvingCurtainView`'s backdrop/logo hierarchy.
+@MainActor
+final class PlayerStartupState: ObservableObject {
+    @Published var resolveStageKey: String = "searching"
+    @Published var resolveStageLabel: String = "Klargjør strøm…"
+    @Published var resolvePercent: Int = 12
+    @Published var resolveHeadline: String?
+    @Published private(set) var engineStartupPercentBucket: Int = 50
+
+    var engineStartupFraction: Double {
+        Double(engineStartupPercentBucket) / 100.0
+    }
+
+    func updateEngineStartupFraction(_ rawFraction: Double?) {
+        let clamped = min(1.0, max(0.0, rawFraction ?? 0.5))
+        let bucket = Int((clamped * 100.0).rounded())
+        if bucket != engineStartupPercentBucket {
+            engineStartupPercentBucket = bucket
+        }
+    }
+}
+
 /// Calm cinema curtain held above `AetherPlayerSurface` (`zIndex: 2`) until
 /// `hasFirstFrameReadyForDisplay == true && isAwaitingDisplaySwitch == false`,
-/// eliminating black blinks during VFS mount and HDMI HDR/24p handshake.
+/// reusing already-cached detail/shelf backdrops with zero 4K Gaussian blur passes.
 struct ResolvingCurtainView: View {
     @ObservedObject var viewModel: PlayerViewModel
     let initialRequest: PlaybackLaunchRequest
@@ -17,20 +41,20 @@ struct ResolvingCurtainView: View {
                 CachedArtworkView(
                     url: backdropURL,
                     client: client,
-                    maxPixelSize: 480,
+                    maxPixelSize: 960,
                     placeholderSymbol: "film",
-                    contentMode: .fill
+                    contentMode: .fill,
+                    reuseAnyCachedSize: true
                 )
                 .ignoresSafeArea()
-                .opacity(0.28)
-                .blur(radius: 14)
+                .opacity(0.22)
             }
 
             RadialGradient(
                 colors: [
-                    LunaTheme.pureBlack.opacity(0.32),
+                    LunaTheme.pureBlack.opacity(0.36),
                     LunaTheme.pureBlack.opacity(0.84),
-                    LunaTheme.pureBlack.opacity(0.97),
+                    LunaTheme.pureBlack.opacity(0.98),
                 ],
                 center: .center,
                 startRadius: 120,
@@ -38,7 +62,18 @@ struct ResolvingCurtainView: View {
             )
             .ignoresSafeArea()
 
-            VStack(spacing: 28) {
+            LinearGradient(
+                colors: [
+                    LunaTheme.pureBlack.opacity(0.55),
+                    Color.clear,
+                    LunaTheme.pureBlack.opacity(0.88),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            VStack(spacing: 26) {
                 Spacer()
 
                 if let logoURL = resolvedLogoURL {
@@ -46,15 +81,15 @@ struct ResolvingCurtainView: View {
                         url: logoURL,
                         client: client,
                         maxPixelSize: 800,
-                        contentMode: .fit
+                        contentMode: .fit,
+                        reuseAnyCachedSize: true
                     )
-                    .frame(maxWidth: 540, maxHeight: 144)
-                    .shadow(color: .black.opacity(0.82), radius: 18, x: 0, y: 6)
+                    .frame(maxWidth: 520, maxHeight: 140)
 
                     if let episodeContext = curtainDisplay.mainLine {
                         Text(episodeContext)
                             .font(.title3.weight(.semibold))
-                            .foregroundStyle(LunaTheme.moonlight.opacity(0.88))
+                            .foregroundStyle(LunaTheme.moonlight)
                     }
                 } else {
                     VStack(spacing: 8) {
@@ -66,7 +101,7 @@ struct ResolvingCurtainView: View {
                         if let mainTitle = curtainDisplay.mainLine {
                             Text(mainTitle)
                                 .font(.system(size: 46, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(LunaTheme.linen)
                                 .multilineTextAlignment(.center)
                                 .lineLimit(2)
                                 .frame(maxWidth: 960)
@@ -74,30 +109,14 @@ struct ResolvingCurtainView: View {
                     }
                 }
 
-                VStack(spacing: 14) {
-                    LoadingCatTrackView(
-                        comfort: viewModel.comfort,
-                        targetFraction: effectiveProgressFraction,
-                        isPreparingReveal: !viewModel.isResolving,
-                        trackWidth: CatCompanionLayout.loadingTrackWidth
-                    )
-                    .id(initialRequest.id)
-
-                    Text(statusLineText)
-                        .font(.callout)
-                        .foregroundStyle(LunaTheme.muted)
-
-                    if let headline = viewModel.resolveHeadline, !headline.isEmpty {
-                        Text(headline)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(LunaTheme.amber.opacity(0.92))
-                            .lineLimit(1)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 5)
-                            .background(Color.white.opacity(0.08), in: Capsule())
-                    }
-                }
-                .padding(.top, 6)
+                ResolvingProgressClusterLeafView(
+                    startupState: viewModel.startupState,
+                    isResolving: viewModel.isResolving,
+                    hasFirstFrameReadyForDisplay: viewModel.hasFirstFrameReadyForDisplay,
+                    isAwaitingDisplaySwitch: viewModel.isAwaitingDisplaySwitch,
+                    isRestoringFromBackground: viewModel.isRestoringFromBackground
+                )
+                .padding(.top, 8)
 
                 Spacer()
             }
@@ -108,14 +127,12 @@ struct ResolvingCurtainView: View {
 
     private var resolvedBackdropURL: URL? {
         let raw = initialRequest.backdropUrl ?? viewModel.activeSession?.item.backdropUrl
-        guard let raw, !raw.isEmpty else { return nil }
-        return client?.buildAbsoluteURL(raw)
+        return client?.resolveArtworkURL(raw)
     }
 
     private var resolvedLogoURL: URL? {
         let raw = viewModel.activeSession?.item.logoUrl ?? initialRequest.logoUrl
-        guard let raw, !raw.isEmpty else { return nil }
-        return client?.buildAbsoluteURL(raw)
+        return client?.resolveArtworkURL(raw)
     }
 
     private var curtainDisplay: (seriesLine: String?, mainLine: String?) {
@@ -129,34 +146,77 @@ struct ResolvingCurtainView: View {
             hasLogo: resolvedLogoURL != nil
         )
     }
+}
+
+private struct ResolvingProgressClusterLeafView: View {
+    @ObservedObject var startupState: PlayerStartupState
+    let isResolving: Bool
+    let hasFirstFrameReadyForDisplay: Bool
+    let isAwaitingDisplaySwitch: Bool
+    let isRestoringFromBackground: Bool
+
+    private static let trackWidth: CGFloat = 520
+    private static let trackHeight: CGFloat = 4
+
+    var body: some View {
+        let progress = effectiveProgressFraction
+
+        VStack(spacing: 14) {
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(LunaTheme.warmBorderBase.opacity(0.14))
+
+                Capsule()
+                    .fill(LunaTheme.primaryAmberGradient)
+                    .frame(width: max(20, Self.trackWidth * CGFloat(progress)))
+                    .animation(.easeOut(duration: 0.24), value: progress)
+            }
+            .frame(width: Self.trackWidth, height: Self.trackHeight)
+
+            Text(statusLineText)
+                .font(.callout)
+                .foregroundStyle(LunaTheme.muted)
+
+            if let headline = startupState.resolveHeadline, !headline.isEmpty {
+                Text(headline)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(LunaTheme.moonlight)
+                    .lineLimit(1)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 5)
+                    .background(LunaTheme.surfaceRaised, in: Capsule())
+                    .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
+            }
+        }
+    }
 
     private var effectiveProgressFraction: Double {
-        if !viewModel.isResolving {
-            let startupFrac = viewModel.hasFirstFrameReadyForDisplay
+        if !isResolving {
+            let startupFrac = hasFirstFrameReadyForDisplay
                 ? 1.0
-                : min(1.0, max(0.0, viewModel.startupProgress?.fraction ?? 0.5))
+                : startupState.engineStartupFraction
             return min(0.99, 0.92 + startupFrac * 0.07)
         }
-        return min(0.92, max(0.15, Double(viewModel.resolvePercent) / 100.0))
+        return min(0.92, max(0.14, Double(startupState.resolvePercent) / 100.0))
     }
 
     private var statusLineText: String {
-        if viewModel.isRestoringFromBackground {
-            if viewModel.isAwaitingDisplaySwitch {
+        if isRestoringFromBackground {
+            if isAwaitingDisplaySwitch {
                 return "Tilpasser skjermens HDR og bildefrekvens…"
             }
             return "Gjenoppretter avspilling…"
         }
-        if !viewModel.isResolving {
-            if !viewModel.hasFirstFrameReadyForDisplay {
+        if !isResolving {
+            if !hasFirstFrameReadyForDisplay {
                 return "Klargjør første bilde…"
             }
-            if viewModel.isAwaitingDisplaySwitch {
+            if isAwaitingDisplaySwitch {
                 return "Tilpasser skjermens HDR og bildefrekvens…"
             }
             return "Starter avspilling…"
         }
-        let stage = viewModel.resolveStageLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stage = startupState.resolveStageLabel.trimmingCharacters(in: .whitespacesAndNewlines)
         return stage.isEmpty ? "Klargjør strøm…" : stage
     }
 }

@@ -12,7 +12,7 @@ struct DetailCastStripView: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Medvirkende")
                     .font(.headline.weight(.bold))
-                    .foregroundStyle(LunaTheme.moonlight)
+                    .foregroundStyle(LunaTheme.linen)
                     .padding(.horizontal, horizontalGutter)
 
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -32,7 +32,7 @@ struct DetailCastStripView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Medvirkende")
                     .font(.headline.weight(.bold))
-                    .foregroundStyle(LunaTheme.moonlight)
+                    .foregroundStyle(LunaTheme.linen)
                     .padding(.horizontal, horizontalGutter)
 
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -70,30 +70,30 @@ private struct CastMemberCardButton: View {
                     contentMode: .fill
                 )
                 .frame(width: 112, height: 140)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
                         .strokeBorder(
-                            isFocused ? LunaTheme.amber : Color.white.opacity(0.10),
-                            lineWidth: isFocused ? 2.5 : 1
+                            isFocused ? LunaTheme.amber : LunaTheme.cardBorderColor(isFocused: false),
+                            lineWidth: isFocused ? 2.2 : 1
                         )
                 )
                 .shadow(
-                    color: isFocused ? LunaTheme.amber.opacity(0.35) : .clear,
-                    radius: 14,
+                    color: isFocused ? LunaTheme.amber.opacity(0.32) : .clear,
+                    radius: isFocused ? 14 : 0,
                     x: 0,
-                    y: 6
+                    y: isFocused ? 5 : 0
                 )
 
                 Text(member.name)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(isFocused ? .white : LunaTheme.moonlight)
+                    .foregroundStyle(LunaTheme.cardTitleColor(isFocused: isFocused))
                     .lineLimit(1)
 
                 if let character = member.character, !character.isEmpty {
                     Text(character)
                         .font(.caption2)
-                        .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.muted)
+                        .foregroundStyle(LunaTheme.cardSubtitleColor(isFocused: isFocused))
                         .lineLimit(1)
                 }
             }
@@ -102,7 +102,7 @@ private struct CastMemberCardButton: View {
             .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
         .focusEffectDisabled(true)
         .focused($isFocused)
     }

@@ -1,6 +1,6 @@
 # Luna for tvOS
 
-**Luna** (`v2.3.6`) is a native SwiftUI tvOS media player built on [AetherEngine](https://github.com/superuser404notfound/AetherEngine) (`7.69.0`) for the **LunaCore** `/api/tv/v1` native TV engine.
+**Luna** (`v2.4.0`) is a native SwiftUI tvOS media player built on [AetherEngine](https://github.com/superuser404notfound/AetherEngine) (`7.69.0`) for the **LunaCore** `/api/tv/v1` native TV engine.
 
 ## Highlights
 

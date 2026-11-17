@@ -55,7 +55,7 @@ struct EpisodeCardView: View {
                                     .font(.callout.weight(.bold))
                                     .foregroundStyle(LunaTheme.emerald)
                                     .padding(6)
-                                    .background(Color.black.opacity(0.65), in: Circle())
+                                    .background(LunaTheme.cinemaGlass, in: Circle())
                             }
                         }
                         .padding(12)
@@ -65,7 +65,7 @@ struct EpisodeCardView: View {
                         if pct > 1 && !upcoming {
                             let trackWidth: CGFloat = 392
                             ZStack(alignment: .leading) {
-                                Capsule().fill(Color.white.opacity(0.24))
+                                Capsule().fill(LunaTheme.warmBorderBase.opacity(0.22))
                                 Capsule()
                                     .fill(LunaTheme.amber)
                                     .frame(width: trackWidth * CGFloat(pct / 100.0))
@@ -77,7 +77,11 @@ struct EpisodeCardView: View {
                     }
                 }
                 .frame(width: 420, height: 236)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
+                        .strokeBorder(LunaTheme.cardBorderColor(isFocused: isFocused), lineWidth: 1)
+                )
             }
             .buttonStyle(.card)
             .focused($isFocused)
@@ -106,7 +110,7 @@ struct EpisodeCardView: View {
             HStack(spacing: 8) {
                 Text(EpisodeTitleFormatter.episodeCardTitle(episode: episode, seriesTitle: seriesTitle))
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(isFocused ? .white : LunaTheme.moonlight)
+                    .foregroundStyle(LunaTheme.cardTitleColor(isFocused: isFocused))
                     .lineLimit(1)
 
                 Spacer(minLength: 4)

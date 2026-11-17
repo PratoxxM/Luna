@@ -294,7 +294,7 @@ public final class AppSessionStore: ObservableObject {
                 return trimmed
             }
         }
-        return "2.3.6"
+        return "2.4.0"
     }
 
     public nonisolated static func currentBuildNumberString() -> String? {
@@ -334,12 +334,16 @@ public final class AppSessionStore: ObservableObject {
         }
         SideloadSafeStorage.deleteDeviceToken(defaults: defaults)
         AetherEngine.discardPrewarmedSources()
+        PlayerAudioSessionCoordinator.shared.flushDeferredDisplayCriteriaResetIfIdle()
         LunaCoreSessionPool.shared.invalidateAll()
+        CatalogBrowseMemoryCache.shared.clear()
+        LibraryBrowseMemoryCache.shared.clear()
         DiskSWRStore.clearMemory()
         Task { await DiskSWRStore.clearAllAsync() }
         deviceToken = nil
         availableRooms = HardwareProfilePreset.fallbackRooms
         activePlaybackTarget = nil
+        homeRefreshNonce &+= 1
         rebuildCachedClient()
     }
 

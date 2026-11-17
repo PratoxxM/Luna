@@ -18,6 +18,7 @@ internal enum HomeRefreshPolicy {
 struct HomeView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.lunaSubpageVisibility) private var subpageVisibility
 
     let isActiveTab: Bool
 
@@ -28,10 +29,12 @@ struct HomeView: View {
     @State private var mutationErrorMessage: String?
     @State private var lastSeenRefreshNonce: Int = -1
     @State private var lastValidatedAt: Date = .distantPast
+    @State private var validatedScopeKey: String?
 
     @State private var selectedCard: TvMediaCard?
     @State private var selectedSeeAllRow: TvShelfRow?
     @State private var sourcePickerContext: SourcePickerContext?
+    @State private var modalToken = UUID()
     @State private var mutationBannerTask: Task<Void, Never>?
 
     @Namespace private var homeFocusNamespace
@@ -126,6 +129,7 @@ struct HomeView: View {
             .padding(.top, 16)
             .padding(.bottom, 84)
         }
+        .lunaRootScrollTopBarTracking(tab: .home)
         .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
         .focusScope(homeFocusNamespace)
         .navigationDestination(item: $selectedCard) { card in
@@ -173,10 +177,27 @@ struct HomeView: View {
             .environmentObject(sessionStore.comfort)
             .preferredColorScheme(.dark)
         }
-        .task(id: "\(sessionStore.serverBaseURL?.host ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)") {
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
+        .task(id: "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)") {
+            let currentScope = "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
             await syncDiskSnapshotIfRoomChanged()
-            await revalidateHome(forceUnconditional: false)
+            if validatedScopeKey == currentScope,
+               TabContentFreshnessPolicy.isCacheFresh(
+                   hasCachedContent: homePayload != nil,
+                   lastValidatedAt: lastValidatedAt,
+                   cachedRefreshNonce: lastSeenRefreshNonce,
+                   currentRefreshNonce: sessionStore.homeRefreshNonce
+               ) {
+                return
+            }
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
+            await revalidateHome(forceUnconditional: false, scopeKey: currentScope)
+        }
+        .onChange(of: sourcePickerContext != nil) { _, isShowingModal in
+            if isShowingModal {
+                subpageVisibility.enterModal(modalToken)
+            } else {
+                subpageVisibility.leaveModal(modalToken)
+            }
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
             guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
@@ -185,8 +206,13 @@ struct HomeView: View {
         }
         .onChange(of: isActiveTab) { _, active in
             guard active else { return }
-            let stale = Date().timeIntervalSince(lastValidatedAt) >= 15
-            if lastSeenRefreshNonce != sessionStore.homeRefreshNonce || stale {
+            let isFresh = TabContentFreshnessPolicy.isCacheFresh(
+                hasCachedContent: homePayload != nil,
+                lastValidatedAt: lastValidatedAt,
+                cachedRefreshNonce: lastSeenRefreshNonce,
+                currentRefreshNonce: sessionStore.homeRefreshNonce
+            )
+            if !isFresh {
                 lastSeenRefreshNonce = sessionStore.homeRefreshNonce
                 Task { await revalidateHome(forceUnconditional: false) }
             }
@@ -205,6 +231,9 @@ struct HomeView: View {
         }
         .onDisappear {
             mutationBannerTask?.cancel()
+            if sourcePickerContext == nil {
+                subpageVisibility.leaveModal(modalToken)
+            }
         }
     }
 
@@ -237,8 +266,9 @@ struct HomeView: View {
         }
     }
 
-    private func revalidateHome(forceUnconditional: Bool) async {
+    private func revalidateHome(forceUnconditional: Bool, scopeKey: String? = nil) async {
         guard let client = sessionStore.makeClient() else { return }
+        let resolvedScope = scopeKey ?? "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
         if homePayload == nil {
             isInitialColdFetch = true
         }
@@ -251,9 +281,11 @@ struct HomeView: View {
             switch result {
             case .notModified:
                 lastValidatedAt = Date()
+                validatedScopeKey = resolvedScope
             case .updated(let payload, let newEtag, let rawData):
                 cachedEtag = newEtag
                 lastValidatedAt = Date()
+                validatedScopeKey = resolvedScope
                 if !(homePayload?.isSemanticallyEqual(to: payload) ?? false) {
                     withAnimation(.easeOut(duration: 0.22)) {
                         homePayload = payload

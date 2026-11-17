@@ -2,6 +2,21 @@ import SwiftUI
 import CoreGraphics
 import AetherBridge
 
+internal enum TimelineClockBucketer {
+    /// 0.5 s buckets (2 Hz max while playing, 0 Hz when paused) so 10 Hz engine clock ticks
+    /// never trigger unnecessary SwiftUI layout passes on the player timeline.
+    nonisolated static func timeBucket(_ seconds: Double) -> Int {
+        guard seconds.isFinite, seconds >= 0 else { return -1 }
+        return Int((seconds * 2.0).rounded(.down))
+    }
+
+    /// 2.0 s buckets (0.5 Hz max) for the subtle background forward-buffer bar.
+    nonisolated static func bufferBucket(_ seconds: Double) -> Int {
+        guard seconds.isFinite, seconds >= 0 else { return -1 }
+        return Int((seconds / 2.0).rounded(.down))
+    }
+}
+
 /// Minimalist evening-cinema transport overlay.
 /// Contains zero focusable buttons so `SiriRemoteTouchSurface` retains uninterrupted
 /// touch-scrubbing and clickpad control across playing, paused, and scrubbing states.
@@ -43,25 +58,25 @@ struct PlayerBottomBarView: View {
 
             Spacer()
 
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .lastTextBaseline, spacing: 24) {
                     VStack(alignment: .leading, spacing: 4) {
                         if let seriesLine = titleDisplay.seriesLine {
                             Text(seriesLine)
                                 .font(.callout.weight(.semibold))
-                                .foregroundStyle(LunaTheme.amber)
+                                .foregroundStyle(LunaTheme.moonlight)
                         }
 
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
                             if isPaused && !viewModel.isScrubbing {
                                 Image(systemName: "pause.fill")
-                                    .font(.callout.weight(.bold))
-                                    .foregroundStyle(LunaTheme.amber)
+                                    .font(.callout.weight(.semibold))
+                                    .foregroundStyle(LunaTheme.pauseWarmLine)
                             }
 
                             Text(titleDisplay.titleLine)
-                                .font(.title2.weight(.bold))
-                                .foregroundStyle(.white)
+                                .font(.title2.weight(.semibold))
+                                .foregroundStyle(LunaTheme.linen)
                                 .lineLimit(1)
 
                             if !viewModel.chapters.isEmpty && !viewModel.isScrubbing {
@@ -85,7 +100,6 @@ struct PlayerBottomBarView: View {
                 TimelineScrubberLeafView(
                     viewModel: viewModel,
                     scrubState: viewModel.scrubState,
-                    comfort: viewModel.comfort,
                     engine: viewModel.engine,
                     duration: duration,
                     isPaused: isPaused
@@ -98,8 +112,8 @@ struct PlayerBottomBarView: View {
                 LinearGradient(
                     colors: [
                         Color.clear,
-                        Color.black.opacity(0.62),
-                        Color.black.opacity(0.92),
+                        Color.black.opacity(0.58),
+                        Color.black.opacity(0.90),
                     ],
                     startPoint: .top,
                     endPoint: .bottom
@@ -119,7 +133,7 @@ struct PlayerBottomBarView: View {
     }
 }
 
-// MARK: - Isolated Clock Leaf Views (10 Hz Contained)
+// MARK: - Isolated & Bucketed Clock Leaf Views
 
 private struct EndsAtAndFormatLeafView: View {
     let engine: AetherEngine
@@ -188,14 +202,14 @@ private struct ActiveChapterLabelLeafView: View {
 struct TimelineScrubberLeafView: View {
     @ObservedObject var viewModel: PlayerViewModel
     @ObservedObject var scrubState: PlayerScrubState
-    @ObservedObject var comfort: ComfortPreferences
     let engine: AetherEngine
     let duration: Double
     let isPaused: Bool
-    var onPauseCatActivityChanged: (Bool) -> Void = { _ in }
 
     @State private var currentTime: Double = 0
+    @State private var lastTimeBucket: Int = -1
     @State private var bufferedTime: Double = 0
+    @State private var lastBufferBucket: Int = -1
 
     var body: some View {
         let effectiveDuration = max(duration, currentTime, 1)
@@ -210,30 +224,28 @@ struct TimelineScrubberLeafView: View {
             return currentTime
         }()
         let isExpanded = isScrubbing || isPaused || viewModel.coalescedSeekPreviewTarget != nil
-        let barHeight: CGFloat = isExpanded ? 10 : 6
+        let barHeight: CGFloat = isExpanded ? 7 : 5
         let progressRatio = min(1.0, max(0.0, displayTime / effectiveDuration))
         let bufferRatio = min(1.0, max(0.0, bufferedTime / effectiveDuration))
 
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 11) {
             GeometryReader { geo in
                 let totalWidth = max(1, geo.size.width)
                 let playheadX = totalWidth * CGFloat(progressRatio)
 
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(Color.white.opacity(0.16))
+                        .fill(LunaTheme.warmBorderBase.opacity(0.16))
 
                     Capsule()
-                        .fill(Color.white.opacity(0.30))
+                        .fill(LunaTheme.warmBorderBase.opacity(0.28))
                         .frame(width: totalWidth * CGFloat(bufferRatio))
 
                     Capsule()
                         .fill(
-                            LinearGradient(
-                                colors: [LunaTheme.amber, LunaTheme.amberDeep],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
+                            isScrubbing
+                                ? AnyShapeStyle(LunaTheme.primaryAmberGradient)
+                                : AnyShapeStyle(LunaTheme.pauseWarmLine)
                         )
                         .frame(width: totalWidth * CGFloat(progressRatio))
 
@@ -243,38 +255,20 @@ struct TimelineScrubberLeafView: View {
                             let xPos = totalWidth * CGFloat(ch.startSeconds / effectiveDuration)
                             Rectangle()
                                 .fill(Color.black.opacity(0.76))
-                                .frame(width: 2.5, height: barHeight)
+                                .frame(width: 2.0, height: barHeight)
                                 .offset(x: xPos)
                         }
                     }
 
                     if isExpanded {
-                        let showPlayheadEars = comfort.showCatCompanions && (isPaused || isScrubbing)
-                        let playheadDiameter = CatCompanionLayout.playheadDiameter
+                        let knobDiameter: CGFloat = isScrubbing ? 15 : 13
                         Circle()
-                            .fill(.white)
-                            .frame(width: playheadDiameter, height: playheadDiameter)
-                            .overlay(alignment: .top) {
-                                if showPlayheadEars {
-                                    CatPlayheadEarsView()
-                                        .offset(y: -7)
-                                }
-                            }
-                            .shadow(color: LunaTheme.amber.opacity(0.85), radius: isScrubbing ? 14 : 8)
-                            .offset(x: max(0, min(totalWidth - playheadDiameter, playheadX - playheadDiameter * 0.5)))
+                            .fill(isScrubbing ? LunaTheme.amber : LunaTheme.linen)
+                            .frame(width: knobDiameter, height: knobDiameter)
+                            .offset(x: max(0, min(totalWidth - knobDiameter, playheadX - knobDiameter * 0.5)))
                     }
                 }
                 .frame(height: barHeight)
-                .overlay(alignment: .topLeading) {
-                    PauseCatOverlayLeafView(
-                        comfort: comfort,
-                        isPaused: isPaused,
-                        isScrubbing: isScrubbing,
-                        trackWidth: totalWidth,
-                        playheadX: playheadX,
-                        onVisualActivityChanged: onPauseCatActivityChanged
-                    )
-                }
                 .overlay(alignment: .bottomLeading) {
                     if isScrubbing {
                         let chapterTitle = viewModel.activeChapter(at: displayTime)?.title
@@ -284,7 +278,6 @@ struct TimelineScrubberLeafView: View {
                             chapterTitle: chapterTitle,
                             previewImage: scrubState.previewImage,
                             drawsInCompositorView: engine.scrubPreviewDrawsInView,
-                            showCatCompanion: comfort.showCatCompanions,
                             onMountCompositorView: { compView in
                                 viewModel.attachCompositorPreviewView(compView)
                             }
@@ -295,7 +288,7 @@ struct TimelineScrubberLeafView: View {
                             max(0, totalWidth - bubbleWidth)
                         )
                         bubble
-                            .offset(x: clampedOriginX, y: -24)
+                            .offset(x: clampedOriginX, y: -22)
                             .transition(.opacity)
                     }
                 }
@@ -323,8 +316,28 @@ struct TimelineScrubberLeafView: View {
                     .foregroundStyle(LunaTheme.muted)
             }
         }
-        .onReceive(engine.clock.$currentTime) { currentTime = $0 }
-        .onReceive(engine.clock.$bufferedPosition) { bufferedTime = $0 }
+        .onAppear {
+            let initialTime = max(0, engine.currentTime)
+            currentTime = initialTime
+            lastTimeBucket = TimelineClockBucketer.timeBucket(initialTime)
+            let initialBuf = max(0, engine.bufferedPosition)
+            bufferedTime = initialBuf
+            lastBufferBucket = TimelineClockBucketer.bufferBucket(initialBuf)
+        }
+        .onReceive(engine.clock.$currentTime) { t in
+            let bucket = TimelineClockBucketer.timeBucket(t)
+            if bucket != lastTimeBucket {
+                lastTimeBucket = bucket
+                currentTime = t
+            }
+        }
+        .onReceive(engine.clock.$bufferedPosition) { b in
+            let bucket = TimelineClockBucketer.bufferBucket(b)
+            if bucket != lastBufferBucket {
+                lastBufferBucket = bucket
+                bufferedTime = b
+            }
+        }
     }
 
     static func formatSeconds(_ seconds: Double) -> String {

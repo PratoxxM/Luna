@@ -106,6 +106,10 @@ public enum BlurHashDecoder {
         return cache.image(forKey: makeCacheKey(raw, width: width, height: height, punch: punch))
     }
 
+    public static func clearCache() {
+        cache.removeAll()
+    }
+
     public static func decodeAsync(_ blurHash: String?, width: Int = 32, height: Int = 18, punch: Float = 1.0) async -> CGImage? {
         if let hit = cachedImage(blurHash, width: width, height: height, punch: punch) {
             return hit
@@ -334,6 +338,34 @@ public actor ArtworkPipeline {
         return ramCache.image(forKey: key)
     }
 
+    private nonisolated static let candidateCachedPixelSizes: [Int] = [
+        1920, 960, 896, 800, 750, 720, 640, 480, 220,
+    ]
+
+    /// Looks up any already-decoded bitmap in RAM for `url` (checking `preferredMaxPixelSize` first,
+    /// then standard hero/card/still pixel buckets) so player startup curtains can reuse already-rendered
+    /// detail or shelf backdrops in `0 ms` without re-decoding.
+    public nonisolated func anyMemoryCachedImage(
+        for url: URL,
+        preferredMaxPixelSize: Int
+    ) -> (key: String, image: CGImage)? {
+        let preferredKey = Self.cacheKey(for: url, maxPixelSize: preferredMaxPixelSize)
+        if let exact = ramCache.image(forKey: preferredKey) {
+            return (preferredKey, exact)
+        }
+        for bucket in Self.candidateCachedPixelSizes where bucket != preferredMaxPixelSize {
+            let key = Self.cacheKey(for: url, maxPixelSize: bucket)
+            if let hit = ramCache.image(forKey: key) {
+                return (key, hit)
+            }
+        }
+        return nil
+    }
+
+    public nonisolated func insertMemoryCachedImageForTesting(_ image: CGImage, url: URL, maxPixelSize: Int) {
+        ramCache.insert(image, forKey: Self.cacheKey(for: url, maxPixelSize: maxPixelSize))
+    }
+
     public func loadImage(
         url: URL,
         maxPixelSize: Int,
@@ -525,6 +557,7 @@ public actor ArtworkPipeline {
 
     public func clearAll() {
         ramCache.removeAll()
+        BlurHashDecoder.clearCache()
         diskTouchTracker.removeAll()
         didEnsureCacheDir = false
         try? FileManager.default.removeItem(at: Self.imageCacheDirectoryURL)

@@ -14,13 +14,46 @@ private enum LibrarySectionTab: String, CaseIterable, Identifiable, Sendable {
         case .local: return "Lokalt på NAS"
         }
     }
+}
 
-    var icon: String {
-        switch self {
-        case .watchlist: return "bookmark.fill"
-        case .favorites: return "star.fill"
-        case .local: return "externaldrive.fill.badge.checkmark"
+internal struct LibraryBrowseSnapshot {
+    var payload: TvLibraryResponse
+    var localItems: [TvMediaCard]
+    var localOffset: Int
+    var localHasMore: Bool
+    var fetchedAt: Date
+    var refreshNonce: Int
+}
+
+@MainActor
+internal final class LibraryBrowseMemoryCache {
+    static let shared = LibraryBrowseMemoryCache()
+    private let maxEntries = 12
+    private var entries: [String: LibraryBrowseSnapshot] = [:]
+    private var order: [String] = []
+
+    var entryCount: Int { entries.count }
+
+    func snapshot(for key: String) -> LibraryBrowseSnapshot? {
+        guard let hit = entries[key] else { return nil }
+        order.removeAll { $0 == key }
+        order.append(key)
+        return hit
+    }
+
+    func store(_ snapshot: LibraryBrowseSnapshot, for key: String) {
+        entries[key] = snapshot
+        order.removeAll { $0 == key }
+        order.append(key)
+        while order.count > maxEntries {
+            let evicted = order.removeFirst()
+            entries.removeValue(forKey: evicted)
         }
+    }
+
+    func clear() {
+        entries.removeAll()
+        order.removeAll()
     }
 }
 
@@ -58,7 +91,7 @@ struct LibraryHubView: View {
     ]
 
     private var queryKey: String {
-        "\(activeSection.rawValue)#\(mediaTypeFilter)#\(localTierFilter)#\(localSort)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
+        "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(activeSection.rawValue)#\(mediaTypeFilter)#\(localTierFilter)#\(localSort)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
     }
 
     var body: some View {
@@ -75,46 +108,40 @@ struct LibraryHubView: View {
 
                 Text("Mitt bibliotek")
                     .font(.title2.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(LunaTheme.linen)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.top, 14)
 
-                // Primary 3-section switcher
+                // Primary 3-section switcher (uniform warm espresso pills)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
+                    HStack(spacing: 12) {
                         LunaPillButton(
                             LibrarySectionTab.watchlist.label,
-                            systemImage: LibrarySectionTab.watchlist.icon,
                             badgeText: counts.map { String($0.watchlist) },
-                            isSelected: activeSection == .watchlist,
-                            accent: .periwinkle
+                            isSelected: activeSection == .watchlist
                         ) {
                             activeSection = .watchlist
                         }
 
                         LunaPillButton(
                             LibrarySectionTab.favorites.label,
-                            systemImage: LibrarySectionTab.favorites.icon,
                             badgeText: counts.map { String($0.favorites) },
-                            isSelected: activeSection == .favorites,
-                            accent: .amber
+                            isSelected: activeSection == .favorites
                         ) {
                             activeSection = .favorites
                         }
 
                         LunaPillButton(
                             LibrarySectionTab.local.label,
-                            systemImage: LibrarySectionTab.local.icon,
                             badgeText: counts.map { String($0.localTotal) },
-                            isSelected: activeSection == .local,
-                            accent: .emerald
+                            isSelected: activeSection == .local
                         ) {
                             activeSection = .local
                         }
 
                         Rectangle()
-                            .fill(LunaTheme.moonlight.opacity(0.16))
-                            .frame(width: 1, height: 28)
+                            .fill(LunaTheme.warmBorder)
+                            .frame(width: 1, height: 26)
                             .padding(.horizontal, 6)
 
                         mediaTypePills
@@ -151,7 +178,7 @@ struct LibraryHubView: View {
                         Text(errorMessage)
                             .foregroundStyle(LunaTheme.amber)
                         LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                            Task { await loadLibrary() }
+                            Task { await loadLibrary(forceNetwork: true) }
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -161,6 +188,7 @@ struct LibraryHubView: View {
             }
             .padding(.bottom, 72)
         }
+        .lunaRootScrollTopBarTracking(tab: .library)
         .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
@@ -170,17 +198,25 @@ struct LibraryHubView: View {
         }
         .task(id: queryKey) {
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            await loadLibrary()
+            await loadLibrary(forceNetwork: false)
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
             guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
             lastSeenRefreshNonce = newNonce
-            Task { await loadLibrary() }
+            Task { await loadLibrary(forceNetwork: true) }
         }
         .onChange(of: isActiveTab) { _, active in
-            guard active, lastSeenRefreshNonce != sessionStore.homeRefreshNonce else { return }
+            guard active else { return }
+            let cached = LibraryBrowseMemoryCache.shared.snapshot(for: queryKey)
+            let isFresh = TabContentFreshnessPolicy.isCacheFresh(
+                hasCachedContent: cached != nil,
+                lastValidatedAt: cached?.fetchedAt ?? .distantPast,
+                cachedRefreshNonce: cached?.refreshNonce ?? lastSeenRefreshNonce,
+                currentRefreshNonce: sessionStore.homeRefreshNonce
+            )
+            guard !isFresh else { return }
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            Task { await loadLibrary() }
+            Task { await loadLibrary(forceNetwork: true) }
         }
         .onDisappear {
             mutationBannerTask?.cancel()
@@ -192,20 +228,19 @@ struct LibraryHubView: View {
         LunaPillButton("Alle typer", isSelected: mediaTypeFilter == "all", prominence: .subtleChip) {
             mediaTypeFilter = "all"
         }
-        LunaPillButton("Filmer", systemImage: "film", isSelected: mediaTypeFilter == "movie", prominence: .subtleChip) {
+        LunaPillButton("Filmer", isSelected: mediaTypeFilter == "movie", prominence: .subtleChip) {
             mediaTypeFilter = "movie"
         }
-        LunaPillButton("Serier", systemImage: "tv", isSelected: mediaTypeFilter == "series", prominence: .subtleChip) {
+        LunaPillButton("Serier", isSelected: mediaTypeFilter == "series", prominence: .subtleChip) {
             mediaTypeFilter = "series"
         }
     }
 
     private func localTierAndSortBar(counts: TvLibraryCounts?) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 14) {
+            HStack(spacing: 12) {
                 LunaPillButton(
                     "Alle lokale",
-                    systemImage: "square.stack.3d.up.fill",
                     badgeText: counts.map { String($0.localTotal) },
                     isSelected: localTierFilter == "all",
                     prominence: .subtleChip
@@ -215,18 +250,15 @@ struct LibraryHubView: View {
 
                 LunaPillButton(
                     "Hurtiglagring (NVMe)",
-                    systemImage: "bolt.fill",
                     badgeText: counts.map { String($0.nvme) },
                     isSelected: localTierFilter == "nvme",
-                    prominence: .subtleChip,
-                    accent: .emerald
+                    prominence: .subtleChip
                 ) {
                     localTierFilter = "nvme"
                 }
 
                 LunaPillButton(
                     "Arkiv",
-                    systemImage: "archivebox.fill",
                     badgeText: counts.map { String($0.archive) },
                     isSelected: localTierFilter == "archive",
                     prominence: .subtleChip
@@ -235,7 +267,7 @@ struct LibraryHubView: View {
                 }
 
                 Rectangle()
-                    .fill(LunaTheme.moonlight.opacity(0.16))
+                    .fill(LunaTheme.warmBorder)
                     .frame(width: 1, height: 26)
                     .padding(.horizontal, 6)
 
@@ -259,15 +291,14 @@ struct LibraryHubView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Egne samlinger fra MediaLogg")
                 .font(.title3.weight(.bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(LunaTheme.linen)
                 .padding(.horizontal, LunaTheme.horizontalGutter)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 20) {
+                HStack(spacing: 16) {
                     ForEach(lists) { list in
                         LunaPillButton(
                             list.name,
-                            systemImage: "rectangle.stack.fill",
                             badgeText: list.itemCount > 0 ? String(list.itemCount) : nil
                         ) {
                             selectedCustomList = list
@@ -296,8 +327,6 @@ struct LibraryHubView: View {
 
         if activeItems.isEmpty {
             LibraryEmptyStateView(
-                comfort: sessionStore.comfort,
-                showMoonCat: activeSection == .watchlist || activeSection == .favorites,
                 headline: emptyStateHeadline,
                 subtitle: emptyStateSubtitle
             )
@@ -383,9 +412,46 @@ struct LibraryHubView: View {
         }
     }
 
-    private func loadLibrary() async {
+    private func persistLibrarySnapshot(for key: String, payload: TvLibraryResponse, fetchedAt: Date? = nil) {
+        let existing = LibraryBrowseMemoryCache.shared.snapshot(for: key)
+        LibraryBrowseMemoryCache.shared.store(
+            LibraryBrowseSnapshot(
+                payload: payload,
+                localItems: localItems,
+                localOffset: localOffset,
+                localHasMore: localHasMore,
+                fetchedAt: fetchedAt ?? existing?.fetchedAt ?? Date(),
+                refreshNonce: sessionStore.homeRefreshNonce
+            ),
+            for: key
+        )
+    }
+
+    private func loadLibrary(forceNetwork: Bool = false) async {
         guard let client = sessionStore.makeClient() else { return }
-        isLoading = true
+        let targetKey = queryKey
+        let currentNonce = sessionStore.homeRefreshNonce
+
+        if let cached = LibraryBrowseMemoryCache.shared.snapshot(for: targetKey) {
+            libraryPayload = cached.payload
+            localItems = cached.localItems
+            localOffset = cached.localOffset
+            localHasMore = cached.localHasMore
+            isLoading = false
+
+            if !forceNetwork,
+               TabContentFreshnessPolicy.isCacheFresh(
+                   hasCachedContent: true,
+                   lastValidatedAt: cached.fetchedAt,
+                   cachedRefreshNonce: cached.refreshNonce,
+                   currentRefreshNonce: currentNonce
+               ) {
+                errorMessage = nil
+                return
+            }
+        } else {
+            isLoading = true
+        }
         errorMessage = nil
 
         do {
@@ -397,20 +463,26 @@ struct LibraryHubView: View {
                 offset: 0,
                 limit: pageSize
             )
+            guard !Task.isCancelled, queryKey == targetKey else { return }
             libraryPayload = res
             localItems = res.localItems
             localOffset = res.localItems.count
             localHasMore = res.localHasMore ?? false
+            persistLibrarySnapshot(for: targetKey, payload: res, fetchedAt: Date())
         } catch LunaCoreError.unauthorized {
+            LibraryBrowseMemoryCache.shared.clear()
             sessionStore.unpairDevice()
         } catch {
-            errorMessage = error.localizedDescription
+            if libraryPayload == nil {
+                errorMessage = error.localizedDescription
+            }
         }
         isLoading = false
     }
 
     private func loadMoreLocalItems() async {
         guard !isLoadingMoreLocal, localHasMore, let client = sessionStore.makeClient() else { return }
+        let targetKey = queryKey
         isLoadingMoreLocal = true
         defer { isLoadingMoreLocal = false }
 
@@ -421,7 +493,7 @@ struct LibraryHubView: View {
             sort: localSort,
             offset: localOffset,
             limit: pageSize
-        ) else {
+        ), queryKey == targetKey else {
             return
         }
 
@@ -430,6 +502,9 @@ struct LibraryHubView: View {
         localItems.append(contentsOf: fresh)
         localOffset += res.localItems.count
         localHasMore = res.localHasMore ?? false
+        if let payload = libraryPayload {
+            persistLibrarySnapshot(for: targetKey, payload: payload)
+        }
     }
 
     private func showMutationError(_ error: Error) {
@@ -443,9 +518,10 @@ struct LibraryHubView: View {
     }
 
     private func markLocalMutationAndReload() async {
+        LibraryBrowseMemoryCache.shared.clear()
         lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
         sessionStore.notifyContentMutated()
-        await loadLibrary()
+        await loadLibrary(forceNetwork: true)
     }
 
     private func toggleWatchlist(_ card: TvMediaCard) async {
@@ -483,25 +559,27 @@ struct LibraryHubView: View {
 }
 
 private struct LibraryEmptyStateView: View {
-    @ObservedObject var comfort: ComfortPreferences
-    let showMoonCat: Bool
     let headline: String
     let subtitle: String
 
     var body: some View {
-        HStack(alignment: .center, spacing: showMoonCat && comfort.showCatCompanions ? 32 : 0) {
-            if showMoonCat && comfort.showCatCompanions {
-                MoonSleepingCatView(comfort: comfort)
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text(headline)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(LunaTheme.moonlight)
-                Text(subtitle)
-                    .font(.callout)
-                    .foregroundStyle(LunaTheme.muted)
-            }
+        VStack(alignment: .leading, spacing: 10) {
+            Text(headline)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(LunaTheme.linen)
+            Text(subtitle)
+                .font(.callout)
+                .foregroundStyle(LunaTheme.muted)
         }
+        .padding(28)
+        .frame(maxWidth: 880, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
+                .fill(LunaTheme.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
+                .strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1)
+        )
     }
 }

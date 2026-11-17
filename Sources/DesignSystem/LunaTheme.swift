@@ -2,74 +2,55 @@ import SwiftUI
 import CoreGraphics
 
 public enum LunaTheme {
-    /// Deep midnight menu canvas (`#07090E`) — calm, warm-neutral dark cinema base.
-    public static let canvas = Color(red: 7.0 / 255.0, green: 9.0 / 255.0, blue: 14.0 / 255.0)
-    /// Pure black (`#000000`) reserved for OLED video surface & resolving curtain.
+    /// Near-black warm charcoal menu base (`#0A0908`) — protects LG OLED black floor with zero cold blue cast.
+    public static let canvas = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0)
+    /// Pure black (`#000000`) reserved for OLED video surface & startup curtain.
     public static let pureBlack = Color.black
-    /// Elevated card / panel surface (`#0E131D`).
-    public static let surface = Color(red: 14.0 / 255.0, green: 19.0 / 255.0, blue: 29.0 / 255.0)
-    /// Slightly lighter elevated surface (`#161E2E`).
-    public static let surfaceRaised = Color(red: 22.0 / 255.0, green: 30.0 / 255.0, blue: 46.0 / 255.0)
-    /// Dark HDR/Dolby Vision-safe cinema glass (`#0C0F17` @ 90%) — avoids tvOS `.ultraThinMaterial` 203-nit HDR washout.
-    public static let cinemaGlass = Color(red: 12.0 / 255.0, green: 15.0 / 255.0, blue: 23.0 / 255.0).opacity(0.90)
+    /// Calm matte espresso surface (`#14110F`) for cards, panels, and shelves.
+    public static let surface = Color(red: 20.0 / 255.0, green: 17.0 / 255.0, blue: 15.0 / 255.0)
+    /// Slightly softer matte espresso (`#181412`) for subtle filter & genre chips.
+    public static let surfaceSubtle = Color(red: 24.0 / 255.0, green: 20.0 / 255.0, blue: 18.0 / 255.0)
+    /// Elevated matte espresso (`#1E1916`) for resting secondary buttons & grouped Settings rows.
+    public static let surfaceRaised = Color(red: 30.0 / 255.0, green: 25.0 / 255.0, blue: 22.0 / 255.0)
+    /// Warm roasted espresso (`#2A231E`) for active/selected secondary controls without competing with «Spill av».
+    public static let surfaceSelected = Color(red: 42.0 / 255.0, green: 35.0 / 255.0, blue: 30.0 / 255.0)
+    /// Dark HDR/Dolby Vision-safe warm cinema glass (`#120F0D` @ 92%) — avoids tvOS `.ultraThinMaterial` 203-nit washout.
+    public static let cinemaGlass = Color(red: 18.0 / 255.0, green: 15.0 / 255.0, blue: 13.0 / 255.0).opacity(0.92)
 
-    /// Warm amber accent (`#F5C46B`) — primary focus glow, progress bars, favorite stars.
-    public static let amber = Color(red: 245.0 / 255.0, green: 196.0 / 255.0, blue: 107.0 / 255.0)
-    /// Deeper warm gold (`#D99B38`) for gradients.
-    public static let amberDeep = Color(red: 217.0 / 255.0, green: 155.0 / 255.0, blue: 56.0 / 255.0)
-    /// Soft moonlight silver-blue (`#E6ECF5`) for crisp readable secondary labels.
-    public static let moonlight = Color(red: 230.0 / 255.0, green: 236.0 / 255.0, blue: 245.0 / 255.0)
-    /// Muted slate (`#93A2B8`) for metadata subtitles.
-    public static let muted = Color(red: 147.0 / 255.0, green: 162.0 / 255.0, blue: 184.0 / 255.0)
-    /// Soft emerald (`#62D6A2`) for instant NVMe tier badges & watched checkmarks.
-    public static let emerald = Color(red: 98.0 / 255.0, green: 214.0 / 255.0, blue: 162.0 / 255.0)
-    /// Celestial periwinkle (`#94A8FF`) for watchlist & follow/monitor states.
-    public static let periwinkle = Color(red: 148.0 / 255.0, green: 168.0 / 255.0, blue: 255.0 / 255.0)
-    /// Night-Fury coral (`#F07167`) for clear, reset, and unpair actions.
-    public static let coral = Color(red: 240.0 / 255.0, green: 113.0 / 255.0, blue: 103.0 / 255.0)
+    /// Warm linen (`#F5F0E8`) for crisp, non-glaring primary titles & headings.
+    public static let linen = Color(red: 245.0 / 255.0, green: 240.0 / 255.0, blue: 232.0 / 255.0)
+    /// Warm parchment (`#C8BFB6`) for secondary labels and resting button copy.
+    public static let moonlight = Color(red: 200.0 / 255.0, green: 191.0 / 255.0, blue: 182.0 / 255.0)
+    /// Daylight-calibrated warm taupe (`#A0968C`) — readable in bright rooms (Frame Pro) while gentle in dark OLED rooms.
+    public static let muted = Color(red: 160.0 / 255.0, green: 150.0 / 255.0, blue: 140.0 / 255.0)
+    /// Non-glaring warm-white cinema pause timeline fill (`#DDD6CC`).
+    public static let pauseWarmLine = Color(red: 221.0 / 255.0, green: 214.0 / 255.0, blue: 204.0 / 255.0)
 
-    /// Elevated Twilight Starry-Blue resting button fill (`#34466C -> #293858`, `L* ≈ 24–30`).
-    public static let buttonGlassTop = Color(red: 52.0 / 255.0, green: 70.0 / 255.0, blue: 108.0 / 255.0)
-    public static let buttonGlassBottom = Color(red: 41.0 / 255.0, green: 56.0 / 255.0, blue: 88.0 / 255.0)
-    /// Elevated Celestial Indigo lift for secondary filter & genre chips (`#2F4063 -> #253351`).
-    public static let buttonSubtleTop = Color(red: 47.0 / 255.0, green: 64.0 / 255.0, blue: 99.0 / 255.0).opacity(0.94)
-    public static let buttonSubtleBottom = Color(red: 37.0 / 255.0, green: 51.0 / 255.0, blue: 81.0 / 255.0).opacity(0.92)
-    /// Deep Starry-Indigo anchor base underneath rich 28–32% semantic selected tints.
-    public static let buttonSelectedBaseTop = Color(red: 31.0 / 255.0, green: 44.0 / 255.0, blue: 71.0 / 255.0)
-    public static let buttonSelectedBaseBottom = Color(red: 23.0 / 255.0, green: 33.0 / 255.0, blue: 55.0 / 255.0)
-    /// Warm golden Luna Siri Remote focus glow (`#FCE19E -> #F2B544` champagne-amber gradient).
-    public static let focusGoldTop = Color(red: 252.0 / 255.0, green: 225.0 / 255.0, blue: 158.0 / 255.0)
-    public static let focusGoldBottom = Color(red: 242.0 / 255.0, green: 181.0 / 255.0, blue: 68.0 / 255.0)
-    public static let focusGoldBorder = Color(red: 255.0 / 255.0, green: 243.0 / 255.0, blue: 206.0 / 255.0)
-    /// Brighter platinum-gold sheen reserved for focused `PrimaryPlayButton` («Spill av»).
-    public static let playFocusTop = Color(red: 255.0 / 255.0, green: 245.0 / 255.0, blue: 214.0 / 255.0)
-    public static let playFocusBottom = Color(red: 234.0 / 255.0, green: 167.0 / 255.0, blue: 59.0 / 255.0)
+    /// Muted honey-brass (`#E5A93C`) — the single primary accent reserved for Siri Remote focus & «Spill av».
+    public static let amber = Color(red: 229.0 / 255.0, green: 169.0 / 255.0, blue: 60.0 / 255.0)
+    /// Deeper warm brass (`#C98E2B`) for subtle primary gradient depth.
+    public static let amberDeep = Color(red: 201.0 / 255.0, green: 142.0 / 255.0, blue: 43.0 / 255.0)
+    /// Calm sage-emerald (`#5EBF8E`) reserved strictly for NVMe storage badges & Sett checkmarks.
+    public static let emerald = Color(red: 94.0 / 255.0, green: 191.0 / 255.0, blue: 142.0 / 255.0)
+    /// Warm terracotta (`#D96B52`) reserved strictly for destructive/reset actions.
+    public static let coral = Color(red: 217.0 / 255.0, green: 107.0 / 255.0, blue: 82.0 / 255.0)
+
+    /// Base warm cream border tint (`#FFF4E6`) used at 10–18% opacity for 1 pt matte hairlines.
+    public static let warmBorderBase = Color(red: 255.0 / 255.0, green: 244.0 / 255.0, blue: 230.0 / 255.0)
+    public static let warmBorderSubtle = warmBorderBase.opacity(0.10)
+    public static let warmBorder = warmBorderBase.opacity(0.14)
+    public static let warmBorderStrong = warmBorderBase.opacity(0.18)
+
+    /// Honey-brass Siri Remote focus fill (`#F0BE5E -> #DF9F32`, centered on `#E5A93C`).
+    public static let focusGoldTop = Color(red: 240.0 / 255.0, green: 190.0 / 255.0, blue: 94.0 / 255.0)
+    public static let focusGoldBottom = Color(red: 223.0 / 255.0, green: 159.0 / 255.0, blue: 50.0 / 255.0)
+    public static let focusGoldBorder = Color(red: 247.0 / 255.0, green: 223.0 / 255.0, blue: 172.0 / 255.0)
+    /// Slightly brighter warm brass highlight reserved for focused `PrimaryPlayButton` («Spill av»).
+    public static let playFocusTop = Color(red: 249.0 / 255.0, green: 214.0 / 255.0, blue: 138.0 / 255.0)
+    public static let playFocusBottom = amber
 
     public static let horizontalGutter: CGFloat = 64
-
-    public static var buttonRestGradient: LinearGradient {
-        LinearGradient(
-            colors: [buttonGlassTop, buttonGlassBottom],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    public static var buttonSubtleGradient: LinearGradient {
-        LinearGradient(
-            colors: [buttonSubtleTop, buttonSubtleBottom],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    public static var buttonSelectedBaseGradient: LinearGradient {
-        LinearGradient(
-            colors: [buttonSelectedBaseTop, buttonSelectedBaseBottom],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
+    public static let cardRadius: CGFloat = 18
 
     public static var focusGoldGradient: LinearGradient {
         LinearGradient(
@@ -81,11 +62,7 @@ public enum LunaTheme {
 
     public static var playFocusGradient: LinearGradient {
         LinearGradient(
-            colors: [
-                playFocusTop,
-                Color(red: 249.0 / 255.0, green: 206.0 / 255.0, blue: 110.0 / 255.0),
-                playFocusBottom,
-            ],
+            colors: [playFocusTop, amber, amberDeep],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
@@ -93,25 +70,22 @@ public enum LunaTheme {
 
     public static var primaryAmberGradient: LinearGradient {
         LinearGradient(
-            colors: [
-                Color(red: 248.0 / 255.0, green: 203.0 / 255.0, blue: 114.0 / 255.0),
-                amberDeep,
-            ],
+            colors: [amber, amberDeep],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
     }
 
-    public static func topInnerHighlightGradient(isFocused: Bool) -> LinearGradient {
-        LinearGradient(
-            colors: [
-                Color.white.opacity(isFocused ? 0.65 : 0.26),
-                Color.white.opacity(isFocused ? 0.16 : 0.05),
-                Color.clear,
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+    public static func cardBorderColor(isFocused: Bool) -> Color {
+        isFocused ? warmBorderBase.opacity(0.32) : warmBorderBase.opacity(0.12)
+    }
+
+    public static func cardTitleColor(isFocused: Bool) -> Color {
+        linen
+    }
+
+    public static func cardSubtitleColor(isFocused: Bool) -> Color {
+        isFocused ? amber : muted
     }
 
     public static func color(fromHex rawHex: String?) -> Color? {
@@ -130,44 +104,55 @@ public enum LunaTheme {
         let b = Double(rgb & 0xFF) / 255.0
         return Color(red: r, green: g, blue: b)
     }
+}
 
-    public static func symbolForGenre(slug: String, serverIcon: String?) -> String {
-        if let icon = serverIcon?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !icon.isEmpty,
-           icon.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-") }) {
-            return icon
+// MARK: - Clean Vector Crescent Moon Mark
+
+public struct LunaCrescentMarkView: View {
+    public var size: CGFloat
+    public var color: Color
+
+    public init(size: CGFloat = 28, color: Color = LunaTheme.amber) {
+        self.size = size
+        self.color = color
+    }
+
+    public var body: some View {
+        Canvas { context, canvasSize in
+            let side = min(canvasSize.width, canvasSize.height)
+            let center = CGPoint(x: canvasSize.width * 0.5, y: canvasSize.height * 0.5)
+            let outerR = side * 0.44
+            let innerR = side * 0.36
+            let cutOffset = CGPoint(x: side * 0.17, y: -side * 0.12)
+
+            var path = Path()
+            path.addEllipse(
+                in: CGRect(
+                    x: center.x - outerR,
+                    y: center.y - outerR,
+                    width: outerR * 2,
+                    height: outerR * 2
+                )
+            )
+            path.addEllipse(
+                in: CGRect(
+                    x: center.x + cutOffset.x - innerR,
+                    y: center.y + cutOffset.y - innerR,
+                    width: innerR * 2,
+                    height: innerR * 2
+                )
+            )
+            context.fill(path, with: .color(color), style: FillStyle(eoFill: true))
         }
-        switch slug.lowercased() {
-        case "animasjon", "animation": return "sparkles"
-        case "action", "action-adventure": return "bolt.fill"
-        case "eventyr", "adventure": return "safari.fill"
-        case "komedie", "comedy": return "face.smiling.fill"
-        case "krim", "crime": return "magnifyingglass.circle.fill"
-        case "dokumentar", "documentary": return "globe.europe.africa.fill"
-        case "drama": return "theatermasks.fill"
-        case "familie", "family": return "house.and.flag.fill"
-        case "fantasy", "sci-fi-fantasy": return "wand.and.stars"
-        case "historie", "history": return "hourglass"
-        case "skrekk", "horror": return "moon.zzz.fill"
-        case "musikk", "music": return "music.quarternote.3"
-        case "mysterium", "mystery": return "eye.fill"
-        case "romantikk", "romance": return "heart.fill"
-        case "sci-fi", "science-fiction": return "atom"
-        case "thriller": return "waveform.path.ecg"
-        case "krig", "war": return "shield.lefthalf.filled"
-        case "western": return "sun.dust.fill"
-        case "reality": return "tv.and.mediabox"
-        default: return "film.stack"
-        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }
 
-// MARK: - Chromeless Focus-Safe tvOS Button Style & Pill Buttons
+// MARK: - Chromeless Focus-Safe tvOS Button Style & Matte Espresso Pill Buttons
 
-/// Replaces `.buttonStyle(.plain)` across Luna.
-/// On tvOS (including tvOS 18–26+ Liquid Glass), SwiftUI's built-in `PlainButtonStyle`
-/// still injects a bright white rectangular platter behind focused labels even when
-/// `.focusEffectDisabled()` is set. A custom `ButtonStyle` renders strictly `configuration.label`.
+/// Replaces `.buttonStyle(.plain)` across Luna so tvOS 18–26+ never injects a bright
+/// white rectangular system platter behind custom pill buttons.
 public struct LunaChromelessButtonStyle: ButtonStyle {
     public init() {}
 
@@ -187,14 +172,12 @@ public enum LunaButtonProminence: Sendable {
 public enum LunaButtonAccent: Sendable {
     case amber
     case emerald
-    case periwinkle
     case coral
 
     public var color: Color {
         switch self {
         case .amber: return LunaTheme.amber
         case .emerald: return LunaTheme.emerald
-        case .periwinkle: return LunaTheme.periwinkle
         case .coral: return LunaTheme.coral
         }
     }
@@ -235,6 +218,65 @@ public struct LunaPillButton: View {
         self.action = action
     }
 
+    public nonisolated static func resolveIconForeground(
+        isFocused: Bool,
+        isSelected: Bool,
+        prominence: LunaButtonProminence,
+        accent: LunaButtonAccent
+    ) -> Color {
+        if isFocused || prominence == .primaryAmber {
+            return LunaTheme.canvas
+        }
+        if accent == .coral {
+            return LunaTheme.coral
+        }
+        if isSelected {
+            return accent == .emerald ? LunaTheme.emerald : LunaTheme.linen
+        }
+        return LunaTheme.moonlight
+    }
+
+    public nonisolated static func resolveLabelForeground(
+        isFocused: Bool,
+        isSelected: Bool,
+        prominence: LunaButtonProminence,
+        accent: LunaButtonAccent
+    ) -> Color {
+        if isFocused || prominence == .primaryAmber {
+            return LunaTheme.canvas
+        }
+        if accent == .coral {
+            return LunaTheme.coral
+        }
+        if isSelected {
+            return LunaTheme.linen
+        }
+        return LunaTheme.moonlight
+    }
+
+    public nonisolated static func resolveBorderColor(
+        isFocused: Bool,
+        isSelected: Bool,
+        prominence: LunaButtonProminence,
+        accent: LunaButtonAccent
+    ) -> Color {
+        if isFocused {
+            return LunaTheme.focusGoldBorder
+        }
+        switch prominence {
+        case .primaryAmber:
+            return LunaTheme.focusGoldBorder.opacity(0.45)
+        case .glassPill, .subtleChip:
+            if accent == .coral {
+                return LunaTheme.coral.opacity(0.42)
+            }
+            if isSelected {
+                return accent == .emerald ? LunaTheme.emerald.opacity(0.38) : LunaTheme.warmBorderStrong
+            }
+            return prominence == .glassPill ? LunaTheme.warmBorder : LunaTheme.warmBorderSubtle
+        }
+    }
+
     public var body: some View {
         Button(action: action) {
             LunaPillLabel(
@@ -269,12 +311,12 @@ private struct LunaPillLabel: View {
         HStack(spacing: isCompact ? 8 : 10) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(isCompact ? .system(size: 22, weight: .bold) : .callout.weight(.bold))
+                    .font(isCompact ? .system(size: 21, weight: .semibold) : .callout.weight(.semibold))
                     .foregroundStyle(iconForegroundColor)
             }
             if !title.isEmpty {
                 Text(title)
-                    .font(isCompact ? .system(size: 25, weight: .semibold) : .callout.weight(.semibold))
+                    .font(isCompact ? .system(size: 24, weight: .semibold) : .callout.weight(.semibold))
                     .foregroundStyle(labelForegroundColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.88)
@@ -293,40 +335,34 @@ private struct LunaPillLabel: View {
         .background(backgroundView)
         .overlay(
             Capsule()
-                .strokeBorder(LunaTheme.topInnerHighlightGradient(isFocused: isFocused), lineWidth: 1.0)
-        )
-        .overlay(
-            Capsule()
                 .strokeBorder(borderColor, lineWidth: borderWidth)
         )
         .shadow(
-            color: shadowColor,
-            radius: isFocused ? 20 : (isSelected ? 12 : 8),
+            color: isFocused ? LunaTheme.amber.opacity(0.38) : .clear,
+            radius: isFocused ? 18 : 0,
             x: 0,
-            y: isFocused ? 8 : 4
+            y: isFocused ? 6 : 0
         )
-        .scaleEffect(isFocused ? 1.055 : 1.0)
-        .animation(.spring(response: 0.22, dampingFraction: 0.78), value: isFocused)
+        .scaleEffect(isFocused ? 1.045 : 1.0)
+        .animation(.spring(response: 0.22, dampingFraction: 0.80), value: isFocused)
     }
 
     private var iconForegroundColor: Color {
-        if isFocused || prominence == .primaryAmber {
-            return LunaTheme.canvas
-        }
-        if isSelected || accent == .coral {
-            return accent.color
-        }
-        return LunaTheme.moonlight
+        LunaPillButton.resolveIconForeground(
+            isFocused: isFocused,
+            isSelected: isSelected,
+            prominence: prominence,
+            accent: accent
+        )
     }
 
     private var labelForegroundColor: Color {
-        if isFocused || prominence == .primaryAmber {
-            return LunaTheme.canvas
-        }
-        if isSelected {
-            return .white
-        }
-        return LunaTheme.moonlight
+        LunaPillButton.resolveLabelForeground(
+            isFocused: isFocused,
+            isSelected: isSelected,
+            prominence: prominence,
+            accent: accent
+        )
     }
 
     private var badgeForegroundColor: Color {
@@ -334,9 +370,9 @@ private struct LunaPillLabel: View {
             return LunaTheme.canvas
         }
         if isSelected {
-            return .white
+            return LunaTheme.linen
         }
-        return LunaTheme.moonlight
+        return LunaTheme.muted
     }
 
     @ViewBuilder
@@ -348,86 +384,46 @@ private struct LunaPillLabel: View {
             case .primaryAmber:
                 Capsule().fill(LunaTheme.primaryAmberGradient)
             case .glassPill:
-                ZStack {
-                    Capsule().fill(isSelected ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonRestGradient)
-                    if isSelected {
-                        Capsule().fill(accent.color.opacity(0.30))
-                    } else if accent == .coral {
-                        Capsule().fill(LunaTheme.coral.opacity(0.16))
-                    }
-                }
+                Capsule().fill(isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
             case .subtleChip:
-                ZStack {
-                    Capsule().fill(isSelected ? LunaTheme.buttonSelectedBaseGradient : LunaTheme.buttonSubtleGradient)
-                    if isSelected {
-                        Capsule().fill(accent.color.opacity(0.28))
-                    } else if accent == .coral {
-                        Capsule().fill(LunaTheme.coral.opacity(0.15))
-                    }
-                }
+                Capsule().fill(isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceSubtle)
             }
         }
     }
 
     private var borderColor: Color {
-        if isFocused {
-            return LunaTheme.focusGoldBorder
-        }
-        switch prominence {
-        case .primaryAmber:
-            return LunaTheme.focusGoldBorder.opacity(0.55)
-        case .glassPill:
-            if isSelected {
-                return accent.color.opacity(0.92)
-            }
-            if accent == .coral {
-                return LunaTheme.coral.opacity(0.68)
-            }
-            return LunaTheme.moonlight.opacity(0.38)
-        case .subtleChip:
-            if isSelected {
-                return accent.color.opacity(0.90)
-            }
-            if accent == .coral {
-                return LunaTheme.coral.opacity(0.62)
-            }
-            return LunaTheme.moonlight.opacity(0.30)
-        }
+        LunaPillButton.resolveBorderColor(
+            isFocused: isFocused,
+            isSelected: isSelected,
+            prominence: prominence,
+            accent: accent
+        )
     }
 
     private var borderWidth: CGFloat {
-        if isFocused { return 2.3 }
-        if isSelected { return 1.75 }
-        return prominence == .glassPill ? 1.2 : 1.05
-    }
-
-    private var shadowColor: Color {
-        if isFocused {
-            return LunaTheme.amber.opacity(0.54)
-        }
-        if prominence == .primaryAmber {
-            return LunaTheme.amber.opacity(0.30)
-        }
-        if isSelected {
-            return accent.color.opacity(0.30)
-        }
-        return Color.black.opacity(0.36)
+        if isFocused { return 2.0 }
+        return 1.0
     }
 
     private var badgeBackground: Color {
         if isFocused || prominence == .primaryAmber {
-            return Color.black.opacity(0.18)
+            return LunaTheme.canvas.opacity(0.16)
         }
         if isSelected {
-            return accent.color.opacity(0.34)
+            return LunaTheme.warmBorderBase.opacity(0.14)
         }
-        return Color.white.opacity(0.16)
+        return LunaTheme.warmBorderBase.opacity(0.08)
     }
 }
 
-// MARK: - Off-Main-Thread Cached Artwork View
+// MARK: - Off-Main-Thread Cached Artwork View (Zero 1-Frame Stale Reuse Flash)
 
 public struct CachedArtworkView: View {
+    private struct TaggedCGImage {
+        let key: String
+        let image: CGImage
+    }
+
     let url: URL?
     let client: LunaCoreClient?
     let maxPixelSize: Int
@@ -435,9 +431,10 @@ public struct CachedArtworkView: View {
     let dominantColor: String?
     let placeholderSymbol: String
     let contentMode: ContentMode
+    let reuseAnyCachedSize: Bool
 
-    @State private var loadedCGImage: CGImage?
-    @State private var decodedBlurCGImage: CGImage?
+    @State private var loadedArtwork: TaggedCGImage?
+    @State private var decodedBlur: TaggedCGImage?
 
     public init(
         url: URL?,
@@ -446,7 +443,8 @@ public struct CachedArtworkView: View {
         blurHash: String? = nil,
         dominantColor: String? = nil,
         placeholderSymbol: String = "film",
-        contentMode: ContentMode = .fill
+        contentMode: ContentMode = .fill,
+        reuseAnyCachedSize: Bool = false
     ) {
         self.url = url
         self.client = client
@@ -455,13 +453,79 @@ public struct CachedArtworkView: View {
         self.dominantColor = dominantColor
         self.placeholderSymbol = placeholderSymbol
         self.contentMode = contentMode
+        self.reuseAnyCachedSize = reuseAnyCachedSize
 
-        if let url, let memHit = ArtworkPipeline.shared.memoryCachedImage(for: url, maxPixelSize: maxPixelSize) {
-            _loadedCGImage = State(initialValue: memHit)
+        let expectedImgKey = Self.imageSlotKey(url: url, maxPixelSize: maxPixelSize, reuseAnyCachedSize: reuseAnyCachedSize)
+        if let url, let expectedImgKey, let hit = Self.lookupMemoryImage(
+            url: url,
+            maxPixelSize: maxPixelSize,
+            reuseAnyCachedSize: reuseAnyCachedSize
+        ) {
+            _loadedArtwork = State(initialValue: TaggedCGImage(key: expectedImgKey, image: hit))
         } else {
-            _loadedCGImage = State(initialValue: nil)
+            _loadedArtwork = State(initialValue: nil)
         }
-        _decodedBlurCGImage = State(initialValue: BlurHashDecoder.cachedImage(blurHash, width: 32, height: 24))
+
+        let cleanBlur = Self.normalizedBlurKey(blurHash)
+        if let cleanBlur, let blurHit = BlurHashDecoder.cachedImage(cleanBlur, width: 32, height: 24) {
+            _decodedBlur = State(initialValue: TaggedCGImage(key: cleanBlur, image: blurHit))
+        } else {
+            _decodedBlur = State(initialValue: nil)
+        }
+    }
+
+    /// Pure key-verified resolver ensuring recycled `LazyVGrid` / `LazyHStack` cells never flash
+    /// the previous card's bitmap for 1 frame before `.task(id:)` runs.
+    public nonisolated static func selectKeyMatchedImage(
+        expectedKey: String?,
+        stateKey: String?,
+        stateImage: CGImage?,
+        memoryFallback: () -> CGImage?
+    ) -> CGImage? {
+        guard let expectedKey else {
+            return nil
+        }
+        if stateKey == expectedKey, let stateImage {
+            return stateImage
+        }
+        return memoryFallback()
+    }
+
+    private nonisolated static func imageSlotKey(url: URL?, maxPixelSize: Int, reuseAnyCachedSize: Bool) -> String? {
+        guard let url else { return nil }
+        return reuseAnyCachedSize
+            ? ArtworkPipeline.rawIdentity(for: url)
+            : ArtworkPipeline.cacheKey(for: url, maxPixelSize: maxPixelSize)
+    }
+
+    private nonisolated static func normalizedBlurKey(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              trimmed.count >= 6 else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private nonisolated static func lookupMemoryImage(
+        url: URL,
+        maxPixelSize: Int,
+        reuseAnyCachedSize: Bool
+    ) -> CGImage? {
+        if reuseAnyCachedSize {
+            return ArtworkPipeline.shared.anyMemoryCachedImage(
+                for: url,
+                preferredMaxPixelSize: maxPixelSize
+            )?.image
+        }
+        return ArtworkPipeline.shared.memoryCachedImage(for: url, maxPixelSize: maxPixelSize)
+    }
+
+    private var currentImageKey: String? {
+        Self.imageSlotKey(url: url, maxPixelSize: maxPixelSize, reuseAnyCachedSize: reuseAnyCachedSize)
+    }
+
+    private var currentBlurKey: String? {
+        Self.normalizedBlurKey(blurHash)
     }
 
     public var body: some View {
@@ -475,34 +539,50 @@ public struct CachedArtworkView: View {
                 placeholderLayer
             }
         }
-        .task(id: "\(url?.absoluteString ?? "nil")#\(blurHash ?? "")") {
-            let targetBlur = BlurHashDecoder.cachedImage(blurHash, width: 32, height: 24)
-            if decodedBlurCGImage !== targetBlur {
-                decodedBlurCGImage = targetBlur
+        .task(id: "\(currentImageKey ?? "nil")#\(currentBlurKey ?? "")") {
+            let targetBlurKey = currentBlurKey
+            if let targetBlurKey {
+                if let cachedBlur = BlurHashDecoder.cachedImage(targetBlurKey, width: 32, height: 24) {
+                    if decodedBlur?.key != targetBlurKey || decodedBlur?.image !== cachedBlur {
+                        decodedBlur = TaggedCGImage(key: targetBlurKey, image: cachedBlur)
+                    }
+                } else if decodedBlur?.key != targetBlurKey {
+                    decodedBlur = nil
+                }
+            } else if decodedBlur != nil {
+                decodedBlur = nil
             }
 
-            guard let url else {
-                loadedCGImage = nil
-                if decodedBlurCGImage == nil, contentMode != .fit, blurHash != nil {
-                    if let blurImg = await BlurHashDecoder.decodeAsync(blurHash, width: 32, height: 24), !Task.isCancelled {
-                        decodedBlurCGImage = blurImg
+            guard let url, let targetImageKey = currentImageKey else {
+                loadedArtwork = nil
+                if let targetBlurKey, decodedBlur?.key != targetBlurKey, contentMode != .fit {
+                    if let blurImg = await BlurHashDecoder.decodeAsync(targetBlurKey, width: 32, height: 24),
+                       !Task.isCancelled {
+                        decodedBlur = TaggedCGImage(key: targetBlurKey, image: blurImg)
                     }
                 }
                 return
             }
-            if let hit = ArtworkPipeline.shared.memoryCachedImage(for: url, maxPixelSize: maxPixelSize) {
-                if loadedCGImage !== hit {
-                    loadedCGImage = hit
+
+            if let hit = Self.lookupMemoryImage(
+                url: url,
+                maxPixelSize: maxPixelSize,
+                reuseAnyCachedSize: reuseAnyCachedSize
+            ) {
+                if loadedArtwork?.key != targetImageKey || loadedArtwork?.image !== hit {
+                    loadedArtwork = TaggedCGImage(key: targetImageKey, image: hit)
                 }
                 return
             }
-            // Clear previous cell's artwork while loading the new URL.
-            loadedCGImage = nil
-            if decodedBlurCGImage == nil, contentMode != .fit, blurHash != nil {
-                if let blurImg = await BlurHashDecoder.decodeAsync(blurHash, width: 32, height: 24), !Task.isCancelled {
-                    decodedBlurCGImage = blurImg
+
+            loadedArtwork = nil
+            if let targetBlurKey, decodedBlur?.key != targetBlurKey, contentMode != .fit {
+                if let blurImg = await BlurHashDecoder.decodeAsync(targetBlurKey, width: 32, height: 24),
+                   !Task.isCancelled {
+                    decodedBlur = TaggedCGImage(key: targetBlurKey, image: blurImg)
                 }
             }
+
             let fetched = await ArtworkPipeline.shared.loadImage(
                 url: url,
                 maxPixelSize: maxPixelSize,
@@ -511,29 +591,47 @@ public struct CachedArtworkView: View {
             guard !Task.isCancelled else { return }
             if let fetched {
                 withAnimation(.easeOut(duration: 0.18)) {
-                    loadedCGImage = fetched
+                    loadedArtwork = TaggedCGImage(key: targetImageKey, image: fetched)
                 }
             } else {
-                loadedCGImage = nil
+                loadedArtwork = nil
             }
         }
     }
 
     private var resolvedImage: CGImage? {
-        if let loadedCGImage {
-            return loadedCGImage
-        }
-        if let url {
-            return ArtworkPipeline.shared.memoryCachedImage(for: url, maxPixelSize: maxPixelSize)
-        }
-        return nil
+        Self.selectKeyMatchedImage(
+            expectedKey: currentImageKey,
+            stateKey: loadedArtwork?.key,
+            stateImage: loadedArtwork?.image,
+            memoryFallback: {
+                guard let url else { return nil }
+                return Self.lookupMemoryImage(
+                    url: url,
+                    maxPixelSize: maxPixelSize,
+                    reuseAnyCachedSize: reuseAnyCachedSize
+                )
+            }
+        )
+    }
+
+    private var resolvedBlurImage: CGImage? {
+        Self.selectKeyMatchedImage(
+            expectedKey: currentBlurKey,
+            stateKey: decodedBlur?.key,
+            stateImage: decodedBlur?.image,
+            memoryFallback: {
+                guard let currentBlurKey else { return nil }
+                return BlurHashDecoder.cachedImage(currentBlurKey, width: 32, height: 24)
+            }
+        )
     }
 
     @ViewBuilder
     private var placeholderLayer: some View {
         if contentMode == .fit {
             Color.clear
-        } else if let blurCG = decodedBlurCGImage ?? BlurHashDecoder.cachedImage(blurHash, width: 32, height: 24) {
+        } else if let blurCG = resolvedBlurImage {
             Image(decorative: blurCG, scale: 1.0, orientation: .up)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
@@ -542,16 +640,16 @@ public struct CachedArtworkView: View {
             ZStack {
                 LinearGradient(
                     colors: [
-                        tint.opacity(0.65),
+                        tint.opacity(0.32),
                         LunaTheme.surface,
-                        LunaTheme.canvas
+                        LunaTheme.canvas,
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
                 Image(systemName: placeholderSymbol)
                     .font(.title2)
-                    .foregroundStyle(LunaTheme.moonlight.opacity(0.28))
+                    .foregroundStyle(LunaTheme.muted.opacity(0.45))
             }
         }
     }

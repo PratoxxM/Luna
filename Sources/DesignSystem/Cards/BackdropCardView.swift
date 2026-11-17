@@ -7,8 +7,6 @@ public enum BackdropCardVariant: Sendable {
 }
 
 public struct BackdropCardView: View {
-    @Environment(\.ambientFocusSink) private var ambientFocus
-
     let card: TvMediaCard
     let client: LunaCoreClient?
     let variant: BackdropCardVariant
@@ -75,9 +73,9 @@ public struct BackdropCardView: View {
                                         .foregroundStyle(storageBadgeForeground)
                                         .padding(.horizontal, 9)
                                         .padding(.vertical, 4)
-                                        .background(Color.black.opacity(0.72), in: Capsule())
+                                        .background(LunaTheme.cinemaGlass, in: Capsule())
                                         .overlay(
-                                            Capsule().strokeBorder(storageBadgeForeground.opacity(0.35), lineWidth: 0.8)
+                                            Capsule().strokeBorder(storageBadgeForeground.opacity(0.32), lineWidth: 1)
                                         )
                                 }
                             }
@@ -96,7 +94,6 @@ public struct BackdropCardView: View {
                                             .foregroundStyle(LunaTheme.canvas)
                                             .frame(width: 34, height: 34)
                                             .background(LunaTheme.amber, in: Circle())
-                                            .shadow(color: .black.opacity(0.45), radius: 6, x: 0, y: 2)
                                     }
                                     .padding(.horizontal, 14)
                                 }
@@ -104,7 +101,7 @@ public struct BackdropCardView: View {
                                 if pct > 0 {
                                     let trackWidth = max(0, width - 28)
                                     ZStack(alignment: .leading) {
-                                        Capsule().fill(Color.white.opacity(0.26))
+                                        Capsule().fill(LunaTheme.warmBorderBase.opacity(0.24))
                                         Capsule()
                                             .fill(LunaTheme.amber)
                                             .frame(width: trackWidth * CGFloat(pct / 100.0))
@@ -117,7 +114,7 @@ public struct BackdropCardView: View {
                             .padding(.bottom, 10)
                             .background(
                                 LinearGradient(
-                                    colors: [.clear, Color.black.opacity(0.68)],
+                                    colors: [.clear, Color.black.opacity(0.72)],
                                     startPoint: .top,
                                     endPoint: .bottom
                                 )
@@ -126,10 +123,10 @@ public struct BackdropCardView: View {
                     }
                 }
                 .frame(width: width, height: height)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(Color.white.opacity(isFocused ? 0.28 : 0.08), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
+                        .strokeBorder(LunaTheme.cardBorderColor(isFocused: isFocused), lineWidth: 1)
                 )
             }
             .buttonStyle(.card)
@@ -145,7 +142,7 @@ public struct BackdropCardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(card.title)
                     .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(isFocused ? .white : LunaTheme.moonlight)
+                    .foregroundStyle(LunaTheme.cardTitleColor(isFocused: isFocused))
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
                     .multilineTextAlignment(.leading)
@@ -153,21 +150,12 @@ public struct BackdropCardView: View {
 
                 Text(subtitleLine)
                     .font(.system(size: 21, weight: .medium))
-                    .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.muted)
+                    .foregroundStyle(LunaTheme.cardSubtitleColor(isFocused: isFocused))
                     .lineLimit(1)
             }
             .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: 68, alignment: .topLeading)
             .offset(y: isFocused ? 7 : 0)
             .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
-        }
-        .onChange(of: isFocused) { _, focused in
-            if focused {
-                ambientFocus.reportFocus(
-                    card.dominantColor,
-                    nil,
-                    card.blurHash
-                )
-            }
         }
     }
 
@@ -179,20 +167,20 @@ public struct BackdropCardView: View {
                 .foregroundStyle(urgent ? LunaTheme.canvas : LunaTheme.amber)
             Text(card.upcomingPillText)
                 .font(.system(size: 18, weight: .bold, design: .rounded))
-                .foregroundStyle(urgent ? LunaTheme.canvas : LunaTheme.moonlight)
+                .foregroundStyle(urgent ? LunaTheme.canvas : LunaTheme.linen)
                 .lineLimit(1)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(
-            urgent ? LunaTheme.amber : Color.black.opacity(0.76),
+            urgent ? LunaTheme.amber : LunaTheme.cinemaGlass,
             in: Capsule()
         )
         .overlay(
             Capsule()
                 .strokeBorder(
-                    urgent ? Color.clear : LunaTheme.amber.opacity(0.35),
-                    lineWidth: 0.9
+                    urgent ? Color.clear : LunaTheme.warmBorder,
+                    lineWidth: 1
                 )
         )
     }

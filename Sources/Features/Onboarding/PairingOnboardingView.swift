@@ -16,28 +16,19 @@ struct PairingOnboardingView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.05, green: 0.06, blue: 0.09),
-                    Color(red: 0.09, green: 0.08, blue: 0.12),
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            AmbientBackdropView()
 
             VStack(spacing: 36) {
-                VStack(spacing: 12) {
-                    Image(systemName: "moon.stars.fill")
-                        .font(.system(size: 64))
-                        .foregroundStyle(Color(red: 0.96, green: 0.77, blue: 0.42))
+                VStack(spacing: 14) {
+                    LunaCrescentMarkView(size: 62, color: LunaTheme.amber)
 
                     Text("Luna")
                         .font(.system(size: 56, weight: .bold, design: .rounded))
+                        .foregroundStyle(LunaTheme.linen)
 
                     Text("Dedikert hjemmekino for LunaCore · Dolby Vision FEL & Spatial Audio")
                         .font(.headline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LunaTheme.muted)
                 }
 
                 if let pairingInfo, let selectedBaseURL {
@@ -49,7 +40,7 @@ struct PairingOnboardingView: View {
                 if let errorMessage {
                     Text(errorMessage)
                         .font(.callout)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(LunaTheme.amber)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 920)
                 }
@@ -81,13 +72,13 @@ struct PairingOnboardingView: View {
                     ProgressView()
                     Text(statusMessage)
                         .font(.title3)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LunaTheme.moonlight)
                 }
             } else {
                 VStack(spacing: 16) {
                     Text("Funnet på lokalnettet")
                         .font(.headline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(LunaTheme.muted)
 
                     ForEach(bonjour.servers) { srv in
                         LunaPillButton(
@@ -134,29 +125,33 @@ struct PairingOnboardingView: View {
         VStack(spacing: 28) {
             Text(isCodeExpired ? "Paringskoden er utløpt" : "Godkjenn TV-en i LunaCore Web")
                 .font(.title2.weight(.semibold))
-                .foregroundStyle(isCodeExpired ? LunaTheme.amber : .white)
+                .foregroundStyle(isCodeExpired ? LunaTheme.amber : LunaTheme.linen)
 
             Text(isCodeExpired ? "------" : pairingInfo.displayCode)
                 .font(.system(size: 88, weight: .heavy, design: .monospaced))
                 .tracking(8)
-                .foregroundStyle(isCodeExpired ? LunaTheme.muted : Color(red: 0.96, green: 0.77, blue: 0.42))
+                .foregroundStyle(isCodeExpired ? LunaTheme.muted : LunaTheme.amber)
                 .padding(.horizontal, 48)
                 .padding(.vertical, 24)
                 .background(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(Color.white.opacity(0.08))
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(LunaTheme.surfaceRaised)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(LunaTheme.warmBorder, lineWidth: 1)
                 )
 
             VStack(spacing: 8) {
                 Text("Åpne LunaCore på mobil eller PC → System → Luna Apple TV (eller banneret øverst).")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LunaTheme.moonlight)
                 Text("Velg rom («Kjellerstua» eller «Stua») og trykk Godkjenn — Luna logger inn automatisk.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(LunaTheme.moonlight)
                 Text("Server: \(baseURL.absoluteString)")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(LunaTheme.muted)
             }
             .multilineTextAlignment(.center)
 
