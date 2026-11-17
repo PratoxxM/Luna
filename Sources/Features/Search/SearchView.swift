@@ -35,7 +35,7 @@ struct SearchView: View {
                     TextField("Søk etter film, serie, person eller originaltittel…", text: $query)
 
                     if !query.isEmpty {
-                        LunaPillButton("Tøm", systemImage: "xmark.circle") {
+                        LunaPillButton("Tøm", systemImage: "xmark.circle", prominence: .subtleChip, accent: .coral) {
                             query = ""
                         }
                     }
@@ -55,7 +55,7 @@ struct SearchView: View {
                                 Text("Tidligere søk")
                                     .font(.headline.weight(.semibold))
                                     .foregroundStyle(LunaTheme.moonlight)
-                                LunaPillButton("Tøm logg", systemImage: "trash") {
+                                LunaPillButton("Tøm logg", systemImage: "trash", prominence: .subtleChip, accent: .coral) {
                                     clearRecentSearches()
                                 }
                             }

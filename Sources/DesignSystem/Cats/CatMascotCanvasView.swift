@@ -17,8 +17,8 @@ public enum CatPose: Equatable, Sendable {
 }
 
 /// Pure vector Canvas mascot renderer faithful to Luna's two AppIcon cats:
-/// - `blackNightFury`: charcoal-black cat with moonlight chest spot, golden eyes, and red Toothless tail fin.
-/// - `brownTabby`: striped brown tabby with warm cream muzzle/chest bib and white socks.
+/// - `blackNightFury`: moonlit twilight plum-charcoal coat (`#38334D`), clear white chest heart, golden eyes, and scarlet Toothless tail fin (`#E63833`).
+/// - `brownTabby`: golden-cinnamon striped tabby (`#946942`) with cream muzzle/chest bib, white socks, and olive-hazel green eyes (`#85A657`).
 /// Zero `@State` mutations; renders smoothly at 4K tvOS resolution in OLED/HDR-safe tones.
 struct CatMascotCanvasView: View {
     let kind: CatSpriteKind
@@ -53,12 +53,14 @@ struct CatMascotCanvasView: View {
                 }
             }
         }
+        .shadow(color: Color.black.opacity(0.84), radius: 1.4, x: 0, y: 0)
+        .shadow(color: Color.black.opacity(0.55), radius: 4.5, x: 0, y: 1.8)
         .allowsHitTesting(false)
     }
 
     // MARK: - Palette (OLED / HDR Comfort Tones)
 
-    private struct CatPalette: Sendable {
+    struct CatPalette: Sendable {
         let coat: Color
         let coatShade: Color
         let coatHighlight: Color
@@ -68,40 +70,43 @@ struct CatMascotCanvasView: View {
         let eyeIris: Color
         let nose: Color
         let rimStroke: Color
+        let tailFin: Color
     }
 
-    private nonisolated static func palette(for kind: CatSpriteKind) -> CatPalette {
+    nonisolated static func palette(for kind: CatSpriteKind) -> CatPalette {
         switch kind {
         case .blackNightFury:
             return CatPalette(
-                coat: Color(red: 0.16, green: 0.15, blue: 0.21),
-                coatShade: Color(red: 0.10, green: 0.09, blue: 0.14),
-                coatHighlight: Color(red: 0.23, green: 0.21, blue: 0.30),
-                stripe: Color(red: 0.12, green: 0.11, blue: 0.16),
-                cream: Color(red: 0.86, green: 0.88, blue: 0.92),
-                innerEar: Color(red: 0.35, green: 0.27, blue: 0.36),
-                eyeIris: Color(red: 0.90, green: 0.64, blue: 0.22),
-                nose: Color(red: 0.22, green: 0.18, blue: 0.25),
-                rimStroke: LunaTheme.moonlight.opacity(0.24)
+                coat: Color(red: 56.0 / 255.0, green: 51.0 / 255.0, blue: 77.0 / 255.0),
+                coatShade: Color(red: 38.0 / 255.0, green: 33.0 / 255.0, blue: 54.0 / 255.0),
+                coatHighlight: Color(red: 78.0 / 255.0, green: 72.0 / 255.0, blue: 107.0 / 255.0),
+                stripe: Color(red: 34.0 / 255.0, green: 30.0 / 255.0, blue: 48.0 / 255.0),
+                cream: Color(red: 0.94, green: 0.96, blue: 0.99),
+                innerEar: Color(red: 0.42, green: 0.34, blue: 0.46),
+                eyeIris: Color(red: 0.93, green: 0.68, blue: 0.24),
+                nose: Color(red: 0.28, green: 0.24, blue: 0.35),
+                rimStroke: LunaTheme.moonlight.opacity(0.56),
+                tailFin: Color(red: 230.0 / 255.0, green: 56.0 / 255.0, blue: 51.0 / 255.0)
             )
         case .brownTabby:
             return CatPalette(
-                coat: Color(red: 0.49, green: 0.35, blue: 0.23),
-                coatShade: Color(red: 0.36, green: 0.25, blue: 0.16),
-                coatHighlight: Color(red: 0.60, green: 0.44, blue: 0.30),
-                stripe: Color(red: 0.22, green: 0.14, blue: 0.09),
-                cream: Color(red: 0.85, green: 0.81, blue: 0.75),
-                innerEar: Color(red: 0.62, green: 0.42, blue: 0.38),
-                eyeIris: Color(red: 0.78, green: 0.66, blue: 0.26),
-                nose: Color(red: 0.75, green: 0.47, blue: 0.45),
-                rimStroke: LunaTheme.amber.opacity(0.18)
+                coat: Color(red: 148.0 / 255.0, green: 105.0 / 255.0, blue: 66.0 / 255.0),
+                coatShade: Color(red: 110.0 / 255.0, green: 75.0 / 255.0, blue: 46.0 / 255.0),
+                coatHighlight: Color(red: 174.0 / 255.0, green: 127.0 / 255.0, blue: 84.0 / 255.0),
+                stripe: Color(red: 58.0 / 255.0, green: 35.0 / 255.0, blue: 19.0 / 255.0),
+                cream: Color(red: 0.95, green: 0.91, blue: 0.85),
+                innerEar: Color(red: 0.72, green: 0.48, blue: 0.43),
+                eyeIris: Color(red: 133.0 / 255.0, green: 166.0 / 255.0, blue: 87.0 / 255.0),
+                nose: Color(red: 0.79, green: 0.50, blue: 0.48),
+                rimStroke: Color(red: 0.96, green: 0.86, blue: 0.68).opacity(0.42),
+                tailFin: Color(red: 230.0 / 255.0, green: 56.0 / 255.0, blue: 51.0 / 255.0)
             )
         }
     }
 
     // MARK: - Active Side-Profile Poses
 
-    private struct PoseMetrics: Sendable {
+    struct PoseMetrics: Sendable {
         var bobY: CGFloat = 0
         var bodyPitch: CGFloat = 0
         var chestDrop: CGFloat = 0
@@ -121,7 +126,7 @@ struct CatMascotCanvasView: View {
         var isAlertEyes: Bool = false
     }
 
-    private nonisolated static func metrics(for pose: CatPose) -> PoseMetrics {
+    nonisolated static func metrics(for pose: CatPose) -> PoseMetrics {
         switch pose {
         case .running(let stridePhase, let sprintIntensity):
             let theta = stridePhase * Double.pi * 2.0
@@ -176,7 +181,7 @@ struct CatMascotCanvasView: View {
             let sniff = CGFloat(min(1, max(0, sniffProgress)))
             let stepScale = max(0.08, 1.0 - sniff * 0.92)
             return PoseMetrics(
-                bobY: 2.2 + sniff * 1.4,
+                bobY: 1.4 + sniff * 1.0,
                 bodyPitch: 0.06 + sniff * 0.14,
                 chestDrop: 2.2 + sniff * 2.8,
                 rumpLift: -0.5,
@@ -254,75 +259,42 @@ struct CatMascotCanvasView: View {
             layer.translateBy(x: -40, y: -(34 + m.bobY))
 
             let baseY = 34 + m.bobY
+            let hasSocks = (kind == .brownTabby)
 
             // 1. Tail (behind torso)
-            drawTail(
-                in: &layer,
-                kind: kind,
-                palette: p,
-                rumpPoint: CGPoint(x: 20, y: baseY - 2 + m.rumpLift),
-                metrics: m
-            )
+            drawTail(in: &layer, kind: kind, palette: p, rumpPoint: CGPoint(x: 20, y: baseY - 2 + m.rumpLift), metrics: m)
 
             // 2. Far legs (behind torso)
-            drawLeg(
-                in: &layer,
-                palette: p,
-                origin: CGPoint(x: 25, y: baseY + 3 + m.rumpLift * 0.5),
-                angle: m.hindFarAngle,
-                length: 13 * m.legExtend,
-                isFar: true,
-                hasWhiteSock: kind == .brownTabby
-            )
-            drawLeg(
-                in: &layer,
-                palette: p,
-                origin: CGPoint(x: 47, y: baseY + 3 + m.chestDrop * 0.5),
-                angle: m.frontFarAngle,
-                length: 13 * m.legExtend,
-                isFar: true,
-                hasWhiteSock: kind == .brownTabby
-            )
+            drawLeg(in: &layer, palette: p, origin: CGPoint(x: 25, y: baseY + 3 + m.rumpLift * 0.5), angle: m.hindFarAngle, length: 13 * m.legExtend, isFar: true, hasWhiteSock: hasSocks)
+            drawLeg(in: &layer, palette: p, origin: CGPoint(x: 47, y: baseY + 3 + m.chestDrop * 0.5), angle: m.frontFarAngle, length: 13 * m.legExtend, isFar: true, hasWhiteSock: hasSocks)
 
             // 3. Torso
             let torsoPath = Path { path in
                 let rumpY = baseY + m.rumpLift
                 let chestY = baseY + m.chestDrop
                 path.move(to: CGPoint(x: 19, y: rumpY + 1))
-                path.addCurve(
-                    to: CGPoint(x: 51, y: chestY - 4),
-                    control1: CGPoint(x: 24, y: baseY - 10 - m.archLift),
-                    control2: CGPoint(x: 42, y: baseY - 9 - m.archLift * 0.5)
-                )
-                path.addCurve(
-                    to: CGPoint(x: 49, y: chestY + 8),
-                    control1: CGPoint(x: 56, y: chestY - 1),
-                    control2: CGPoint(x: 55, y: chestY + 7)
-                )
-                path.addCurve(
-                    to: CGPoint(x: 19, y: rumpY + 6),
-                    control1: CGPoint(x: 40, y: baseY + 9),
-                    control2: CGPoint(x: 27, y: baseY + 10)
-                )
+                path.addCurve(to: CGPoint(x: 51, y: chestY - 4), control1: CGPoint(x: 24, y: baseY - 10 - m.archLift), control2: CGPoint(x: 42, y: baseY - 9 - m.archLift * 0.5))
+                path.addCurve(to: CGPoint(x: 49, y: chestY + 8), control1: CGPoint(x: 56, y: chestY - 1), control2: CGPoint(x: 55, y: chestY + 7))
+                path.addCurve(to: CGPoint(x: 19, y: rumpY + 6), control1: CGPoint(x: 40, y: baseY + 9), control2: CGPoint(x: 27, y: baseY + 10))
                 path.closeSubpath()
             }
             layer.fill(torsoPath, with: .color(p.coat))
-            layer.stroke(torsoPath, with: .color(p.rimStroke), lineWidth: 0.85)
+            layer.stroke(torsoPath, with: .color(p.rimStroke), lineWidth: 1.05)
 
             // Coat markings on torso
             if kind == .blackNightFury {
-                // Signature white chest spot
+                // Clear white chest heart
                 let spot = Path { path in
-                    let cx: CGFloat = 50.5
+                    let cx: CGFloat = 50.2
                     let cy: CGFloat = baseY + 2.5 + m.chestDrop * 0.75
-                    path.move(to: CGPoint(x: cx, y: cy - 2.6))
-                    path.addQuadCurve(to: CGPoint(x: cx + 3.0, y: cy + 0.5), control: CGPoint(x: cx + 2.6, y: cy - 2.4))
-                    path.addQuadCurve(to: CGPoint(x: cx, y: cy + 3.6), control: CGPoint(x: cx + 2.2, y: cy + 2.5))
-                    path.addQuadCurve(to: CGPoint(x: cx - 2.8, y: cy + 0.5), control: CGPoint(x: cx - 2.0, y: cy + 2.4))
-                    path.addQuadCurve(to: CGPoint(x: cx, y: cy - 2.6), control: CGPoint(x: cx - 2.4, y: cy - 2.4))
+                    path.move(to: CGPoint(x: cx, y: cy - 1.3))
+                    path.addCurve(to: CGPoint(x: cx + 3.4, y: cy + 0.3), control1: CGPoint(x: cx + 1.4, y: cy - 3.6), control2: CGPoint(x: cx + 4.1, y: cy - 2.0))
+                    path.addQuadCurve(to: CGPoint(x: cx, y: cy + 4.4), control: CGPoint(x: cx + 2.6, y: cy + 2.7))
+                    path.addQuadCurve(to: CGPoint(x: cx - 3.2, y: cy + 0.3), control: CGPoint(x: cx - 2.4, y: cy + 2.7))
+                    path.addCurve(to: CGPoint(x: cx, y: cy - 1.3), control1: CGPoint(x: cx - 3.9, y: cy - 2.0), control2: CGPoint(x: cx - 1.3, y: cy - 3.6))
                     path.closeSubpath()
                 }
-                layer.fill(spot, with: .color(p.cream.opacity(0.92)))
+                layer.fill(spot, with: .color(p.cream.opacity(0.95)))
             } else {
                 // Warm cream chest bib + dark tabby stripes along back
                 let bib = Path { path in
@@ -339,43 +311,21 @@ struct CatMascotCanvasView: View {
                     let sy = baseY - 5.5 - m.archLift * 0.45
                     var stripe = Path()
                     stripe.move(to: CGPoint(x: sx, y: sy))
-                    stripe.addQuadCurve(
-                        to: CGPoint(x: sx - 1.8, y: sy + 7.5),
-                        control: CGPoint(x: sx - 3.0, y: sy + 3.6)
-                    )
+                    stripe.addQuadCurve(to: CGPoint(x: sx - 1.8, y: sy + 7.5), control: CGPoint(x: sx - 3.0, y: sy + 3.6))
                     layer.stroke(stripe, with: .color(p.stripe), style: StrokeStyle(lineWidth: 2.0, lineCap: .round))
                 }
             }
 
             // 4. Near legs
-            drawLeg(
-                in: &layer,
-                palette: p,
-                origin: CGPoint(x: 23, y: baseY + 3 + m.rumpLift * 0.5),
-                angle: m.hindNearAngle,
-                length: 13.5 * m.legExtend,
-                isFar: false,
-                hasWhiteSock: kind == .brownTabby
-            )
-            drawLeg(
-                in: &layer,
-                palette: p,
-                origin: CGPoint(x: 49, y: baseY + 3 + m.chestDrop * 0.5),
-                angle: m.frontNearAngle,
-                length: 13.5 * m.legExtend,
-                isFar: false,
-                hasWhiteSock: kind == .brownTabby
-            )
+            drawLeg(in: &layer, palette: p, origin: CGPoint(x: 23, y: baseY + 3 + m.rumpLift * 0.5), angle: m.hindNearAngle, length: 13.5 * m.legExtend, isFar: false, hasWhiteSock: hasSocks)
+            drawLeg(in: &layer, palette: p, origin: CGPoint(x: 49, y: baseY + 3 + m.chestDrop * 0.5), angle: m.frontNearAngle, length: 13.5 * m.legExtend, isFar: false, hasWhiteSock: hasSocks)
 
             // 5. Head
             drawHead(
                 in: &layer,
                 kind: kind,
                 palette: p,
-                center: CGPoint(
-                    x: 55.5 + m.headOffset.x,
-                    y: baseY - 9.5 + m.chestDrop * 0.45 + m.headOffset.y
-                ),
+                center: CGPoint(x: 55.5 + m.headOffset.x, y: baseY - 9.5 + m.chestDrop * 0.45 + m.headOffset.y),
                 tilt: m.headTilt,
                 earPerk: m.earPerk,
                 isAlertEyes: m.isAlertEyes
@@ -410,6 +360,89 @@ struct CatMascotCanvasView: View {
         ctx.fill(Path(ellipseIn: pawRect), with: .color(pawColor))
     }
 
+    struct TailGeometry: Sendable {
+        let tip: CGPoint
+        let ctrl1: CGPoint
+        let ctrl2: CGPoint
+        let angle: CGFloat
+    }
+
+    nonisolated static func tailGeometry(rumpPoint: CGPoint, metrics m: PoseMetrics) -> TailGeometry {
+        let wave = CGFloat(sin(m.tailWavePhase * Double.pi * 2.0)) * 2.2
+        let tipX = max(11.2, rumpPoint.x - 8.5 + m.tailWag * 0.22)
+        let tipY = max(9.5, rumpPoint.y - 14.0 + m.tailLift * 0.30 + wave * 0.35 + m.tailWag * 0.28)
+        let tip = CGPoint(x: tipX, y: tipY)
+        let ctrl1 = CGPoint(x: rumpPoint.x - 8.5, y: rumpPoint.y + 4.5 - wave * 0.35)
+        let ctrl2 = CGPoint(x: tip.x + 1.8, y: tip.y + 7.5 + wave * 0.25)
+        let angle = atan2(tip.y - ctrl2.y, tip.x - ctrl2.x)
+        return TailGeometry(tip: tip, ctrl1: ctrl1, ctrl2: ctrl2, angle: angle)
+    }
+
+    private nonisolated static let blackFinSamplePoints: [CGPoint] = [
+        CGPoint(x: 2.4, y: 0.2), CGPoint(x: -2.0, y: 8.0), CGPoint(x: -9.2, y: 6.2), CGPoint(x: -7.0, y: 1.6)
+    ]
+
+    private nonisolated static let redFinSamplePoints: [CGPoint] = [
+        CGPoint(x: 2.6, y: -0.2), CGPoint(x: -2.8, y: -10.5), CGPoint(x: -11.2, y: -8.8), CGPoint(x: -9.4, y: -0.4)
+    ]
+
+    nonisolated static func activeCanvasBounds(for pose: CatPose) -> CGRect {
+        let m = metrics(for: pose)
+        let baseY = 34 + m.bobY
+        let pivot = CGPoint(x: 40, y: baseY)
+        let rump = CGPoint(x: 20, y: baseY - 2 + m.rumpLift)
+        let g = tailGeometry(rumpPoint: rump, metrics: m)
+
+        var points: [CGPoint] = [rump, g.tip, g.ctrl1, g.ctrl2]
+        let ca = cos(g.angle)
+        let sa = sin(g.angle)
+        for p in blackFinSamplePoints + redFinSamplePoints {
+            points.append(CGPoint(x: g.tip.x + p.x * ca - p.y * sa, y: g.tip.y + p.x * sa + p.y * ca))
+        }
+        let head = CGPoint(x: 55.5 + m.headOffset.x, y: baseY - 9.5 + m.chestDrop * 0.45 + m.headOffset.y)
+        let ct = cos(m.headTilt)
+        let st = sin(m.headTilt)
+        let headLocalPoints: [CGPoint] = [
+            CGPoint(x: 2.0 - m.earPerk * 3, y: -15.5 - m.earPerk * 4),
+            CGPoint(x: -6.2 - m.earPerk * 2, y: -15.5 - m.earPerk * 4),
+            CGPoint(x: 11.0, y: 0),
+            CGPoint(x: 14.5, y: 2.2 - 0.15 * 14.0),
+            CGPoint(x: 14.5, y: 2.2 + 0.12 * 14.0)
+        ]
+        for lp in headLocalPoints {
+            points.append(CGPoint(x: head.x + lp.x * ct - lp.y * st, y: head.y + lp.x * st + lp.y * ct))
+        }
+
+        let legs: [(CGPoint, CGFloat, CGFloat)] = [
+            (CGPoint(x: 49, y: baseY + 3 + m.chestDrop * 0.5), m.frontNearAngle, 13.5 * m.legExtend),
+            (CGPoint(x: 47, y: baseY + 3 + m.chestDrop * 0.5), m.frontFarAngle, 13.0 * m.legExtend),
+            (CGPoint(x: 23, y: baseY + 3 + m.rumpLift * 0.5), m.hindNearAngle, 13.5 * m.legExtend),
+            (CGPoint(x: 25, y: baseY + 3 + m.rumpLift * 0.5), m.hindFarAngle, 13.0 * m.legExtend)
+        ]
+        for (origin, angle, len) in legs {
+            let fx = origin.x + sin(angle) * len
+            let fy = origin.y + cos(angle) * len
+            points.append(CGPoint(x: fx + 3.6, y: fy + 1.6))
+            points.append(CGPoint(x: fx - 1.2, y: fy + 1.6))
+        }
+
+        let cp = cos(m.bodyPitch)
+        let sp = sin(m.bodyPitch)
+        var minX = CGFloat.greatestFiniteMagnitude
+        var maxX = -CGFloat.greatestFiniteMagnitude
+        var minY = CGFloat.greatestFiniteMagnitude
+        var maxY = -CGFloat.greatestFiniteMagnitude
+        for pt in points {
+            let dx = pt.x - pivot.x
+            let dy = pt.y - pivot.y
+            let wx = pivot.x + dx * cp - dy * sp
+            let wy = pivot.y + dx * sp + dy * cp
+            minX = min(minX, wx); maxX = max(maxX, wx)
+            minY = min(minY, wy); maxY = max(maxY, wy)
+        }
+        return CGRect(x: minX, y: minY, width: max(0, maxX - minX), height: max(0, maxY - minY))
+    }
+
     private nonisolated static func drawTail(
         in ctx: inout GraphicsContext,
         kind: CatSpriteKind,
@@ -417,57 +450,52 @@ struct CatMascotCanvasView: View {
         rumpPoint: CGPoint,
         metrics m: PoseMetrics
     ) {
-        let wave = CGFloat(sin(m.tailWavePhase * Double.pi * 2.0)) * 3.0
-        let tip = CGPoint(
-            x: rumpPoint.x - 15.0 + m.tailWag * 0.35,
-            y: rumpPoint.y - 7.5 + m.tailLift + wave * 0.5 + m.tailWag * 0.5
-        )
-        let ctrl1 = CGPoint(x: rumpPoint.x - 7.5, y: rumpPoint.y - 1.5 - wave * 0.6)
-        let ctrl2 = CGPoint(x: tip.x + 4.5, y: tip.y + 4.0 + wave * 0.5)
+        let g = tailGeometry(rumpPoint: rumpPoint, metrics: m)
 
         var tailPath = Path()
         tailPath.move(to: rumpPoint)
-        tailPath.addCurve(to: tip, control1: ctrl1, control2: ctrl2)
+        tailPath.addCurve(to: g.tip, control1: g.ctrl1, control2: g.ctrl2)
 
-        ctx.stroke(tailPath, with: .color(p.coat), style: StrokeStyle(lineWidth: 3.4, lineCap: .round))
-        ctx.stroke(tailPath, with: .color(p.rimStroke), style: StrokeStyle(lineWidth: 0.7, lineCap: .round))
+        ctx.stroke(tailPath, with: .color(p.coat), style: StrokeStyle(lineWidth: 3.6, lineCap: .round))
+        ctx.stroke(tailPath, with: .color(p.rimStroke), style: StrokeStyle(lineWidth: 0.85, lineCap: .round))
 
         if kind == .blackNightFury {
-            // Toothless / Night-Fury tail fin at tip!
-            let dx = tip.x - ctrl2.x
-            let dy = tip.y - ctrl2.y
-            let angle = atan2(dy, dx)
-
+            // Upright S-tail with ~2x larger scarlet Night-Fury prosthetic tail fin (#E63833)
             ctx.drawLayer { finCtx in
-                finCtx.translateBy(x: tip.x, y: tip.y)
-                finCtx.rotate(by: Angle(radians: Double(angle)))
+                finCtx.translateBy(x: g.tip.x, y: g.tip.y)
+                finCtx.rotate(by: Angle(radians: Double(g.angle)))
 
-                // Black left tail fin (smaller charcoal winglet)
+                // Inner charcoal winglet
                 let blackFin = Path { path in
-                    path.move(to: CGPoint(x: 2, y: 0))
-                    path.addQuadCurve(to: CGPoint(x: -7.5, y: -5.2), control: CGPoint(x: -2.0, y: -6.2))
-                    path.addQuadCurve(to: CGPoint(x: -5.5, y: -1.0), control: CGPoint(x: -6.5, y: -2.8))
+                    path.move(to: CGPoint(x: 2.4, y: 0.2))
+                    path.addQuadCurve(to: CGPoint(x: -9.2, y: 6.2), control: CGPoint(x: -2.0, y: 8.0))
+                    path.addQuadCurve(to: CGPoint(x: -7.0, y: 1.6), control: CGPoint(x: -8.0, y: 3.4))
                     path.closeSubpath()
                 }
                 finCtx.fill(blackFin, with: .color(p.coatShade))
-                finCtx.stroke(blackFin, with: .color(p.rimStroke), lineWidth: 0.6)
+                finCtx.stroke(blackFin, with: .color(p.rimStroke), lineWidth: 0.7)
 
-                // Iconic red Night-Fury prosthetic tail fin!
+                // Outer scarlet prosthetic tail fin (unobstructed above/left of tail tip)
                 let redFin = Path { path in
-                    path.move(to: CGPoint(x: 2.2, y: 0.2))
-                    path.addQuadCurve(to: CGPoint(x: -8.5, y: 6.4), control: CGPoint(x: -2.2, y: 7.4))
-                    path.addLine(to: CGPoint(x: -6.5, y: 2.2))
-                    path.addLine(to: CGPoint(x: -7.2, y: 0.5))
+                    path.move(to: CGPoint(x: 2.6, y: -0.2))
+                    path.addQuadCurve(to: CGPoint(x: -11.2, y: -8.8), control: CGPoint(x: -2.8, y: -10.5))
+                    path.addLine(to: CGPoint(x: -9.0, y: -4.6))
+                    path.addLine(to: CGPoint(x: -8.4, y: -2.0))
+                    path.addLine(to: CGPoint(x: -9.4, y: -0.4))
                     path.closeSubpath()
                 }
-                let redWingColor = Color(red: 0.74, green: 0.20, blue: 0.18)
-                finCtx.fill(redFin, with: .color(redWingColor))
-                finCtx.stroke(redFin, with: .color(Color(red: 0.18, green: 0.08, blue: 0.08)), lineWidth: 0.65)
+                finCtx.fill(redFin, with: .color(p.tailFin))
+                finCtx.stroke(redFin, with: .color(Color(red: 0.16, green: 0.05, blue: 0.06)), lineWidth: 0.75)
+
+                var rib = Path()
+                rib.move(to: CGPoint(x: 0.2, y: -0.5))
+                rib.addQuadCurve(to: CGPoint(x: -9.2, y: -6.4), control: CGPoint(x: -4.2, y: -4.8))
+                finCtx.stroke(rib, with: .color(Color(red: 1.0, green: 0.72, blue: 0.66).opacity(0.42)), lineWidth: 0.65)
             }
         } else {
-            // Subtle tabby tail stripes near the tip
+            // Subtle tabby tail stripes along the upright S-curve
             for t in [0.42, 0.72] {
-                let pt = cubicPoint(p0: rumpPoint, p1: ctrl1, p2: ctrl2, p3: tip, t: CGFloat(t))
+                let pt = cubicPoint(p0: rumpPoint, p1: g.ctrl1, p2: g.ctrl2, p3: g.tip, t: CGFloat(t))
                 let dot = Path(ellipseIn: CGRect(x: pt.x - 1.6, y: pt.y - 1.6, width: 3.2, height: 3.2))
                 ctx.fill(dot, with: .color(p.stripe))
             }
@@ -495,6 +523,7 @@ struct CatMascotCanvasView: View {
                 path.closeSubpath()
             }
             hCtx.fill(backEar, with: .color(p.coatShade))
+            hCtx.stroke(backEar, with: .color(p.rimStroke.opacity(0.75)), lineWidth: 0.7)
 
             // Front ear
             let frontEar = Path { path in
@@ -504,7 +533,7 @@ struct CatMascotCanvasView: View {
                 path.closeSubpath()
             }
             hCtx.fill(frontEar, with: .color(p.coat))
-            hCtx.stroke(frontEar, with: .color(p.rimStroke), lineWidth: 0.7)
+            hCtx.stroke(frontEar, with: .color(p.rimStroke), lineWidth: 0.9)
 
             let innerEar = Path { path in
                 path.move(to: CGPoint(x: -5.8, y: -6.2))
@@ -518,7 +547,7 @@ struct CatMascotCanvasView: View {
             let headRect = CGRect(x: -10.5, y: -9.5, width: 21.5, height: 18.5)
             let headPath = Path(ellipseIn: headRect)
             hCtx.fill(headPath, with: .color(p.coat))
-            hCtx.stroke(headPath, with: .color(p.rimStroke), lineWidth: 0.85)
+            hCtx.stroke(headPath, with: .color(p.rimStroke), lineWidth: 1.05)
 
             if kind == .brownTabby {
                 // Cream lower muzzle & chin
@@ -568,7 +597,7 @@ struct CatMascotCanvasView: View {
             let bodyRect = CGRect(x: 14, y: 22 - breath * 0.5, width: 48, height: 26 + breath)
             let bodyPath = Path(ellipseIn: bodyRect)
             layer.fill(bodyPath, with: .color(p.coat))
-            layer.stroke(bodyPath, with: .color(p.rimStroke), lineWidth: 0.9)
+            layer.stroke(bodyPath, with: .color(p.rimStroke), lineWidth: 1.05)
 
             if kind == .brownTabby {
                 for sx in [26.0, 34.0, 42.0] {
@@ -581,8 +610,8 @@ struct CatMascotCanvasView: View {
                 layer.fill(paw, with: .color(p.cream))
             } else {
                 // Chest tuft peeking near chin
-                let spot = Path(ellipseIn: CGRect(x: 44, y: 39, width: 5.5, height: 4.0))
-                layer.fill(spot, with: .color(p.cream.opacity(0.88)))
+                let spot = Path(ellipseIn: CGRect(x: 43.5, y: 38.5, width: 6.2, height: 4.5))
+                layer.fill(spot, with: .color(p.cream.opacity(0.95)))
             }
 
             // Wrapped sleeping tail around front
@@ -599,11 +628,11 @@ struct CatMascotCanvasView: View {
                 // Red tail fin peeking cutely beside curled paw
                 let fin = Path { path in
                     path.move(to: CGPoint(x: 46, y: 46.5))
-                    path.addQuadCurve(to: CGPoint(x: 54.5, y: 43.0), control: CGPoint(x: 51.5, y: 49.0))
-                    path.addLine(to: CGPoint(x: 51.0, y: 44.0))
+                    path.addQuadCurve(to: CGPoint(x: 56.5, y: 41.5), control: CGPoint(x: 52.5, y: 49.5))
+                    path.addLine(to: CGPoint(x: 51.8, y: 43.2))
                     path.closeSubpath()
                 }
-                layer.fill(fin, with: .color(Color(red: 0.74, green: 0.20, blue: 0.18)))
+                layer.fill(fin, with: .color(p.tailFin))
             }
 
             // Tucked sleeping head
@@ -658,7 +687,7 @@ struct CatMascotCanvasView: View {
     }
 }
 
-/// Small glowing amber/gold moon-spark chased along the loading progress bar tip.
+/// Glowing amber/gold moon-spark chased along the loading progress bar tip.
 struct MoonSparkView: View {
     let pulse: Double
 
@@ -666,56 +695,59 @@ struct MoonSparkView: View {
         let haloScale = 0.88 + 0.22 * sin(pulse)
         ZStack {
             Circle()
-                .fill(LunaTheme.amber.opacity(0.32))
-                .frame(width: 22, height: 22)
+                .fill(LunaTheme.amber.opacity(0.36))
+                .frame(width: 38, height: 38)
                 .scaleEffect(haloScale)
-                .blur(radius: 3)
+                .blur(radius: 5)
 
             Image(systemName: "moon.stars.fill")
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(LunaTheme.amber)
-                .shadow(color: LunaTheme.amberDeep.opacity(0.85), radius: 5)
+                .shadow(color: LunaTheme.amberDeep.opacity(0.92), radius: 7)
         }
         .allowsHitTesting(false)
     }
 }
 
-/// Tiny pointed cat ears perched atop the scrubber playhead knob when paused or scrubbing.
+/// Pointed cat ears perched atop the scrubber playhead knob when paused or scrubbing.
 struct CatPlayheadEarsView: View {
     var body: some View {
         Canvas { context, size in
+            let sx = size.width / 18.0
+            let sy = size.height / 8.0
             let leftOuter = Path { p in
-                p.move(to: CGPoint(x: 2.0, y: size.height))
-                p.addLine(to: CGPoint(x: 4.0, y: 1.0))
-                p.addLine(to: CGPoint(x: 7.8, y: size.height - 1.0))
+                p.move(to: CGPoint(x: 2.4 * sx, y: size.height))
+                p.addLine(to: CGPoint(x: 4.3 * sx, y: 0.8 * sy))
+                p.addLine(to: CGPoint(x: 7.8 * sx, y: size.height - 0.8 * sy))
                 p.closeSubpath()
             }
             let rightOuter = Path { p in
-                p.move(to: CGPoint(x: size.width - 7.8, y: size.height - 1.0))
-                p.addLine(to: CGPoint(x: size.width - 4.0, y: 1.0))
-                p.addLine(to: CGPoint(x: size.width - 2.0, y: size.height))
+                p.move(to: CGPoint(x: size.width - 7.8 * sx, y: size.height - 0.8 * sy))
+                p.addLine(to: CGPoint(x: size.width - 4.3 * sx, y: 0.8 * sy))
+                p.addLine(to: CGPoint(x: size.width - 2.4 * sx, y: size.height))
                 p.closeSubpath()
             }
-            let earFill = Color(red: 0.90, green: 0.92, blue: 0.96)
+            let earFill = Color(red: 0.92, green: 0.94, blue: 0.98)
             context.fill(leftOuter, with: .color(earFill))
             context.fill(rightOuter, with: .color(earFill))
 
             let leftInner = Path { p in
-                p.move(to: CGPoint(x: 3.3, y: size.height - 1.0))
-                p.addLine(to: CGPoint(x: 4.3, y: 3.2))
-                p.addLine(to: CGPoint(x: 6.4, y: size.height - 1.2))
+                p.move(to: CGPoint(x: 3.2 * sx, y: size.height - 0.8 * sy))
+                p.addLine(to: CGPoint(x: 4.3 * sx, y: 2.8 * sy))
+                p.addLine(to: CGPoint(x: 6.4 * sx, y: size.height - 1.0 * sy))
                 p.closeSubpath()
             }
             let rightInner = Path { p in
-                p.move(to: CGPoint(x: size.width - 6.4, y: size.height - 1.2))
-                p.addLine(to: CGPoint(x: size.width - 4.3, y: 3.2))
-                p.addLine(to: CGPoint(x: size.width - 3.3, y: size.height - 1.0))
+                p.move(to: CGPoint(x: size.width - 6.4 * sx, y: size.height - 1.0 * sy))
+                p.addLine(to: CGPoint(x: size.width - 4.3 * sx, y: 2.8 * sy))
+                p.addLine(to: CGPoint(x: size.width - 3.2 * sx, y: size.height - 0.8 * sy))
                 p.closeSubpath()
             }
-            context.fill(leftInner, with: .color(LunaTheme.amber.opacity(0.85)))
-            context.fill(rightInner, with: .color(LunaTheme.amber.opacity(0.85)))
+            context.fill(leftInner, with: .color(LunaTheme.amber.opacity(0.90)))
+            context.fill(rightInner, with: .color(LunaTheme.amber.opacity(0.90)))
         }
-        .frame(width: 18, height: 8)
+        .frame(width: 28, height: 14)
+        .shadow(color: Color.black.opacity(0.65), radius: 2, x: 0, y: 1)
         .allowsHitTesting(false)
     }
 }

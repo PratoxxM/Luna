@@ -155,6 +155,7 @@ struct SourcePickerSheetView: View {
                                 }
                             }
                         }
+                        .padding(.horizontal, 12)
                         .padding(.vertical, 10)
                     }
                 }
@@ -270,7 +271,7 @@ private struct CandidateRowButton: View {
 
                     Text(candidate.releaseTitle)
                         .font(.caption.monospaced())
-                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.78) : LunaTheme.muted)
+                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.76) : LunaTheme.moonlight.opacity(0.76))
                         .lineLimit(1)
                 }
 
@@ -289,23 +290,42 @@ private struct CandidateRowButton: View {
                         .padding(.horizontal, 11)
                         .padding(.vertical, 5)
                         .background(
-                            isFocused ? LunaTheme.canvas.opacity(0.85) : Color.white.opacity(0.10),
+                            isFocused ? LunaTheme.canvas.opacity(0.88) : Color.white.opacity(0.14),
                             in: Capsule()
                         )
                 }
             }
             .padding(.horizontal, 26)
             .padding(.vertical, 18)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(isFocused ? LunaTheme.amber : LunaTheme.surfaceRaised.opacity(0.88))
-            )
+            .background {
+                if isFocused {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(LunaTheme.pearlFocusGradient)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(LunaTheme.buttonRestGradient)
+                        if isCurrentWinner {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(LunaTheme.amber.opacity(0.14))
+                        }
+                    }
+                }
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(
-                        isFocused ? Color.white.opacity(0.9) : LunaTheme.moonlight.opacity(0.12),
-                        lineWidth: isFocused ? 2 : 1
+                        isFocused
+                            ? Color.white.opacity(0.95)
+                            : (isCurrentWinner ? LunaTheme.amber.opacity(0.75) : LunaTheme.moonlight.opacity(0.24)),
+                        lineWidth: isFocused ? 2.2 : (isCurrentWinner ? 1.5 : 1.0)
                     )
+            )
+            .shadow(
+                color: isFocused ? LunaTheme.pearlFocusBottom.opacity(0.38) : .black.opacity(0.28),
+                radius: isFocused ? 18 : 8,
+                x: 0,
+                y: isFocused ? 6 : 3
             )
             .scaleEffect(isFocused ? 1.015 : 1.0)
             .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)

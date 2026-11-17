@@ -721,7 +721,7 @@ final class EpisodeFormattingAndCatCompanionTests: XCTestCase {
         XCTAssertEqual(sprint.pounceBlend(at: finishTime + 0.30, isPreparingReveal: false), 0.0, accuracy: 0.001)
 
         // Pause-katt lifecycle: hidden -> stroll -> stretch -> nap (zZz) -> scamper off
-        XCTAssertEqual(PauseCatLifecycle.idleThresholdSeconds, 20.0)
+        XCTAssertEqual(PauseCatLifecycle.idleThresholdSeconds, 6.0)
         XCTAssertNil(PauseCatLifecycle.visualSnapshot(phase: .hidden, at: 10))
 
         let active = PauseCatPhase.active(enteredAt: 500.0)

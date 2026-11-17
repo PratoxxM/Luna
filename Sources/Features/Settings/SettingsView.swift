@@ -50,7 +50,8 @@ struct SettingsView: View {
                         LunaPillButton(
                             "Bruk rom valgt i LunaCore Web",
                             systemImage: "arrow.uturn.backward",
-                            prominence: .subtleChip
+                            prominence: .glassPill,
+                            accent: .periwinkle
                         ) {
                             Task {
                                 await sessionStore.restoreServerManagedRoomAndProfile()
@@ -60,7 +61,7 @@ struct SettingsView: View {
 
                     Divider().overlay(LunaTheme.moonlight.opacity(0.12))
 
-                    HStack(alignment: .top, spacing: 44) {
+                    VStack(alignment: .leading, spacing: 18) {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Dolby Vision Dual-Layer (P7 FEL)")
                                 .font(.callout.weight(.semibold))
@@ -269,7 +270,7 @@ struct SettingsView: View {
                     )
 
                     HStack(spacing: 18) {
-                        LunaPillButton("Tøm hurtigbuffer", systemImage: "trash", prominence: .subtleChip) {
+                        LunaPillButton("Tøm hurtigbuffer", systemImage: "trash", prominence: .subtleChip, accent: .coral) {
                             Task {
                                 await DiskSWRStore.clearAllAsync()
                                 await ArtworkPipeline.shared.clearAll()
@@ -279,11 +280,11 @@ struct SettingsView: View {
                             }
                         }
 
-                        LunaPillButton("Par TV på nytt", systemImage: "qrcode", prominence: .subtleChip) {
+                        LunaPillButton("Par TV på nytt", systemImage: "qrcode", prominence: .subtleChip, accent: .coral) {
                             showUnpairConfirm = true
                         }
 
-                        LunaPillButton("Nullstill tilkobling", systemImage: "xmark.circle", prominence: .subtleChip) {
+                        LunaPillButton("Nullstill tilkobling", systemImage: "xmark.circle", prominence: .subtleChip, accent: .coral) {
                             showResetConfirm = true
                         }
 
@@ -398,37 +399,56 @@ private struct SettingsRoomRowButton: View {
             HStack(spacing: 18) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(isSelected ? LunaTheme.amber : LunaTheme.muted)
+                    .foregroundStyle(
+                        isFocused
+                            ? LunaTheme.canvas
+                            : (isSelected ? LunaTheme.amber : LunaTheme.moonlight.opacity(0.62))
+                    )
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.headline)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(isFocused ? LunaTheme.canvas : .white)
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(LunaTheme.muted)
+                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.76) : LunaTheme.moonlight.opacity(0.76))
                 }
 
                 Spacer()
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(
-                        isFocused
-                            ? LunaTheme.amber.opacity(0.22)
-                            : (isSelected ? LunaTheme.amber.opacity(0.10) : Color.white.opacity(0.04))
-                    )
-            )
+            .background {
+                if isFocused {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(LunaTheme.pearlFocusGradient)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(LunaTheme.buttonRestGradient)
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(LunaTheme.amber.opacity(0.16))
+                        }
+                    }
+                }
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(
-                        isFocused ? LunaTheme.amber : (isSelected ? LunaTheme.amber.opacity(0.42) : Color.white.opacity(0.08)),
-                        lineWidth: isFocused ? 2 : 1
+                        isFocused
+                            ? Color.white.opacity(0.95)
+                            : (isSelected ? LunaTheme.amber.opacity(0.78) : LunaTheme.moonlight.opacity(0.24)),
+                        lineWidth: isFocused ? 2.2 : (isSelected ? 1.5 : 1.0)
                     )
             )
-            .scaleEffect(isFocused ? 1.01 : 1.0)
+            .shadow(
+                color: isFocused ? LunaTheme.pearlFocusBottom.opacity(0.35) : .black.opacity(0.25),
+                radius: isFocused ? 16 : 6,
+                x: 0,
+                y: isFocused ? 6 : 3
+            )
+            .scaleEffect(isFocused ? 1.015 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.82), value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())
@@ -451,35 +471,60 @@ private struct SettingsToggleRowButton: View {
             HStack(spacing: 18) {
                 Text(title)
                     .font(.callout.weight(.medium))
-                    .foregroundStyle(isFocused ? .white : LunaTheme.moonlight)
+                    .foregroundStyle(isFocused ? LunaTheme.canvas : .white)
                     .lineLimit(2)
 
                 Spacer(minLength: 16)
 
                 Text(isOn ? "På" : "Av")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(isOn ? LunaTheme.canvas : LunaTheme.muted)
+                    .foregroundStyle(
+                        isFocused
+                            ? (isOn ? LunaTheme.emerald : LunaTheme.canvas)
+                            : (isOn ? LunaTheme.canvas : LunaTheme.moonlight)
+                    )
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
                     .background(
-                        isOn ? LunaTheme.amber : Color.white.opacity(0.08),
+                        isFocused
+                            ? (isOn ? LunaTheme.canvas : LunaTheme.canvas.opacity(0.14))
+                            : (isOn ? LunaTheme.emerald : Color.white.opacity(0.16)),
                         in: Capsule()
                     )
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 13)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isFocused ? LunaTheme.amber.opacity(0.20) : Color.white.opacity(0.04))
-            )
+            .background {
+                if isFocused {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(LunaTheme.pearlFocusGradient)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(LunaTheme.buttonRestGradient)
+                        if isOn {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(LunaTheme.emerald.opacity(0.08))
+                        }
+                    }
+                }
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(
-                        isFocused ? LunaTheme.amber : Color.white.opacity(0.08),
-                        lineWidth: isFocused ? 2 : 1
+                        isFocused
+                            ? Color.white.opacity(0.95)
+                            : (isOn ? LunaTheme.emerald.opacity(0.45) : LunaTheme.moonlight.opacity(0.24)),
+                        lineWidth: isFocused ? 2.2 : 1.0
                     )
             )
-            .scaleEffect(isFocused ? 1.01 : 1.0)
+            .shadow(
+                color: isFocused ? LunaTheme.pearlFocusBottom.opacity(0.35) : .black.opacity(0.25),
+                radius: isFocused ? 16 : 6,
+                x: 0,
+                y: isFocused ? 6 : 3
+            )
+            .scaleEffect(isFocused ? 1.015 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.82), value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())

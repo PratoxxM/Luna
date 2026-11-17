@@ -142,7 +142,8 @@ struct PlayerTopDrawerView: View {
                             }
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
                 }
                 .frame(maxHeight: 280)
             }
@@ -152,17 +153,18 @@ struct PlayerTopDrawerView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     sectionHeader(String(format: "Tekstsynk (%+.1f s)", viewModel.subtitleDelaySeconds))
                     HStack(spacing: 12) {
-                        LunaPillButton("-0.1 s", systemImage: "minus", prominence: .subtleChip) {
+                        LunaPillButton("-0.1 s", systemImage: "minus", prominence: .subtleChip, size: .compact) {
                             viewModel.adjustSubtitleDelay(by: -0.1)
                         }
                         LunaPillButton(
                             "0.0 s",
                             isSelected: abs(viewModel.subtitleDelaySeconds) < 0.01,
-                            prominence: abs(viewModel.subtitleDelaySeconds) < 0.01 ? .glassPill : .subtleChip
+                            prominence: abs(viewModel.subtitleDelaySeconds) < 0.01 ? .glassPill : .subtleChip,
+                            size: .compact
                         ) {
                             viewModel.resetSubtitleDelay()
                         }
-                        LunaPillButton("+0.1 s", systemImage: "plus", prominence: .subtleChip) {
+                        LunaPillButton("+0.1 s", systemImage: "plus", prominence: .subtleChip, size: .compact) {
                             viewModel.adjustSubtitleDelay(by: 0.1)
                         }
                     }
@@ -175,7 +177,8 @@ struct PlayerTopDrawerView: View {
                             LunaPillButton(
                                 preset.displayTitle,
                                 isSelected: comfort.hdrSubtitlePreset == preset,
-                                prominence: comfort.hdrSubtitlePreset == preset ? .glassPill : .subtleChip
+                                prominence: comfort.hdrSubtitlePreset == preset ? .glassPill : .subtleChip,
+                                size: .compact
                             ) {
                                 comfort.hdrSubtitlePreset = preset
                             }
@@ -183,7 +186,7 @@ struct PlayerTopDrawerView: View {
                     }
                 }
             }
-            .frame(width: 680, alignment: .leading)
+            .frame(width: 900, alignment: .leading)
         }
     }
 
@@ -214,7 +217,8 @@ struct PlayerTopDrawerView: View {
                             }
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
                 }
                 .frame(maxHeight: 280)
             }
@@ -226,23 +230,24 @@ struct PlayerTopDrawerView: View {
                     sectionHeader("Lydsynk (\(ComfortPreferences.formatAudioDelayMs(ms)) · huskes på denne TV-en)")
 
                     HStack(spacing: 10) {
-                        LunaPillButton("-25 ms", prominence: .subtleChip) {
+                        LunaPillButton("-25 ms", prominence: .subtleChip, size: .compact) {
                             viewModel.adjustAudioDelay(byMs: -25)
                         }
-                        LunaPillButton("-10 ms", prominence: .subtleChip) {
+                        LunaPillButton("-10 ms", prominence: .subtleChip, size: .compact) {
                             viewModel.adjustAudioDelay(byMs: -10)
                         }
                         LunaPillButton(
                             "0 ms",
                             isSelected: ms == 0,
-                            prominence: ms == 0 ? .glassPill : .subtleChip
+                            prominence: ms == 0 ? .glassPill : .subtleChip,
+                            size: .compact
                         ) {
                             viewModel.resetAudioDelay()
                         }
-                        LunaPillButton("+10 ms", prominence: .subtleChip) {
+                        LunaPillButton("+10 ms", prominence: .subtleChip, size: .compact) {
                             viewModel.adjustAudioDelay(byMs: 10)
                         }
-                        LunaPillButton("+25 ms", prominence: .subtleChip) {
+                        LunaPillButton("+25 ms", prominence: .subtleChip, size: .compact) {
                             viewModel.adjustAudioDelay(byMs: 25)
                         }
                     }
@@ -256,7 +261,8 @@ struct PlayerTopDrawerView: View {
                             LunaPillButton(
                                 mode.displayTitle,
                                 isSelected: viewModel.audioEnhancement == mode,
-                                prominence: viewModel.audioEnhancement == mode ? .glassPill : .subtleChip
+                                prominence: viewModel.audioEnhancement == mode ? .glassPill : .subtleChip,
+                                size: .compact
                             ) {
                                 viewModel.setAudioEnhancement(mode)
                             }
@@ -356,7 +362,8 @@ struct PlayerTopDrawerView: View {
                                 }
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                     }
                     .frame(maxHeight: viewModel.chapters.isEmpty ? 280 : 200)
                 }
@@ -370,7 +377,8 @@ struct PlayerTopDrawerView: View {
                         LunaPillButton(
                             mode.displayTitle,
                             isSelected: comfort.lowResUpscaleMode == mode,
-                            prominence: comfort.lowResUpscaleMode == mode ? .glassPill : .subtleChip
+                            prominence: comfort.lowResUpscaleMode == mode ? .glassPill : .subtleChip,
+                            size: .compact
                         ) {
                             comfort.lowResUpscaleMode = mode
                         }
@@ -494,16 +502,20 @@ private struct DrawerTrackRowButton: View {
             HStack(spacing: 16) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(isSelected ? LunaTheme.amber : LunaTheme.muted.opacity(0.65))
+                    .foregroundStyle(
+                        isFocused
+                            ? LunaTheme.canvas
+                            : (isSelected ? LunaTheme.amber : LunaTheme.moonlight.opacity(0.64))
+                    )
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.callout.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(isFocused ? LunaTheme.canvas : .white)
                         .lineLimit(1)
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(LunaTheme.muted)
+                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.76) : LunaTheme.moonlight.opacity(0.76))
                         .lineLimit(1)
                 }
 
@@ -516,26 +528,44 @@ private struct DrawerTrackRowButton: View {
                             .foregroundStyle(LunaTheme.amber)
                             .padding(.horizontal, 9)
                             .padding(.vertical, 4)
-                            .background(Color.white.opacity(0.08), in: Capsule())
+                            .background(
+                                isFocused ? LunaTheme.canvas.opacity(0.88) : Color.white.opacity(0.12),
+                                in: Capsule()
+                            )
                     }
                 }
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(
-                        isFocused
-                            ? LunaTheme.amber.opacity(0.22)
-                            : (isSelected ? LunaTheme.amber.opacity(0.12) : Color.white.opacity(0.05))
-                    )
-            )
+            .background {
+                if isFocused {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(LunaTheme.pearlFocusGradient)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(LunaTheme.buttonRestGradient)
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(LunaTheme.amber.opacity(0.16))
+                        }
+                    }
+                }
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(
-                        isFocused ? LunaTheme.amber : (isSelected ? LunaTheme.amber.opacity(0.45) : Color.white.opacity(0.08)),
-                        lineWidth: isFocused ? 2 : 1
+                        isFocused
+                            ? Color.white.opacity(0.95)
+                            : (isSelected ? LunaTheme.amber.opacity(0.76) : LunaTheme.moonlight.opacity(0.24)),
+                        lineWidth: isFocused ? 2.2 : (isSelected ? 1.5 : 1.0)
                     )
+            )
+            .shadow(
+                color: isFocused ? LunaTheme.pearlFocusBottom.opacity(0.36) : .black.opacity(0.28),
+                radius: isFocused ? 16 : 6,
+                x: 0,
+                y: isFocused ? 6 : 3
             )
             .scaleEffect(isFocused ? 1.015 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isFocused)
@@ -560,47 +590,68 @@ private struct ChapterPillCardButton: View {
                 HStack(spacing: 8) {
                     Text(TimelineScrubberLeafView.formatSeconds(chapter.startSeconds))
                         .font(.caption.monospacedDigit().weight(.bold))
-                        .foregroundStyle(LunaTheme.amber)
+                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.84) : LunaTheme.amber)
 
                     if isActive {
                         Text("Spiller nå")
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(LunaTheme.amber)
+                            .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.canvas)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
-                            .background(LunaTheme.amber.opacity(0.18), in: Capsule())
+                            .background(
+                                isFocused ? LunaTheme.canvas : LunaTheme.amber,
+                                in: Capsule()
+                            )
                     } else if let kindLabel = chapter.kind.badgeLabel {
                         Text(kindLabel)
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(LunaTheme.canvas)
+                            .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.canvas)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
-                            .background(LunaTheme.amber, in: Capsule())
+                            .background(
+                                isFocused ? LunaTheme.canvas : LunaTheme.amber,
+                                in: Capsule()
+                            )
                     }
                 }
 
                 Text(chapter.title)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(isFocused ? LunaTheme.canvas : .white)
                     .lineLimit(1)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
             .frame(minWidth: 204, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(
-                        isFocused
-                            ? LunaTheme.amber.opacity(0.24)
-                            : (isActive ? LunaTheme.amber.opacity(0.12) : Color.white.opacity(0.06))
-                    )
-            )
+            .background {
+                if isFocused {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(LunaTheme.pearlFocusGradient)
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(LunaTheme.buttonRestGradient)
+                        if isActive {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(LunaTheme.amber.opacity(0.18))
+                        }
+                    }
+                }
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(
-                        isFocused ? LunaTheme.amber : (isActive ? LunaTheme.amber.opacity(0.55) : Color.white.opacity(0.12)),
-                        lineWidth: isFocused ? 2 : (isActive ? 1.5 : 1)
+                        isFocused
+                            ? Color.white.opacity(0.95)
+                            : (isActive ? LunaTheme.amber.opacity(0.78) : LunaTheme.moonlight.opacity(0.24)),
+                        lineWidth: isFocused ? 2.2 : (isActive ? 1.5 : 1.0)
                     )
+            )
+            .shadow(
+                color: isFocused ? LunaTheme.pearlFocusBottom.opacity(0.36) : .black.opacity(0.28),
+                radius: isFocused ? 16 : 6,
+                x: 0,
+                y: isFocused ? 6 : 3
             )
             .scaleEffect(isFocused ? 1.03 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isFocused)

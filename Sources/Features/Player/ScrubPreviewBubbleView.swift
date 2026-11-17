@@ -15,10 +15,11 @@ struct ScrubPreviewBubbleView: View {
     let chapterTitle: String?
     let previewImage: CGImage?
     let drawsInCompositorView: Bool
+    var showCatCompanion: Bool = false
     let onMountCompositorView: (AetherScrubPreviewView?) -> Void
 
-    static let frameWidth: CGFloat = 224
-    static let compactWidth: CGFloat = 188
+    static let frameWidth: CGFloat = 236
+    static let compactWidth: CGFloat = 212
 
     var hasVisualFrame: Bool {
         drawsInCompositorView || previewImage != nil
@@ -43,16 +44,26 @@ struct ScrubPreviewBubbleView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                if showCatCompanion {
+                    Image(systemName: "pawprint.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(LunaTheme.amber.opacity(0.86))
+                }
+
                 Text(TimelineScrubberLeafView.formatSeconds(targetSeconds))
                     .font(.callout.monospacedDigit().weight(.bold))
                     .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
 
                 let delta = targetSeconds - originSeconds
                 if abs(delta) >= 1.0 {
                     Text(Self.formatSignedDelta(delta))
                         .font(.caption.monospacedDigit().weight(.bold))
                         .foregroundStyle(LunaTheme.amber)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
                 }
             }
 

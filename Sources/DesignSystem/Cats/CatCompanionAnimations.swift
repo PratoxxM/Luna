@@ -3,6 +3,22 @@ import SwiftUI
 
 // MARK: - Pure Sprint & Pause State Machines (Unit-Tested, Zero View-Body Mutations)
 
+public enum CatCompanionLayout: Sendable {
+    public static let loadingTrackWidth: CGFloat = 640
+    public static let loadingTrackHeight: CGFloat = 7
+    public static let loadingContainerHeight: CGFloat = 90
+    public static let loadingBlackCatSize = CGSize(width: 94, height: 66)
+    public static let loadingTabbyCatSize = CGSize(width: 90, height: 63)
+    public static let loadingBlackOffset: CGFloat = 54
+    public static let loadingTabbySpacing: CGFloat = 88
+    public static let pauseCatSize = CGSize(width: 96, height: 68)
+    public static let prowlingCatSize = CGSize(width: 116, height: 81)
+    public static let moonSceneSize = CGSize(width: 216, height: 216)
+    public static let moonCatSize = CGSize(width: 114, height: 80)
+    public static let playheadDiameter: CGFloat = 24
+    public static let playheadEarsSize = CGSize(width: 28, height: 14)
+}
+
 public struct LoadingSprintInterpolator: Equatable, Sendable {
     public private(set) var anchorFraction: Double
     public private(set) var anchorTimestamp: TimeInterval
@@ -22,8 +38,8 @@ public struct LoadingSprintInterpolator: Equatable, Sendable {
     }
 
     public static func makeInitial(targetFraction: Double, now: TimeInterval) -> LoadingSprintInterpolator {
-        let clampedGoal = min(0.99, max(0.08, targetFraction))
-        let start = min(0.06, clampedGoal)
+        let clampedGoal = min(0.99, max(0.14, targetFraction))
+        let start = min(0.12, clampedGoal)
         return LoadingSprintInterpolator(
             anchorFraction: start,
             anchorTimestamp: now,
@@ -86,13 +102,23 @@ public struct PauseCatSnapshot: Equatable, Sendable {
 }
 
 public enum PauseCatLifecycle: Sendable {
-    public static let idleThresholdSeconds: TimeInterval = 20.0
+    public static let idleThresholdSeconds: TimeInterval = 6.0
     public static let strollDuration: TimeInterval = 1.9
     public static let stretchDuration: TimeInterval = 1.4
     public static let perkDuration: TimeInterval = 0.24
     public static let scamperDuration: TimeInterval = 0.85
     public static let activeAnimationInterval: TimeInterval = 1.0 / 30.0
     public static let sleepingAnimationInterval: TimeInterval = 1.0 / 12.0
+
+    public static func centeredAnchorX(
+        trackWidth: CGFloat,
+        catWidth: CGFloat = CatCompanionLayout.pauseCatSize.width
+    ) -> CGFloat {
+        let maxAnchor = max(0, trackWidth - catWidth)
+        let centered = (trackWidth - catWidth) * 0.5
+        let safeMargin = min(maxAnchor, max(0, trackWidth > 640 ? 220 : 0))
+        return min(maxAnchor, max(safeMargin, centered))
+    }
 
     public static var activeSettleToNapSeconds: TimeInterval {
         strollDuration + stretchDuration
@@ -214,7 +240,7 @@ struct LoadingCatTrackView: View {
     @ObservedObject var comfort: ComfortPreferences
     let targetFraction: Double
     let isPreparingReveal: Bool
-    var trackWidth: CGFloat = 440
+    var trackWidth: CGFloat = CatCompanionLayout.loadingTrackWidth
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var interpolator: LoadingSprintInterpolator
@@ -223,7 +249,7 @@ struct LoadingCatTrackView: View {
         comfort: ComfortPreferences,
         targetFraction: Double,
         isPreparingReveal: Bool,
-        trackWidth: CGFloat = 440
+        trackWidth: CGFloat = CatCompanionLayout.loadingTrackWidth
     ) {
         self.comfort = comfort
         self.targetFraction = targetFraction
@@ -275,16 +301,16 @@ struct LoadingCatTrackView: View {
                         endPoint: .trailing
                     )
                 )
-                .frame(width: max(20, trackWidth * CGFloat(targetFraction)))
+                .frame(width: max(24, trackWidth * CGFloat(targetFraction)))
                 .animation(.easeOut(duration: 0.28), value: targetFraction)
         }
-        .frame(width: trackWidth, height: 4)
+        .frame(width: trackWidth, height: CatCompanionLayout.loadingTrackHeight)
     }
 
     private var staticCatsBar: some View {
         let sparkX = trackWidth * CGFloat(targetFraction)
-        let blackX = sparkX - 28
-        let tabbyX = blackX - 38
+        let blackX = sparkX - CatCompanionLayout.loadingBlackOffset
+        let tabbyX = blackX - CatCompanionLayout.loadingTabbySpacing
         let poseBlack: CatPose = isPreparingReveal
             ? .pounceCrouch(wigglePhase: 0, crouchBlend: 1.0)
             : .prowling(stridePhase: 0.2, sniffProgress: 0)
@@ -304,23 +330,29 @@ struct LoadingCatTrackView: View {
                             endPoint: .trailing
                         )
                     )
-                    .frame(width: max(20, sparkX))
+                    .frame(width: max(24, sparkX))
             }
-            .frame(width: trackWidth, height: 4.5)
-            .padding(.bottom, 7)
+            .frame(width: trackWidth, height: CatCompanionLayout.loadingTrackHeight)
+            .padding(.bottom, 14)
 
             MoonSparkView(pulse: 0.5)
-                .position(x: sparkX, y: 36.75)
+                .position(x: sparkX, y: 72.5)
 
             CatMascotCanvasView(kind: .brownTabby, pose: poseTabby)
-                .frame(width: 44, height: 31)
-                .position(x: tabbyX, y: 21.0)
+                .frame(
+                    width: CatCompanionLayout.loadingTabbyCatSize.width,
+                    height: CatCompanionLayout.loadingTabbyCatSize.height
+                )
+                .position(x: tabbyX, y: 44.0)
 
             CatMascotCanvasView(kind: .blackNightFury, pose: poseBlack)
-                .frame(width: 46, height: 32)
-                .position(x: blackX, y: 20.5)
+                .frame(
+                    width: CatCompanionLayout.loadingBlackCatSize.width,
+                    height: CatCompanionLayout.loadingBlackCatSize.height
+                )
+                .position(x: blackX, y: 42.5)
         }
-        .frame(width: trackWidth, height: 46, alignment: .bottomLeading)
+        .frame(width: trackWidth, height: CatCompanionLayout.loadingContainerHeight, alignment: .bottomLeading)
     }
 
     private func animatedTrackContent(
@@ -330,8 +362,8 @@ struct LoadingCatTrackView: View {
         pounceBlend: Double
     ) -> some View {
         let sparkX = trackWidth * CGFloat(fraction)
-        let blackCatX = sparkX - 28
-        let tabbyCatX = blackCatX - 38
+        let blackCatX = sparkX - CatCompanionLayout.loadingBlackOffset
+        let tabbyCatX = blackCatX - CatCompanionLayout.loadingTabbySpacing
 
         let gallopRate = isAdvancing ? 2.85 : 1.75
         let strideA = (now * gallopRate).truncatingRemainder(dividingBy: 1.0)
@@ -358,23 +390,29 @@ struct LoadingCatTrackView: View {
                             endPoint: .trailing
                         )
                     )
-                    .frame(width: max(18, sparkX))
+                    .frame(width: max(24, sparkX))
             }
-            .frame(width: trackWidth, height: 4.5)
-            .padding(.bottom, 7)
+            .frame(width: trackWidth, height: CatCompanionLayout.loadingTrackHeight)
+            .padding(.bottom, 14)
 
             MoonSparkView(pulse: now * 4.2)
-                .position(x: sparkX, y: 36.75)
+                .position(x: sparkX, y: 72.5)
 
             CatMascotCanvasView(kind: .brownTabby, pose: tabbyPose)
-                .frame(width: 44, height: 31)
-                .position(x: tabbyCatX, y: 21.0)
+                .frame(
+                    width: CatCompanionLayout.loadingTabbyCatSize.width,
+                    height: CatCompanionLayout.loadingTabbyCatSize.height
+                )
+                .position(x: tabbyCatX, y: 44.0)
 
             CatMascotCanvasView(kind: .blackNightFury, pose: blackPose)
-                .frame(width: 46, height: 32)
-                .position(x: blackCatX, y: 20.5)
+                .frame(
+                    width: CatCompanionLayout.loadingBlackCatSize.width,
+                    height: CatCompanionLayout.loadingBlackCatSize.height
+                )
+                .position(x: blackCatX, y: 42.5)
         }
-        .frame(width: trackWidth, height: 46, alignment: .bottomLeading)
+        .frame(width: trackWidth, height: CatCompanionLayout.loadingContainerHeight, alignment: .bottomLeading)
     }
 }
 
@@ -385,6 +423,7 @@ struct PauseCatOverlayLeafView: View {
     let isPaused: Bool
     let isScrubbing: Bool
     let trackWidth: CGFloat
+    var onVisualActivityChanged: (Bool) -> Void = { _ in }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var phase: PauseCatPhase = .hidden
@@ -404,14 +443,14 @@ struct PauseCatOverlayLeafView: View {
     }
 
     var body: some View {
-        let anchorX = max(trackWidth * 0.50, min(trackWidth * 0.58, trackWidth - 660))
+        let anchorX = PauseCatLifecycle.centeredAnchorX(trackWidth: trackWidth)
 
         Group {
             if phase != .hidden && comfort.showCatCompanions && !isScrubbing {
                 if reduceMotion {
                     if let snap = PauseCatLifecycle.visualSnapshot(phase: phase, at: 0, reduceMotion: true) {
                         catView(snapshot: snap)
-                            .offset(x: anchorX + snap.xOffset, y: -33)
+                            .offset(x: anchorX + snap.xOffset, y: -61)
                     }
                 } else {
                     TimelineView(.animation(minimumInterval: activeMinimumInterval)) { context in
@@ -421,13 +460,16 @@ struct PauseCatOverlayLeafView: View {
                             reduceMotion: false
                         ) {
                             catView(snapshot: snap)
-                                .offset(x: anchorX + snap.xOffset, y: -33)
+                                .offset(x: anchorX + snap.xOffset, y: -61)
                         }
                     }
                 }
             }
         }
         .allowsHitTesting(false)
+        .onChange(of: phase != .hidden) { _, visible in
+            onVisualActivityChanged(visible && comfort.showCatCompanions && !isScrubbing)
+        }
         .task(id: IdleTaskKey(enabled: comfort.showCatCompanions, isPaused: isPaused, isScrubbing: isScrubbing)) {
             guard comfort.showCatCompanions, !isScrubbing else {
                 isSettledNapping = false
@@ -487,30 +529,35 @@ struct PauseCatOverlayLeafView: View {
                 pose: snapshot.pose,
                 facingRight: snapshot.facingRight
             )
-            .frame(width: 54, height: 38)
+            .frame(
+                width: CatCompanionLayout.pauseCatSize.width,
+                height: CatCompanionLayout.pauseCatSize.height
+            )
 
             if let zElapsed = snapshot.zzzElapsed {
-                let floatOffset = reduceMotion ? 0.0 : sin(zElapsed * 1.9) * 3.0
-                HStack(spacing: 1) {
+                let floatOffset = reduceMotion ? 0.0 : sin(zElapsed * 1.9) * 5.0
+                HStack(spacing: 2) {
                     Text("z")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundStyle(LunaTheme.moonlight.opacity(0.62))
-                        .offset(y: CGFloat(2 - floatOffset * 0.6))
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(LunaTheme.moonlight.opacity(0.74))
+                        .offset(y: CGFloat(3 - floatOffset * 0.6))
                     Text("Z")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(LunaTheme.amber.opacity(0.84))
-                        .offset(y: CGFloat(-2 - floatOffset))
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(LunaTheme.amber.opacity(0.95))
+                        .offset(y: CGFloat(-3 - floatOffset))
                     Text("z")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
-                        .foregroundStyle(LunaTheme.moonlight.opacity(0.55))
-                        .offset(y: CGFloat(-5 - floatOffset * 0.8))
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(LunaTheme.moonlight.opacity(0.68))
+                        .offset(y: CGFloat(-8 - floatOffset * 0.8))
                 }
-                .offset(x: 6, y: -7)
+                .shadow(color: Color.black.opacity(0.82), radius: 3, x: 0, y: 1)
+                .offset(x: 12, y: 0)
             } else if snapshot.isAlertBadgeVisible {
                 Text("!")
-                    .font(.system(size: 13, weight: .black, design: .rounded))
+                    .font(.system(size: 24, weight: .black, design: .rounded))
                     .foregroundStyle(LunaTheme.amber)
-                    .offset(x: 11, y: -10)
+                    .shadow(color: Color.black.opacity(0.85), radius: 3, x: 0, y: 1)
+                    .offset(x: 18, y: -10)
             }
         }
         .opacity(snapshot.opacity)
@@ -527,17 +574,20 @@ struct ProwlingSourceCatView: View {
         if !comfort.showCatCompanions {
             ProgressView()
         } else if reduceMotion {
-            VStack(spacing: 14) {
-                HStack(spacing: 8) {
+            VStack(spacing: 16) {
+                HStack(spacing: 12) {
                     CatMascotCanvasView(
                         kind: .blackNightFury,
                         pose: .prowling(stridePhase: 0.15, sniffProgress: 0.9)
                     )
-                    .frame(width: 66, height: 46)
+                    .frame(
+                        width: CatCompanionLayout.prowlingCatSize.width,
+                        height: CatCompanionLayout.prowlingCatSize.height
+                    )
 
                     Image(systemName: "sparkle")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(LunaTheme.amber.opacity(0.8))
+                        .font(.callout.weight(.bold))
+                        .foregroundStyle(LunaTheme.amber.opacity(0.88))
                 }
                 ProgressView()
             }
@@ -560,21 +610,21 @@ struct ProwlingSourceCatView: View {
 
         if cycle < 0.34 {
             let p = cycle / 0.34
-            pos = -80 + 160 * p
+            pos = -136 + 272 * p
             facingRight = true
             sniff = 0
         } else if cycle < 0.50 {
-            pos = 80
+            pos = 136
             facingRight = true
             let p = (cycle - 0.34) / 0.16
             sniff = sin(p * Double.pi)
         } else if cycle < 0.84 {
             let p = (cycle - 0.50) / 0.34
-            pos = 80 - 160 * p
+            pos = 136 - 272 * p
             facingRight = false
             sniff = 0
         } else {
-            pos = -80
+            pos = -136
             facingRight = false
             let p = (cycle - 0.84) / 0.16
             sniff = sin(p * Double.pi)
@@ -582,18 +632,18 @@ struct ProwlingSourceCatView: View {
 
         let rawStride = (now * 1.4).truncatingRemainder(dividingBy: 1.0)
         let stride = rawStride < 0 ? rawStride + 1.0 : rawStride
-        return VStack(spacing: 8) {
+        return VStack(spacing: 10) {
             ZStack {
                 Capsule()
-                    .fill(LunaTheme.moonlight.opacity(0.08))
-                    .frame(width: 240, height: 3)
-                    .offset(y: 19)
+                    .fill(LunaTheme.moonlight.opacity(0.14))
+                    .frame(width: 420, height: 5)
+                    .offset(y: 34)
 
                 if sniff > 0.15 {
                     Image(systemName: "sparkle")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(LunaTheme.amber.opacity(sniff * 0.85))
-                        .offset(x: CGFloat(pos + (facingRight ? 34 : -34)), y: 12)
+                        .font(.callout.weight(.bold))
+                        .foregroundStyle(LunaTheme.amber.opacity(sniff * 0.90))
+                        .offset(x: CGFloat(pos + (facingRight ? 58 : -58)), y: 20)
                 }
 
                 CatMascotCanvasView(
@@ -601,10 +651,13 @@ struct ProwlingSourceCatView: View {
                     pose: .prowling(stridePhase: stride, sniffProgress: sniff),
                     facingRight: facingRight
                 )
-                .frame(width: 66, height: 46)
+                .frame(
+                    width: CatCompanionLayout.prowlingCatSize.width,
+                    height: CatCompanionLayout.prowlingCatSize.height
+                )
                 .offset(x: CGFloat(pos))
             }
-            .frame(width: 260, height: 48)
+            .frame(width: 460, height: 86)
         }
     }
 }
@@ -624,7 +677,7 @@ struct MoonSleepingCatView: View {
                     let t = context.date.timeIntervalSinceReferenceDate
                     moonScene(
                         breathPhase: t * 1.35,
-                        zDrift: sin(t * 1.5) * 3.0
+                        zDrift: sin(t * 1.5) * 4.5
                     )
                 }
             }
@@ -635,9 +688,9 @@ struct MoonSleepingCatView: View {
         ZStack {
             // Soft amber crescent moon aura
             Circle()
-                .fill(LunaTheme.amber.opacity(0.09))
-                .frame(width: 138, height: 138)
-                .blur(radius: 10)
+                .fill(LunaTheme.amber.opacity(0.11))
+                .frame(width: 200, height: 200)
+                .blur(radius: 14)
 
             // Crescent moon silhouette (exact two-circle intersection for crisp horns)
             Canvas { context, size in
@@ -686,46 +739,52 @@ struct MoonSleepingCatView: View {
                 context.fill(
                     moonPath,
                     with: .linearGradient(
-                        Gradient(colors: [LunaTheme.amber.opacity(0.92), LunaTheme.amberDeep.opacity(0.88)]),
+                        Gradient(colors: [LunaTheme.amber.opacity(0.94), LunaTheme.amberDeep.opacity(0.90)]),
                         startPoint: CGPoint(x: c1.x - bigR, y: c1.y - bigR),
                         endPoint: CGPoint(x: c1.x + bigR * 0.5, y: c1.y + bigR)
                     )
                 )
             }
-            .frame(width: 144, height: 144)
+            .frame(width: 210, height: 210)
 
             // Sleeping mascot cat curled snugly inside the crescent curve
             CatMascotCanvasView(
                 kind: .blackNightFury,
                 pose: .curledSleeping(breathPhase: breathPhase)
             )
-            .frame(width: 72, height: 50)
-            .offset(x: 7, y: 19)
+            .frame(
+                width: CatCompanionLayout.moonCatSize.width,
+                height: CatCompanionLayout.moonCatSize.height
+            )
+            .offset(x: 10, y: 28)
 
             // Soft muted twinkle stars & zZz
-            HStack(spacing: 2) {
+            HStack(spacing: 3) {
                 Text("z")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(LunaTheme.moonlight.opacity(0.55))
-                    .offset(y: CGFloat(3 - zDrift * 0.5))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(LunaTheme.moonlight.opacity(0.68))
+                    .offset(y: CGFloat(4 - zDrift * 0.5))
                 Text("Z")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundStyle(LunaTheme.amber.opacity(0.80))
-                    .offset(y: CGFloat(-2 - zDrift))
+                    .font(.system(size: 21, weight: .bold, design: .rounded))
+                    .foregroundStyle(LunaTheme.amber.opacity(0.90))
+                    .offset(y: CGFloat(-3 - zDrift))
             }
-            .offset(x: 36, y: -10)
+            .offset(x: 54, y: -14)
 
             Image(systemName: "sparkle")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(LunaTheme.amber.opacity(0.65))
-                .offset(x: -44, y: -44)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(LunaTheme.amber.opacity(0.75))
+                .offset(x: -64, y: -64)
 
             Image(systemName: "sparkle")
-                .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(LunaTheme.moonlight.opacity(0.45))
-                .offset(x: 44, y: -46)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(LunaTheme.moonlight.opacity(0.55))
+                .offset(x: 64, y: -68)
         }
-        .frame(width: 148, height: 148)
+        .frame(
+            width: CatCompanionLayout.moonSceneSize.width,
+            height: CatCompanionLayout.moonSceneSize.height
+        )
         .allowsHitTesting(false)
     }
 }

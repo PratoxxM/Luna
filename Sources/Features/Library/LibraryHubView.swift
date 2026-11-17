@@ -86,7 +86,8 @@ struct LibraryHubView: View {
                             LibrarySectionTab.watchlist.label,
                             systemImage: LibrarySectionTab.watchlist.icon,
                             badgeText: counts.map { String($0.watchlist) },
-                            isSelected: activeSection == .watchlist
+                            isSelected: activeSection == .watchlist,
+                            accent: .periwinkle
                         ) {
                             activeSection = .watchlist
                         }
@@ -95,7 +96,8 @@ struct LibraryHubView: View {
                             LibrarySectionTab.favorites.label,
                             systemImage: LibrarySectionTab.favorites.icon,
                             badgeText: counts.map { String($0.favorites) },
-                            isSelected: activeSection == .favorites
+                            isSelected: activeSection == .favorites,
+                            accent: .amber
                         ) {
                             activeSection = .favorites
                         }
@@ -104,7 +106,8 @@ struct LibraryHubView: View {
                             LibrarySectionTab.local.label,
                             systemImage: LibrarySectionTab.local.icon,
                             badgeText: counts.map { String($0.localTotal) },
-                            isSelected: activeSection == .local
+                            isSelected: activeSection == .local,
+                            accent: .emerald
                         ) {
                             activeSection = .local
                         }
@@ -214,7 +217,8 @@ struct LibraryHubView: View {
                     systemImage: "bolt.fill",
                     badgeText: counts.map { String($0.nvme) },
                     isSelected: localTierFilter == "nvme",
-                    prominence: .subtleChip
+                    prominence: .subtleChip,
+                    accent: .emerald
                 ) {
                     localTierFilter = "nvme"
                 }

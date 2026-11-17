@@ -404,8 +404,8 @@ struct PlayerContainerView: View {
                 .foregroundStyle(.white)
             if comfort.showCatCompanions {
                 Image(systemName: "pawprint.fill")
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(LunaTheme.amber.opacity(0.85))
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(LunaTheme.amber.opacity(0.90))
             }
         }
         .padding(.horizontal, 28)

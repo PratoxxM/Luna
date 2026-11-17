@@ -96,7 +96,7 @@ struct DetailHeroHeaderView: View {
             }
 
             // Streamlined Action Bar: Focus lands directly on Primary Play!
-            HStack(spacing: 16) {
+            HStack(spacing: 12) {
                 PrimaryPlayButton(
                     title: primaryPlayTitle,
                     isWarmReady: isPreResolvedReady,
@@ -108,6 +108,8 @@ struct DetailHeroHeaderView: View {
                     item.inWatchlist ? "I huskeliste" : "Huskeliste",
                     systemImage: item.inWatchlist ? "bookmark.fill" : "bookmark",
                     isSelected: item.inWatchlist,
+                    accent: .periwinkle,
+                    size: .compact,
                     action: onToggleWatchlist
                 )
 
@@ -115,12 +117,15 @@ struct DetailHeroHeaderView: View {
                     watchedButtonTitle,
                     systemImage: item.watched ? "checkmark.circle.fill" : "checkmark.circle",
                     isSelected: item.watched,
+                    accent: .emerald,
+                    size: .compact,
                     action: onToggleWatched
                 )
 
                 LunaPillButton(
                     "Bytt kilde",
                     systemImage: "arrow.triangle.2.circlepath",
+                    size: .compact,
                     action: onPickSource
                 )
 
@@ -128,7 +133,8 @@ struct DetailHeroHeaderView: View {
                     "",
                     systemImage: item.favoriteFlag ? "star.fill" : "star",
                     isSelected: item.favoriteFlag,
-                    prominence: .subtleChip,
+                    accent: .amber,
+                    size: .compact,
                     action: onToggleFavorite
                 )
             }
@@ -283,11 +289,13 @@ private struct PrimaryPlayLabel: View {
     let isWarmReady: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Image(systemName: "play.fill")
-                .font(.headline.weight(.black))
+                .font(.system(size: 30, weight: .black))
             Text(title)
-                .font(.headline.weight(.bold))
+                .font(.system(size: 34, weight: .bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.86)
             if isWarmReady {
                 Circle()
                     .fill(LunaTheme.canvas.opacity(0.65))
@@ -295,31 +303,23 @@ private struct PrimaryPlayLabel: View {
             }
         }
         .foregroundStyle(LunaTheme.canvas)
-        .padding(.horizontal, 32)
-        .padding(.vertical, 15)
+        .padding(.horizontal, 28)
+        .padding(.vertical, 14)
         .background(
             Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: focused
-                            ? [Color.white, LunaTheme.amber]
-                            : [LunaTheme.amber, LunaTheme.amberDeep],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(focused ? LunaTheme.pearlFocusGradient : LunaTheme.primaryAmberGradient)
         )
         .overlay(
             Capsule()
                 .strokeBorder(Color.white.opacity(focused ? 0.95 : 0.35), lineWidth: focused ? 2.5 : 1.0)
         )
         .shadow(
-            color: LunaTheme.amber.opacity(focused ? 0.55 : 0.22),
+            color: (focused ? LunaTheme.pearlFocusBottom : LunaTheme.amber).opacity(focused ? 0.50 : 0.24),
             radius: focused ? 22 : 10,
             x: 0,
             y: focused ? 8 : 4
         )
-        .scaleEffect(focused ? 1.06 : 1.0)
+        .scaleEffect(focused ? 1.055 : 1.0)
         .animation(.spring(response: 0.22, dampingFraction: 0.78), value: focused)
     }
 }

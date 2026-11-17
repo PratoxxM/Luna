@@ -85,7 +85,6 @@ struct MainNavigationShell: View {
                 }
                 .tag(MainNavigationTab.settings)
             }
-            .tint(LunaTheme.amber)
         }
         .environment(\.ambientFocusSink, ambientController.focusSink)
         .environmentObject(sessionStore.comfort)

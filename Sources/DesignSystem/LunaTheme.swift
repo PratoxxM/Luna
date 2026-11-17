@@ -23,8 +23,54 @@ public enum LunaTheme {
     public static let muted = Color(red: 147.0 / 255.0, green: 162.0 / 255.0, blue: 184.0 / 255.0)
     /// Soft emerald (`#62D6A2`) for instant NVMe tier badges & watched checkmarks.
     public static let emerald = Color(red: 98.0 / 255.0, green: 214.0 / 255.0, blue: 162.0 / 255.0)
+    /// Celestial periwinkle (`#94A8FF`) for watchlist & follow/monitor states.
+    public static let periwinkle = Color(red: 148.0 / 255.0, green: 168.0 / 255.0, blue: 255.0 / 255.0)
+    /// Night-Fury coral (`#F07167`) for clear, reset, and unpair actions.
+    public static let coral = Color(red: 240.0 / 255.0, green: 113.0 / 255.0, blue: 103.0 / 255.0)
+
+    /// Elevated Twilight Indigo-Slate resting button fill (`#24324F -> #1A253B`).
+    public static let buttonGlassTop = Color(red: 36.0 / 255.0, green: 50.0 / 255.0, blue: 79.0 / 255.0)
+    public static let buttonGlassBottom = Color(red: 26.0 / 255.0, green: 37.0 / 255.0, blue: 59.0 / 255.0)
+    /// Translucent Celestial Slate lift for secondary chips above `#0E131D` / `#0D111A` panels.
+    public static let buttonSubtleTop = Color(red: 44.0 / 255.0, green: 59.0 / 255.0, blue: 92.0 / 255.0).opacity(0.72)
+    public static let buttonSubtleBottom = Color(red: 30.0 / 255.0, green: 42.0 / 255.0, blue: 68.0 / 255.0).opacity(0.68)
+    /// HDR-comfortable Moonlit Pearl / Warm Champagne focused platter (`#F4F7FC -> #F3E0B8`).
+    public static let pearlFocusTop = Color(red: 244.0 / 255.0, green: 247.0 / 255.0, blue: 252.0 / 255.0)
+    public static let pearlFocusBottom = Color(red: 243.0 / 255.0, green: 224.0 / 255.0, blue: 184.0 / 255.0)
 
     public static let horizontalGutter: CGFloat = 64
+
+    public static var buttonRestGradient: LinearGradient {
+        LinearGradient(
+            colors: [buttonGlassTop, buttonGlassBottom],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    public static var buttonSubtleGradient: LinearGradient {
+        LinearGradient(
+            colors: [buttonSubtleTop, buttonSubtleBottom],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    public static var pearlFocusGradient: LinearGradient {
+        LinearGradient(
+            colors: [pearlFocusTop, pearlFocusBottom],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    public static var primaryAmberGradient: LinearGradient {
+        LinearGradient(
+            colors: [amber, amberDeep],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
 
     public static func color(fromHex rawHex: String?) -> Color? {
         guard var cleaned = rawHex?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -96,12 +142,35 @@ public enum LunaButtonProminence: Sendable {
     case subtleChip
 }
 
+public enum LunaButtonAccent: Sendable {
+    case amber
+    case emerald
+    case periwinkle
+    case coral
+
+    public var color: Color {
+        switch self {
+        case .amber: return LunaTheme.amber
+        case .emerald: return LunaTheme.emerald
+        case .periwinkle: return LunaTheme.periwinkle
+        case .coral: return LunaTheme.coral
+        }
+    }
+}
+
+public enum LunaButtonSize: Sendable {
+    case regular
+    case compact
+}
+
 public struct LunaPillButton: View {
     let title: String
     let systemImage: String?
     let badgeText: String?
     let isSelected: Bool
     let prominence: LunaButtonProminence
+    let accent: LunaButtonAccent
+    let size: LunaButtonSize
     let action: () -> Void
 
     public init(
@@ -110,6 +179,8 @@ public struct LunaPillButton: View {
         badgeText: String? = nil,
         isSelected: Bool = false,
         prominence: LunaButtonProminence = .glassPill,
+        accent: LunaButtonAccent = .amber,
+        size: LunaButtonSize = .regular,
         action: @escaping () -> Void
     ) {
         self.title = title
@@ -117,6 +188,8 @@ public struct LunaPillButton: View {
         self.badgeText = badgeText
         self.isSelected = isSelected
         self.prominence = prominence
+        self.accent = accent
+        self.size = size
         self.action = action
     }
 
@@ -127,7 +200,9 @@ public struct LunaPillButton: View {
                 systemImage: systemImage,
                 badgeText: badgeText,
                 isSelected: isSelected,
-                prominence: prominence
+                prominence: prominence,
+                accent: accent,
+                size: size
             )
         }
         .buttonStyle(LunaChromelessButtonStyle())
@@ -144,36 +219,42 @@ private struct LunaPillLabel: View {
     let badgeText: String?
     let isSelected: Bool
     let prominence: LunaButtonProminence
+    let accent: LunaButtonAccent
+    let size: LunaButtonSize
 
     var body: some View {
-        HStack(spacing: 10) {
+        let isCompact = size == .compact
+        HStack(spacing: isCompact ? 8 : 10) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.callout.weight(.bold))
+                    .font(isCompact ? .system(size: 22, weight: .bold) : .callout.weight(.bold))
+                    .foregroundStyle(iconForegroundColor)
             }
             if !title.isEmpty {
                 Text(title)
-                    .font(.callout.weight(.semibold))
+                    .font(isCompact ? .system(size: 25, weight: .semibold) : .callout.weight(.semibold))
+                    .foregroundStyle(labelForegroundColor)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.88)
             }
             if let badgeText, !badgeText.isEmpty {
                 Text(badgeText)
                     .font(.caption2.weight(.bold).monospacedDigit())
+                    .foregroundStyle(badgeForegroundColor)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(badgeBackground, in: Capsule())
             }
         }
-        .foregroundStyle(foregroundColor)
-        .padding(.horizontal, title.isEmpty ? 18 : 24)
-        .padding(.vertical, 13)
+        .padding(.horizontal, title.isEmpty ? (isCompact ? 15 : 18) : (isCompact ? 18 : 22))
+        .padding(.vertical, isCompact ? 11 : 12)
         .background(backgroundView)
         .overlay(
             Capsule()
-                .strokeBorder(borderColor, lineWidth: isFocused ? 2.2 : 1.0)
+                .strokeBorder(borderColor, lineWidth: borderWidth)
         )
         .shadow(
-            color: isFocused ? LunaTheme.amber.opacity(0.38) : Color.black.opacity(0.28),
+            color: shadowColor,
             radius: isFocused ? 18 : 8,
             x: 0,
             y: isFocused ? 8 : 4
@@ -182,76 +263,119 @@ private struct LunaPillLabel: View {
         .animation(.spring(response: 0.22, dampingFraction: 0.78), value: isFocused)
     }
 
-    private var foregroundColor: Color {
-        switch prominence {
-        case .primaryAmber:
-            return isFocused ? LunaTheme.canvas : Color(red: 0.06, green: 0.06, blue: 0.08)
-        case .glassPill, .subtleChip:
-            if isFocused {
-                return .white
-            }
-            if isSelected {
-                return LunaTheme.amber
-            }
-            return LunaTheme.moonlight.opacity(0.92)
+    private var iconForegroundColor: Color {
+        if isFocused || prominence == .primaryAmber {
+            return LunaTheme.canvas
         }
+        if isSelected || accent == .coral {
+            return accent.color
+        }
+        return LunaTheme.moonlight
+    }
+
+    private var labelForegroundColor: Color {
+        if isFocused || prominence == .primaryAmber {
+            return LunaTheme.canvas
+        }
+        if isSelected {
+            return accent.color
+        }
+        return LunaTheme.moonlight
+    }
+
+    private var badgeForegroundColor: Color {
+        if isFocused || prominence == .primaryAmber {
+            return LunaTheme.canvas
+        }
+        if isSelected {
+            return accent.color
+        }
+        return LunaTheme.moonlight
     }
 
     @ViewBuilder
     private var backgroundView: some View {
-        switch prominence {
-        case .primaryAmber:
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: isFocused
-                            ? [Color.white, LunaTheme.amber]
-                            : [LunaTheme.amber, LunaTheme.amberDeep],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-        case .glassPill:
-            ZStack {
-                Capsule().fill(LunaTheme.surfaceRaised.opacity(0.95))
-                if isFocused {
-                    Capsule().fill(LunaTheme.amber.opacity(0.24))
-                } else if isSelected {
-                    Capsule().fill(LunaTheme.amber.opacity(0.16))
+        if isFocused {
+            Capsule().fill(LunaTheme.pearlFocusGradient)
+        } else {
+            switch prominence {
+            case .primaryAmber:
+                Capsule().fill(LunaTheme.primaryAmberGradient)
+            case .glassPill:
+                ZStack {
+                    Capsule().fill(LunaTheme.buttonRestGradient)
+                    if isSelected {
+                        Capsule().fill(accent.color.opacity(0.11))
+                    } else if accent == .coral {
+                        Capsule().fill(LunaTheme.coral.opacity(0.11))
+                    }
                 }
-            }
-        case .subtleChip:
-            ZStack {
-                Capsule().fill(LunaTheme.surface.opacity(0.94))
-                if isFocused {
-                    Capsule().fill(LunaTheme.amber.opacity(0.22))
-                } else if isSelected {
-                    Capsule().fill(LunaTheme.amber.opacity(0.14))
+            case .subtleChip:
+                ZStack {
+                    Capsule().fill(LunaTheme.buttonSubtleGradient)
+                    if isSelected {
+                        Capsule().fill(accent.color.opacity(0.11))
+                    } else if accent == .coral {
+                        Capsule().fill(LunaTheme.coral.opacity(0.11))
+                    }
                 }
             }
         }
     }
 
     private var borderColor: Color {
+        if isFocused {
+            return Color.white.opacity(0.95)
+        }
         switch prominence {
         case .primaryAmber:
-            return isFocused ? Color.white.opacity(0.95) : LunaTheme.amber.opacity(0.8)
-        case .glassPill, .subtleChip:
-            if isFocused {
-                return LunaTheme.amber
-            }
+            return Color.white.opacity(0.32)
+        case .glassPill:
             if isSelected {
-                return LunaTheme.amber.opacity(0.65)
+                return accent.color.opacity(0.84)
             }
-            return LunaTheme.moonlight.opacity(0.16)
+            if accent == .coral {
+                return LunaTheme.coral.opacity(0.58)
+            }
+            return LunaTheme.moonlight.opacity(0.30)
+        case .subtleChip:
+            if isSelected {
+                return accent.color.opacity(0.82)
+            }
+            if accent == .coral {
+                return LunaTheme.coral.opacity(0.55)
+            }
+            return LunaTheme.moonlight.opacity(0.24)
         }
     }
 
-    private var badgeBackground: Color {
-        if prominence == .primaryAmber {
-            return Color.black.opacity(0.18)
+    private var borderWidth: CGFloat {
+        if isFocused { return 2.2 }
+        if isSelected { return 1.5 }
+        return prominence == .glassPill ? 1.15 : 1.0
+    }
+
+    private var shadowColor: Color {
+        if isFocused {
+            return LunaTheme.pearlFocusBottom.opacity(0.42)
         }
-        return isSelected || isFocused ? LunaTheme.amber.opacity(0.26) : Color.white.opacity(0.12)
+        if prominence == .primaryAmber {
+            return LunaTheme.amber.opacity(0.24)
+        }
+        if isSelected {
+            return accent.color.opacity(0.22)
+        }
+        return Color.black.opacity(0.32)
+    }
+
+    private var badgeBackground: Color {
+        if isFocused || prominence == .primaryAmber {
+            return Color.black.opacity(0.15)
+        }
+        if isSelected {
+            return accent.color.opacity(0.24)
+        }
+        return Color.white.opacity(0.14)
     }
 }
 

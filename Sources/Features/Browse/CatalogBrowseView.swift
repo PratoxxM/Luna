@@ -134,7 +134,8 @@ struct CatalogBrowseView: View {
                         LunaPillButton(
                             "Kun lokalt",
                             systemImage: localOnly ? "checkmark.circle.fill" : "internaldrive",
-                            isSelected: localOnly
+                            isSelected: localOnly,
+                            accent: .emerald
                         ) {
                             localOnly.toggle()
                         }
@@ -142,7 +143,8 @@ struct CatalogBrowseView: View {
                         LunaPillButton(
                             "Skjul sette",
                             systemImage: unwatchedOnly ? "eye.slash.fill" : "eye.slash",
-                            isSelected: unwatchedOnly
+                            isSelected: unwatchedOnly,
+                            accent: .periwinkle
                         ) {
                             unwatchedOnly.toggle()
                         }
@@ -215,7 +217,7 @@ struct CatalogBrowseView: View {
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(LunaTheme.moonlight)
                         if localOnly || unwatchedOnly {
-                            LunaPillButton("Nullstill hurtigfiltre", systemImage: "xmark.circle") {
+                            LunaPillButton("Nullstill hurtigfiltre", systemImage: "xmark.circle", prominence: .subtleChip, accent: .coral) {
                                 localOnly = false
                                 unwatchedOnly = false
                             }

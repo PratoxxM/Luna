@@ -79,7 +79,7 @@ struct ResolvingCurtainView: View {
                         comfort: viewModel.comfort,
                         targetFraction: effectiveProgressFraction,
                         isPreparingReveal: !viewModel.isResolving,
-                        trackWidth: 440
+                        trackWidth: CatCompanionLayout.loadingTrackWidth
                     )
                     .id(initialRequest.id)
 
@@ -137,7 +137,7 @@ struct ResolvingCurtainView: View {
                 : min(1.0, max(0.0, viewModel.startupProgress?.fraction ?? 0.5))
             return min(0.99, 0.92 + startupFrac * 0.07)
         }
-        return min(0.92, max(0.08, Double(viewModel.resolvePercent) / 100.0))
+        return min(0.92, max(0.15, Double(viewModel.resolvePercent) / 100.0))
     }
 
     private var statusLineText: String {

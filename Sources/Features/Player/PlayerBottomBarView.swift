@@ -9,6 +9,8 @@ struct PlayerBottomBarView: View {
     @ObservedObject var viewModel: PlayerViewModel
     let fallbackRequest: PlaybackLaunchRequest
 
+    @State private var isPauseCatVisible: Bool = false
+
     private var isPaused: Bool {
         viewModel.playbackPhase == .paused
     }
@@ -82,14 +84,18 @@ struct PlayerBottomBarView: View {
                     )
                 }
 
+                let showPauseBreathingRoom = viewModel.comfort.showCatCompanions && (isPaused || isPauseCatVisible)
                 TimelineScrubberLeafView(
                     viewModel: viewModel,
                     scrubState: viewModel.scrubState,
                     comfort: viewModel.comfort,
                     engine: viewModel.engine,
                     duration: duration,
-                    isPaused: isPaused
+                    isPaused: isPaused,
+                    onPauseCatActivityChanged: { isPauseCatVisible = $0 }
                 )
+                .padding(.top, showPauseBreathingRoom ? 60 : 0)
+                .animation(.easeOut(duration: 0.24), value: showPauseBreathingRoom)
             }
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.top, 56)
@@ -192,6 +198,7 @@ struct TimelineScrubberLeafView: View {
     let engine: AetherEngine
     let duration: Double
     let isPaused: Bool
+    var onPauseCatActivityChanged: (Bool) -> Void = { _ in }
 
     @State private var currentTime: Double = 0
     @State private var bufferedTime: Double = 0
@@ -249,17 +256,18 @@ struct TimelineScrubberLeafView: View {
 
                     if isExpanded {
                         let showPlayheadEars = comfort.showCatCompanions && (isPaused || isScrubbing)
+                        let playheadDiameter = CatCompanionLayout.playheadDiameter
                         Circle()
                             .fill(.white)
-                            .frame(width: 18, height: 18)
+                            .frame(width: playheadDiameter, height: playheadDiameter)
                             .overlay(alignment: .top) {
                                 if showPlayheadEars {
                                     CatPlayheadEarsView()
-                                        .offset(y: -4)
+                                        .offset(y: -7)
                                 }
                             }
-                            .shadow(color: LunaTheme.amber.opacity(0.82), radius: isScrubbing ? 12 : 7)
-                            .offset(x: max(0, min(totalWidth - 18, playheadX - 9)))
+                            .shadow(color: LunaTheme.amber.opacity(0.85), radius: isScrubbing ? 14 : 8)
+                            .offset(x: max(0, min(totalWidth - playheadDiameter, playheadX - playheadDiameter * 0.5)))
                     }
                 }
                 .frame(height: barHeight)
@@ -268,7 +276,8 @@ struct TimelineScrubberLeafView: View {
                         comfort: comfort,
                         isPaused: isPaused,
                         isScrubbing: isScrubbing,
-                        trackWidth: totalWidth
+                        trackWidth: totalWidth,
+                        onVisualActivityChanged: onPauseCatActivityChanged
                     )
                 }
                 .overlay(alignment: .bottomLeading) {
@@ -280,6 +289,7 @@ struct TimelineScrubberLeafView: View {
                             chapterTitle: chapterTitle,
                             previewImage: scrubState.previewImage,
                             drawsInCompositorView: engine.scrubPreviewDrawsInView,
+                            showCatCompanion: comfort.showCatCompanions,
                             onMountCompositorView: { compView in
                                 viewModel.attachCompositorPreviewView(compView)
                             }
@@ -290,7 +300,7 @@ struct TimelineScrubberLeafView: View {
                             max(0, totalWidth - bubbleWidth)
                         )
                         bubble
-                            .offset(x: clampedOriginX, y: -22)
+                            .offset(x: clampedOriginX, y: -24)
                             .transition(.opacity)
                     }
                 }

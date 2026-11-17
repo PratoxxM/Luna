@@ -85,7 +85,7 @@ struct SeriesFlowOverlays: View {
                 }
             }
             .padding(.horizontal, LunaTheme.horizontalGutter)
-            .padding(.bottom, isBottomBarVisible ? 195 : 58)
+            .padding(.bottom, isBottomBarVisible ? 226 : 58)
             .animation(.spring(response: 0.28, dampingFraction: 0.82), value: showNextButton)
             .animation(.spring(response: 0.26, dampingFraction: 0.82), value: activeIntro?.id)
         }
