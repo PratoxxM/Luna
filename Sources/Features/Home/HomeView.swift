@@ -155,6 +155,8 @@ struct HomeView: View {
                         itemId: target.itemId,
                         title: target.title,
                         seriesTitle: target.seriesTitle,
+                        season: target.season,
+                        episode: target.episode,
                         startPositionSeconds: target.startPositionSeconds,
                         candidateId: reusedPrepareToken == nil ? picked.candidateId : nil,
                         prepareToken: reusedPrepareToken,
@@ -167,6 +169,7 @@ struct HomeView: View {
                 }
             )
             .environmentObject(sessionStore)
+            .environmentObject(sessionStore.comfort)
             .preferredColorScheme(.dark)
         }
         .task(id: "\(sessionStore.serverBaseURL?.host ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)") {
@@ -280,6 +283,8 @@ struct HomeView: View {
             itemId: resolved.itemId,
             title: resolved.title,
             seriesTitle: resolved.seriesTitle,
+            season: resolved.season,
+            episode: resolved.episode,
             startPositionSeconds: resolved.startPos,
             backdropUrl: card.preferredLandscapePath,
             logoUrl: card.logoUrl

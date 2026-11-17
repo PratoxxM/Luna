@@ -74,9 +74,16 @@ final class DetailPreResolveController: ObservableObject {
             try? await Task.sleep(nanoseconds: 180_000_000)
             guard !Task.isCancelled, let self else { return }
 
+            let apiTitle = EpisodeTitleFormatter.apiEpisodeTitle(
+                rawTitle: title,
+                seriesTitle: seriesTitle,
+                itemId: targetItemId,
+                season: nil,
+                episode: nil
+            )
             guard let prep = try? await client.preparePlayback(
                 itemId: targetItemId,
-                title: title,
+                title: apiTitle,
                 seriesTitle: seriesTitle,
                 startPositionSeconds: startPos
             ) else {

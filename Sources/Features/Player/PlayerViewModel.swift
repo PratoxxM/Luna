@@ -198,10 +198,19 @@ final class PlayerViewModel: ObservableObject {
         heartbeatTask = nil
         lastReportedServerState = nil
 
+        let seriesName = current.item.seriesTitle
+        let cleanNextTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
+            next.title,
+            seriesTitle: seriesName,
+            season: next.season,
+            episode: next.episode
+        ) ?? ""
         let req = PlaybackLaunchRequest(
             itemId: next.itemId,
-            title: next.title ?? String(format: "S%02dE%02d", next.season, next.episode),
-            seriesTitle: current.item.seriesTitle ?? current.item.title,
+            title: cleanNextTitle,
+            seriesTitle: seriesName,
+            season: next.season,
+            episode: next.episode,
             startPositionSeconds: 0,
             backdropUrl: next.stillUrl ?? current.item.backdropUrl,
             logoUrl: current.item.logoUrl

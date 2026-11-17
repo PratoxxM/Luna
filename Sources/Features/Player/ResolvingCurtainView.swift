@@ -51,43 +51,37 @@ struct ResolvingCurtainView: View {
                     .frame(maxWidth: 540, maxHeight: 144)
                     .shadow(color: .black.opacity(0.82), radius: 18, x: 0, y: 6)
 
-                    if let episodeContext = episodeSubtitle {
+                    if let episodeContext = curtainDisplay.mainLine {
                         Text(episodeContext)
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(LunaTheme.moonlight.opacity(0.88))
                     }
                 } else {
                     VStack(spacing: 8) {
-                        if let series = initialRequest.seriesTitle ?? viewModel.activeSession?.item.seriesTitle {
+                        if let series = curtainDisplay.seriesLine {
                             Text(series)
                                 .font(.title3.weight(.semibold))
                                 .foregroundStyle(LunaTheme.amber)
                         }
-                        Text(viewModel.activeSession?.item.title ?? initialRequest.title)
-                            .font(.system(size: 46, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .frame(maxWidth: 960)
+                        if let mainTitle = curtainDisplay.mainLine {
+                            Text(mainTitle)
+                                .font(.system(size: 46, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .frame(maxWidth: 960)
+                        }
                     }
                 }
 
                 VStack(spacing: 14) {
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.white.opacity(0.14))
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [LunaTheme.amber, LunaTheme.amberDeep],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(width: max(20, 440 * CGFloat(effectiveProgressFraction)))
-                            .animation(.easeOut(duration: 0.28), value: effectiveProgressFraction)
-                    }
-                    .frame(width: 440, height: 4)
+                    LoadingCatTrackView(
+                        comfort: viewModel.comfort,
+                        targetFraction: effectiveProgressFraction,
+                        isPreparingReveal: !viewModel.isResolving,
+                        trackWidth: 440
+                    )
+                    .id(initialRequest.id)
 
                     Text(statusLineText)
                         .font(.callout)
@@ -124,21 +118,24 @@ struct ResolvingCurtainView: View {
         return client?.buildAbsoluteURL(raw)
     }
 
-    private var episodeSubtitle: String? {
-        if let item = viewModel.activeSession?.item,
-           let s = item.season, let e = item.episode, s > 0, e > 0 {
-            return String(format: "S%02dE%02d · %@", s, e, item.title)
-        }
-        if initialRequest.seriesTitle != nil {
-            return initialRequest.title
-        }
-        return nil
+    private var curtainDisplay: (seriesLine: String?, mainLine: String?) {
+        let item = viewModel.activeSession?.item
+        return EpisodeTitleFormatter.curtainLabels(
+            title: item?.title ?? initialRequest.title,
+            seriesTitle: item?.seriesTitle ?? initialRequest.seriesTitle,
+            itemId: item?.itemId ?? initialRequest.itemId,
+            season: item?.season ?? initialRequest.season,
+            episode: item?.episode ?? initialRequest.episode,
+            hasLogo: resolvedLogoURL != nil
+        )
     }
 
     private var effectiveProgressFraction: Double {
         if !viewModel.isResolving {
-            let startupFrac = viewModel.startupProgress?.fraction ?? 0.5
-            return min(0.99, 0.88 + startupFrac * 0.11)
+            let startupFrac = viewModel.hasFirstFrameReadyForDisplay
+                ? 1.0
+                : min(1.0, max(0.0, viewModel.startupProgress?.fraction ?? 0.5))
+            return min(0.99, 0.92 + startupFrac * 0.07)
         }
         return min(0.92, max(0.08, Double(viewModel.resolvePercent) / 100.0))
     }

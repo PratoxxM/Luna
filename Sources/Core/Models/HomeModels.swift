@@ -227,29 +227,14 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
     }
 
     public var nonGenericEpisodeTitle: String? {
-        guard let raw = episodeTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty else {
-            return nil
-        }
-        if raw.caseInsensitiveCompare(title) == .orderedSame {
-            return nil
-        }
-        if let episodeCode, raw.caseInsensitiveCompare(episodeCode) == .orderedSame {
-            return nil
-        }
-        let lower = raw.lowercased()
-        if ["tba", "tbd", "ukjent", "unknown"].contains(lower) {
-            return nil
-        }
-        for prefix in ["episode #", "episode ", "ep. ", "ep ", "del ", "avsnitt "] {
-            if lower.hasPrefix(prefix) {
-                let tail = lower.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
-                if !tail.isEmpty, tail.allSatisfy(\.isNumber) {
-                    return nil
-                }
-            }
-        }
-        return raw
+        let parsedCode = EpisodeTitleFormatter.parseEpisodeCode(episodeCode)
+        return EpisodeTitleFormatter.nonGenericEpisodeTitle(
+            episodeTitle,
+            seriesTitle: title,
+            season: directPlayTarget?.season ?? nextUp?.season ?? progress?.season ?? parsedCode?.season,
+            episode: directPlayTarget?.episode ?? nextUp?.episode ?? progress?.episode ?? parsedCode?.episode,
+            episodeCode: episodeCode
+        )
     }
 
     public var upcomingPillText: String {

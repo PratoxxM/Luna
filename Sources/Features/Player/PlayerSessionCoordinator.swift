@@ -29,7 +29,7 @@ extension PlayerViewModel {
         do {
             let (status, startRes) = try await client.resolvePlayback(
                 itemId: request.itemId,
-                title: request.title,
+                title: request.apiTitle,
                 seriesTitle: request.seriesTitle,
                 startPositionSeconds: request.startPositionSeconds,
                 candidateId: request.candidateId,
@@ -628,6 +628,8 @@ extension PlayerViewModel {
                     itemId: baseReq.itemId,
                     title: baseReq.title,
                     seriesTitle: baseReq.seriesTitle,
+                    season: baseReq.season,
+                    episode: baseReq.episode,
                     startPositionSeconds: resumeAt,
                     candidateId: activeSession?.selectedCandidate.id ?? baseReq.candidateId,
                     prepareToken: nil,

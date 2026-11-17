@@ -283,6 +283,13 @@ public final class ComfortPreferences: ObservableObject {
         }
     }
 
+    @Published public var showCatCompanions: Bool {
+        didSet {
+            guard oldValue != showCatCompanions else { return }
+            defaults.set(showCatCompanions, forKey: SideloadSafeStorage.showCatCompanionsKey)
+        }
+    }
+
     @Published public var lowResUpscaleMode: LowResUpscaleMode {
         didSet {
             guard oldValue != lowResUpscaleMode else { return }
@@ -332,6 +339,7 @@ public final class ComfortPreferences: ObservableObject {
         self.autoPlayNextEpisode = defaults.object(forKey: SideloadSafeStorage.autoPlayNextEpisodeKey) as? Bool ?? true
         self.smartNordicSubtitleRule = defaults.object(forKey: SideloadSafeStorage.smartNordicSubtitleRuleKey) as? Bool ?? true
         self.showNerdHUD = defaults.object(forKey: SideloadSafeStorage.showNerdHUDKey) as? Bool ?? false
+        self.showCatCompanions = defaults.object(forKey: SideloadSafeStorage.showCatCompanionsKey) as? Bool ?? true
         let rawUpscale = defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey) ?? LowResUpscaleMode.off.rawValue
         self.lowResUpscaleMode = LowResUpscaleMode(rawValue: rawUpscale) ?? .off
         if defaults.object(forKey: SideloadSafeStorage.audioDelayMsKey) != nil {

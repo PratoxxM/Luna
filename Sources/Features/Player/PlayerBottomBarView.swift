@@ -7,10 +7,17 @@ import AetherBridge
 /// touch-scrubbing and clickpad control across playing, paused, and scrubbing states.
 struct PlayerBottomBarView: View {
     @ObservedObject var viewModel: PlayerViewModel
-    let fallbackTitle: String
+    let fallbackRequest: PlaybackLaunchRequest
 
     private var isPaused: Bool {
         viewModel.playbackPhase == .paused
+    }
+
+    private var titleDisplay: (seriesLine: String?, titleLine: String) {
+        EpisodeTitleFormatter.bottomBarLabels(
+            sessionItem: viewModel.activeSession?.item,
+            request: viewModel.currentRequest ?? fallbackRequest
+        )
     }
 
     var body: some View {
@@ -39,7 +46,7 @@ struct PlayerBottomBarView: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .lastTextBaseline, spacing: 24) {
                     VStack(alignment: .leading, spacing: 4) {
-                        if let seriesLine = seriesContextLine {
+                        if let seriesLine = titleDisplay.seriesLine {
                             Text(seriesLine)
                                 .font(.callout.weight(.semibold))
                                 .foregroundStyle(LunaTheme.amber)
@@ -52,7 +59,7 @@ struct PlayerBottomBarView: View {
                                     .foregroundStyle(LunaTheme.amber)
                             }
 
-                            Text(viewModel.activeSession?.item.title ?? fallbackTitle)
+                            Text(titleDisplay.titleLine)
                                 .font(.title2.weight(.bold))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
@@ -78,6 +85,7 @@ struct PlayerBottomBarView: View {
                 TimelineScrubberLeafView(
                     viewModel: viewModel,
                     scrubState: viewModel.scrubState,
+                    comfort: viewModel.comfort,
                     engine: viewModel.engine,
                     duration: duration,
                     isPaused: isPaused
@@ -99,17 +107,6 @@ struct PlayerBottomBarView: View {
             )
         }
         .allowsHitTesting(false)
-    }
-
-    private var seriesContextLine: String? {
-        guard let item = viewModel.activeSession?.item else { return nil }
-        if let series = item.seriesTitle, !series.isEmpty {
-            if let s = item.season, let e = item.episode, s > 0, e > 0 {
-                return String(format: "%@ · S%02dE%02d", series, s, e)
-            }
-            return series
-        }
-        return nil
     }
 
     private var compactFormatSummary: String {
@@ -191,6 +188,7 @@ private struct ActiveChapterLabelLeafView: View {
 struct TimelineScrubberLeafView: View {
     @ObservedObject var viewModel: PlayerViewModel
     @ObservedObject var scrubState: PlayerScrubState
+    @ObservedObject var comfort: ComfortPreferences
     let engine: AetherEngine
     let duration: Double
     let isPaused: Bool
@@ -250,14 +248,29 @@ struct TimelineScrubberLeafView: View {
                     }
 
                     if isExpanded {
+                        let showPlayheadEars = comfort.showCatCompanions && (isPaused || isScrubbing)
                         Circle()
                             .fill(.white)
                             .frame(width: 18, height: 18)
+                            .overlay(alignment: .top) {
+                                if showPlayheadEars {
+                                    CatPlayheadEarsView()
+                                        .offset(y: -4)
+                                }
+                            }
                             .shadow(color: LunaTheme.amber.opacity(0.82), radius: isScrubbing ? 12 : 7)
                             .offset(x: max(0, min(totalWidth - 18, playheadX - 9)))
                     }
                 }
                 .frame(height: barHeight)
+                .overlay(alignment: .topLeading) {
+                    PauseCatOverlayLeafView(
+                        comfort: comfort,
+                        isPaused: isPaused,
+                        isScrubbing: isScrubbing,
+                        trackWidth: totalWidth
+                    )
+                }
                 .overlay(alignment: .bottomLeading) {
                     if isScrubbing {
                         let chapterTitle = viewModel.activeChapter(at: displayTime)?.title

@@ -26,6 +26,7 @@ public enum SideloadSafeStorage {
     public static let showNerdHUDKey = "luna.v1.comfort.show_nerd_hud"
     public static let lowResUpscaleModeKey = "luna.v1.comfort.low_res_upscale_mode"
     public static let audioDelayMsKey = "luna.v1.comfort.audio_delay_ms"
+    public static let showCatCompanionsKey = "luna.v1.comfort.show_cat_companions"
     public static let recentSearchesKey = "luna.v1.recent_searches"
 
     private static let keychainService = "luna.v1.credentials"

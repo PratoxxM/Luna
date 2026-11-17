@@ -189,7 +189,7 @@ struct PlayerContainerView: View {
                 if isBottomBarShown {
                     PlayerBottomBarView(
                         viewModel: viewModel,
-                        fallbackTitle: effectiveRequest.title
+                        fallbackRequest: effectiveRequest
                     )
                     .transition(.opacity)
                     .zIndex(5)
@@ -255,7 +255,10 @@ struct PlayerContainerView: View {
                 restoreCanvasFocusSoon()
             }
         }
-        .onChange(of: viewModel.playbackPhase) { _, phase in
+        .onChange(of: viewModel.playbackPhase) { oldPhase, phase in
+            if oldPhase == .paused && phase == .playing && viewModel.isPictureReadyForReveal && !isTopDrawerOpen {
+                revealBottomBarTemporarily()
+            }
             guard phase == .ended,
                   !viewModel.isResolving,
                   !viewModel.isSwitchingSource,
@@ -400,6 +403,11 @@ struct PlayerContainerView: View {
             Text("\(sign)\(secs) s")
                 .font(.title2.monospacedDigit().weight(.bold))
                 .foregroundStyle(.white)
+            if comfort.showCatCompanions {
+                Image(systemName: "pawprint.fill")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(LunaTheme.amber.opacity(0.85))
+            }
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 16)
@@ -436,6 +444,8 @@ struct PlayerContainerView: View {
                             itemId: base.itemId,
                             title: base.title,
                             seriesTitle: base.seriesTitle,
+                            season: base.season,
+                            episode: base.episode,
                             startPositionSeconds: base.startPositionSeconds,
                             candidateId: base.candidateId,
                             prepareToken: nil,

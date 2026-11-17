@@ -290,14 +290,12 @@ struct LibraryHubView: View {
         }()
 
         if activeItems.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(emptyStateHeadline)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(LunaTheme.moonlight)
-                Text(emptyStateSubtitle)
-                    .font(.callout)
-                    .foregroundStyle(LunaTheme.muted)
-            }
+            LibraryEmptyStateView(
+                comfort: sessionStore.comfort,
+                showMoonCat: activeSection == .watchlist || activeSection == .favorites,
+                headline: emptyStateHeadline,
+                subtitle: emptyStateSubtitle
+            )
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.vertical, 48)
         } else {
@@ -475,6 +473,30 @@ struct LibraryHubView: View {
             }
         } catch {
             showMutationError(error)
+        }
+    }
+}
+
+private struct LibraryEmptyStateView: View {
+    @ObservedObject var comfort: ComfortPreferences
+    let showMoonCat: Bool
+    let headline: String
+    let subtitle: String
+
+    var body: some View {
+        HStack(alignment: .center, spacing: showMoonCat && comfort.showCatCompanions ? 32 : 0) {
+            if showMoonCat && comfort.showCatCompanions {
+                MoonSleepingCatView(comfort: comfort)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(headline)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(LunaTheme.moonlight)
+                Text(subtitle)
+                    .font(.callout)
+                    .foregroundStyle(LunaTheme.muted)
+            }
         }
     }
 }

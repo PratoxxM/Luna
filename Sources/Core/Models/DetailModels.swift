@@ -36,6 +36,19 @@ public struct TvEpisodeCard: Codable, Identifiable, Equatable, Hashable, Sendabl
         String(format: "S%02dE%02d", seasonNumber, episodeNumber)
     }
 
+    public var nonGenericTitle: String? {
+        EpisodeTitleFormatter.nonGenericEpisodeTitle(
+            title,
+            season: seasonNumber,
+            episode: episodeNumber,
+            episodeCode: seasonEpisodeCode
+        )
+    }
+
+    public var displayCardTitle: String {
+        EpisodeTitleFormatter.episodeCardTitle(episode: self)
+    }
+
     public var formattedRuntime: String? {
         guard let runtimeSeconds, runtimeSeconds >= 60 else { return nil }
         let mins = Int((runtimeSeconds / 60.0).rounded())

@@ -5,6 +5,8 @@ public struct SourcePickerContext: Identifiable, Equatable, Hashable, Sendable {
     public let itemId: String
     public let title: String
     public let seriesTitle: String?
+    public let season: Int?
+    public let episode: Int?
     public let startPositionSeconds: Double?
     public let existingPrepareToken: String?
     public let backdropUrl: String?
@@ -14,6 +16,8 @@ public struct SourcePickerContext: Identifiable, Equatable, Hashable, Sendable {
         itemId: String,
         title: String,
         seriesTitle: String? = nil,
+        season: Int? = nil,
+        episode: Int? = nil,
         startPositionSeconds: Double? = nil,
         existingPrepareToken: String? = nil,
         backdropUrl: String? = nil,
@@ -23,10 +27,37 @@ public struct SourcePickerContext: Identifiable, Equatable, Hashable, Sendable {
         self.itemId = itemId
         self.title = title
         self.seriesTitle = seriesTitle
+        let parsed = EpisodeTitleFormatter.resolveSeasonAndEpisode(
+            itemId: itemId,
+            season: season,
+            episode: episode
+        )
+        self.season = parsed.season
+        self.episode = parsed.episode
         self.startPositionSeconds = startPositionSeconds
         self.existingPrepareToken = existingPrepareToken
         self.backdropUrl = backdropUrl
         self.logoUrl = logoUrl
+    }
+
+    public var apiTitle: String {
+        EpisodeTitleFormatter.apiEpisodeTitle(
+            rawTitle: title,
+            seriesTitle: seriesTitle,
+            itemId: itemId,
+            season: season,
+            episode: episode
+        )
+    }
+
+    public var displaySubject: String {
+        EpisodeTitleFormatter.sourcePickerSubject(
+            title: title,
+            seriesTitle: seriesTitle,
+            itemId: itemId,
+            season: season,
+            episode: episode
+        )
     }
 }
 
@@ -56,7 +87,7 @@ struct SourcePickerSheetView: View {
                             .font(.title2.weight(.bold))
                             .foregroundStyle(.white)
 
-                        Text("\(context.seriesTitle ?? context.title) · Rangert for \(sessionStore.roomName) (\(sessionStore.activePreset.shortBadgeLabel))")
+                        Text("\(context.displaySubject) · Rangert for \(sessionStore.roomName) (\(sessionStore.activePreset.shortBadgeLabel))")
                             .font(.callout)
                             .foregroundStyle(LunaTheme.muted)
                     }
@@ -70,8 +101,8 @@ struct SourcePickerSheetView: View {
 
                 if isLoading {
                     Spacer()
-                    HStack(spacing: 16) {
-                        ProgressView()
+                    VStack(spacing: 16) {
+                        ProwlingSourceCatView(comfort: sessionStore.comfort)
                         Text("Søker etter beste lokale og Usenet-kilder…")
                             .font(.headline)
                             .foregroundStyle(LunaTheme.moonlight)
@@ -174,7 +205,7 @@ struct SourcePickerSheetView: View {
             } else {
                 let prep = try await client.preparePlayback(
                     itemId: context.itemId,
-                    title: context.title,
+                    title: context.apiTitle,
                     seriesTitle: context.seriesTitle,
                     startPositionSeconds: context.startPositionSeconds
                 )

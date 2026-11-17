@@ -246,6 +246,11 @@ struct SettingsView: View {
                         )
 
                         SettingsToggleRowButton(
+                            title: "Vis animerte kattefølgesvenner ved innlasting og pause",
+                            isOn: $comfort.showCatCompanions
+                        )
+
+                        SettingsToggleRowButton(
                             title: "Vis sanntids teknisk status («Nerde-HUD») i spilleren",
                             isOn: $comfort.showNerdHUD
                         )

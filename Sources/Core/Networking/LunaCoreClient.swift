@@ -474,12 +474,19 @@ public struct LunaCoreClient: Sendable {
             let seriesTitle: String?
             let startPositionSeconds: Double?
         }
+        let sanitizedTitle = EpisodeTitleFormatter.apiEpisodeTitle(
+            rawTitle: title,
+            seriesTitle: seriesTitle,
+            itemId: itemId,
+            season: nil,
+            episode: nil
+        )
         return try await sendJSON(
             method: "POST",
             path: "/api/tv/v1/playback/prepare",
             body: PrepareBody(
                 itemId: itemId,
-                title: title,
+                title: sanitizedTitle,
                 seriesTitle: seriesTitle,
                 startPositionSeconds: startPositionSeconds
             )
@@ -505,11 +512,18 @@ public struct LunaCoreClient: Sendable {
         guard let url = buildAbsoluteURL("/api/tv/v1/playback/resolve") else {
             throw LunaCoreError.invalidURL("/api/tv/v1/playback/resolve")
         }
+        let sanitizedTitle = EpisodeTitleFormatter.apiEpisodeTitle(
+            rawTitle: title,
+            seriesTitle: seriesTitle,
+            itemId: itemId,
+            season: nil,
+            episode: nil
+        )
         var req = authorizedRequest(url: url, method: "POST")
         req.httpBody = try JSONEncoder().encode(
             ResolveBody(
                 itemId: itemId,
-                title: title,
+                title: sanitizedTitle,
                 seriesTitle: seriesTitle,
                 startPositionSeconds: startPositionSeconds,
                 candidateId: candidateId,

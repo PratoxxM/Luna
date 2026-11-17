@@ -2,6 +2,7 @@ import SwiftUI
 
 struct EpisodeCardView: View {
     let episode: TvEpisodeCard
+    var seriesTitle: String? = nil
     let client: LunaCoreClient?
     let onPlay: () -> Void
     let onPickSource: () -> Void
@@ -103,7 +104,7 @@ struct EpisodeCardView: View {
             }
 
             HStack(spacing: 8) {
-                Text("\(episode.codeLabel) · \(episode.title)")
+                Text(EpisodeTitleFormatter.episodeCardTitle(episode: episode, seriesTitle: seriesTitle))
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(isFocused ? .white : LunaTheme.moonlight)
                     .lineLimit(1)

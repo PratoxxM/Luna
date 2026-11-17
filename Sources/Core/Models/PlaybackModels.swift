@@ -5,6 +5,8 @@ public struct PlaybackLaunchRequest: Identifiable, Equatable, Sendable {
     public let itemId: String
     public let title: String
     public let seriesTitle: String?
+    public let season: Int?
+    public let episode: Int?
     public let startPositionSeconds: Double?
     public let candidateId: String?
     public let prepareToken: String?
@@ -15,6 +17,8 @@ public struct PlaybackLaunchRequest: Identifiable, Equatable, Sendable {
         itemId: String,
         title: String,
         seriesTitle: String? = nil,
+        season: Int? = nil,
+        episode: Int? = nil,
         startPositionSeconds: Double? = nil,
         candidateId: String? = nil,
         prepareToken: String? = nil,
@@ -25,11 +29,32 @@ public struct PlaybackLaunchRequest: Identifiable, Equatable, Sendable {
         self.itemId = itemId
         self.title = title
         self.seriesTitle = seriesTitle
+        let parsed = EpisodeTitleFormatter.resolveSeasonAndEpisode(
+            itemId: itemId,
+            season: season,
+            episode: episode
+        )
+        self.season = parsed.season
+        self.episode = parsed.episode
         self.startPositionSeconds = startPositionSeconds
         self.candidateId = candidateId
         self.prepareToken = prepareToken
         self.backdropUrl = backdropUrl
         self.logoUrl = logoUrl
+    }
+
+    public var formattedEpisodeCode: String? {
+        EpisodeTitleFormatter.formatEpisodeCode(season: season, episode: episode)
+    }
+
+    public var apiTitle: String {
+        EpisodeTitleFormatter.apiEpisodeTitle(
+            rawTitle: title,
+            seriesTitle: seriesTitle,
+            itemId: itemId,
+            season: season,
+            episode: episode
+        )
     }
 }
 

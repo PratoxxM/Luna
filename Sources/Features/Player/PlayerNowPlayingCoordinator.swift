@@ -83,20 +83,17 @@ enum PlayerNowPlayingCoordinator {
         engine.setVideoNowPlayingInfo([:])
     }
 
-    private static func makeBaseInfo(for session: TvPlaybackSession) -> [String: Any] {
+    static func makeBaseInfo(for session: TvPlaybackSession) -> [String: Any] {
+        let meta = EpisodeTitleFormatter.nowPlayingMetadata(for: session.item)
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: session.item.title
+            MPMediaItemPropertyTitle: meta.title
         ]
 
-        if let seriesTitle = session.item.seriesTitle, !seriesTitle.isEmpty {
-            info[MPMediaItemPropertyArtist] = seriesTitle
-            if let s = session.item.season, let e = session.item.episode {
-                info[MPMediaItemPropertyAlbumTitle] = String(format: "%@ · S%02dE%02d", seriesTitle, s, e)
-            } else {
-                info[MPMediaItemPropertyAlbumTitle] = seriesTitle
-            }
-        } else if let year = session.item.year {
-            info[MPMediaItemPropertyArtist] = String(year)
+        if let artist = meta.artist, !artist.isEmpty {
+            info[MPMediaItemPropertyArtist] = artist
+        }
+        if let albumTitle = meta.albumTitle, !albumTitle.isEmpty {
+            info[MPMediaItemPropertyAlbumTitle] = albumTitle
         }
 
         return info

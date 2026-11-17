@@ -18,22 +18,50 @@ struct TransientErrorBanner: View {
 enum MediaCardMutator {
     static func resolvePlayTarget(
         for card: TvMediaCard
-    ) -> (itemId: String, title: String, seriesTitle: String?, startPos: Double?) {
+    ) -> (itemId: String, title: String, seriesTitle: String?, season: Int?, episode: Int?, startPos: Double?) {
         if let direct = card.directPlayTarget {
-            let displayTitle = card.episodeTitle ?? direct.title ?? card.title
+            let parsedFromId = EpisodeTitleFormatter.parseEpisodeFromItemId(direct.itemId)
+            let s = direct.season ?? card.nextUp?.season ?? card.progress?.season ?? parsedFromId?.season
+            let e = direct.episode ?? card.nextUp?.episode ?? card.progress?.episode ?? parsedFromId?.episode
+            let isEpisode = EpisodeTitleFormatter.isEpisodeTarget(
+                itemId: direct.itemId,
+                mediaType: direct.mediaType ?? (card.mediaType == "series" ? "episode" : card.mediaType),
+                seriesTitle: direct.seriesTitle ?? (card.mediaType == "series" ? card.title : nil),
+                season: s,
+                episode: e
+            )
             let seriesName = card.mediaType == "series" ? card.title : direct.seriesTitle
+            let displayTitle: String
+            if isEpisode {
+                let clean = card.nonGenericEpisodeTitle
+                    ?? EpisodeTitleFormatter.nonGenericEpisodeTitle(
+                        direct.title,
+                        seriesTitle: seriesName,
+                        season: s,
+                        episode: e,
+                        episodeCode: card.episodeCode
+                    )
+                displayTitle = clean ?? ""
+            } else {
+                displayTitle = direct.title ?? card.title
+            }
             return (
                 direct.itemId,
                 displayTitle,
                 seriesName,
+                s,
+                e,
                 direct.startPositionSeconds ?? card.progress?.positionSeconds
             )
         }
         if card.mediaType == "series", let next = card.nextUp, let tmdb = card.ids.tmdb {
+            let clean = card.nonGenericEpisodeTitle
             return (
                 "episode:tmdb:\(tmdb):s\(next.season):e\(next.episode)",
-                card.episodeTitle ?? card.title,
+                clean ?? "",
                 card.title,
+                next.season,
+                next.episode,
                 card.progress?.positionSeconds
             )
         }
@@ -41,14 +69,34 @@ enum MediaCardMutator {
            let s = card.progress?.season,
            let e = card.progress?.episode,
            let tmdb = card.ids.tmdb {
+            let clean = EpisodeTitleFormatter.nonGenericEpisodeTitle(
+                card.episodeTitle,
+                seriesTitle: card.title,
+                season: s,
+                episode: e,
+                episodeCode: card.episodeCode
+            )
             return (
                 "episode:tmdb:\(tmdb):s\(s):e\(e)",
+                clean ?? "",
                 card.title,
-                card.title,
+                s,
+                e,
                 card.progress?.positionSeconds
             )
         }
-        return (card.itemId, card.title, nil, card.progress?.positionSeconds)
+        if card.mediaType == "series" {
+            let parsedCode = EpisodeTitleFormatter.parseEpisodeCode(card.episodeCode)
+            return (
+                card.itemId,
+                card.nonGenericEpisodeTitle ?? "",
+                card.title,
+                parsedCode?.season,
+                parsedCode?.episode,
+                card.progress?.positionSeconds
+            )
+        }
+        return (card.itemId, card.title, nil, nil, nil, card.progress?.positionSeconds)
     }
 
     static func launchPlayback(for card: TvMediaCard, sessionStore: AppSessionStore) {
@@ -57,6 +105,8 @@ enum MediaCardMutator {
             itemId: resolved.itemId,
             title: resolved.title,
             seriesTitle: resolved.seriesTitle,
+            season: resolved.season,
+            episode: resolved.episode,
             startPositionSeconds: resolved.startPos,
             backdropUrl: card.preferredLandscapePath,
             logoUrl: card.logoUrl

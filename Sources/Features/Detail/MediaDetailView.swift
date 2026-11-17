@@ -60,6 +60,8 @@ struct MediaDetailView: View {
                                     itemId: target.itemId,
                                     title: target.title,
                                     seriesTitle: target.seriesTitle,
+                                    season: target.season,
+                                    episode: target.episode,
                                     startPositionSeconds: target.startPos,
                                     existingPrepareToken: preResolve.matchingToken(for: target.itemId),
                                     backdropUrl: detail.backdropUrl ?? detail.cardBackdropUrl,
@@ -134,6 +136,8 @@ struct MediaDetailView: View {
                         itemId: target.itemId,
                         title: target.title,
                         seriesTitle: target.seriesTitle,
+                        season: target.season,
+                        episode: target.episode,
                         startPositionSeconds: target.startPositionSeconds,
                         candidateId: reusedToken == nil ? picked.candidateId : nil,
                         prepareToken: reusedToken,
@@ -146,6 +150,7 @@ struct MediaDetailView: View {
                 }
             )
             .environmentObject(sessionStore)
+            .environmentObject(sessionStore.comfort)
             .preferredColorScheme(.dark)
         }
         .confirmationDialog(
@@ -242,6 +247,7 @@ struct MediaDetailView: View {
                             ForEach(episodes) { ep in
                                 EpisodeCardView(
                                     episode: ep,
+                                    seriesTitle: detail.title,
                                     client: client,
                                     onPlay: {
                                         guard ep.isUpcoming != true else { return }
@@ -249,10 +255,19 @@ struct MediaDetailView: View {
                                             itemId: ep.itemId,
                                             client: sessionStore.makeClient()
                                         )
+                                        let cleanEpisodeTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
+                                            ep.title,
+                                            seriesTitle: detail.title,
+                                            season: ep.seasonNumber,
+                                            episode: ep.episodeNumber,
+                                            episodeCode: ep.seasonEpisodeCode
+                                        ) ?? ""
                                         sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
                                             itemId: ep.itemId,
-                                            title: ep.title,
+                                            title: cleanEpisodeTitle,
                                             seriesTitle: detail.title,
+                                            season: ep.seasonNumber,
+                                            episode: ep.episodeNumber,
                                             startPositionSeconds: ep.progress?.positionSeconds,
                                             prepareToken: usePrep,
                                             backdropUrl: ep.stillUrl ?? detail.backdropUrl,
@@ -261,12 +276,23 @@ struct MediaDetailView: View {
                                     },
                                     onPickSource: {
                                         guard ep.isUpcoming != true else { return }
+                                        let cleanEpisodeTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
+                                            ep.title,
+                                            seriesTitle: detail.title,
+                                            season: ep.seasonNumber,
+                                            episode: ep.episodeNumber,
+                                            episodeCode: ep.seasonEpisodeCode
+                                        ) ?? ""
                                         sourcePickerContext = SourcePickerContext(
                                             itemId: ep.itemId,
-                                            title: ep.title,
+                                            title: cleanEpisodeTitle,
                                             seriesTitle: detail.title,
+                                            season: ep.seasonNumber,
+                                            episode: ep.episodeNumber,
                                             startPositionSeconds: ep.progress?.positionSeconds,
-                                            existingPrepareToken: preResolve.matchingToken(for: ep.itemId)
+                                            existingPrepareToken: preResolve.matchingToken(for: ep.itemId),
+                                            backdropUrl: ep.stillUrl ?? detail.backdropUrl,
+                                            logoUrl: detail.logoUrl
                                         )
                                     },
                                     onToggleWatched: {
@@ -326,7 +352,14 @@ struct MediaDetailView: View {
         return "Spill av"
     }
 
-    private func primaryTargetInfo(_ item: TvItemDetail) -> (itemId: String, title: String, seriesTitle: String?, startPos: Double?) {
+    private func primaryTargetInfo(_ item: TvItemDetail) -> (
+        itemId: String,
+        title: String,
+        seriesTitle: String?,
+        season: Int?,
+        episode: Int?,
+        startPos: Double?
+    ) {
         let itemProgPos: Double? = (item.progress?.percent ?? 0) < 90 ? item.progress?.positionSeconds : 0
         if item.mediaType == "series" {
             let rewatchFromStart = item.nextUp == nil && item.watched
@@ -353,9 +386,16 @@ struct MediaDetailView: View {
             } else {
                 startPos = 0
             }
-            return (epId, matchingEp?.title ?? item.title, item.title, startPos)
+            let cleanEpisodeTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
+                matchingEp?.title,
+                seriesTitle: item.title,
+                season: s,
+                episode: e,
+                episodeCode: matchingEp?.seasonEpisodeCode
+            )
+            return (epId, cleanEpisodeTitle ?? "", item.title, s, e, startPos)
         }
-        return (item.itemId, item.title, nil, itemProgPos)
+        return (item.itemId, item.title, nil, nil, nil, itemProgPos)
     }
 
     private func launchPrimaryPlayback(_ item: TvItemDetail) {
@@ -368,6 +408,8 @@ struct MediaDetailView: View {
             itemId: target.itemId,
             title: target.title,
             seriesTitle: target.seriesTitle,
+            season: target.season,
+            episode: target.episode,
             startPositionSeconds: target.startPos,
             prepareToken: matchingToken,
             backdropUrl: item.backdropUrl ?? item.cardBackdropUrl,
@@ -417,7 +459,7 @@ struct MediaDetailView: View {
                 loaded.blurHash
             )
 
-            if loaded.mediaType == "movie" || loaded.nextUp != nil {
+            if loaded.mediaType == "movie", !Task.isCancelled {
                 schedulePreResolve(for: loaded)
             }
 
@@ -439,7 +481,7 @@ struct MediaDetailView: View {
                 } else {
                     await loadSeasonEpisodes(detail: loaded, seasonNumber: targetSeason)
                 }
-                if loaded.nextUp == nil {
+                if !Task.isCancelled {
                     schedulePreResolve(for: loaded)
                 }
             }
