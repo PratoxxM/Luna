@@ -143,7 +143,7 @@ struct PairingOnboardingView: View {
                 )
 
             VStack(spacing: 8) {
-                Text("Åpne LunaCore på mobil eller PC → System → Luna Apple TV (eller banneret øverst).")
+                Text("Åpne LunaCore på mobil eller PC → Apple TV (eller banneret øverst).")
                     .font(.callout)
                     .foregroundStyle(LunaTheme.moonlight)
                 Text("Velg rom («Kjellerstua» eller «Stua») og trykk Godkjenn — Luna logger inn automatisk.")

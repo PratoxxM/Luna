@@ -467,6 +467,8 @@ extension PlayerViewModel {
         firstFrameFallbackTask = nil
         coalescedSeekTask?.cancel()
         coalescedSeekTask = nil
+        chapterSeekTask?.cancel()
+        chapterSeekTask = nil
         smartRuleTask?.cancel()
         smartRuleTask = nil
         audioDelayCommitTask?.cancel()

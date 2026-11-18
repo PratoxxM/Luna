@@ -88,4 +88,20 @@ final class BonjourServerBrowserTests: XCTestCase {
         browser.stop()
         XCTAssertFalse(browser.isSearching)
     }
+
+    @MainActor
+    func testResolveTimeoutPrunesStalledConnectionCleanly() async {
+        let browser = BonjourServerBrowser(resolveTimeoutNanoseconds: 35_000_000)
+        browser.beginResolve(
+            key: "stalled._lunacore._tcp.local.",
+            endpoint: .hostPort(host: "127.0.0.1", port: 9),
+            serviceName: "LunaCore",
+            txt: [:]
+        )
+        XCTAssertEqual(browser.activeResolverCount, 1)
+
+        try? await Task.sleep(nanoseconds: 120_000_000)
+        XCTAssertEqual(browser.activeResolverCount, 0)
+        browser.stop()
+    }
 }

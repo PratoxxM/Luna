@@ -69,9 +69,11 @@ for check_dir in [root / "Sources", root / "Tests", root / "Packages"]:
         if name == "Watchlist" or RETIRED_NAME_RE.search(name):
             errors.append(f"RETIRED_PATH {rel}: retired leftover file/directory")
 
-PRIVATE_IP_RE = re.compile(r"\b(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b")
+PRIVATE_IP_RE = re.compile(
+    r"\b(?:10\.\d{1,3}|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b"
+)
 NAS_PATH_RE = re.compile(r"/volume[12](?=[^0-9A-Za-z_-]|$)")
-SECRET_LITERAL_RE = re.compile(r"luna_tv_|skogsrudveien", re.IGNORECASE)
+SECRET_LITERAL_RE = re.compile(r"luna_tv_|skogsrudveien|\.ts\.net", re.IGNORECASE)
 RETIRED_BRAND_RE = re.compile(r"mediaos|media[-_]core", re.IGNORECASE)
 
 TEXT_EXTS = {".swift", ".yml", ".yaml", ".md", ".plist", ".json", ".txt", ".sh", ".py"}
@@ -80,12 +82,12 @@ scan_targets = [
     root / "Tests",
     root / "Packages",
     root / "Config",
+    root / "Resources",
     root / "docs",
     root / "ops",
     root / ".github",
     root / "project.yml",
-    root / "AGENTS.md",
-    root / "README.md",
+    *sorted(root.glob("*.md")),
 ]
 
 for target in scan_targets:

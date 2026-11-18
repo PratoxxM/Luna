@@ -82,6 +82,8 @@ public final class AppSessionStore: ObservableObject {
     private let cachedOSVersion: String
     private var cachedClient: LunaCoreClient?
     private var overrideSyncTask: Task<Void, Never>?
+    private var profileSyncTask: Task<Void, Never>?
+    internal private(set) var appliedTLSConfiguredHost: String?
 
     public var isPaired: Bool {
         serverBaseURL != nil && !(deviceToken ?? "").isEmpty
@@ -247,6 +249,8 @@ public final class AppSessionStore: ObservableObject {
         self.hardwareProfile = hardwareProfile
         defaults.set(roomName, forKey: SideloadSafeStorage.roomNameKey)
         defaults.set(hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
+        profileSyncTask?.cancel()
+        profileSyncTask = nil
 
         if persistAsLocalOverride {
             self.localProfileOverride = hardwareProfile
@@ -257,8 +261,11 @@ public final class AppSessionStore: ObservableObject {
             defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
             rebuildCachedClient()
             if let client = makeClient() {
-                Task {
+                profileSyncTask = Task { @MainActor [weak self] in
                     try? await client.updateDeviceProfile(roomName: roomName, hardwareProfile: hardwareProfile)
+                    if !Task.isCancelled {
+                        self?.profileSyncTask = nil
+                    }
                 }
             }
         }
@@ -294,7 +301,7 @@ public final class AppSessionStore: ObservableObject {
                 return trimmed
             }
         }
-        return "2.4.0"
+        return "2.6.0"
     }
 
     public nonisolated static func currentBuildNumberString() -> String? {
@@ -329,6 +336,8 @@ public final class AppSessionStore: ObservableObject {
     public func unpairDevice() {
         overrideSyncTask?.cancel()
         overrideSyncTask = nil
+        profileSyncTask?.cancel()
+        profileSyncTask = nil
         if let old = deviceToken, old.count >= 8 {
             EngineLog.unregisterSecret(old)
         }
@@ -351,6 +360,7 @@ public final class AppSessionStore: ObservableObject {
         unpairDevice()
         serverBaseURL = nil
         defaults.removeObject(forKey: SideloadSafeStorage.serverURLKey)
+        applyEngineTLSPolicy()
         rebuildCachedClient()
     }
 
@@ -390,16 +400,30 @@ public final class AppSessionStore: ObservableObject {
         return url
     }
 
+    internal nonisolated static func shouldTrustServerHost(
+        _ host: String,
+        configuredHost: String?,
+        allowSelfSignedLanTLS: Bool
+    ) -> Bool {
+        guard allowSelfSignedLanTLS else { return false }
+        let normalized = host.lowercased()
+        if let configuredHost = configuredHost?.lowercased(), normalized == configuredHost {
+            return true
+        }
+        return normalized.hasSuffix(".local")
+    }
+
     private func applyEngineTLSPolicy() {
         let allowLan = allowSelfSignedLanTLS
         let configuredHost = serverBaseURL?.host?.lowercased()
+        appliedTLSConfiguredHost = allowLan ? configuredHost : nil
         if allowLan {
             EngineTLS.serverTrustEvaluator = { space in
-                let host = space.host.lowercased()
-                if let configuredHost, host == configuredHost {
-                    return true
-                }
-                return host.hasSuffix(".local")
+                Self.shouldTrustServerHost(
+                    space.host,
+                    configuredHost: configuredHost,
+                    allowSelfSignedLanTLS: true
+                )
             }
         } else {
             EngineTLS.serverTrustEvaluator = nil

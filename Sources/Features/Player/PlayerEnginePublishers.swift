@@ -43,7 +43,7 @@ extension PlayerViewModel {
                         )
                     }
                 } else if phase == .playing, previousPhase != .playing {
-                    guard !self.isRestoringFromBackground else { return }
+                    guard !self.isRestoringFromBackground, !self.isDismissing else { return }
                     if self.needsNativeAudioActivationAfterPausedRestore {
                         self.needsNativeAudioActivationAfterPausedRestore = false
                         let videoRoute = self.transport.videoRoute
@@ -55,7 +55,8 @@ extension PlayerViewModel {
                     if self.lastReportedServerState != nil,
                        self.lastReportedServerState != "playing" {
                         Task { @MainActor [weak self] in
-                            await self?.sendHeartbeatOnce(overrideState: "playing")
+                            guard let self, !self.isDismissing else { return }
+                            await self.sendHeartbeatOnce(overrideState: "playing")
                         }
                     }
                 }

@@ -19,8 +19,16 @@ public final class BonjourServerBrowser: ObservableObject {
 
     private var browser: NWBrowser?
     private var activeResolvers: [String: NWConnection] = [:]
+    private var resolveTimeouts: [String: Task<Void, Never>] = [:]
+    internal let resolveTimeoutNanoseconds: UInt64
 
-    public init() {}
+    public init(resolveTimeoutNanoseconds: UInt64 = 8_000_000_000) {
+        self.resolveTimeoutNanoseconds = resolveTimeoutNanoseconds
+    }
+
+    internal var activeResolverCount: Int {
+        activeResolvers.count
+    }
 
     public func start() {
         stop()
@@ -57,11 +65,82 @@ public final class BonjourServerBrowser: ObservableObject {
     public func stop() {
         browser?.cancel()
         browser = nil
+        for (_, timeoutTask) in resolveTimeouts {
+            timeoutTask.cancel()
+        }
+        resolveTimeouts.removeAll()
         for (_, conn) in activeResolvers {
+            conn.stateUpdateHandler = nil
             conn.cancel()
         }
         activeResolvers.removeAll()
         isSearching = false
+    }
+
+    internal func cancelResolver(for key: String) {
+        resolveTimeouts.removeValue(forKey: key)?.cancel()
+        if let conn = activeResolvers.removeValue(forKey: key) {
+            conn.stateUpdateHandler = nil
+            conn.cancel()
+        }
+    }
+
+    internal func beginResolve(
+        key: String,
+        endpoint: NWEndpoint,
+        serviceName: String,
+        txt: [String: String]
+    ) {
+        cancelResolver(for: key)
+
+        let params = NWParameters.tcp
+        if let ip = params.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
+            ip.version = .v4
+        }
+        let conn = NWConnection(to: endpoint, using: params)
+        activeResolvers[key] = conn
+
+        conn.stateUpdateHandler = { [weak self, weak conn] state in
+            switch state {
+            case .ready:
+                let remoteEndpoint = conn?.currentPath?.remoteEndpoint
+                conn?.stateUpdateHandler = nil
+                conn?.cancel()
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.resolveTimeouts.removeValue(forKey: key)?.cancel()
+                    self.activeResolvers.removeValue(forKey: key)
+                    if let resolved = Self.extractServer(
+                        id: key,
+                        serviceName: serviceName,
+                        remoteEndpoint: remoteEndpoint,
+                        txt: txt
+                    ) {
+                        if let existingIdx = self.servers.firstIndex(where: { $0.id == key }) {
+                            self.servers[existingIdx] = resolved
+                        } else if !self.servers.contains(where: { $0.baseURL == resolved.baseURL }) {
+                            self.servers.append(resolved)
+                        }
+                    }
+                }
+            case .failed, .cancelled:
+                conn?.stateUpdateHandler = nil
+                Task { @MainActor [weak self] in
+                    self?.resolveTimeouts.removeValue(forKey: key)?.cancel()
+                    self?.activeResolvers.removeValue(forKey: key)
+                }
+            default:
+                break
+            }
+        }
+
+        let timeoutNs = resolveTimeoutNanoseconds
+        resolveTimeouts[key] = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: timeoutNs)
+            guard !Task.isCancelled, let self else { return }
+            self.cancelResolver(for: key)
+        }
+        conn.start(queue: .global(qos: .userInitiated))
     }
 
     private func handleBrowseResults(_ results: Set<NWBrowser.Result>) {
@@ -78,52 +157,12 @@ public final class BonjourServerBrowser: ObservableObject {
             if case let .bonjour(record) = result.metadata {
                 txtDict = record.dictionary
             }
-
-            let params = NWParameters.tcp
-            if let ip = params.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
-                ip.version = .v4
-            }
-            let conn = NWConnection(to: result.endpoint, using: params)
-            activeResolvers[key] = conn
-            let capturedTxt = txtDict
-            let capturedName = name
-
-            conn.stateUpdateHandler = { [weak self] state in
-                switch state {
-                case .ready:
-                    let remoteEndpoint = conn.currentPath?.remoteEndpoint
-                    conn.cancel()
-                    Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        self.activeResolvers.removeValue(forKey: key)
-                        if let resolved = Self.extractServer(
-                            id: key,
-                            serviceName: capturedName,
-                            remoteEndpoint: remoteEndpoint,
-                            txt: capturedTxt
-                        ) {
-                            if let existingIdx = self.servers.firstIndex(where: { $0.id == key }) {
-                                self.servers[existingIdx] = resolved
-                            } else if !self.servers.contains(where: { $0.baseURL == resolved.baseURL }) {
-                                self.servers.append(resolved)
-                            }
-                        }
-                    }
-                case .failed, .cancelled:
-                    Task { @MainActor [weak self] in
-                        self?.activeResolvers.removeValue(forKey: key)
-                    }
-                default:
-                    break
-                }
-            }
-            conn.start(queue: .global(qos: .userInitiated))
+            beginResolve(key: key, endpoint: result.endpoint, serviceName: name, txt: txtDict)
         }
 
         // Prune servers and pending resolvers that disappeared from the LAN.
-        for (staleKey, staleConn) in activeResolvers where !activeKeys.contains(staleKey) {
-            staleConn.cancel()
-            activeResolvers.removeValue(forKey: staleKey)
+        for staleKey in Array(activeResolvers.keys) where !activeKeys.contains(staleKey) {
+            cancelResolver(for: staleKey)
         }
         servers.removeAll { !activeKeys.contains($0.id) }
     }

@@ -158,4 +158,58 @@ final class PausedScrubCommitTests: XCTestCase {
         task.cancel()
         await task.value
     }
+
+    @MainActor
+    func testSeekToChapterCancelsPendingCoalescedRelativeSeekAndSeeksExact() async throws {
+        let suite = "luna.test.chapterseek.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let engine = try AetherEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+
+        let seeks = TestLockedBox<[(Double, Bool)]>([])
+        let transport = MockPlayerTransport(state: .playing, playbackPhase: .playing)
+        transport.currentTime = 100
+        transport.onSeek = { pos, exact in
+            seeks.withLock { $0.append((pos, exact)) }
+        }
+
+        let vm = PlayerViewModel(
+            engine: engine,
+            comfort: ComfortPreferences(defaults: defaults),
+            transport: transport
+        )
+        vm.isResolving = false
+        vm.durationSeconds = 600
+
+        vm.coalesceRelativeSeek(delta: 30)
+        XCTAssertNotNil(vm.coalescedSeekTask)
+        XCTAssertEqual(vm.coalescedSeekPreviewTarget, 130)
+
+        let chapter = PlaybackChapter(
+            id: "ch-2",
+            title: "Act II",
+            startSeconds: 320,
+            endSeconds: 480,
+            kind: .chapter
+        )
+        vm.seekToChapter(chapter)
+        XCTAssertNil(vm.coalescedSeekTask)
+        XCTAssertEqual(vm.coalescedSeekDelta, 0)
+        XCTAssertNil(vm.coalescedSeekPreviewTarget)
+
+        await vm.chapterSeekTask?.value
+        try? await Task.sleep(nanoseconds: 280_000_000)
+        let recorded = seeks.withLock { $0 }
+        XCTAssertEqual(recorded.count, 1)
+        XCTAssertEqual(recorded.first?.0, 320)
+        XCTAssertEqual(recorded.first?.1, true)
+    }
 }

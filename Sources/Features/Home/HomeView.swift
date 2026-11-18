@@ -36,6 +36,8 @@ struct HomeView: View {
     @State private var sourcePickerContext: SourcePickerContext?
     @State private var modalToken = UUID()
     @State private var mutationBannerTask: Task<Void, Never>?
+    @State private var reloadTask: Task<Void, Never>?
+    @State private var reloadGeneration: UInt64 = 0
 
     @Namespace private var homeFocusNamespace
 
@@ -90,7 +92,7 @@ struct HomeView: View {
                             .font(.callout)
                             .foregroundStyle(LunaTheme.amber)
                         LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                            Task { await revalidateHome(forceUnconditional: true) }
+                            scheduleRevalidateHome(forceUnconditional: true)
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -198,8 +200,12 @@ struct HomeView: View {
                ) {
                 return
             }
+            reloadTask?.cancel()
+            reloadTask = nil
+            reloadGeneration &+= 1
+            let taskGen = reloadGeneration
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            await revalidateHome(forceUnconditional: false, scopeKey: currentScope)
+            await revalidateHome(forceUnconditional: false, scopeKey: currentScope, generation: taskGen)
         }
         .onChange(of: sourcePickerContext != nil) { _, isShowingModal in
             if isShowingModal {
@@ -211,7 +217,7 @@ struct HomeView: View {
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
             guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
             lastSeenRefreshNonce = newNonce
-            Task { await revalidateHome(forceUnconditional: false) }
+            scheduleRevalidateHome(forceUnconditional: false)
         }
         .onChange(of: isActiveTab) { _, active in
             guard active else { return }
@@ -223,7 +229,7 @@ struct HomeView: View {
             )
             if !isFresh {
                 lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-                Task { await revalidateHome(forceUnconditional: false) }
+                scheduleRevalidateHome(forceUnconditional: false)
             }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -236,10 +242,12 @@ struct HomeView: View {
             ) else {
                 return
             }
-            Task { await revalidateHome(forceUnconditional: false) }
+            scheduleRevalidateHome(forceUnconditional: false)
         }
         .onDisappear {
             mutationBannerTask?.cancel()
+            reloadTask?.cancel()
+            reloadTask = nil
             if sourcePickerContext == nil {
                 subpageVisibility.leaveModal(modalToken)
             }
@@ -275,7 +283,19 @@ struct HomeView: View {
         }
     }
 
-    private func revalidateHome(forceUnconditional: Bool, scopeKey: String? = nil) async {
+    private func scheduleRevalidateHome(forceUnconditional: Bool, scopeKey: String? = nil) {
+        reloadTask?.cancel()
+        reloadGeneration &+= 1
+        let gen = reloadGeneration
+        reloadTask = Task { @MainActor in
+            await revalidateHome(forceUnconditional: forceUnconditional, scopeKey: scopeKey, generation: gen)
+            if reloadGeneration == gen {
+                reloadTask = nil
+            }
+        }
+    }
+
+    private func revalidateHome(forceUnconditional: Bool, scopeKey: String? = nil, generation: UInt64? = nil) async {
         guard let client = sessionStore.makeClient() else { return }
         let resolvedScope = scopeKey ?? "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
         if homePayload == nil {
@@ -287,6 +307,7 @@ struct HomeView: View {
             let result = try await client.fetchHomeConditional(
                 ifNoneMatch: forceUnconditional ? nil : cachedEtag
             )
+            guard !Task.isCancelled, (generation == nil || generation == reloadGeneration) else { return }
             switch result {
             case .notModified:
                 lastValidatedAt = Date()
@@ -309,14 +330,19 @@ struct HomeView: View {
                     decodedPayload: payload
                 )
             }
+        } catch is CancellationError {
+            return
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
+            guard !Task.isCancelled, (generation == nil || generation == reloadGeneration) else { return }
             if homePayload == nil {
                 errorMessage = error.localizedDescription
             }
         }
-        isInitialColdFetch = false
+        if generation == nil || generation == reloadGeneration {
+            isInitialColdFetch = false
+        }
     }
 
     private func openSourcePicker(for card: TvMediaCard) {

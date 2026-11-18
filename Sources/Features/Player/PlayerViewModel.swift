@@ -101,6 +101,7 @@ final class PlayerViewModel: ObservableObject {
 
     var cancellables = Set<AnyCancellable>()
     var coalescedSeekTask: Task<Void, Never>?
+    var chapterSeekTask: Task<Void, Never>?
     var smartRuleTask: Task<Void, Never>?
     var switchSourceTask: Task<Void, Never>?
     var audioDelayCommitTask: Task<Void, Never>?
@@ -408,6 +409,8 @@ final class PlayerViewModel: ObservableObject {
         coalescedSeekDelta = accumulatedDelta
         coalescedSeekPreviewTarget = clampedTarget
 
+        chapterSeekTask?.cancel()
+        chapterSeekTask = nil
         coalescedSeekTask?.cancel()
         coalescedSeekTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 220_000_000)
@@ -422,8 +425,19 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func seekToChapter(_ chapter: PlaybackChapter) {
-        Task { @MainActor [weak self] in
-            await self?.transport.seek(to: max(0, chapter.startSeconds), exact: true)
+        guard !isResolving else { return }
+        coalescedSeekTask?.cancel()
+        coalescedSeekTask = nil
+        coalescedSeekDelta = 0
+        coalescedSeekPreviewTarget = nil
+        chapterSeekTask?.cancel()
+        let targetSeconds = max(0, chapter.startSeconds)
+        chapterSeekTask = Task { @MainActor [weak self] in
+            guard !Task.isCancelled, let self else { return }
+            await self.transport.seek(to: targetSeconds, exact: true)
+            if !Task.isCancelled {
+                self.chapterSeekTask = nil
+            }
         }
     }
 

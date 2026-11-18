@@ -60,7 +60,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Features/Detail/DetailSeasonsSectionView.swift` | Season tabs & horizontal episode strip | — | — |
 | `Sources/Features/Detail/EpisodeCardView.swift` | Focusable episode tile with progress, air badge & watched toggle | — | `EpisodeTitleFormattingTests.swift` |
 | `Sources/Features/Detail/DetailPreResolveController.swift` | Background pre-resolve + WebSocket progress bridge | `POST /playback/prepare`, `WS /ws/playback/:id` | `PlaybackResolveSocketTests.swift` |
-| `Sources/Features/Detail/SourcePickerSheetView.swift` | Focusable release/source selector sheet | `GET /playback/:id/alternatives` | — |
+| `Sources/Features/Detail/SourcePickerSheetView.swift` | Focusable release/source selector sheet | `GET /playback/:id/alternatives` | `ClientOriginAndBlurHashTests.swift` |
 | `Sources/Features/Detail/DetailDeleteSheetView.swift` | Confined media deletion sheet with preflight byte summary | `POST /delete/{preflight,}` | `NavigationSettingsAndDeleteTests.swift` |
 | `Sources/Features/Settings/SettingsView.swift` | 2-column settings root (*Rom & Skjerm · Lyd & Synk · Undertekster · Avspilling · System*) | `PATCH /api/tv/v1/device/profile`, `GET /bootstrap` | `NavigationSettingsAndDeleteTests.swift` |
 | `Sources/Features/Settings/SettingsComfortSectionView.swift` | Subtitle opacity/box, Dolby Vision P7 FEL, speaker & MetalFX comfort controls | `PATCH /api/tv/v1/device/profile` | `PlayerOverlayAndCacheTests.swift` |

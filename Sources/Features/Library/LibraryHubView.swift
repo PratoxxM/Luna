@@ -83,6 +83,8 @@ struct LibraryHubView: View {
     @State private var selectedCustomList: TvCustomListSummary?
     @State private var pendingDeleteTarget: TvDeleteRequestTarget?
     @State private var modalToken = UUID()
+    @State private var reloadTask: Task<Void, Never>?
+    @State private var reloadGeneration: UInt64 = 0
 
     init(isActiveTab: Bool = true) {
         self.isActiveTab = isActiveTab
@@ -175,7 +177,7 @@ struct LibraryHubView: View {
                         Text(errorMessage)
                             .foregroundStyle(LunaTheme.amber)
                         LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                            Task { await loadLibrary(forceNetwork: true) }
+                            scheduleReloadLibrary(forceNetwork: true)
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -227,13 +229,17 @@ struct LibraryHubView: View {
             }
         }
         .task(id: queryKey) {
+            reloadTask?.cancel()
+            reloadTask = nil
+            reloadGeneration &+= 1
+            let gen = reloadGeneration
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            await loadLibrary(forceNetwork: false)
+            await loadLibrary(forceNetwork: false, generation: gen)
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
             guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
             lastSeenRefreshNonce = newNonce
-            Task { await loadLibrary(forceNetwork: true) }
+            scheduleReloadLibrary(forceNetwork: true)
         }
         .onChange(of: isActiveTab) { _, active in
             guard active else { return }
@@ -246,10 +252,12 @@ struct LibraryHubView: View {
             )
             guard !isFresh else { return }
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            Task { await loadLibrary(forceNetwork: true) }
+            scheduleReloadLibrary(forceNetwork: true)
         }
         .onDisappear {
             mutationBannerTask?.cancel()
+            reloadTask?.cancel()
+            reloadTask = nil
             if pendingDeleteTarget == nil {
                 subpageVisibility.leaveModal(modalToken)
             }
@@ -469,7 +477,19 @@ struct LibraryHubView: View {
         )
     }
 
-    private func loadLibrary(forceNetwork: Bool = false) async {
+    private func scheduleReloadLibrary(forceNetwork: Bool) {
+        reloadTask?.cancel()
+        reloadGeneration &+= 1
+        let gen = reloadGeneration
+        reloadTask = Task { @MainActor in
+            await loadLibrary(forceNetwork: forceNetwork, generation: gen)
+            if reloadGeneration == gen {
+                reloadTask = nil
+            }
+        }
+    }
+
+    private func loadLibrary(forceNetwork: Bool = false, generation: UInt64? = nil) async {
         guard let client = sessionStore.makeClient() else { return }
         let targetKey = queryKey
         let currentNonce = sessionStore.homeRefreshNonce
@@ -505,21 +525,26 @@ struct LibraryHubView: View {
                 offset: 0,
                 limit: pageSize
             )
-            guard !Task.isCancelled, queryKey == targetKey else { return }
+            guard !Task.isCancelled, (generation == nil || generation == reloadGeneration), queryKey == targetKey else { return }
             libraryPayload = res
             localItems = res.localItems
             localOffset = res.localItems.count
             localHasMore = res.localHasMore ?? false
             persistLibrarySnapshot(for: targetKey, payload: res, fetchedAt: Date())
+        } catch is CancellationError {
+            return
         } catch LunaCoreError.unauthorized {
             LibraryBrowseMemoryCache.shared.clear()
             sessionStore.unpairDevice()
         } catch {
+            guard !Task.isCancelled, (generation == nil || generation == reloadGeneration) else { return }
             if libraryPayload == nil {
                 errorMessage = error.localizedDescription
             }
         }
-        isLoading = false
+        if generation == nil || generation == reloadGeneration {
+            isLoading = false
+        }
     }
 
     private func loadMoreLocalItems() async {

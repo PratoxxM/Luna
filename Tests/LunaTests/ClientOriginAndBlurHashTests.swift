@@ -138,4 +138,78 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         XCTAssertNil(cancelledResult)
         XCTAssertEqual(BlurHashDecoder.metricsSnapshot().actualDecodes, 0)
     }
+
+    @MainActor
+    func testResetAllConnectionSettingsClearsConfiguredTLSHostAndPolicy() throws {
+        let suite = "luna.test.resetconnection.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = AppSessionStore(defaults: defaults)
+        let url = try XCTUnwrap(URL(string: "https://media-box.example.test:8920"))
+        store.completePairing(
+            baseURL: url,
+            token: "test-token-value-1234",
+            pairedDevice: TvPairedDeviceInfo(
+                deviceId: store.deviceID,
+                deviceName: "Apple TV",
+                roomName: "Stua",
+                hardwareProfile: "hdr10-512",
+                overrides: TvDeviceOverrides()
+            )
+        )
+        XCTAssertEqual(store.appliedTLSConfiguredHost, "media-box.example.test")
+        XCTAssertTrue(
+            AppSessionStore.shouldTrustServerHost(
+                "media-box.example.test",
+                configuredHost: store.appliedTLSConfiguredHost,
+                allowSelfSignedLanTLS: store.allowSelfSignedLanTLS
+            )
+        )
+
+        store.resetAllConnectionSettings()
+
+        XCTAssertNil(store.serverBaseURL)
+        XCTAssertNil(store.deviceToken)
+        XCTAssertNil(store.appliedTLSConfiguredHost)
+        XCTAssertFalse(
+            AppSessionStore.shouldTrustServerHost(
+                "media-box.example.test",
+                configuredHost: store.appliedTLSConfiguredHost,
+                allowSelfSignedLanTLS: store.allowSelfSignedLanTLS
+            )
+        )
+        XCTAssertTrue(
+            AppSessionStore.shouldTrustServerHost(
+                "lunacore.local",
+                configuredHost: store.appliedTLSConfiguredHost,
+                allowSelfSignedLanTLS: store.allowSelfSignedLanTLS
+            )
+        )
+    }
+
+    func testSourcePickerTokenPolicyClearsExpiredExistingPrepareTokenOnRetry() {
+        XCTAssertEqual(
+            SourcePickerTokenPolicy.effectiveExistingPrepareToken(
+                rawExistingToken: " prep-tok-1 ",
+                existingTokenFailed: false
+            ),
+            "prep-tok-1"
+        )
+        XCTAssertNil(
+            SourcePickerTokenPolicy.effectiveExistingPrepareToken(
+                rawExistingToken: "prep-tok-1",
+                existingTokenFailed: true
+            )
+        )
+        XCTAssertNil(
+            SourcePickerTokenPolicy.effectiveExistingPrepareToken(
+                rawExistingToken: "   ",
+                existingTokenFailed: false
+            )
+        )
+    }
 }

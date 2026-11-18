@@ -61,6 +61,20 @@ public struct SourcePickerContext: Identifiable, Equatable, Hashable, Sendable {
     }
 }
 
+internal enum SourcePickerTokenPolicy {
+    nonisolated static func effectiveExistingPrepareToken(
+        rawExistingToken: String?,
+        existingTokenFailed: Bool
+    ) -> String? {
+        guard !existingTokenFailed,
+              let existing = rawExistingToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !existing.isEmpty else {
+            return nil
+        }
+        return existing
+    }
+}
+
 struct SourcePickerSheetView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
 
@@ -71,6 +85,7 @@ struct SourcePickerSheetView: View {
     @State private var candidates: [TvCandidateInfo] = []
     @State private var activeCandidateId: String?
     @State private var resolvedPrepareToken: String?
+    @State private var existingTokenFailed: Bool = false
     @State private var createdOrphanSessionId: String?
     @State private var didSelectCandidate: Bool = false
     @State private var isLoading: Bool = true
@@ -176,7 +191,7 @@ struct SourcePickerSheetView: View {
     }
 
     private func stopOrphanSessionIfNeeded() {
-        guard context.existingPrepareToken == nil,
+        guard (context.existingPrepareToken == nil || existingTokenFailed),
               let sid = createdOrphanSessionId,
               let client = sessionStore.makeClient() else {
             return
@@ -201,11 +216,16 @@ struct SourcePickerSheetView: View {
         isLoading = true
         errorMessage = nil
 
+        var usedExistingToken = false
         do {
             let sessionToken: String
-            if let existing = context.existingPrepareToken, !existing.isEmpty {
+            if let existing = SourcePickerTokenPolicy.effectiveExistingPrepareToken(
+                rawExistingToken: context.existingPrepareToken,
+                existingTokenFailed: existingTokenFailed
+            ) {
                 sessionToken = existing
                 resolvedPrepareToken = existing
+                usedExistingToken = true
             } else {
                 let prep = try await client.preparePlayback(
                     itemId: context.itemId,
@@ -231,6 +251,10 @@ struct SourcePickerSheetView: View {
             sessionStore.unpairDevice()
             onCancel()
         } catch {
+            if usedExistingToken {
+                existingTokenFailed = true
+                resolvedPrepareToken = nil
+            }
             errorMessage = error.localizedDescription
         }
         isLoading = false

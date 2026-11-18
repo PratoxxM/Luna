@@ -69,6 +69,8 @@ struct CatalogBrowseView: View {
     @State private var mutationErrorBanner: String?
     @State private var lastSeenRefreshNonce: Int = -1
     @State private var mutationBannerTask: Task<Void, Never>?
+    @State private var reloadTask: Task<Void, Never>?
+    @State private var reloadGeneration: UInt64 = 0
 
     @State private var selectedCard: TvMediaCard?
 
@@ -220,7 +222,7 @@ struct CatalogBrowseView: View {
                         Text(errorMessage)
                             .foregroundStyle(LunaTheme.amber)
                         LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                            Task { await loadFirstPage(forceNetwork: true) }
+                            scheduleReloadFirstPage(forceNetwork: true)
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -310,13 +312,17 @@ struct CatalogBrowseView: View {
             }
         }
         .task(id: reloadTriggerKey) {
+            reloadTask?.cancel()
+            reloadTask = nil
+            reloadGeneration &+= 1
+            let gen = reloadGeneration
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            await loadFirstPage(forceNetwork: false)
+            await loadFirstPage(forceNetwork: false, generation: gen)
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
             guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
             lastSeenRefreshNonce = newNonce
-            Task { await loadFirstPage(forceNetwork: true) }
+            scheduleReloadFirstPage(forceNetwork: true)
         }
         .onChange(of: isActiveTab) { _, active in
             guard active else { return }
@@ -329,10 +335,12 @@ struct CatalogBrowseView: View {
             )
             guard !isFresh else { return }
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            Task { await loadFirstPage(forceNetwork: true) }
+            scheduleReloadFirstPage(forceNetwork: true)
         }
         .onDisappear {
             mutationBannerTask?.cancel()
+            reloadTask?.cancel()
+            reloadTask = nil
             if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
                 isRootTab: isRootTab,
                 hasPushedChildDestination: selectedCard != nil,
@@ -359,7 +367,19 @@ struct CatalogBrowseView: View {
         )
     }
 
-    private func loadFirstPage(forceNetwork: Bool = false) async {
+    private func scheduleReloadFirstPage(forceNetwork: Bool) {
+        reloadTask?.cancel()
+        reloadGeneration &+= 1
+        let gen = reloadGeneration
+        reloadTask = Task { @MainActor in
+            await loadFirstPage(forceNetwork: forceNetwork, generation: gen)
+            if reloadGeneration == gen {
+                reloadTask = nil
+            }
+        }
+    }
+
+    private func loadFirstPage(forceNetwork: Bool = false, generation: UInt64? = nil) async {
         guard let client = sessionStore.makeClient() else { return }
         let triggerKey = reloadTriggerKey
         let currentNonce = sessionStore.homeRefreshNonce
@@ -402,7 +422,7 @@ struct CatalogBrowseView: View {
                 page: 1,
                 limit: 30
             )
-            guard !Task.isCancelled, reloadTriggerKey == triggerKey else { return }
+            guard !Task.isCancelled, (generation == nil || generation == reloadGeneration), reloadTriggerKey == triggerKey else { return }
             currentPage = 1
             items = res.items
             hasMore = res.hasMore
@@ -413,15 +433,20 @@ struct CatalogBrowseView: View {
                 selectedGenreLabel = serverGenre.label
             }
             persistSnapshot(for: triggerKey, fetchedAt: Date(), refreshNonce: sessionStore.homeRefreshNonce)
+        } catch is CancellationError {
+            return
         } catch LunaCoreError.unauthorized {
             CatalogBrowseMemoryCache.shared.clear()
             sessionStore.unpairDevice()
         } catch {
+            guard !Task.isCancelled, (generation == nil || generation == reloadGeneration) else { return }
             if items.isEmpty {
                 errorMessage = error.localizedDescription
             }
         }
-        isLoading = false
+        if generation == nil || generation == reloadGeneration {
+            isLoading = false
+        }
     }
 
     private func loadNextPage() async {
