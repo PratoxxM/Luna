@@ -123,7 +123,13 @@ actor TestStepGate {
     }
 }
 
-final class MockURLProtocol: URLProtocol, @unchecked Sendable {
+private struct MockProtocolDeliveryContext: @unchecked Sendable {
+    let urlProtocol: MockURLProtocol
+    let client: (any URLProtocolClient)?
+    let request: URLRequest
+}
+
+final class MockURLProtocol: URLProtocol {
     typealias Handler = @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
     typealias AsyncHandler = @Sendable (URLRequest) async throws -> (HTTPURLResponse, Data)
 
@@ -194,21 +200,30 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
         }
         Self.recordedRequests.withLock { $0[host, default: []].append(request) }
         let taskKey = ObjectIdentifier(self)
-        let req = request
-        let task = Task.detached(priority: .userInitiated) { [self] in
-            defer { _ = Self.activeTasks.withLock { $0.removeValue(forKey: taskKey) } }
-            do {
-                let (response, data) = try await handler(req)
-                guard !Task.isCancelled else { return }
-                self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-                self.client?.urlProtocol(self, didLoad: data)
-                self.client?.urlProtocolDidFinishLoading(self)
-            } catch {
-                guard !Task.isCancelled else { return }
-                self.client?.urlProtocol(self, didFailWithError: error)
+        let context = MockProtocolDeliveryContext(
+            urlProtocol: self,
+            client: client,
+            request: request
+        )
+        Self.activeTasks.withLock { map in
+            map[taskKey] = Task.detached(priority: .userInitiated) {
+                defer { _ = Self.activeTasks.withLock { $0.removeValue(forKey: taskKey) } }
+                do {
+                    let (response, data) = try await handler(context.request)
+                    guard !Task.isCancelled else { return }
+                    context.client?.urlProtocol(
+                        context.urlProtocol,
+                        didReceive: response,
+                        cacheStoragePolicy: .notAllowed
+                    )
+                    context.client?.urlProtocol(context.urlProtocol, didLoad: data)
+                    context.client?.urlProtocolDidFinishLoading(context.urlProtocol)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    context.client?.urlProtocol(context.urlProtocol, didFailWithError: error)
+                }
             }
         }
-        Self.activeTasks.withLock { $0[taskKey] = task }
     }
 
     override func stopLoading() {
