@@ -195,6 +195,7 @@ final class PausedScrubCommitTests: XCTestCase {
 
         let chapter = PlaybackChapter(
             id: "ch-2",
+            index: 1,
             title: "Act II",
             startSeconds: 320,
             endSeconds: 480,
