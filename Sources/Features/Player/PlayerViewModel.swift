@@ -191,8 +191,9 @@ final class PlayerViewModel: ObservableObject {
         self.alternatives = []
         self.alternativesSessionId = nil
         resolveTask?.cancel()
-        resolveTask = Task { @MainActor in
-            await runResolveAndLoad(request: request, client: client, isReplacement: false)
+        resolveTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.runResolveAndLoad(request: request, client: client, isReplacement: false)
         }
     }
 

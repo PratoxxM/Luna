@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import XCTest
 @testable import Luna
 
@@ -103,5 +104,132 @@ final class BonjourServerBrowserTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 120_000_000)
         XCTAssertEqual(browser.activeResolverCount, 0)
         browser.stop()
+    }
+
+    @MainActor
+    func testRapidBeginResolveReplacementIgnoresStaleReadyAndCancellationCallbacks() async throws {
+        let key = "lunacore._lunacore._tcp.local."
+        let browser = BonjourServerBrowser(resolveTimeoutNanoseconds: 60_000_000)
+        defer { browser.stop() }
+
+        browser.beginResolve(
+            key: key,
+            endpoint: .hostPort(host: .name("stale-host.example.test", nil), port: 8090),
+            serviceName: "StaleServer",
+            txt: [:]
+        )
+        let firstConnId = try XCTUnwrap(browser.activeResolverId(for: key))
+
+        browser.beginResolve(
+            key: key,
+            endpoint: .hostPort(host: .name("active-host.example.test", nil), port: 8090),
+            serviceName: "ActiveServer",
+            txt: [:]
+        )
+        let secondConnId = try XCTUnwrap(browser.activeResolverId(for: key))
+        XCTAssertNotEqual(firstConnId, secondConnId)
+        XCTAssertEqual(browser.activeResolverCount, 1)
+
+        // Late .ready and .cancelled callbacks from the superseded connection must be ignored
+        browser.applyResolverReady(
+            key: key,
+            connId: firstConnId,
+            serviceName: "StaleServer",
+            remoteEndpoint: .hostPort(host: .name("stale-host.example.test", nil), port: 8090),
+            txt: [:]
+        )
+        XCTAssertEqual(browser.activeResolverId(for: key), secondConnId)
+        XCTAssertEqual(browser.activeResolverCount, 1)
+        XCTAssertTrue(browser.servers.isEmpty)
+
+        browser.applyResolverTerminated(key: key, connId: firstConnId)
+        XCTAssertEqual(browser.activeResolverId(for: key), secondConnId)
+        XCTAssertEqual(browser.activeResolverCount, 1)
+
+        // Active connection callback resolves and cleans up cleanly
+        browser.applyResolverReady(
+            key: key,
+            connId: secondConnId,
+            serviceName: "ActiveServer",
+            remoteEndpoint: .hostPort(host: .name("active-host.example.test", nil), port: 8090),
+            txt: ["https_port": "8920"]
+        )
+        XCTAssertEqual(browser.activeResolverCount, 0)
+        XCTAssertNil(browser.activeResolverId(for: key))
+        XCTAssertEqual(browser.servers.count, 1)
+        XCTAssertEqual(browser.servers.first?.baseURL.absoluteString, "https://active-host.example.test:8920")
+
+        // Verify replacement resolver timeout also cleans up when not manually completed
+        browser.beginResolve(
+            key: key,
+            endpoint: .hostPort(host: .name("timeout-1.example.test", nil), port: 8090),
+            serviceName: "First",
+            txt: [:]
+        )
+        browser.beginResolve(
+            key: key,
+            endpoint: .hostPort(host: .name("timeout-2.example.test", nil), port: 8090),
+            serviceName: "Second",
+            txt: [:]
+        )
+        XCTAssertEqual(browser.activeResolverCount, 1)
+        try? await Task.sleep(nanoseconds: 140_000_000)
+        XCTAssertEqual(browser.activeResolverCount, 0)
+    }
+
+    @MainActor
+    func testStopStartBrowserReplacementIgnoresStaleCancelledAndBrowseCallbacks() async throws {
+        let browser = BonjourServerBrowser()
+        defer { browser.stop() }
+
+        browser.start()
+        let firstBrowserId = try XCTUnwrap(browser.activeBrowserId)
+        XCTAssertTrue(browser.isSearching)
+
+        browser.stop()
+        XCTAssertNil(browser.activeBrowserId)
+        XCTAssertFalse(browser.isSearching)
+
+        browser.start()
+        let secondBrowserId = try XCTUnwrap(browser.activeBrowserId)
+        XCTAssertNotEqual(firstBrowserId, secondBrowserId)
+        XCTAssertTrue(browser.isSearching)
+
+        // Late .cancelled/.failed state update from first browser must not clobber new browser's isSearching
+        browser.applyBrowserStateUpdate(.cancelled, browserId: firstBrowserId)
+        XCTAssertTrue(browser.isSearching)
+        XCTAssertEqual(browser.activeBrowserId, secondBrowserId)
+
+        browser.applyBrowserStateUpdate(.failed(.posix(.ECANCELED)), browserId: firstBrowserId)
+        XCTAssertTrue(browser.isSearching)
+
+        // Populate a resolved server and verify stale browse results from first browser do not prune it
+        let key = "svc._lunacore._tcp.local."
+        browser.beginResolve(
+            key: key,
+            endpoint: .hostPort(host: .name("live.example.test", nil), port: 8090),
+            serviceName: "Live",
+            txt: [:]
+        )
+        let connId = try XCTUnwrap(browser.activeResolverId(for: key))
+        browser.applyResolverReady(
+            key: key,
+            connId: connId,
+            serviceName: "Live",
+            remoteEndpoint: .hostPort(host: .name("live.example.test", nil), port: 8090),
+            txt: [:]
+        )
+        XCTAssertEqual(browser.servers.count, 1)
+
+        browser.applyBrowseResults([], browserId: firstBrowserId)
+        XCTAssertEqual(browser.servers.count, 1)
+
+        // Allow main queue to drain real NWBrowser cancellation from first browser
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertTrue(browser.isSearching)
+
+        // Matching current browserId updates state cleanly
+        browser.applyBrowserStateUpdate(.cancelled, browserId: secondBrowserId)
+        XCTAssertFalse(browser.isSearching)
     }
 }
