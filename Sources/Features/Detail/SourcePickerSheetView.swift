@@ -105,12 +105,21 @@ internal final class SourcePickerViewModel: ObservableObject {
     @Published private(set) var didSelectCandidate: Bool = false
     @Published private(set) var isLoading: Bool = true
     @Published private(set) var errorMessage: String?
+    private(set) var isDismissed: Bool = false
+
+    func handleAppear() {
+        isDismissed = false
+    }
 
     func loadCandidates(
         context: SourcePickerContext,
         client: (any SourcePickerSessionClient)?,
         onUnauthorized: () -> Void
     ) async {
+        guard !Task.isCancelled, !isDismissed else { return }
+        if !didSelectCandidate {
+            stopOrphanSessionIfNeeded(context: context, client: client)
+        }
         guard let client else {
             isLoading = false
             errorMessage = "Mangler tilkobling til LunaCore."
@@ -136,7 +145,7 @@ internal final class SourcePickerViewModel: ObservableObject {
                     seriesTitle: context.seriesTitle,
                     startPositionSeconds: context.startPositionSeconds
                 )
-                if Task.isCancelled {
+                if Task.isCancelled || isDismissed {
                     if let orphanSid = prep.playbackSession?.sessionId {
                         Self.stopSessionDetached(sessionId: orphanSid, client: client)
                     }
@@ -155,7 +164,7 @@ internal final class SourcePickerViewModel: ObservableObject {
                 createdOrphanSessionId = prep.playbackSession?.sessionId
             }
 
-            if Task.isCancelled {
+            if Task.isCancelled || isDismissed {
                 if !didSelectCandidate {
                     stopOrphanSessionIfNeeded(context: context, client: client)
                 }
@@ -163,7 +172,7 @@ internal final class SourcePickerViewModel: ObservableObject {
             }
 
             let alt = try await client.fetchAlternatives(sessionId: sessionToken)
-            if Task.isCancelled {
+            if Task.isCancelled || isDismissed {
                 if !didSelectCandidate {
                     stopOrphanSessionIfNeeded(context: context, client: client)
                 }
@@ -183,8 +192,19 @@ internal final class SourcePickerViewModel: ObservableObject {
             }
             return
         } catch LunaCoreError.unauthorized {
-            onUnauthorized()
+            if !didSelectCandidate {
+                stopOrphanSessionIfNeeded(context: context, client: client)
+            }
+            if !Task.isCancelled && !isDismissed {
+                onUnauthorized()
+            }
         } catch {
+            if !didSelectCandidate {
+                stopOrphanSessionIfNeeded(context: context, client: client)
+            }
+            if Task.isCancelled || isDismissed {
+                return
+            }
             if usedExistingToken {
                 existingTokenFailed = true
                 resolvedPrepareToken = nil
@@ -215,6 +235,7 @@ internal final class SourcePickerViewModel: ObservableObject {
         context: SourcePickerContext,
         client: (any SourcePickerSessionClient)?
     ) {
+        isDismissed = true
         if !didSelectCandidate {
             stopOrphanSessionIfNeeded(context: context, client: client)
         }
@@ -257,6 +278,7 @@ struct SourcePickerSheetView: View {
     let onCancel: () -> Void
 
     @StateObject private var viewModel = SourcePickerViewModel()
+    @State private var reloadAttempt: Int = 0
 
     var body: some View {
         ZStack {
@@ -302,7 +324,7 @@ struct SourcePickerSheetView: View {
                             .foregroundStyle(LunaTheme.moonlight)
                             .multilineTextAlignment(.center)
                         LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                            Task { await loadCandidates() }
+                            reloadAttempt &+= 1
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -346,7 +368,10 @@ struct SourcePickerSheetView: View {
         .onExitCommand {
             onCancel()
         }
-        .task {
+        .onAppear {
+            viewModel.handleAppear()
+        }
+        .task(id: reloadAttempt) {
             await loadCandidates()
         }
         .onDisappear {

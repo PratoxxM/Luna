@@ -32,12 +32,22 @@ private final class MockSourcePickerSessionClient: SourcePickerSessionClient, @u
     let log = TestLockedBox<[String]>([])
     let stoppedSessions = TestLockedBox<[String]>([])
     let fetchAlternativesCount = TestLockedBox<Int>(0)
+    let prepareCount = TestLockedBox<Int>(0)
     let sessionIdToReturn: String
     let prepareTokenToReturn: String
+    let gatePrepare: Bool
+    let failAlternativesOnce: Bool
 
-    init(sessionIdToReturn: String = "sess-orphan-1", prepareTokenToReturn: String = "prep-tok-1") {
+    init(
+        sessionIdToReturn: String = "sess-orphan-1",
+        prepareTokenToReturn: String = "prep-tok-1",
+        gatePrepare: Bool = true,
+        failAlternativesOnce: Bool = false
+    ) {
         self.sessionIdToReturn = sessionIdToReturn
         self.prepareTokenToReturn = prepareTokenToReturn
+        self.gatePrepare = gatePrepare
+        self.failAlternativesOnce = failAlternativesOnce
     }
 
     func preparePlayback(
@@ -46,14 +56,22 @@ private final class MockSourcePickerSessionClient: SourcePickerSessionClient, @u
         seriesTitle: String?,
         startPositionSeconds: Double?
     ) async throws -> TvPrepareResponse {
-        await prepareGate.wait(label: "prepare", log: log)
+        let idx = prepareCount.withLock { count -> Int in
+            count += 1
+            return count
+        }
+        if gatePrepare {
+            await prepareGate.wait(label: "prepare", log: log)
+        }
+        let sid = idx == 1 ? sessionIdToReturn : "\(sessionIdToReturn)-\(idx)"
+        let tok = idx == 1 ? prepareTokenToReturn : "\(prepareTokenToReturn)-\(idx)"
         let json = """
         {
           "ok": true,
           "status": "ready",
-          "prepareToken": "\(prepareTokenToReturn)",
+          "prepareToken": "\(tok)",
           "playbackSession": {
-            "sessionId": "\(sessionIdToReturn)",
+            "sessionId": "\(sid)",
             "streamToken": "stream-placeholder-token",
             "roomName": "Stua",
             "hardwareProfile": "hdr10-512",
@@ -69,7 +87,7 @@ private final class MockSourcePickerSessionClient: SourcePickerSessionClient, @u
               "releaseTitle": "Movie.2024.2160p",
               "source": "nvme"
             },
-            "stream": { "url": "/api/tv/v1/streams/\(sessionIdToReturn)/master" },
+            "stream": { "url": "/api/tv/v1/streams/\(sid)/master" },
             "aetherConfig": {
               "preferDualLayerDolbyVision": false,
               "dolbyVisionHandling": "baseLayerOnly",
@@ -83,7 +101,13 @@ private final class MockSourcePickerSessionClient: SourcePickerSessionClient, @u
     }
 
     func fetchAlternatives(sessionId: String) async throws -> TvAlternativesResponse {
-        fetchAlternativesCount.withLock { $0 += 1 }
+        let callIndex = fetchAlternativesCount.withLock { count -> Int in
+            count += 1
+            return count
+        }
+        if failAlternativesOnce && callIndex == 1 {
+            throw LunaCoreError.serverMessage(404, "Expired session")
+        }
         let json = """
         {
           "ok": true,
@@ -394,5 +418,57 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         await activeClient.heartbeatSignal.wait(untilAtLeast: 1)
         XCTAssertEqual(activeClient.stoppedSessions.withLock { $0 }, ["sess-active-2"])
         XCTAssertNil(activeVm.createdOrphanSessionId)
+
+        // 3. Existing token fails -> retry launches preparePlayback -> sheet dismissed before Task.cancel():
+        //    isDismissed guard still stops the newly created session without leaking.
+        let retryContext = SourcePickerContext(
+            itemId: "movie:tmdb:550",
+            title: "Fight Club",
+            existingPrepareToken: "stale-preresolve-tok"
+        )
+        let retryClient = MockSourcePickerSessionClient(
+            sessionIdToReturn: "sess-retry-orphan-3",
+            prepareTokenToReturn: "prep-retry-3",
+            gatePrepare: true,
+            failAlternativesOnce: true
+        )
+        let retryVm = SourcePickerViewModel()
+        await retryVm.loadCandidates(context: retryContext, client: retryClient, onUnauthorized: {})
+        XCTAssertTrue(retryVm.existingTokenFailed)
+        XCTAssertEqual(retryClient.fetchAlternativesCount.withLock { $0 }, 1)
+
+        let retryTask = Task { @MainActor in
+            await retryVm.loadCandidates(context: retryContext, client: retryClient, onUnauthorized: {})
+        }
+        await retryClient.prepareGate.waitUntilStarted()
+        retryVm.handleDisappear(context: retryContext, client: retryClient)
+        await retryClient.prepareGate.finish()
+        await retryTask.value
+        await retryClient.heartbeatSignal.wait(untilAtLeast: 1)
+
+        XCTAssertEqual(retryClient.stoppedSessions.withLock { $0 }, ["sess-retry-orphan-3"])
+        XCTAssertEqual(retryClient.fetchAlternativesCount.withLock { $0 }, 1)
+        XCTAssertNil(retryVm.createdOrphanSessionId)
+
+        // 4. Non-cancellation fetchAlternatives failure stops created orphan session immediately before retry.
+        let failAltClient = MockSourcePickerSessionClient(
+            sessionIdToReturn: "sess-alt-fail",
+            prepareTokenToReturn: "prep-alt-fail",
+            gatePrepare: false,
+            failAlternativesOnce: true
+        )
+        let failAltVm = SourcePickerViewModel()
+        await failAltVm.loadCandidates(context: context, client: failAltClient, onUnauthorized: {})
+        await failAltClient.heartbeatSignal.wait(untilAtLeast: 1)
+        XCTAssertEqual(failAltClient.stoppedSessions.withLock { $0 }, ["sess-alt-fail"])
+        XCTAssertNil(failAltVm.createdOrphanSessionId)
+        XCTAssertNotNil(failAltVm.errorMessage)
+
+        await failAltVm.loadCandidates(context: context, client: failAltClient, onUnauthorized: {})
+        XCTAssertNil(failAltVm.errorMessage)
+        XCTAssertEqual(failAltVm.createdOrphanSessionId, "sess-alt-fail-2")
+        failAltVm.handleDisappear(context: context, client: failAltClient)
+        await failAltClient.heartbeatSignal.wait(untilAtLeast: 2)
+        XCTAssertEqual(failAltClient.stoppedSessions.withLock { $0 }, ["sess-alt-fail", "sess-alt-fail-2"])
     }
 }
