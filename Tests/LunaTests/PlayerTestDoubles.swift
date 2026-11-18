@@ -85,7 +85,9 @@ final class TestLockedBox<Value: Sendable>: Sendable {
         self.storage = Mutex(initialValue)
     }
 
-    func withLock<Result: Sendable>(_ body: (inout Value) throws -> Result) rethrows -> Result {
+    func withLock<Result, E: Error>(
+        _ body: (inout sending Value) throws(E) -> sending Result
+    ) throws(E) -> sending Result {
         try storage.withLock(body)
     }
 }
