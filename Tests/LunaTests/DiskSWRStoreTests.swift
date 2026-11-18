@@ -66,13 +66,9 @@ final class DiskSWRStoreTests: XCTestCase {
             )
         )
 
-        // Wait for detached utility write to flush to disk
-        var diskBytes: Int64 = 0
-        for _ in 0..<40 {
-            diskBytes = await DiskSWRStore.diskUsageBytesAsync()
-            if diskBytes > 0 { break }
-            try? await Task.sleep(nanoseconds: 25_000_000)
-        }
+        // Drain detached utility write and verify disk bytes
+        await DiskSWRStore.drainPendingWrites()
+        let diskBytes = await DiskSWRStore.diskUsageBytesAsync()
         XCTAssertGreaterThan(diskBytes, 0)
 
         // Clear RAM cache and verify reload from disk restores payload + ETag
@@ -111,22 +107,39 @@ final class DiskSWRStoreTests: XCTestCase {
             hardwareProfile: "hdr10-512",
             decodedPayload: nil
         )
-        var legacyLoaded: CachedHomeSnapshot?
-        for _ in 0..<40 {
-            DiskSWRStore.clearMemory()
-            legacyLoaded = await DiskSWRStore.loadHomeAsync(
-                serverHost: "fresh-host-\(UUID().uuidString).local",
-                roomName: "Stua",
-                hardwareProfile: "hdr10-512"
-            )
-            if legacyLoaded != nil { break }
-            try? await Task.sleep(nanoseconds: 25_000_000)
-        }
+        await DiskSWRStore.drainPendingWrites()
+        DiskSWRStore.clearMemory()
+        let legacyLoaded = await DiskSWRStore.loadHomeAsync(
+            serverHost: "fresh-host-\(UUID().uuidString).local",
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512"
+        )
         XCTAssertEqual(legacyLoaded?.etag, "\"legacy-etag\"")
 
         await DiskSWRStore.clearAllAsync()
         let afterClear = await DiskSWRStore.diskUsageBytesAsync()
         XCTAssertEqual(afterClear, 0)
+    }
+
+    func testClearAllAsyncCancelsPendingBackgroundWriteWithoutResurrectingSnapshot() async throws {
+        await DiskSWRStore.clearAllAsync()
+        let host = "swr-cancel-\(UUID().uuidString.lowercased()).local"
+        let rawData = Data(#"{"ok":true,"roomName":"Stua","hardwareProfile":"hdr10-512","rows":[]}"#.utf8)
+
+        DiskSWRStore.saveHomeInBackground(
+            rawPayloadData: rawData,
+            etag: "\"etag-cancel\"",
+            serverHost: host,
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512",
+            decodedPayload: nil
+        )
+        await DiskSWRStore.clearAllAsync()
+        await DiskSWRStore.drainPendingWrites()
+
+        XCTAssertNil(DiskSWRStore.memorySnapshot(serverHost: host, roomName: "Stua", hardwareProfile: "hdr10-512"))
+        let usageAfterClear = await DiskSWRStore.diskUsageBytesAsync()
+        XCTAssertEqual(usageAfterClear, 0)
     }
 
     func testConcurrentMemoryReadsAndWritesUnderMutex() async throws {
@@ -162,6 +175,7 @@ final class DiskSWRStoreTests: XCTestCase {
             hardwareProfile: "hdr10-512"
         )
         XCTAssertEqual(snap?.payload.roomName, "Stua")
+        await DiskSWRStore.drainPendingWrites()
         await DiskSWRStore.clearAllAsync()
     }
 }

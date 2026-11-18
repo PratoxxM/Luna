@@ -90,6 +90,11 @@ private actor DiskSWRStorageActor {
     }
 }
 
+private struct DiskSWRPendingWrites: Sendable {
+    var clearEpoch: UInt64 = 0
+    var activeTasks: [UUID: Task<Void, Never>] = [:]
+}
+
 /// Sideload-safe Stale-While-Revalidate (SWR) store on tvOS local flash.
 ///
 /// Uses `Caches/LunaV2/swr/` without ever referencing the runtime bundle identifier
@@ -97,6 +102,7 @@ private actor DiskSWRStorageActor {
 /// All disk I/O runs inside `DiskSWRStorageActor`; `@MainActor` reads only from the RAM cache.
 public enum DiskSWRStore {
     private static let memoryCache = Mutex<[String: CachedHomeSnapshot]>([:])
+    private static let pendingWrites = Mutex(DiskSWRPendingWrites())
 
     private static func sanitize(_ raw: String) -> String {
         String(raw.lowercased().map { ch in
@@ -163,17 +169,31 @@ public enum DiskSWRStore {
             let snap = CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: decodedPayload)
             storeMemorySnapshot(snap, forKey: primaryKey)
         }
-        Task.detached(priority: .utility) {
-            if decodedPayload == nil,
-               let decoded = try? LunaCoreClient.decodeJSON(TvHomeResponse.self, from: rawPayloadData) {
-                let snap = CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: decoded)
-                storeMemorySnapshot(snap, forKey: primaryKey)
+        let taskID = UUID()
+        pendingWrites.withLock { state in
+            let epoch = state.clearEpoch
+            let created = Task.detached(priority: .utility) {
+                defer {
+                    _ = pendingWrites.withLock { $0.activeTasks.removeValue(forKey: taskID) }
+                }
+                guard !Task.isCancelled else { return }
+                if decodedPayload == nil,
+                   let decoded = try? LunaCoreClient.decodeJSON(TvHomeResponse.self, from: rawPayloadData) {
+                    let shouldStore = pendingWrites.withLock { $0.clearEpoch == epoch && !Task.isCancelled }
+                    if shouldStore {
+                        let snap = CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: decoded)
+                        storeMemorySnapshot(snap, forKey: primaryKey)
+                    }
+                }
+                let shouldWriteDisk = pendingWrites.withLock { $0.clearEpoch == epoch && !Task.isCancelled }
+                guard shouldWriteDisk else { return }
+                await DiskSWRStorageActor.shared.saveToDisk(
+                    rawPayloadData: rawPayloadData,
+                    etag: etag,
+                    baseName: primaryKey
+                )
             }
-            await DiskSWRStorageActor.shared.saveToDisk(
-                rawPayloadData: rawPayloadData,
-                etag: etag,
-                baseName: primaryKey
-            )
+            state.activeTasks[taskID] = created
         }
     }
 
@@ -185,8 +205,30 @@ public enum DiskSWRStore {
         memoryCache.withLock { $0.removeAll() }
     }
 
+    internal static func drainPendingWrites() async {
+        while true {
+            let tasks = pendingWrites.withLock { Array($0.activeTasks.values) }
+            if tasks.isEmpty { break }
+            for task in tasks {
+                await task.value
+            }
+        }
+    }
+
     public static func clearAllAsync() async {
+        let tasksToCancel = pendingWrites.withLock { state -> [Task<Void, Never>] in
+            state.clearEpoch &+= 1
+            let tasks = Array(state.activeTasks.values)
+            state.activeTasks.removeAll()
+            return tasks
+        }
         clearMemory()
+        for task in tasksToCancel {
+            task.cancel()
+        }
+        for task in tasksToCancel {
+            await task.value
+        }
         await DiskSWRStorageActor.shared.clearAllDiskFiles()
     }
 }
