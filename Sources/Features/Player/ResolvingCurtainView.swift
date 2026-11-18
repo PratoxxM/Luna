@@ -1,5 +1,4 @@
 import SwiftUI
-import AetherBridge
 
 /// Isolated startup & WebSocket resolution progress state observed exclusively by
 /// `ResolvingProgressClusterLeafView` so progress ticks never re-render `PlayerContainerView`
