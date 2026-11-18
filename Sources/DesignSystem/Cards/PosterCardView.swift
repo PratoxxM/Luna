@@ -53,13 +53,7 @@ public struct PosterCardView: View {
 
                     VStack {
                         HStack(alignment: .top, spacing: 6) {
-                            if card.isFavorite == true {
-                                Image(systemName: "star.fill")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(LunaTheme.amber)
-                                    .padding(7)
-                                    .background(LunaTheme.cinemaGlass, in: Circle())
-                            } else if card.progress?.watched == true {
+                            if card.progress?.watched == true {
                                 Image(systemName: "checkmark.circle.fill")
                                     .font(.caption.weight(.bold))
                                     .foregroundStyle(LunaTheme.emerald)

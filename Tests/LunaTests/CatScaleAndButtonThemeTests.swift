@@ -14,7 +14,8 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         try assertRGB(LunaTheme.linen, r: 245, g: 240, b: 232)        // #F5F0E8 warm linen primary text
         try assertRGB(LunaTheme.moonlight, r: 200, g: 191, b: 182)    // #C8BFB6 warm parchment secondary text
         try assertRGB(LunaTheme.muted, r: 160, g: 150, b: 140)        // #A0968C daylight-calibrated Frame Pro taupe
-        try assertRGB(LunaTheme.amber, r: 229, g: 169, b: 60)         // #E5A93C muted honey-brass
+        try assertRGB(LunaTheme.amber, r: 196, g: 140, b: 58)         // #C48C3A muted antique bronze-brass
+        try assertRGB(LunaTheme.amberDeep, r: 158, g: 110, b: 39)     // #9E6E27 deeper warm bronze
         try assertRGB(LunaTheme.warmBorderBase, r: 255, g: 244, b: 230) // #FFF4E6 warm border base
 
         // Verify cinemaGlass is #120F0D @ 92% alpha
@@ -51,9 +52,10 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.moonlight, background: LunaTheme.surfaceRaised), 8.5)
         XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.muted, background: LunaTheme.canvas), 6.2)
         XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.muted, background: LunaTheme.surface), 5.8)
-        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.amber), 8.5)
-        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.focusGoldTop), 9.5)
-        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.focusGoldBottom), 8.0)
+        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.amber), 6.0)
+        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.focusGoldTop), 6.0)
+        let focusMid = Color(red: 177.0 / 255.0, green: 125.0 / 255.0, blue: 49.0 / 255.0)
+        XCTAssertGreaterThanOrEqual(try contrastRatio(foreground: LunaTheme.canvas, background: focusMid), 5.0)
     }
 
     func testInAppCatAssetsRemovedWhileAccentColorAndHomeScreenBrandAssetsRemainIntact() throws {
@@ -62,7 +64,7 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         XCTAssertNil(UIImage(named: "LunaMoonCrescent"))
         XCTAssertNil(UIImage(named: "LunaMoonCatsEmblem"))
 
-        // Global AccentColor.colorset must resolve to warm honey-brass (#E5A93C)
+        // Global AccentColor.colorset must resolve to muted warm bronze (#C48C3A)
         let accentUI = try XCTUnwrap(UIColor(named: "AccentColor"))
         let resolved = accentUI.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
         var r: CGFloat = 0
@@ -70,9 +72,9 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         var b: CGFloat = 0
         var a: CGFloat = 0
         XCTAssertTrue(resolved.getRed(&r, green: &g, blue: &b, alpha: &a))
-        XCTAssertEqual(Double(r), 0.898, accuracy: 0.015)
-        XCTAssertEqual(Double(g), 0.663, accuracy: 0.015)
-        XCTAssertEqual(Double(b), 0.235, accuracy: 0.015)
+        XCTAssertEqual(Double(r), 0.769, accuracy: 0.015)
+        XCTAssertEqual(Double(g), 0.549, accuracy: 0.015)
+        XCTAssertEqual(Double(b), 0.227, accuracy: 0.015)
         XCTAssertEqual(Double(a), 1.0, accuracy: 0.01)
     }
 
@@ -213,7 +215,7 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         try assertRGB(LunaTheme.cardTitleColor(isFocused: false), r: 245, g: 240, b: 232)
         try assertRGB(LunaTheme.cardTitleColor(isFocused: true), r: 245, g: 240, b: 232)
         try assertRGB(LunaTheme.cardSubtitleColor(isFocused: false), r: 160, g: 150, b: 140)
-        try assertRGB(LunaTheme.cardSubtitleColor(isFocused: true), r: 229, g: 169, b: 60)
+        try assertRGB(LunaTheme.cardSubtitleColor(isFocused: true), r: 196, g: 140, b: 58)
 
         // Centered top-dock tab pills keep calm warm espresso resting tokens & dark ink on brass focus
         try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: false), r: 160, g: 150, b: 140)
@@ -257,16 +259,9 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
             onPickSource: {},
             onToggleWatched: {}
         )
-        let castStrip = DetailCastStripView(
-            members: [TvCastMember(name: "Adam Scott", character: "Mark Scout", profileUrl: nil)],
-            castNames: nil,
-            client: nil,
-            onSelectActor: { _ in }
-        )
         XCTAssertEqual(posterCard.card.title, "Fight Club")
         XCTAssertEqual(backdropCard.card.title, "Fight Club")
         XCTAssertEqual(episodeCard.episode.episodeNumber, 1)
-        XCTAssertEqual(castStrip.members?.count, 1)
     }
 
     private func makeSolidTestCGImage(width: Int, height: Int, byte: UInt8) throws -> CGImage {

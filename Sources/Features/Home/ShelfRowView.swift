@@ -10,9 +10,34 @@ struct ShelfRowView: View {
     let onPlayContinueCard: (TvMediaCard) -> Void
     let onPickSourceForCard: (TvMediaCard) -> Void
     let onToggleWatchlist: (TvMediaCard) -> Void
-    let onToggleFavorite: (TvMediaCard) -> Void
     let onMarkWatched: (TvMediaCard) -> Void
+    let onRemoveFromOngoing: (TvMediaCard) -> Void
+    let onRemoveFromList: (TvMediaCard, TvShelfRow) -> Void
     let onSeeAllRow: (TvShelfRow) -> Void
+
+    private var isOngoingRow: Bool {
+        row.rowId == "medialogg-continue"
+            || row.rowId == "continue-watching"
+            || row.rowId == "upcoming-episodes"
+            || row.rowId == "medialogg-upcoming"
+            || row.sourceKind == "system_continue"
+            || row.sourceKind == "system_upcoming"
+            || row.sourceKind == "active_series"
+    }
+
+    private var rowRemoveActionTitle: String? {
+        if isOngoingRow { return "Fjern fra pågående" }
+        if row.sourceKind == "local_library" { return nil }
+        return "Fjern fra listen"
+    }
+
+    private func triggerRemoveAction(for card: TvMediaCard) {
+        if isOngoingRow {
+            onRemoveFromOngoing(card)
+        } else if row.sourceKind != "local_library" {
+            onRemoveFromList(card, row)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -59,6 +84,12 @@ struct ShelfRowView: View {
                                 } label: {
                                     Label("Marker som sett", systemImage: "checkmark.circle")
                                 }
+
+                                Button {
+                                    onRemoveFromOngoing(card)
+                                } label: {
+                                    Label("Fjern fra pågående", systemImage: "minus.circle")
+                                }
                             }
                         }
 
@@ -71,6 +102,7 @@ struct ShelfRowView: View {
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 18)
                 }
+                .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
             } else if row.rowStyle == "upcoming_backdrop" {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -92,6 +124,12 @@ struct ShelfRowView: View {
                                 } label: {
                                     Label("Åpne serie og sesonger", systemImage: "tv")
                                 }
+
+                                Button {
+                                    onRemoveFromOngoing(card)
+                                } label: {
+                                    Label("Fjern fra pågående", systemImage: "minus.circle")
+                                }
                             }
                         }
 
@@ -104,6 +142,7 @@ struct ShelfRowView: View {
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 18)
                 }
+                .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
             } else if row.rowStyle == "backdrop" {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -138,8 +177,9 @@ struct ShelfRowView: View {
                                     onToggleWatchlist: {
                                         onToggleWatchlist(card)
                                     },
-                                    onToggleFavorite: {
-                                        onToggleFavorite(card)
+                                    removeActionTitle: rowRemoveActionTitle,
+                                    onRemoveFromContainer: rowRemoveActionTitle == nil ? nil : {
+                                        triggerRemoveAction(for: card)
                                     }
                                 )
                             }
@@ -154,6 +194,7 @@ struct ShelfRowView: View {
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 18)
                 }
+                .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -187,8 +228,9 @@ struct ShelfRowView: View {
                                     onToggleWatchlist: {
                                         onToggleWatchlist(card)
                                     },
-                                    onToggleFavorite: {
-                                        onToggleFavorite(card)
+                                    removeActionTitle: rowRemoveActionTitle,
+                                    onRemoveFromContainer: rowRemoveActionTitle == nil ? nil : {
+                                        triggerRemoveAction(for: card)
                                     }
                                 )
                             }
@@ -203,6 +245,7 @@ struct ShelfRowView: View {
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 18)
                 }
+                .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
             }
         }
@@ -244,10 +287,10 @@ private struct SeeAllShelfCardButton: View {
                     )
             )
             .shadow(
-                color: isFocused ? LunaTheme.amber.opacity(0.38) : .clear,
-                radius: isFocused ? 18 : 0,
+                color: isFocused ? Color.black.opacity(0.36) : .clear,
+                radius: isFocused ? 12 : 0,
                 x: 0,
-                y: isFocused ? 6 : 0
+                y: isFocused ? 5 : 0
             )
             .scaleEffect(isFocused ? 1.04 : 1.0)
             .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)

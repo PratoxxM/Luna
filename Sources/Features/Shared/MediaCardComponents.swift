@@ -134,19 +134,38 @@ enum MediaCardMutator {
         }
     }
 
-    static func setFavorite(
+    static func removeFromOngoing(
         for card: TvMediaCard,
-        favorite: Bool,
         sessionStore: AppSessionStore
     ) async throws -> Bool {
         guard let client = sessionStore.makeClient() else { return false }
         do {
-            try await client.setFavorite(
-                favorite: favorite,
+            try await client.removeFromOngoing(
                 mediaType: card.mediaType,
+                itemId: card.itemId,
                 ids: card.ids,
-                title: card.title,
-                year: card.year
+                title: card.title
+            )
+            return true
+        } catch LunaCoreError.unauthorized {
+            sessionStore.unpairDevice()
+            return false
+        }
+    }
+
+    static func removeFromList(
+        for card: TvMediaCard,
+        rowId: String,
+        sessionStore: AppSessionStore
+    ) async throws -> Bool {
+        guard let client = sessionStore.makeClient() else { return false }
+        do {
+            try await client.removeFromList(
+                rowId: rowId,
+                mediaType: card.mediaType,
+                itemId: card.itemId,
+                ids: card.ids,
+                title: card.title
             )
             return true
         } catch LunaCoreError.unauthorized {
@@ -200,7 +219,9 @@ struct StandardPosterContextMenuItems: View {
     let onOpenDetails: () -> Void
     var onToggleWatched: (() -> Void)? = nil
     let onToggleWatchlist: () -> Void
-    let onToggleFavorite: () -> Void
+    var removeActionTitle: String? = nil
+    var onRemoveFromContainer: (() -> Void)? = nil
+    var onRequestDelete: (() -> Void)? = nil
 
     var body: some View {
         if let onPlay {
@@ -229,11 +250,16 @@ struct StandardPosterContextMenuItems: View {
             )
         }
 
-        Button(action: onToggleFavorite) {
-            Label(
-                card.isFavorite == true ? "Fjern favoritt" : "Marker som favoritt",
-                systemImage: card.isFavorite == true ? "star.slash" : "star.fill"
-            )
+        if let removeActionTitle, let onRemoveFromContainer {
+            Button(action: onRemoveFromContainer) {
+                Label(removeActionTitle, systemImage: "minus.circle")
+            }
+        }
+
+        if let onRequestDelete {
+            Button(role: .destructive, action: onRequestDelete) {
+                Label("Slett fra NAS…", systemImage: "trash")
+            }
         }
     }
 }

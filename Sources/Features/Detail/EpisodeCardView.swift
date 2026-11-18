@@ -7,6 +7,7 @@ struct EpisodeCardView: View {
     let onPlay: () -> Void
     let onPickSource: () -> Void
     let onToggleWatched: () -> Void
+    var onRequestDelete: (() -> Void)? = nil
 
     @FocusState private var isFocused: Bool
 
@@ -103,6 +104,12 @@ struct EpisodeCardView: View {
                     }
                     Button(action: onPickSource) {
                         Label("Bytt kilde…", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    if let onRequestDelete,
+                       episode.availability?.isPhysicalLocal == true || episode.availability?.isLocalVfs == true {
+                        Button(role: .destructive, action: onRequestDelete) {
+                            Label("Slett episode…", systemImage: "trash")
+                        }
                     }
                 }
             }

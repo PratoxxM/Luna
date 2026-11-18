@@ -2,7 +2,7 @@ import SwiftUI
 
 private enum LibrarySectionTab: String, CaseIterable, Identifiable, Sendable {
     case watchlist = "watchlist"
-    case favorites = "favorites"
+    case lists = "lists"
     case local = "local"
 
     var id: String { rawValue }
@@ -10,7 +10,7 @@ private enum LibrarySectionTab: String, CaseIterable, Identifiable, Sendable {
     var label: String {
         switch self {
         case .watchlist: return "Huskeliste"
-        case .favorites: return "Favoritter & Lister"
+        case .lists: return "Egne lister"
         case .local: return "Lokalt på NAS"
         }
     }
@@ -59,6 +59,7 @@ internal final class LibraryBrowseMemoryCache {
 
 struct LibraryHubView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(\.lunaSubpageVisibility) private var subpageVisibility
 
     let isActiveTab: Bool
 
@@ -80,6 +81,8 @@ struct LibraryHubView: View {
 
     @State private var selectedCard: TvMediaCard?
     @State private var selectedCustomList: TvCustomListSummary?
+    @State private var pendingDeleteTarget: TvDeleteRequestTarget?
+    @State private var modalToken = UUID()
 
     init(isActiveTab: Bool = true) {
         self.isActiveTab = isActiveTab
@@ -103,14 +106,12 @@ struct LibraryHubView: View {
                 if let mutationErrorBanner {
                     TransientErrorBanner(message: mutationErrorBanner)
                         .padding(.horizontal, LunaTheme.horizontalGutter)
-                        .padding(.top, 14)
                 }
 
                 Text("Mitt bibliotek")
                     .font(.title2.weight(.bold))
                     .foregroundStyle(LunaTheme.linen)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.top, 14)
 
                 // Primary 3-section switcher (uniform warm espresso pills)
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -124,11 +125,11 @@ struct LibraryHubView: View {
                         }
 
                         LunaPillButton(
-                            LibrarySectionTab.favorites.label,
-                            badgeText: counts.map { String($0.favorites) },
-                            isSelected: activeSection == .favorites
+                            LibrarySectionTab.lists.label,
+                            badgeText: counts.map { String($0.customLists) },
+                            isSelected: activeSection == .lists
                         ) {
-                            activeSection = .favorites
+                            activeSection = .lists
                         }
 
                         LunaPillButton(
@@ -139,28 +140,24 @@ struct LibraryHubView: View {
                             activeSection = .local
                         }
 
-                        Rectangle()
-                            .fill(LunaTheme.warmBorder)
-                            .frame(width: 1, height: 26)
-                            .padding(.horizontal, 6)
+                        if activeSection != .lists {
+                            Rectangle()
+                                .fill(LunaTheme.warmBorder)
+                                .frame(width: 1, height: 26)
+                                .padding(.horizontal, 6)
 
-                        mediaTypePills
+                            mediaTypePills
+                        }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 10)
                 }
+                .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
 
                 // Secondary filter bar for "Lokalt på NAS"
                 if activeSection == .local {
                     localTierAndSortBar(counts: counts)
-                }
-
-                // Custom MediaLogg shelves strip inside "Favoritter & Lister"
-                if activeSection == .favorites,
-                   let customLists = libraryPayload?.customLists,
-                   !customLists.isEmpty {
-                    customShelvesSection(customLists)
                 }
 
                 // Active Grid Content
@@ -182,19 +179,52 @@ struct LibraryHubView: View {
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
+                } else if activeSection == .lists {
+                    customListsGridSection(libraryPayload?.customLists ?? [])
                 } else {
                     sectionGrid(client: client)
                 }
             }
             .padding(.bottom, 72)
         }
+        .contentMargins(.zero, for: .scrollContent)
+        .ignoresSafeArea(edges: .horizontal)
         .lunaRootScrollTopBarTracking(tab: .library)
         .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
         .navigationDestination(item: $selectedCustomList) { list in
-            CustomRowBrowseView(title: list.name, pathOrRowId: list.browsePath)
+            CustomRowBrowseView(
+                title: list.name,
+                pathOrRowId: list.browsePath,
+                isOngoingList: list.sourceType == "active_series"
+                    || list.id.contains("pagaende")
+                    || list.id.contains("active")
+                    || list.id.contains("continue")
+            )
+        }
+        .sheet(item: $pendingDeleteTarget) { target in
+            DetailDeleteSheetView(
+                target: target,
+                onDeleted: { _ in
+                    localItems.removeAll { $0.itemId == target.itemId }
+                    pendingDeleteTarget = nil
+                    Task { await markLocalMutationAndReload() }
+                },
+                onCancel: {
+                    pendingDeleteTarget = nil
+                }
+            )
+            .environmentObject(sessionStore)
+            .preferredColorScheme(.dark)
+        }
+        .onChange(of: pendingDeleteTarget != nil) { _, isShowingModal in
+            if isShowingModal {
+                subpageVisibility.enterModal(modalToken)
+            } else {
+                subpageVisibility.leaveModal(modalToken)
+            }
         }
         .task(id: queryKey) {
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
@@ -220,6 +250,9 @@ struct LibraryHubView: View {
         }
         .onDisappear {
             mutationBannerTask?.cancel()
+            if pendingDeleteTarget == nil {
+                subpageVisibility.leaveModal(modalToken)
+            }
         }
     }
 
@@ -284,31 +317,32 @@ struct LibraryHubView: View {
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.vertical, 10)
         }
+        .contentMargins(.zero, for: .scrollContent)
         .scrollClipDisabled()
     }
 
-    private func customShelvesSection(_ lists: [TvCustomListSummary]) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Egne samlinger fra MediaLogg")
-                .font(.title3.weight(.bold))
-                .foregroundStyle(LunaTheme.linen)
-                .padding(.horizontal, LunaTheme.horizontalGutter)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    ForEach(lists) { list in
-                        LunaPillButton(
-                            list.name,
-                            badgeText: list.itemCount > 0 ? String(list.itemCount) : nil
-                        ) {
-                            selectedCustomList = list
-                        }
+    @ViewBuilder
+    private func customListsGridSection(_ lists: [TvCustomListSummary]) -> some View {
+        if lists.isEmpty {
+            LibraryEmptyStateView(
+                headline: emptyStateHeadline,
+                subtitle: emptyStateSubtitle
+            )
+            .padding(.horizontal, LunaTheme.horizontalGutter)
+            .padding(.vertical, 48)
+        } else {
+            let listColumns = [
+                GridItem(.adaptive(minimum: 340, maximum: 460), spacing: 26)
+            ]
+            LazyVGrid(columns: listColumns, spacing: 24) {
+                ForEach(lists) { list in
+                    LibraryCustomListTileButton(list: list) {
+                        selectedCustomList = list
                     }
                 }
-                .padding(.horizontal, LunaTheme.horizontalGutter)
-                .padding(.vertical, 10)
             }
-            .scrollClipDisabled()
+            .padding(.horizontal, LunaTheme.horizontalGutter)
+            .padding(.vertical, 12)
         }
     }
 
@@ -318,8 +352,8 @@ struct LibraryHubView: View {
             switch activeSection {
             case .watchlist:
                 return libraryPayload?.watchlist ?? []
-            case .favorites:
-                return libraryPayload?.favorites ?? []
+            case .lists:
+                return []
             case .local:
                 return localItems
             }
@@ -362,9 +396,17 @@ struct LibraryHubView: View {
                             onToggleWatchlist: {
                                 Task { await toggleWatchlist(card) }
                             },
-                            onToggleFavorite: {
-                                Task { await toggleFavorite(card) }
-                            }
+                            onRequestDelete: activeSection == .local ? {
+                                pendingDeleteTarget = TvDeleteRequestTarget(
+                                    kind: card.mediaType,
+                                    itemId: card.itemId,
+                                    tmdbId: card.ids.tmdb,
+                                    tvdbId: card.ids.tvdb,
+                                    title: card.title,
+                                    subtitle: card.year.map(String.init),
+                                    scope: card.mediaType == "series" ? .series : .title
+                                )
+                            } : nil
                         )
                     }
                     .onAppear {
@@ -394,8 +436,8 @@ struct LibraryHubView: View {
         switch activeSection {
         case .watchlist:
             return "Ingen titler i «Huskeliste» akkurat nå."
-        case .favorites:
-            return "Ingen lagrede favoritter ennå."
+        case .lists:
+            return "Ingen egne lister ennå."
         case .local:
             return "Ingen lokale filer matchet filteret."
         }
@@ -405,8 +447,8 @@ struct LibraryHubView: View {
         switch activeSection {
         case .watchlist:
             return "Trykk på «Huskeliste» inne på en film eller serie for å samle det dere vil se her."
-        case .favorites:
-            return "Trykk på «Favoritt» inne på favorittfilmer og -serier for rask tilgang."
+        case .lists:
+            return "Opprett egne lister eller temahylla i LunaCore Web så dukker de opp her."
         case .local:
             return "Lokal filoversikt leses rett fra NVMe-indeksen uten å vekke arkivdiskene."
         }
@@ -535,17 +577,6 @@ struct LibraryHubView: View {
         }
     }
 
-    private func toggleFavorite(_ card: TvMediaCard) async {
-        let nextFavorite = !(card.isFavorite ?? false)
-        do {
-            if try await MediaCardMutator.setFavorite(for: card, favorite: nextFavorite, sessionStore: sessionStore) {
-                await markLocalMutationAndReload()
-            }
-        } catch {
-            showMutationError(error)
-        }
-    }
-
     private func toggleWatched(_ card: TvMediaCard) async {
         let nextWatched = !(card.progress?.watched ?? false)
         do {
@@ -555,6 +586,70 @@ struct LibraryHubView: View {
         } catch {
             showMutationError(error)
         }
+    }
+}
+
+private struct LibraryCustomListTileButton: View {
+    let list: TvCustomListSummary
+    let action: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    private var kindLabel: String {
+        switch list.mediaType?.lowercased() {
+        case "movie": return "Filmer"
+        case "series": return "Serier"
+        default: return "Filmer & Serier"
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                Image(systemName: "rectangle.stack.fill")
+                    .font(.title2)
+                    .foregroundStyle(LunaTheme.amber)
+                    .frame(width: 44, height: 44)
+                    .background(LunaTheme.amber.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(list.name)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(LunaTheme.linen)
+                        .lineLimit(1)
+
+                    Text(list.itemCount > 0 ? "\(kindLabel) · \(list.itemCount) festet" : kindLabel)
+                        .font(.caption)
+                        .foregroundStyle(isFocused ? LunaTheme.moonlight : LunaTheme.muted)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.muted)
+            }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 20)
+            .background(
+                RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
+                    .fill(isFocused ? LunaTheme.surfaceElevated : LunaTheme.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
+                    .strokeBorder(
+                        isFocused ? LunaTheme.focusGoldBorder : LunaTheme.warmBorderSubtle,
+                        lineWidth: isFocused ? 2.2 : 1.0
+                    )
+            )
+            .scaleEffect(isFocused ? 1.02 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.84), value: isFocused)
+        }
+        .buttonStyle(LunaChromelessButtonStyle())
+        .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
+        .focusEffectDisabled(true)
+        .focused($isFocused)
     }
 }
 

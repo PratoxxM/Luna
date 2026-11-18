@@ -408,23 +408,90 @@ public struct LunaCoreClient: Sendable {
         )
     }
 
-    public func setFavorite(favorite: Bool, mediaType: String, ids: TvMediaIds, title: String, year: Int?) async throws {
-        struct ItemPayload: Encodable {
-            let kind: String
-            let title: String
-            let year: Int?
-            let ids: TvMediaIds
-        }
+    public func removeFromOngoing(mediaType: String, itemId: String? = nil, ids: TvMediaIds, title: String?) async throws {
         struct BodyPayload: Encodable {
-            let favorite: Bool
-            let item: ItemPayload
+            let itemId: String?
+            let mediaType: String
+            let ids: TvMediaIds
+            let title: String?
         }
         let _: TvMutationAckResponse = try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/favorite",
+            path: "/api/tv/v1/continue/remove",
+            body: BodyPayload(itemId: itemId, mediaType: mediaType, ids: ids, title: title)
+        )
+    }
+
+    public func removeFromList(rowId: String, mediaType: String, itemId: String? = nil, ids: TvMediaIds, title: String?) async throws {
+        struct BodyPayload: Encodable {
+            let itemId: String?
+            let mediaType: String
+            let ids: TvMediaIds
+            let title: String?
+        }
+        let cleanId = rowId.split(separator: "/").last.map(String.init) ?? rowId
+        let encodedRowId = cleanId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? cleanId
+        let _: TvMutationAckResponse = try await sendJSON(
+            method: "POST",
+            path: "/api/tv/v1/rows/\(encodedRowId)/remove",
+            body: BodyPayload(itemId: itemId, mediaType: mediaType, ids: ids, title: title)
+        )
+    }
+
+    public func deletePreflight(target: TvDeleteRequestTarget) async throws -> TvDeletePreflightResponse {
+        struct BodyPayload: Encodable {
+            let itemId: String
+            let mediaType: String
+            let tmdbId: Int?
+            let tvdbId: Int?
+            let scope: String
+            let season: Int?
+            let episode: Int?
+        }
+        return try await sendJSON(
+            method: "POST",
+            path: "/api/tv/v1/delete/preflight",
             body: BodyPayload(
-                favorite: favorite,
-                item: ItemPayload(kind: mediaType, title: title, year: year, ids: ids)
+                itemId: target.itemId,
+                mediaType: target.kind,
+                tmdbId: target.tmdbId,
+                tvdbId: target.tvdbId,
+                scope: target.scope.rawValue,
+                season: target.season,
+                episode: target.episode
+            )
+        )
+    }
+
+    public func executeDelete(
+        target: TvDeleteRequestTarget,
+        preflightId: String,
+        removeFromLibrary: Bool = true
+    ) async throws -> TvDeleteExecuteResponse {
+        struct BodyPayload: Encodable {
+            let itemId: String
+            let mediaType: String
+            let tmdbId: Int?
+            let tvdbId: Int?
+            let scope: String
+            let season: Int?
+            let episode: Int?
+            let preflightId: String
+            let removeFromLibrary: Bool
+        }
+        return try await sendJSON(
+            method: "POST",
+            path: "/api/tv/v1/delete",
+            body: BodyPayload(
+                itemId: target.itemId,
+                mediaType: target.kind,
+                tmdbId: target.tmdbId,
+                tvdbId: target.tvdbId,
+                scope: target.scope.rawValue,
+                season: target.season,
+                episode: target.episode,
+                preflightId: preflightId,
+                removeFromLibrary: removeFromLibrary
             )
         )
     }

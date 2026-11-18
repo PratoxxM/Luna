@@ -41,7 +41,7 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(card.progress?.percent ?? 0, 16.6, accuracy: 0.01)
     }
 
-    func testDecodeItemDetailOverviewPriorityAndCastMembers() throws {
+    func testDecodeItemDetailOverviewPriority() throws {
         let json = #"""
         {
           "itemId": "tmdb:movie:999",
@@ -52,18 +52,16 @@ final class ModelDecodingTests: XCTestCase {
           "overviewNo": "Norsk beskrivelse først",
           "overviewEn": "English overview",
           "inWatchlist": true,
-          "isFavorite": true,
           "watched": false,
-          "castMembers": [
-            { "name": "Skuespiller En", "character": "Kaptein", "profileUrl": "/api/tv/v1/img/cast-1" }
-          ]
+          "monitored": true,
+          "monitorMode": "all"
         }
         """#
 
         let detail = try JSONDecoder().decode(TvItemDetail.self, from: Data(json.utf8))
         XCTAssertEqual(detail.preferredOverview, "Norsk beskrivelse først")
-        XCTAssertTrue(detail.favoriteFlag)
-        XCTAssertEqual(detail.castMembers?.first?.name, "Skuespiller En")
+        XCTAssertTrue(detail.inWatchlist)
+        XCTAssertTrue(detail.isMonitoredFlag)
     }
 
     func testDecodePlaybackSessionAndCandidateBadges() throws {

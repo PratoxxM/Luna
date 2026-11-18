@@ -250,31 +250,28 @@ private struct CandidateRowButton: View {
             HStack(spacing: 20) {
                 Image(systemName: isCurrentWinner ? "checkmark.circle.fill" : "play.circle.fill")
                     .font(.title2)
-                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.amber)
+                    .foregroundStyle(isFocused || isCurrentWinner ? LunaTheme.amber : LunaTheme.moonlight)
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 10) {
                         Text(candidate.displayHeadline)
                             .font(.headline.weight(.semibold))
-                            .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.linen)
+                            .foregroundStyle(LunaTheme.linen)
                             .lineLimit(1)
 
                         if isRecommended {
                             Text("Anbefalt")
                                 .font(.caption2.weight(.bold))
-                                .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.canvas)
+                                .foregroundStyle(LunaTheme.canvas)
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 3)
-                                .background(
-                                    isFocused ? LunaTheme.canvas : LunaTheme.amber,
-                                    in: Capsule()
-                                )
+                                .background(LunaTheme.amber, in: Capsule())
                         }
                     }
 
                     Text(candidate.releaseTitle)
                         .font(.caption.monospaced())
-                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.78) : LunaTheme.muted)
+                        .foregroundStyle(isFocused ? LunaTheme.moonlight : LunaTheme.muted)
                         .lineLimit(1)
                 }
 
@@ -284,30 +281,35 @@ private struct CandidateRowButton: View {
                     if let size = candidate.formattedSize {
                         Text(size)
                             .font(.caption.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.moonlight)
+                            .foregroundStyle(LunaTheme.moonlight)
                     }
 
                     Text(candidate.sourceBadgeLabel)
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.moonlight)
+                        .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 5)
                         .background(
-                            isFocused ? LunaTheme.canvas.opacity(0.88) : LunaTheme.warmBorderBase.opacity(0.09),
+                            isFocused ? LunaTheme.amber.opacity(0.22) : LunaTheme.warmBorderBase.opacity(0.09),
                             in: Capsule()
+                        )
+                        .overlay(
+                            Capsule().strokeBorder(
+                                isFocused ? LunaTheme.amber.opacity(0.55) : Color.clear,
+                                lineWidth: 1
+                            )
                         )
                 }
             }
             .padding(.horizontal, 26)
             .padding(.vertical, 18)
             .background {
-                if isFocused {
-                    RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
-                        .fill(LunaTheme.focusGoldGradient)
-                } else {
-                    RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
-                        .fill(isCurrentWinner ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
-                }
+                RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
+                    .fill(
+                        isFocused
+                            ? LunaTheme.surfaceElevated
+                            : (isCurrentWinner ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
+                    )
             }
             .overlay(
                 RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
@@ -315,14 +317,14 @@ private struct CandidateRowButton: View {
                         isFocused
                             ? LunaTheme.focusGoldBorder
                             : (isCurrentWinner ? LunaTheme.warmBorderStrong : LunaTheme.warmBorder),
-                        lineWidth: isFocused ? 2.0 : 1.0
+                        lineWidth: isFocused ? 2.2 : 1.0
                     )
             )
             .shadow(
-                color: isFocused ? LunaTheme.amber.opacity(0.38) : .clear,
-                radius: isFocused ? 18 : 0,
+                color: isFocused ? Color.black.opacity(0.36) : .clear,
+                radius: isFocused ? 12 : 0,
                 x: 0,
-                y: isFocused ? 6 : 0
+                y: isFocused ? 5 : 0
             )
             .scaleEffect(isFocused ? 1.015 : 1.0)
             .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)

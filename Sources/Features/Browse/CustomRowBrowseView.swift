@@ -1,5 +1,38 @@
 import SwiftUI
 
+internal enum CustomRowContextPolicy {
+    nonisolated static func isOngoingList(
+        explicitFlag: Bool,
+        rowId: String,
+        sourceKind: String?
+    ) -> Bool {
+        if explicitFlag { return true }
+        if sourceKind == "active_series" || sourceKind == "system_continue" || sourceKind == "system_upcoming" {
+            return true
+        }
+        let lower = rowId.lowercased()
+        return lower == "medialogg-continue"
+            || lower == "continue-watching"
+            || lower == "upcoming-episodes"
+            || lower == "medialogg-upcoming"
+            || lower.contains("pagaende")
+    }
+
+    nonisolated static func removeActionTitle(
+        explicitFlag: Bool,
+        rowId: String,
+        sourceKind: String?
+    ) -> String? {
+        if isOngoingList(explicitFlag: explicitFlag, rowId: rowId, sourceKind: sourceKind) {
+            return "Fjern fra pågående"
+        }
+        if rowId.hasPrefix("genre:") || sourceKind == "genre" || sourceKind == "local_library" {
+            return nil
+        }
+        return "Fjern fra listen"
+    }
+}
+
 /// Full-grid explorer for custom MediaLogg shelves or "Se alle" row links.
 struct CustomRowBrowseView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
@@ -7,10 +40,12 @@ struct CustomRowBrowseView: View {
 
     let title: String
     let pathOrRowId: String
+    var isOngoingList: Bool = false
 
     @State private var subpageToken = UUID()
 
     @State private var items: [TvMediaCard] = []
+    @State private var rowSourceKind: String?
     @State private var hasMore: Bool = false
     @State private var offset: Int = 0
     @State private var isLoading: Bool = true
@@ -30,18 +65,16 @@ struct CustomRowBrowseView: View {
         let client = sessionStore.makeClient()
 
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 32) {
+            VStack(alignment: .leading, spacing: 26) {
                 if let mutationErrorBanner {
                     TransientErrorBanner(message: mutationErrorBanner)
                         .padding(.horizontal, LunaTheme.horizontalGutter)
-                        .padding(.top, 14)
                 }
 
                 Text(title)
                     .font(.largeTitle.weight(.bold))
                     .foregroundStyle(LunaTheme.linen)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.top, 28)
 
                 if isLoading && items.isEmpty {
                     ProgressView()
@@ -90,8 +123,17 @@ struct CustomRowBrowseView: View {
                                     onToggleWatchlist: {
                                         Task { await toggleCustomWatchlist(card) }
                                     },
-                                    onToggleFavorite: {
-                                        Task { await toggleCustomFavorite(card) }
+                                    removeActionTitle: CustomRowContextPolicy.removeActionTitle(
+                                        explicitFlag: isOngoingList,
+                                        rowId: effectiveRowId,
+                                        sourceKind: rowSourceKind
+                                    ),
+                                    onRemoveFromContainer: CustomRowContextPolicy.removeActionTitle(
+                                        explicitFlag: isOngoingList,
+                                        rowId: effectiveRowId,
+                                        sourceKind: rowSourceKind
+                                    ) == nil ? nil : {
+                                        Task { await removeCardFromCurrentList(card) }
                                     }
                                 )
                             }
@@ -116,6 +158,9 @@ struct CustomRowBrowseView: View {
             }
             .padding(.bottom, 72)
         }
+        .contentMargins(.zero, for: .scrollContent)
+        .ignoresSafeArea(edges: .horizontal)
+        .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: sessionStore.activePlaybackTarget != nil))
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
@@ -151,6 +196,9 @@ struct CustomRowBrowseView: View {
         do {
             let res = try await client.fetchRow(pathOrRowId: pathOrRowId, offset: 0, limit: pageSize)
             items = res.items
+            if let sk = res.sourceKind {
+                rowSourceKind = sk
+            }
             hasMore = res.hasMore
             offset = res.items.count
         } catch LunaCoreError.unauthorized {
@@ -207,20 +255,35 @@ struct CustomRowBrowseView: View {
         }
     }
 
-    private func toggleCustomFavorite(_ card: TvMediaCard) async {
-        let nextVal = !(card.isFavorite ?? false)
-        if let idx = items.firstIndex(where: { $0.id == card.id }) {
-            items[idx].isFavorite = nextVal
-        }
+    private var effectiveRowId: String {
+        let stripped = pathOrRowId
+            .replacingOccurrences(of: "/api/tv/v1/rows/", with: "")
+            .split(separator: "?").first.map(String.init) ?? pathOrRowId
+        return stripped.removingPercentEncoding ?? stripped
+    }
+
+    private var effectiveIsOngoing: Bool {
+        CustomRowContextPolicy.isOngoingList(
+            explicitFlag: isOngoingList,
+            rowId: effectiveRowId,
+            sourceKind: rowSourceKind
+        )
+    }
+
+    private func removeCardFromCurrentList(_ card: TvMediaCard) async {
         do {
-            if try await MediaCardMutator.setFavorite(for: card, favorite: nextVal, sessionStore: sessionStore) {
+            let ok: Bool
+            if effectiveIsOngoing {
+                ok = try await MediaCardMutator.removeFromOngoing(for: card, sessionStore: sessionStore)
+            } else {
+                ok = try await MediaCardMutator.removeFromList(for: card, rowId: effectiveRowId, sessionStore: sessionStore)
+            }
+            if ok {
+                items.removeAll { $0.id == card.id }
                 lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
                 sessionStore.notifyContentMutated()
             }
         } catch {
-            if let idx = items.firstIndex(where: { $0.id == card.id }) {
-                items[idx].isFavorite = card.isFavorite
-            }
             showMutationError(error)
         }
     }

@@ -112,7 +112,6 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
     public let imdbVotes: Int?
     public let badges: [String]?
     public var inWatchlist: Bool?
-    public var isFavorite: Bool?
     public let contextSubtitle: String?
     public let airDate: String?
     public let daysUntil: Int?
@@ -143,7 +142,6 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         imdbVotes: Int? = nil,
         badges: [String]? = nil,
         inWatchlist: Bool? = nil,
-        isFavorite: Bool? = nil,
         contextSubtitle: String? = nil,
         airDate: String? = nil,
         daysUntil: Int? = nil,
@@ -171,7 +169,6 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         self.imdbVotes = imdbVotes
         self.badges = badges
         self.inWatchlist = inWatchlist
-        self.isFavorite = isFavorite
         self.contextSubtitle = contextSubtitle
         self.airDate = airDate
         self.daysUntil = daysUntil
@@ -394,6 +391,7 @@ public struct TvHomeResponse: Codable, Equatable, Sendable {
 public struct TvRowPageResponse: Codable, Equatable, Sendable {
     public let ok: Bool
     public let rowId: String
+    public let sourceKind: String?
     public let title: String
     public let offset: Int
     public let limit: Int
@@ -455,6 +453,7 @@ public struct TvCustomListSummary: Codable, Identifiable, Equatable, Hashable, S
     public let id: String
     public let name: String
     public let mediaType: String?
+    public let sourceType: String?
     public let listMode: String?
     public let rowStyle: String?
     public let itemCount: Int

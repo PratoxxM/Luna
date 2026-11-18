@@ -4,6 +4,7 @@ import AetherBridge
 struct MediaDetailView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
+    @Environment(\.dismiss) private var dismiss
 
     let mediaType: String
     let itemId: String
@@ -17,8 +18,8 @@ struct MediaDetailView: View {
     @State private var errorMessage: String?
     @State private var mutationErrorBanner: String?
     @State private var pendingSeriesWatchedItem: TvItemDetail?
+    @State private var pendingDeleteTarget: TvDeleteRequestTarget?
     @State private var lastSeenRefreshNonce: Int = -1
-    @State private var selectedActorQuery: String?
 
     @StateObject private var preResolve = DetailPreResolveController()
     @State private var sourcePickerContext: SourcePickerContext?
@@ -56,6 +57,10 @@ struct MediaDetailView: View {
                             isPreResolvedReady: preResolve.isPreResolvedReady,
                             horizontalGutter: detailGutter,
                             focusNamespace: detailFocusNamespace,
+                            hasLocalEpisodes: episodes.contains {
+                                $0.availability?.isPhysicalLocal == true ||
+                                $0.availability?.isLocalVfs == true
+                            },
                             onPlay: {
                                 launchPrimaryPlayback(detail)
                             },
@@ -85,22 +90,21 @@ struct MediaDetailView: View {
                                     logoUrl: detail.logoUrl
                                 )
                             },
-                            onToggleFavorite: {
-                                Task { await toggleFavorite(detail) }
+                            onDeleteTitle: {
+                                pendingDeleteTarget = TvDeleteRequestTarget(
+                                    kind: detail.mediaType,
+                                    itemId: detail.itemId,
+                                    tmdbId: detail.ids.tmdb,
+                                    tvdbId: detail.ids.tvdb,
+                                    title: detail.title,
+                                    subtitle: detail.year.map(String.init),
+                                    scope: detail.mediaType == "series" ? .series : .title
+                                )
                             }
                         )
 
                         if detail.mediaType == "series", let seasons = detail.seasons, !seasons.isEmpty {
                             seasonsAndEpisodesSection(detail: detail, seasons: seasons, client: client)
-                        }
-
-                        DetailCastStripView(
-                            members: detail.castMembers,
-                            castNames: detail.cast,
-                            client: client,
-                            horizontalGutter: detailGutter
-                        ) { actorName in
-                            selectedActorQuery = actorName
                         }
                     } else if isLoading {
                         HStack(spacing: 16) {
@@ -123,8 +127,9 @@ struct MediaDetailView: View {
                         .padding(.top, 180)
                     }
                 }
-                .padding(.bottom, 84)
+                .padding(.bottom, detail?.mediaType == "series" ? 84 : 0)
             }
+            .scrollBounceBehavior(.basedOnSize)
             .contentMargins(.zero, for: .scrollContent)
             .ignoresSafeArea(edges: [.top, .horizontal])
 
@@ -134,10 +139,29 @@ struct MediaDetailView: View {
                     .padding(.top, 72)
             }
         }
+        .lunaNavigationContainerBackdrop(mode: .probeOnly)
         .focusScope(detailFocusNamespace)
         .toolbar(.hidden, for: .tabBar)
-        .navigationDestination(item: $selectedActorQuery) { actorName in
-            SearchView(initialQuery: actorName)
+        .sheet(item: $pendingDeleteTarget) { target in
+            DetailDeleteSheetView(
+                target: target,
+                onPrepareBeforePreflight: {
+                    preResolve.discardPreparedSession(client: sessionStore.makeClient())
+                },
+                onDeleted: { _ in
+                    pendingDeleteTarget = nil
+                    if target.isWholeTitle {
+                        dismiss()
+                    } else {
+                        Task { await markLocalMutationAndReload() }
+                    }
+                },
+                onCancel: {
+                    pendingDeleteTarget = nil
+                }
+            )
+            .environmentObject(sessionStore)
+            .preferredColorScheme(.dark)
         }
         .sheet(item: $sourcePickerContext) { ctx in
             SourcePickerSheetView(
@@ -198,7 +222,7 @@ struct MediaDetailView: View {
         .onAppear {
             subpageVisibility.enterSubpage(subpageToken)
         }
-        .onChange(of: sourcePickerContext != nil || pendingSeriesWatchedItem != nil) { _, isShowingModal in
+        .onChange(of: sourcePickerContext != nil || pendingSeriesWatchedItem != nil || pendingDeleteTarget != nil) { _, isShowingModal in
             if isShowingModal {
                 subpageVisibility.enterModal(modalToken)
             } else {
@@ -268,7 +292,7 @@ struct MediaDetailView: View {
             detailLoadTask?.cancel()
             detailLoadTask = nil
             let isLaunchingPlayback = sessionStore.activePlaybackTarget != nil
-            let isShowingModal = sourcePickerContext != nil || pendingSeriesWatchedItem != nil
+            let isShowingModal = sourcePickerContext != nil || pendingSeriesWatchedItem != nil || pendingDeleteTarget != nil
             preResolve.handleDisappear(
                 isLaunchingPlayback: isLaunchingPlayback,
                 isShowingSourcePicker: isShowingModal,
@@ -283,7 +307,7 @@ struct MediaDetailView: View {
                 subpageVisibility.leaveModal(modalToken)
             }
             if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
-                hasPushedChildDestination: selectedActorQuery != nil,
+                hasPushedChildDestination: false,
                 hasActivePlayback: isLaunchingPlayback,
                 isShowingModalSheet: isShowingModal
             ) {
@@ -299,129 +323,96 @@ struct MediaDetailView: View {
         seasons: [TvSeasonSummary],
         client: LunaCoreClient?
     ) -> some View {
-        VStack(alignment: .leading, spacing: 24) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
-                    ForEach(seasons) { season in
-                        let selected = selectedSeasonNumber == season.seasonNumber
-                        LunaPillButton(
-                            season.name,
-                            badgeText: season.episodeCount > 0 ? String(season.episodeCount) : nil,
-                            isSelected: selected,
-                            prominence: .subtleChip
-                        ) {
-                            guard selectedSeasonNumber != season.seasonNumber else { return }
-                            selectedSeasonNumber = season.seasonNumber
-                            Task { await loadSeasonEpisodes(detail: detail, seasonNumber: season.seasonNumber) }
-                        }
-                    }
-                }
-                .padding(.horizontal, detailGutter)
-                .padding(.vertical, 10)
+        DetailSeasonsSectionView(
+            detail: detail,
+            seasons: seasons,
+            selectedSeasonNumber: $selectedSeasonNumber,
+            episodes: episodes,
+            isLoadingEpisodes: isLoadingEpisodes,
+            client: client,
+            detailGutter: detailGutter,
+            onSelectSeason: { seasonNumber in
+                Task { await loadSeasonEpisodes(detail: detail, seasonNumber: seasonNumber) }
+            },
+            onPlayEpisode: { ep in
+                guard ep.isUpcoming != true else { return }
+                let usePrep = preResolve.consumeForPlayback(
+                    itemId: ep.itemId,
+                    startPosition: ep.progress?.positionSeconds,
+                    client: sessionStore.makeClient()
+                )
+                let cleanEpisodeTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
+                    ep.title,
+                    seriesTitle: detail.title,
+                    season: ep.seasonNumber,
+                    episode: ep.episodeNumber,
+                    episodeCode: ep.seasonEpisodeCode
+                ) ?? ""
+                sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
+                    itemId: ep.itemId,
+                    title: cleanEpisodeTitle,
+                    seriesTitle: detail.title,
+                    season: ep.seasonNumber,
+                    episode: ep.episodeNumber,
+                    startPositionSeconds: ep.progress?.positionSeconds,
+                    prepareToken: usePrep,
+                    backdropUrl: ep.stillUrl ?? detail.backdropUrl,
+                    logoUrl: detail.logoUrl
+                )
+            },
+            onPickEpisodeSource: { ep in
+                guard ep.isUpcoming != true else { return }
+                let cleanEpisodeTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
+                    ep.title,
+                    seriesTitle: detail.title,
+                    season: ep.seasonNumber,
+                    episode: ep.episodeNumber,
+                    episodeCode: ep.seasonEpisodeCode
+                ) ?? ""
+                sourcePickerContext = SourcePickerContext(
+                    itemId: ep.itemId,
+                    title: cleanEpisodeTitle,
+                    seriesTitle: detail.title,
+                    season: ep.seasonNumber,
+                    episode: ep.episodeNumber,
+                    startPositionSeconds: ep.progress?.positionSeconds,
+                    existingPrepareToken: preResolve.matchingToken(
+                        for: ep.itemId,
+                        startPosition: ep.progress?.positionSeconds
+                    ),
+                    backdropUrl: ep.stillUrl ?? detail.backdropUrl,
+                    logoUrl: detail.logoUrl
+                )
+            },
+            onToggleEpisodeWatched: { ep in
+                Task { await toggleEpisodeWatched(detail: detail, episode: ep) }
+            },
+            onDeleteSeason: { seasonNum in
+                pendingDeleteTarget = TvDeleteRequestTarget(
+                    kind: "series",
+                    itemId: detail.itemId,
+                    tmdbId: detail.ids.tmdb,
+                    tvdbId: detail.ids.tvdb,
+                    title: detail.title,
+                    subtitle: "Sesong \(seasonNum)",
+                    scope: .season,
+                    season: seasonNum
+                )
+            },
+            onDeleteEpisode: { ep in
+                pendingDeleteTarget = TvDeleteRequestTarget(
+                    kind: "series",
+                    itemId: ep.itemId,
+                    tmdbId: detail.ids.tmdb,
+                    tvdbId: detail.ids.tvdb,
+                    title: detail.title,
+                    subtitle: "\(ep.seasonEpisodeCode) · \(ep.nonGenericTitle ?? ep.title)",
+                    scope: .episode,
+                    season: ep.seasonNumber,
+                    episode: ep.episodeNumber
+                )
             }
-            .scrollClipDisabled()
-
-            if isLoadingEpisodes && episodes.isEmpty {
-                HStack(spacing: 14) {
-                    ProgressView()
-                    Text("Henter episoder…")
-                        .font(.callout)
-                        .foregroundStyle(LunaTheme.muted)
-                }
-                .padding(.horizontal, detailGutter)
-            } else {
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 28) {
-                            ForEach(episodes) { ep in
-                                EpisodeCardView(
-                                    episode: ep,
-                                    seriesTitle: detail.title,
-                                    client: client,
-                                    onPlay: {
-                                        guard ep.isUpcoming != true else { return }
-                                        let usePrep = preResolve.consumeForPlayback(
-                                            itemId: ep.itemId,
-                                            startPosition: ep.progress?.positionSeconds,
-                                            client: sessionStore.makeClient()
-                                        )
-                                        let cleanEpisodeTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
-                                            ep.title,
-                                            seriesTitle: detail.title,
-                                            season: ep.seasonNumber,
-                                            episode: ep.episodeNumber,
-                                            episodeCode: ep.seasonEpisodeCode
-                                        ) ?? ""
-                                        sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
-                                            itemId: ep.itemId,
-                                            title: cleanEpisodeTitle,
-                                            seriesTitle: detail.title,
-                                            season: ep.seasonNumber,
-                                            episode: ep.episodeNumber,
-                                            startPositionSeconds: ep.progress?.positionSeconds,
-                                            prepareToken: usePrep,
-                                            backdropUrl: ep.stillUrl ?? detail.backdropUrl,
-                                            logoUrl: detail.logoUrl
-                                        )
-                                    },
-                                    onPickSource: {
-                                        guard ep.isUpcoming != true else { return }
-                                        let cleanEpisodeTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
-                                            ep.title,
-                                            seriesTitle: detail.title,
-                                            season: ep.seasonNumber,
-                                            episode: ep.episodeNumber,
-                                            episodeCode: ep.seasonEpisodeCode
-                                        ) ?? ""
-                                        sourcePickerContext = SourcePickerContext(
-                                            itemId: ep.itemId,
-                                            title: cleanEpisodeTitle,
-                                            seriesTitle: detail.title,
-                                            season: ep.seasonNumber,
-                                            episode: ep.episodeNumber,
-                                            startPositionSeconds: ep.progress?.positionSeconds,
-                                            existingPrepareToken: preResolve.matchingToken(
-                                                for: ep.itemId,
-                                                startPosition: ep.progress?.positionSeconds
-                                            ),
-                                            backdropUrl: ep.stillUrl ?? detail.backdropUrl,
-                                            logoUrl: detail.logoUrl
-                                        )
-                                    },
-                                    onToggleWatched: {
-                                        Task { await toggleEpisodeWatched(detail: detail, episode: ep) }
-                                    }
-                                )
-                                .id(ep.id)
-                            }
-                        }
-                        .padding(.horizontal, detailGutter)
-                        .padding(.vertical, 18)
-                    }
-                    .scrollClipDisabled()
-                    .onAppear {
-                        scrollToTargetEpisode(in: detail, proxy: proxy)
-                    }
-                    .onChange(of: episodes.map(\.id)) { _, _ in
-                        scrollToTargetEpisode(in: detail, proxy: proxy)
-                    }
-                }
-            }
-        }
-    }
-
-    private func scrollToTargetEpisode(in detail: TvItemDetail, proxy: ScrollViewProxy) {
-        let target: TvEpisodeCard? = {
-            if let next = detail.nextUp,
-               let nextMatch = episodes.first(where: {
-                   $0.seasonNumber == next.season && $0.episodeNumber == next.episode
-               }) {
-                return nextMatch
-            }
-            return episodes.first(where: { !$0.watched && $0.isUpcoming != true })
-        }()
-        guard let target, target.id != episodes.first?.id else { return }
-        proxy.scrollTo(target.id, anchor: .leading)
+        )
     }
 
     // MARK: - Playback Target & Silent 450ms Pre-Resolve
@@ -657,25 +648,6 @@ struct MediaDetailView: View {
             await markLocalMutationAndReload()
         } catch {
             detail?.inWatchlist = item.inWatchlist
-            showMutationError(error)
-        }
-    }
-
-    private func toggleFavorite(_ item: TvItemDetail) async {
-        guard let client = sessionStore.makeClient() else { return }
-        let nextVal = !item.favoriteFlag
-        detail?.isFavorite = nextVal
-        do {
-            try await client.setFavorite(
-                favorite: nextVal,
-                mediaType: item.mediaType,
-                ids: item.ids,
-                title: item.title,
-                year: item.year
-            )
-            await markLocalMutationAndReload()
-        } catch {
-            detail?.isFavorite = item.isFavorite
             showMutationError(error)
         }
     }

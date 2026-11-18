@@ -121,14 +121,12 @@ struct CatalogBrowseView: View {
                 if let mutationErrorBanner {
                     TransientErrorBanner(message: mutationErrorBanner)
                         .padding(.horizontal, LunaTheme.horizontalGutter)
-                        .padding(.top, 14)
                 }
 
                 Text(headerTitle)
                     .font(.title2.weight(.bold))
                     .foregroundStyle(LunaTheme.linen)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.top, 14)
 
                 // Sort & quick filter bar (uniform warm espresso pills)
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -167,6 +165,7 @@ struct CatalogBrowseView: View {
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 10)
                 }
+                .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
 
                 // Pure text genre strip (zero icon clutter)
@@ -202,6 +201,7 @@ struct CatalogBrowseView: View {
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                         .padding(.vertical, 10)
                     }
+                    .contentMargins(.zero, for: .scrollContent)
                     .scrollClipDisabled()
                 }
 
@@ -267,9 +267,6 @@ struct CatalogBrowseView: View {
                                     },
                                     onToggleWatchlist: {
                                         Task { await toggleWatchlist(card) }
-                                    },
-                                    onToggleFavorite: {
-                                        Task { await toggleFavorite(card) }
                                     }
                                 )
                             }
@@ -295,8 +292,14 @@ struct CatalogBrowseView: View {
             }
             .padding(.bottom, 64)
         }
+        .contentMargins(.zero, for: .scrollContent)
+        .ignoresSafeArea(edges: .horizontal)
         .lunaRootScrollTopBarTracking(tab: rootNavigationTab, isEnabled: isRootTab)
         .safeAreaPadding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 0)
+        .lunaNavigationContainerBackdrop(
+            isEnabled: !isRootTab,
+            mode: .ambient(isPaused: sessionStore.activePlaybackTarget != nil)
+        )
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
@@ -475,29 +478,6 @@ struct CatalogBrowseView: View {
         } catch {
             if let idx = items.firstIndex(where: { $0.id == card.id }) {
                 items[idx].inWatchlist = card.inWatchlist
-                persistSnapshot(for: triggerKey)
-            }
-            showMutationError(error)
-        }
-    }
-
-    private func toggleFavorite(_ card: TvMediaCard) async {
-        let nextFavorite = !(card.isFavorite ?? false)
-        let triggerKey = reloadTriggerKey
-        if let idx = items.firstIndex(where: { $0.id == card.id }) {
-            items[idx].isFavorite = nextFavorite
-            persistSnapshot(for: triggerKey)
-        }
-        do {
-            if try await MediaCardMutator.setFavorite(for: card, favorite: nextFavorite, sessionStore: sessionStore) {
-                let bumped = sessionStore.homeRefreshNonce &+ 1
-                lastSeenRefreshNonce = bumped
-                sessionStore.notifyContentMutated()
-                persistSnapshot(for: triggerKey, refreshNonce: sessionStore.homeRefreshNonce)
-            }
-        } catch {
-            if let idx = items.firstIndex(where: { $0.id == card.id }) {
-                items[idx].isFavorite = card.isFavorite
                 persistSnapshot(for: triggerKey)
             }
             showMutationError(error)

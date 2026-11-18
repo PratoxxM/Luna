@@ -47,7 +47,7 @@ struct SearchView: View {
                     }
                 }
                 .padding(.horizontal, LunaTheme.horizontalGutter)
-                .padding(.top, 18)
+                .padding(.top, 4)
 
                 if let mutationErrorBanner {
                     TransientErrorBanner(message: mutationErrorBanner)
@@ -76,6 +76,7 @@ struct SearchView: View {
                                 }
                                 .padding(.vertical, 4)
                             }
+                            .contentMargins(.zero, for: .scrollContent)
                             .scrollClipDisabled()
                         }
                         .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -157,9 +158,6 @@ struct SearchView: View {
                                         },
                                         onToggleWatchlist: {
                                             Task { await toggleWatchlist(card) }
-                                        },
-                                        onToggleFavorite: {
-                                            Task { await toggleFavorite(card) }
                                         }
                                     )
                                 }
@@ -171,8 +169,14 @@ struct SearchView: View {
                 }
             }
         }
+        .contentMargins(.zero, for: .scrollContent)
+        .ignoresSafeArea(edges: .horizontal)
         .lunaRootScrollTopBarTracking(tab: .search, isEnabled: isRootTab)
         .safeAreaPadding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 0)
+        .lunaNavigationContainerBackdrop(
+            isEnabled: !isRootTab,
+            mode: .ambient(isPaused: sessionStore.activePlaybackTarget != nil)
+        )
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
@@ -319,24 +323,6 @@ struct SearchView: View {
         } catch {
             if let idx = results.firstIndex(where: { $0.id == card.id }) {
                 results[idx].progress = previousProgress
-            }
-            showMutationError(error)
-        }
-    }
-
-    private func toggleFavorite(_ card: TvMediaCard) async {
-        let previous = card.isFavorite
-        let nextFavorite = !(card.isFavorite ?? false)
-        if let idx = results.firstIndex(where: { $0.id == card.id }) {
-            results[idx].isFavorite = nextFavorite
-        }
-        do {
-            if try await MediaCardMutator.setFavorite(for: card, favorite: nextFavorite, sessionStore: sessionStore) {
-                sessionStore.notifyContentMutated()
-            }
-        } catch {
-            if let idx = results.firstIndex(where: { $0.id == card.id }) {
-                results[idx].isFavorite = previous
             }
             showMutationError(error)
         }

@@ -108,7 +108,7 @@ struct PlayerBottomBarView: View {
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.top, 56)
             .padding(.bottom, 44)
-            .background(
+            .background {
                 LinearGradient(
                     colors: [
                         Color.clear,
@@ -118,7 +118,8 @@ struct PlayerBottomBarView: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
-            )
+                .ignoresSafeArea(edges: [.bottom, .horizontal])
+            }
         }
         .allowsHitTesting(false)
     }

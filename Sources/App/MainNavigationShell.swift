@@ -28,6 +28,7 @@ struct MainNavigationShell: View {
                         isActiveTab: selectedTab == .home
                     )
                     .toolbar(.hidden, for: .tabBar)
+                    .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
                 }
                 .toolbar(.hidden, for: .tabBar)
                 .tabItem {
@@ -43,6 +44,7 @@ struct MainNavigationShell: View {
                         isRootTab: true
                     )
                     .toolbar(.hidden, for: .tabBar)
+                    .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
                 }
                 .toolbar(.hidden, for: .tabBar)
                 .tabItem {
@@ -58,6 +60,7 @@ struct MainNavigationShell: View {
                         isRootTab: true
                     )
                     .toolbar(.hidden, for: .tabBar)
+                    .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
                 }
                 .toolbar(.hidden, for: .tabBar)
                 .tabItem {
@@ -68,6 +71,7 @@ struct MainNavigationShell: View {
                 NavigationStack {
                     LibraryHubView(isActiveTab: selectedTab == .library)
                         .toolbar(.hidden, for: .tabBar)
+                        .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
                 }
                 .toolbar(.hidden, for: .tabBar)
                 .tabItem {
@@ -78,6 +82,7 @@ struct MainNavigationShell: View {
                 NavigationStack {
                     SearchView(isRootTab: true)
                         .toolbar(.hidden, for: .tabBar)
+                        .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
                 }
                 .toolbar(.hidden, for: .tabBar)
                 .tabItem {
@@ -88,6 +93,7 @@ struct MainNavigationShell: View {
                 NavigationStack {
                     SettingsView()
                         .toolbar(.hidden, for: .tabBar)
+                        .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
                 }
                 .toolbar(.hidden, for: .tabBar)
                 .tabItem {
@@ -95,6 +101,7 @@ struct MainNavigationShell: View {
                 }
                 .tag(MainNavigationTab.settings)
             }
+            .ignoresSafeArea()
             .toolbar(.hidden, for: .tabBar)
 
             LinearGradient(
@@ -106,8 +113,8 @@ struct MainNavigationShell: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 140)
-            .ignoresSafeArea(edges: .top)
+            .frame(height: 124)
+            .ignoresSafeArea(edges: [.top, .horizontal])
             .opacity(hideTopBar ? 0 : 1)
             .allowsHitTesting(false)
             .animation(.easeOut(duration: 0.22), value: hideTopBar)

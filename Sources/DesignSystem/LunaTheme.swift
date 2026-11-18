@@ -14,6 +14,8 @@ public enum LunaTheme {
     public static let surfaceRaised = Color(red: 30.0 / 255.0, green: 25.0 / 255.0, blue: 22.0 / 255.0)
     /// Warm roasted espresso (`#2A231E`) for active/selected secondary controls without competing with «Spill av».
     public static let surfaceSelected = Color(red: 42.0 / 255.0, green: 35.0 / 255.0, blue: 30.0 / 255.0)
+    /// Elevated roasted espresso (`#241E1A`) for focused wide settings, drawer, and source-picker rows.
+    public static let surfaceElevated = Color(red: 36.0 / 255.0, green: 30.0 / 255.0, blue: 26.0 / 255.0)
     /// Dark HDR/Dolby Vision-safe warm cinema glass (`#120F0D` @ 92%) — avoids tvOS `.ultraThinMaterial` 203-nit washout.
     public static let cinemaGlass = Color(red: 18.0 / 255.0, green: 15.0 / 255.0, blue: 13.0 / 255.0).opacity(0.92)
 
@@ -26,10 +28,10 @@ public enum LunaTheme {
     /// Non-glaring warm-white cinema pause timeline fill (`#DDD6CC`).
     public static let pauseWarmLine = Color(red: 221.0 / 255.0, green: 214.0 / 255.0, blue: 204.0 / 255.0)
 
-    /// Muted honey-brass (`#E5A93C`) — the single primary accent reserved for Siri Remote focus & «Spill av».
-    public static let amber = Color(red: 229.0 / 255.0, green: 169.0 / 255.0, blue: 60.0 / 255.0)
-    /// Deeper warm brass (`#C98E2B`) for subtle primary gradient depth.
-    public static let amberDeep = Color(red: 201.0 / 255.0, green: 142.0 / 255.0, blue: 43.0 / 255.0)
+    /// Muted antique bronze-brass (`#C48C3A`) — primary accent reserved for Siri Remote focus & «Spill av» (`6.78:1` vs `#0A0908`).
+    public static let amber = Color(red: 196.0 / 255.0, green: 140.0 / 255.0, blue: 58.0 / 255.0)
+    /// Deeper warm bronze (`#9E6E27`) for subtle primary gradient depth.
+    public static let amberDeep = Color(red: 158.0 / 255.0, green: 110.0 / 255.0, blue: 39.0 / 255.0)
     /// Calm sage-emerald (`#5EBF8E`) reserved strictly for NVMe storage badges & Sett checkmarks.
     public static let emerald = Color(red: 94.0 / 255.0, green: 191.0 / 255.0, blue: 142.0 / 255.0)
     /// Warm terracotta (`#D96B52`) reserved strictly for destructive/reset actions.
@@ -41,13 +43,13 @@ public enum LunaTheme {
     public static let warmBorder = warmBorderBase.opacity(0.14)
     public static let warmBorderStrong = warmBorderBase.opacity(0.18)
 
-    /// Honey-brass Siri Remote focus fill (`#F0BE5E -> #DF9F32`, centered on `#E5A93C`).
-    public static let focusGoldTop = Color(red: 240.0 / 255.0, green: 190.0 / 255.0, blue: 94.0 / 255.0)
-    public static let focusGoldBottom = Color(red: 223.0 / 255.0, green: 159.0 / 255.0, blue: 50.0 / 255.0)
-    public static let focusGoldBorder = Color(red: 247.0 / 255.0, green: 223.0 / 255.0, blue: 172.0 / 255.0)
-    /// Slightly brighter warm brass highlight reserved for focused `PrimaryPlayButton` («Spill av»).
-    public static let playFocusTop = Color(red: 249.0 / 255.0, green: 214.0 / 255.0, blue: 138.0 / 255.0)
-    public static let playFocusBottom = amber
+    /// Calm antique bronze Siri Remote focus fill (`#C48C3A -> #9E6E27`) without bright lemon-yellow glare.
+    public static let focusGoldTop = amber
+    public static let focusGoldBottom = amberDeep
+    public static let focusGoldBorder = Color(red: 214.0 / 255.0, green: 170.0 / 255.0, blue: 99.0 / 255.0)
+    /// Subtle warm bronze highlight reserved for focused `PrimaryPlayButton` («Spill av»).
+    public static let playFocusTop = Color(red: 204.0 / 255.0, green: 150.0 / 255.0, blue: 68.0 / 255.0)
+    public static let playFocusBottom = amberDeep
 
     public static let horizontalGutter: CGFloat = 64
     public static let cardRadius: CGFloat = 18
@@ -338,10 +340,10 @@ private struct LunaPillLabel: View {
                 .strokeBorder(borderColor, lineWidth: borderWidth)
         )
         .shadow(
-            color: isFocused ? LunaTheme.amber.opacity(0.38) : .clear,
-            radius: isFocused ? 18 : 0,
+            color: isFocused ? Color.black.opacity(0.34) : .clear,
+            radius: isFocused ? 10 : 0,
             x: 0,
-            y: isFocused ? 6 : 0
+            y: isFocused ? 4 : 0
         )
         .scaleEffect(isFocused ? 1.045 : 1.0)
         .animation(.spring(response: 0.22, dampingFraction: 0.80), value: isFocused)

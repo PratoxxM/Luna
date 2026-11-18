@@ -88,11 +88,16 @@ struct PlayerTopDrawerView: View {
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.top, 38)
             .padding(.bottom, 30)
-            .background(LunaTheme.cinemaGlass)
+            .background {
+                Rectangle()
+                    .fill(LunaTheme.cinemaGlass)
+                    .ignoresSafeArea(edges: [.top, .horizontal])
+            }
             .overlay(alignment: .bottom) {
                 Rectangle()
                     .fill(LunaTheme.warmBorder)
                     .frame(height: 1)
+                    .ignoresSafeArea(edges: .horizontal)
             }
 
             Spacer()
@@ -295,6 +300,7 @@ struct PlayerTopDrawerView: View {
                             }
                             .padding(.vertical, 6)
                         }
+                        .contentMargins(.zero, for: .scrollContent)
                         .scrollClipDisabled()
                         .onAppear {
                             chapterSnapshotTime = max(0, viewModel.engine.currentTime)
@@ -492,19 +498,17 @@ private struct DrawerTrackRowButton: View {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
                     .foregroundStyle(
-                        isFocused
-                            ? LunaTheme.canvas
-                            : (isSelected ? LunaTheme.amber : LunaTheme.muted)
+                        isSelected ? LunaTheme.amber : (isFocused ? LunaTheme.linen : LunaTheme.muted)
                     )
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.callout.weight(.semibold))
-                        .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.linen)
+                        .foregroundStyle(LunaTheme.linen)
                         .lineLimit(1)
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.78) : LunaTheme.muted)
+                        .foregroundStyle(isFocused ? LunaTheme.moonlight : LunaTheme.muted)
                         .lineLimit(1)
                 }
 
@@ -514,11 +518,11 @@ private struct DrawerTrackRowButton: View {
                     ForEach(badges, id: \.self) { badge in
                         Text(badge)
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.moonlight)
+                            .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
                             .padding(.horizontal, 9)
                             .padding(.vertical, 4)
                             .background(
-                                isFocused ? LunaTheme.canvas.opacity(0.88) : LunaTheme.warmBorderBase.opacity(0.09),
+                                isFocused ? LunaTheme.amber.opacity(0.22) : LunaTheme.warmBorderBase.opacity(0.09),
                                 in: Capsule()
                             )
                     }
@@ -527,13 +531,12 @@ private struct DrawerTrackRowButton: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
             .background {
-                if isFocused {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(LunaTheme.focusGoldGradient)
-                } else {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
-                }
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(
+                        isFocused
+                            ? LunaTheme.surfaceElevated
+                            : (isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
+                    )
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -541,14 +544,14 @@ private struct DrawerTrackRowButton: View {
                         isFocused
                             ? LunaTheme.focusGoldBorder
                             : (isSelected ? LunaTheme.warmBorderStrong : LunaTheme.warmBorderSubtle),
-                        lineWidth: isFocused ? 2.0 : 1.0
+                        lineWidth: isFocused ? 2.2 : 1.0
                     )
             )
             .shadow(
-                color: isFocused ? LunaTheme.amber.opacity(0.36) : .clear,
-                radius: isFocused ? 16 : 0,
+                color: isFocused ? Color.black.opacity(0.32) : .clear,
+                radius: isFocused ? 10 : 0,
                 x: 0,
-                y: isFocused ? 5 : 0
+                y: isFocused ? 4 : 0
             )
             .scaleEffect(isFocused ? 1.012 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.82), value: isFocused)
@@ -625,10 +628,10 @@ private struct ChapterPillCardButton: View {
                     )
             )
             .shadow(
-                color: isFocused ? LunaTheme.amber.opacity(0.36) : .clear,
-                radius: isFocused ? 16 : 0,
+                color: isFocused ? Color.black.opacity(0.34) : .clear,
+                radius: isFocused ? 10 : 0,
                 x: 0,
-                y: isFocused ? 5 : 0
+                y: isFocused ? 4 : 0
             )
             .scaleEffect(isFocused ? 1.025 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.82), value: isFocused)

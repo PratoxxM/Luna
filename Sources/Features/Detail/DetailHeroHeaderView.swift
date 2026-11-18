@@ -9,12 +9,13 @@ struct DetailHeroHeaderView: View {
     var horizontalGutter: CGFloat = 90
     let focusNamespace: Namespace.ID
 
+    var hasLocalEpisodes: Bool = false
     let onPlay: () -> Void
     let onToggleWatchlist: () -> Void
     let onToggleWatched: () -> Void
     let onToggleMonitor: () -> Void
     let onPickSource: () -> Void
-    let onToggleFavorite: () -> Void
+    var onDeleteTitle: (() -> Void)? = nil
 
     private var monitorButtonTitle: String {
         if item.mediaType == "series" {
@@ -35,7 +36,18 @@ struct DetailHeroHeaderView: View {
         return item.availability?.isPhysicalLocal != true
     }
 
-    private let heroMinHeight: CGFloat = 770
+    private var shouldShowDeleteButton: Bool {
+        onDeleteTitle != nil && (
+            item.availability?.isPhysicalLocal == true ||
+            item.availability?.isLocalVfs == true ||
+            hasLocalEpisodes ||
+            item.isMonitoredFlag
+        )
+    }
+
+    private var heroMinHeight: CGFloat {
+        item.mediaType == "movie" ? 900 : 750
+    }
 
     var body: some View {
         let landscapeURL = client?.resolveArtworkURL(item.backdropUrl ?? item.cardBackdropUrl)
@@ -160,20 +172,22 @@ struct DetailHeroHeaderView: View {
                     action: onPickSource
                 )
 
-                LunaPillButton(
-                    "Favoritt",
-                    systemImage: item.favoriteFlag ? "star.fill" : "star",
-                    isSelected: item.favoriteFlag,
-                    size: .compact,
-                    action: onToggleFavorite
-                )
+                if shouldShowDeleteButton, let onDeleteTitle {
+                    LunaPillButton(
+                        item.mediaType == "series" ? "Slett serie" : "Slett film",
+                        systemImage: "trash",
+                        accent: .coral,
+                        size: .compact,
+                        action: onDeleteTitle
+                    )
+                }
             }
             .padding(.top, 6)
             .onPlayPauseCommand {
                 onPlay()
             }
         }
-        .padding(.top, 210)
+        .padding(.top, item.mediaType == "movie" ? 180 : 210)
         .padding(.bottom, 38)
         .padding(.horizontal, horizontalGutter)
         .frame(maxWidth: .infinity, minHeight: heroMinHeight, alignment: .bottomLeading)
@@ -346,10 +360,10 @@ private struct PrimaryPlayLabel: View {
                 )
         )
         .shadow(
-            color: focused ? LunaTheme.amber.opacity(0.56) : .clear,
-            radius: focused ? 24 : 0,
+            color: focused ? Color.black.opacity(0.42) : .clear,
+            radius: focused ? 12 : 0,
             x: 0,
-            y: focused ? 8 : 0
+            y: focused ? 5 : 0
         )
         .scaleEffect(focused ? 1.065 : 1.0)
         .animation(.spring(response: 0.22, dampingFraction: 0.78), value: focused)

@@ -114,11 +114,14 @@ struct HomeView: View {
                         onToggleWatchlist: { card in
                             Task { await toggleWatchlist(for: card) }
                         },
-                        onToggleFavorite: { card in
-                            Task { await toggleFavorite(for: card) }
-                        },
                         onMarkWatched: { card in
                             Task { await markWatched(for: card) }
+                        },
+                        onRemoveFromOngoing: { card in
+                            Task { await removeFromOngoing(for: card) }
+                        },
+                        onRemoveFromList: { card, row in
+                            Task { await removeFromList(card, row: row) }
                         },
                         onSeeAllRow: { row in
                             selectedSeeAllRow = row
@@ -126,9 +129,10 @@ struct HomeView: View {
                     )
                 }
             }
-            .padding(.top, 16)
             .padding(.bottom, 84)
         }
+        .contentMargins(.zero, for: .scrollContent)
+        .ignoresSafeArea(edges: .horizontal)
         .lunaRootScrollTopBarTracking(tab: .home)
         .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
         .focusScope(homeFocusNamespace)
@@ -136,8 +140,13 @@ struct HomeView: View {
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
         .navigationDestination(item: $selectedSeeAllRow) { row in
+            let isOngoing = row.rowId == "medialogg-continue"
+                || row.rowId == "upcoming-episodes"
+                || row.sourceKind == "system_continue"
+                || row.sourceKind == "system_upcoming"
+                || row.sourceKind == "active_series"
             if row.nextPath?.contains("/rows/") == true {
-                CustomRowBrowseView(title: row.title, pathOrRowId: row.nextPath ?? row.rowId)
+                CustomRowBrowseView(title: row.title, pathOrRowId: row.nextPath ?? row.rowId, isOngoingList: isOngoing)
             } else if row.rowId == "popular-movies"
                 || row.sourceKind == "system_popular_movies"
                 || row.nextPath?.contains("/catalog/movies") == true {
@@ -147,7 +156,7 @@ struct HomeView: View {
                 || row.nextPath?.contains("/catalog/series") == true {
                 CatalogBrowseView(mediaType: "series", initialGenre: nil, isRootTab: false)
             } else {
-                CustomRowBrowseView(title: row.title, pathOrRowId: row.nextPath ?? row.rowId)
+                CustomRowBrowseView(title: row.title, pathOrRowId: row.nextPath ?? row.rowId, isOngoingList: isOngoing)
             }
         }
         .sheet(item: $sourcePickerContext) { ctx in
@@ -351,10 +360,19 @@ struct HomeView: View {
         }
     }
 
-    private func toggleFavorite(for card: TvMediaCard) async {
-        let nextFav = !(card.isFavorite ?? false)
+    private func removeFromOngoing(for card: TvMediaCard) async {
         do {
-            if try await MediaCardMutator.setFavorite(for: card, favorite: nextFav, sessionStore: sessionStore) {
+            if try await MediaCardMutator.removeFromOngoing(for: card, sessionStore: sessionStore) {
+                await markLocalMutationAndRevalidate()
+            }
+        } catch {
+            showMutationError(error)
+        }
+    }
+
+    private func removeFromList(_ card: TvMediaCard, row: TvShelfRow) async {
+        do {
+            if try await MediaCardMutator.removeFromList(for: card, rowId: row.rowId, sessionStore: sessionStore) {
                 await markLocalMutationAndRevalidate()
             }
         } catch {

@@ -56,14 +56,6 @@ public struct TvEpisodeCard: Codable, Identifiable, Equatable, Hashable, Sendabl
     }
 }
 
-public struct TvCastMember: Codable, Identifiable, Equatable, Hashable, Sendable {
-    public let name: String
-    public let character: String?
-    public let profileUrl: String?
-
-    public var id: String { "\(name)#\(character ?? "")" }
-}
-
 public struct TvItemDetail: Codable, Equatable, Sendable {
     public let itemId: String
     public let mediaType: String
@@ -78,8 +70,6 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
     public let status: String?
     public let runtimeSeconds: Double?
     public let genres: [String]?
-    public let cast: [String]?
-    public let castMembers: [TvCastMember]?
     public let voteAverage: Double?
     public let rating: Double?
     public let imdbRating: Double?
@@ -95,7 +85,6 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
     public let badges: [String]?
     public let nextAirDateBadge: String?
     public var inWatchlist: Bool
-    public var isFavorite: Bool?
     public var watched: Bool
     public var monitored: Bool?
     public var monitorMode: String?
@@ -105,10 +94,6 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
     public let nextUp: TvNextUpPointer?
     public let seasons: [TvSeasonSummary]?
     public let episodes: [TvEpisodeCard]?
-
-    public var favoriteFlag: Bool {
-        isFavorite ?? false
-    }
 
     public var isMonitoredFlag: Bool {
         monitored ?? false

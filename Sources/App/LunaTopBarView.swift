@@ -296,7 +296,7 @@ private struct LunaRootScrollTopBarModifier: ViewModifier {
 }
 
 struct LunaTopBarView: View {
-    static let contentTopPadding: CGFloat = 108
+    static let contentTopPadding: CGFloat = 96
     static let focusDebounceNanoseconds: UInt64 = 180_000_000
 
     @Binding var selectedTab: MainNavigationTab
@@ -476,10 +476,10 @@ struct TopBarTabPillButton: View {
                     )
             )
             .shadow(
-                color: isFocused ? LunaTheme.amber.opacity(0.35) : .clear,
-                radius: isFocused ? 14 : 0,
+                color: isFocused ? Color.black.opacity(0.32) : .clear,
+                radius: isFocused ? 8 : 0,
                 x: 0,
-                y: isFocused ? 5 : 0
+                y: isFocused ? 4 : 0
             )
             .scaleEffect(isFocused ? 1.04 : 1.0)
             .animation(.spring(response: 0.22, dampingFraction: 0.80), value: isFocused)
