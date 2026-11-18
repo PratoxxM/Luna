@@ -92,9 +92,14 @@ public struct PlaybackResolveSocket: Sendable {
 
     internal static func makeWebSocketURL(baseURL: URL, wsPath: String) -> URL? {
         let trimmed = wsPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
+        guard !trimmed.isEmpty, trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else {
+            return nil
+        }
         if trimmed.hasPrefix("ws://") || trimmed.hasPrefix("wss://") {
-            return URL(string: trimmed)
+            guard let url = URL(string: trimmed), let host = url.host, !host.isEmpty else {
+                return nil
+            }
+            return url
         }
         let cleanBase = baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let cleanRel = trimmed.hasPrefix("/") ? trimmed : "/\(trimmed)"

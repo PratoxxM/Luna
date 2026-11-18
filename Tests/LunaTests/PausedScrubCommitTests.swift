@@ -72,6 +72,7 @@ final class PausedScrubCommitTests: XCTestCase {
         await audioGate.reset()
         transport.state = .paused
         transport.playbackPhase = .paused
+        transport.currentTime = 0
         vm.needsNativeAudioActivationAfterPausedRestore = true
         vm.beginTouchScrub()
         vm.stepTouchScrub(by: 15)
@@ -89,6 +90,7 @@ final class PausedScrubCommitTests: XCTestCase {
         log.withLock { $0.removeAll() }
         await seekGate.reset()
         await audioGate.reset()
+        transport.currentTime = 0
         vm.beginTouchScrub()
         vm.stepTouchScrub(by: 30)
         vm.commitTouchScrub()
@@ -111,6 +113,7 @@ final class PausedScrubCommitTests: XCTestCase {
         log.withLock { $0.removeAll() }
         await seekGate.reset()
         await audioGate.reset()
+        transport.currentTime = 0
         vm.beginTouchScrub()
         vm.stepTouchScrub(by: 60)
         vm.commitTouchScrub()
@@ -127,6 +130,7 @@ final class PausedScrubCommitTests: XCTestCase {
         await seekGate.reset()
         await audioGate.reset()
         vm.handleScenePhaseChange(.active)
+        transport.currentTime = 0
         vm.beginTouchScrub()
         vm.stepTouchScrub(by: 75)
         vm.commitTouchScrub()
