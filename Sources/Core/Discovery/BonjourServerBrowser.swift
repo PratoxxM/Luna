@@ -18,7 +18,11 @@ public final class BonjourServerBrowser: ObservableObject {
     @Published public private(set) var isSearching: Bool = false
 
     private var browser: NWBrowser?
+    private var nextBrowserToken: UInt64 = 0
+    private var currentBrowserToken: UInt64?
     private var activeResolvers: [String: NWConnection] = [:]
+    private var nextResolverToken: UInt64 = 0
+    private var resolverTokens: [String: UInt64] = [:]
     private var resolveTimeouts: [String: Task<Void, Never>] = [:]
     internal let resolveTimeoutNanoseconds: UInt64
 
@@ -34,8 +38,16 @@ public final class BonjourServerBrowser: ObservableObject {
         browser.map(ObjectIdentifier.init)
     }
 
+    internal var activeBrowserToken: UInt64? {
+        currentBrowserToken
+    }
+
     internal func activeResolverId(for key: String) -> ObjectIdentifier? {
         activeResolvers[key].map(ObjectIdentifier.init)
+    }
+
+    internal func activeResolverToken(for key: String) -> UInt64? {
+        resolverTokens[key]
     }
 
     public func start() {
@@ -45,18 +57,25 @@ public final class BonjourServerBrowser: ObservableObject {
         let descriptor = NWBrowser.Descriptor.bonjourWithTXTRecord(type: "_lunacore._tcp", domain: nil)
         let nwBrowser = NWBrowser(for: descriptor, using: params)
         let browserId = ObjectIdentifier(nwBrowser)
+        nextBrowserToken &+= 1
+        let browserToken = nextBrowserToken
+        self.currentBrowserToken = browserToken
 
         nwBrowser.stateUpdateHandler = { [weak self] state in
             Task { @MainActor [weak self] in
-                guard let self, self.browser.map(ObjectIdentifier.init) == browserId else { return }
-                self.applyBrowserStateUpdate(state, browserId: browserId)
+                guard let self,
+                      self.browser.map(ObjectIdentifier.init) == browserId,
+                      self.currentBrowserToken == browserToken else { return }
+                self.applyBrowserStateUpdate(state, browserId: browserId, browserToken: browserToken)
             }
         }
 
         nwBrowser.browseResultsChangedHandler = { [weak self] results, _ in
             Task { @MainActor [weak self] in
-                guard let self, self.browser.map(ObjectIdentifier.init) == browserId else { return }
-                self.applyBrowseResults(results, browserId: browserId)
+                guard let self,
+                      self.browser.map(ObjectIdentifier.init) == browserId,
+                      self.currentBrowserToken == browserToken else { return }
+                self.applyBrowseResults(results, browserId: browserId, browserToken: browserToken)
             }
         }
 
@@ -65,8 +84,9 @@ public final class BonjourServerBrowser: ObservableObject {
         nwBrowser.start(queue: .main)
     }
 
-    internal func applyBrowserStateUpdate(_ state: NWBrowser.State, browserId: ObjectIdentifier) {
-        guard self.browser.map(ObjectIdentifier.init) == browserId else { return }
+    internal func applyBrowserStateUpdate(_ state: NWBrowser.State, browserId: ObjectIdentifier, browserToken: UInt64) {
+        guard self.browser.map(ObjectIdentifier.init) == browserId,
+              self.currentBrowserToken == browserToken else { return }
         switch state {
         case .ready:
             self.isSearching = true
@@ -77,14 +97,18 @@ public final class BonjourServerBrowser: ObservableObject {
         }
     }
 
-    internal func applyBrowseResults(_ results: Set<NWBrowser.Result>, browserId: ObjectIdentifier) {
-        guard self.browser.map(ObjectIdentifier.init) == browserId else { return }
+    internal func applyBrowseResults(_ results: Set<NWBrowser.Result>, browserId: ObjectIdentifier, browserToken: UInt64) {
+        guard self.browser.map(ObjectIdentifier.init) == browserId,
+              self.currentBrowserToken == browserToken else { return }
         self.handleBrowseResults(results)
     }
 
     public func stop() {
+        browser?.stateUpdateHandler = nil
+        browser?.browseResultsChangedHandler = nil
         browser?.cancel()
         browser = nil
+        currentBrowserToken = nil
         for (_, timeoutTask) in resolveTimeouts {
             timeoutTask.cancel()
         }
@@ -94,10 +118,12 @@ public final class BonjourServerBrowser: ObservableObject {
             conn.cancel()
         }
         activeResolvers.removeAll()
+        resolverTokens.removeAll()
         isSearching = false
     }
 
     internal func cancelResolver(for key: String) {
+        resolverTokens.removeValue(forKey: key)
         resolveTimeouts.removeValue(forKey: key)?.cancel()
         if let conn = activeResolvers.removeValue(forKey: key) {
             conn.stateUpdateHandler = nil
@@ -119,6 +145,9 @@ public final class BonjourServerBrowser: ObservableObject {
         }
         let conn = NWConnection(to: endpoint, using: params)
         let connId = ObjectIdentifier(conn)
+        nextResolverToken &+= 1
+        let resolverToken = nextResolverToken
+        resolverTokens[key] = resolverToken
         activeResolvers[key] = conn
 
         conn.stateUpdateHandler = { [weak self, weak conn] state in
@@ -128,10 +157,13 @@ public final class BonjourServerBrowser: ObservableObject {
                 conn?.stateUpdateHandler = nil
                 conn?.cancel()
                 Task { @MainActor [weak self] in
-                    guard let self, self.activeResolvers[key].map(ObjectIdentifier.init) == connId else { return }
+                    guard let self,
+                          self.activeResolvers[key].map(ObjectIdentifier.init) == connId,
+                          self.resolverTokens[key] == resolverToken else { return }
                     self.applyResolverReady(
                         key: key,
                         connId: connId,
+                        resolverToken: resolverToken,
                         serviceName: serviceName,
                         remoteEndpoint: remoteEndpoint,
                         txt: txt
@@ -140,8 +172,10 @@ public final class BonjourServerBrowser: ObservableObject {
             case .failed, .cancelled:
                 conn?.stateUpdateHandler = nil
                 Task { @MainActor [weak self] in
-                    guard let self, self.activeResolvers[key].map(ObjectIdentifier.init) == connId else { return }
-                    self.applyResolverTerminated(key: key, connId: connId)
+                    guard let self,
+                          self.activeResolvers[key].map(ObjectIdentifier.init) == connId,
+                          self.resolverTokens[key] == resolverToken else { return }
+                    self.applyResolverTerminated(key: key, connId: connId, resolverToken: resolverToken)
                 }
             default:
                 break
@@ -153,7 +187,8 @@ public final class BonjourServerBrowser: ObservableObject {
             try? await Task.sleep(nanoseconds: timeoutNs)
             guard !Task.isCancelled,
                   let self,
-                  self.activeResolvers[key].map(ObjectIdentifier.init) == connId else { return }
+                  self.activeResolvers[key].map(ObjectIdentifier.init) == connId,
+                  self.resolverTokens[key] == resolverToken else { return }
             self.cancelResolver(for: key)
         }
         conn.start(queue: .global(qos: .userInitiated))
@@ -162,11 +197,14 @@ public final class BonjourServerBrowser: ObservableObject {
     internal func applyResolverReady(
         key: String,
         connId: ObjectIdentifier,
+        resolverToken: UInt64,
         serviceName: String,
         remoteEndpoint: NWEndpoint?,
         txt: [String: String]
     ) {
-        guard self.activeResolvers[key].map(ObjectIdentifier.init) == connId else { return }
+        guard self.activeResolvers[key].map(ObjectIdentifier.init) == connId,
+              self.resolverTokens[key] == resolverToken else { return }
+        self.resolverTokens.removeValue(forKey: key)
         self.resolveTimeouts.removeValue(forKey: key)?.cancel()
         self.activeResolvers.removeValue(forKey: key)
         if let resolved = Self.extractServer(
@@ -183,8 +221,10 @@ public final class BonjourServerBrowser: ObservableObject {
         }
     }
 
-    internal func applyResolverTerminated(key: String, connId: ObjectIdentifier) {
-        guard self.activeResolvers[key].map(ObjectIdentifier.init) == connId else { return }
+    internal func applyResolverTerminated(key: String, connId: ObjectIdentifier, resolverToken: UInt64) {
+        guard self.activeResolvers[key].map(ObjectIdentifier.init) == connId,
+              self.resolverTokens[key] == resolverToken else { return }
+        self.resolverTokens.removeValue(forKey: key)
         self.resolveTimeouts.removeValue(forKey: key)?.cancel()
         self.activeResolvers.removeValue(forKey: key)
     }

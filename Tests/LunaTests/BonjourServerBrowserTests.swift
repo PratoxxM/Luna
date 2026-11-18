@@ -119,6 +119,7 @@ final class BonjourServerBrowserTests: XCTestCase {
             txt: [:]
         )
         let firstConnId = try XCTUnwrap(browser.activeResolverId(for: key))
+        let firstToken = try XCTUnwrap(browser.activeResolverToken(for: key))
 
         browser.beginResolve(
             key: key,
@@ -127,29 +128,32 @@ final class BonjourServerBrowserTests: XCTestCase {
             txt: [:]
         )
         let secondConnId = try XCTUnwrap(browser.activeResolverId(for: key))
-        XCTAssertNotEqual(firstConnId, secondConnId)
+        let secondToken = try XCTUnwrap(browser.activeResolverToken(for: key))
+        XCTAssertNotEqual(firstToken, secondToken)
         XCTAssertEqual(browser.activeResolverCount, 1)
 
         // Late .ready and .cancelled callbacks from the superseded connection must be ignored
         browser.applyResolverReady(
             key: key,
             connId: firstConnId,
+            resolverToken: firstToken,
             serviceName: "StaleServer",
             remoteEndpoint: .hostPort(host: .name("stale-host.example.test", nil), port: 8090),
             txt: [:]
         )
-        XCTAssertEqual(browser.activeResolverId(for: key), secondConnId)
+        XCTAssertEqual(browser.activeResolverToken(for: key), secondToken)
         XCTAssertEqual(browser.activeResolverCount, 1)
         XCTAssertTrue(browser.servers.isEmpty)
 
-        browser.applyResolverTerminated(key: key, connId: firstConnId)
-        XCTAssertEqual(browser.activeResolverId(for: key), secondConnId)
+        browser.applyResolverTerminated(key: key, connId: firstConnId, resolverToken: firstToken)
+        XCTAssertEqual(browser.activeResolverToken(for: key), secondToken)
         XCTAssertEqual(browser.activeResolverCount, 1)
 
         // Active connection callback resolves and cleans up cleanly
         browser.applyResolverReady(
             key: key,
             connId: secondConnId,
+            resolverToken: secondToken,
             serviceName: "ActiveServer",
             remoteEndpoint: .hostPort(host: .name("active-host.example.test", nil), port: 8090),
             txt: ["https_port": "8920"]
@@ -184,23 +188,27 @@ final class BonjourServerBrowserTests: XCTestCase {
 
         browser.start()
         let firstBrowserId = try XCTUnwrap(browser.activeBrowserId)
+        let firstBrowserToken = try XCTUnwrap(browser.activeBrowserToken)
         XCTAssertTrue(browser.isSearching)
 
         browser.stop()
         XCTAssertNil(browser.activeBrowserId)
+        XCTAssertNil(browser.activeBrowserToken)
         XCTAssertFalse(browser.isSearching)
 
         browser.start()
         let secondBrowserId = try XCTUnwrap(browser.activeBrowserId)
-        XCTAssertNotEqual(firstBrowserId, secondBrowserId)
+        let secondBrowserToken = try XCTUnwrap(browser.activeBrowserToken)
+        XCTAssertNotEqual(firstBrowserToken, secondBrowserToken)
         XCTAssertTrue(browser.isSearching)
 
         // Late .cancelled/.failed state update from first browser must not clobber new browser's isSearching
-        browser.applyBrowserStateUpdate(.cancelled, browserId: firstBrowserId)
+        // (even if libmalloc reuses the same heap pointer for NWBrowser)
+        browser.applyBrowserStateUpdate(.cancelled, browserId: firstBrowserId, browserToken: firstBrowserToken)
         XCTAssertTrue(browser.isSearching)
-        XCTAssertEqual(browser.activeBrowserId, secondBrowserId)
+        XCTAssertEqual(browser.activeBrowserToken, secondBrowserToken)
 
-        browser.applyBrowserStateUpdate(.failed(.posix(.ECANCELED)), browserId: firstBrowserId)
+        browser.applyBrowserStateUpdate(.failed(.posix(.ECANCELED)), browserId: firstBrowserId, browserToken: firstBrowserToken)
         XCTAssertTrue(browser.isSearching)
 
         // Populate a resolved server and verify stale browse results from first browser do not prune it
@@ -212,24 +220,26 @@ final class BonjourServerBrowserTests: XCTestCase {
             txt: [:]
         )
         let connId = try XCTUnwrap(browser.activeResolverId(for: key))
+        let connToken = try XCTUnwrap(browser.activeResolverToken(for: key))
         browser.applyResolverReady(
             key: key,
             connId: connId,
+            resolverToken: connToken,
             serviceName: "Live",
             remoteEndpoint: .hostPort(host: .name("live.example.test", nil), port: 8090),
             txt: [:]
         )
         XCTAssertEqual(browser.servers.count, 1)
 
-        browser.applyBrowseResults([], browserId: firstBrowserId)
+        browser.applyBrowseResults([], browserId: firstBrowserId, browserToken: firstBrowserToken)
         XCTAssertEqual(browser.servers.count, 1)
 
         // Allow main queue to drain real NWBrowser cancellation from first browser
         try? await Task.sleep(nanoseconds: 80_000_000)
         XCTAssertTrue(browser.isSearching)
 
-        // Matching current browserId updates state cleanly
-        browser.applyBrowserStateUpdate(.cancelled, browserId: secondBrowserId)
+        // Matching current browserId & token updates state cleanly
+        browser.applyBrowserStateUpdate(.cancelled, browserId: secondBrowserId, browserToken: secondBrowserToken)
         XCTAssertFalse(browser.isSearching)
     }
 }
