@@ -1,6 +1,132 @@
 import CoreGraphics
+import Foundation
 import XCTest
 @testable import Luna
+
+private actor SourcePickerHeartbeatSignal {
+    private var count = 0
+    private var waiters: [(target: Int, cont: CheckedContinuation<Void, Never>)] = []
+
+    func record() {
+        count += 1
+        var remaining: [(target: Int, cont: CheckedContinuation<Void, Never>)] = []
+        for entry in waiters {
+            if count >= entry.target {
+                entry.cont.resume()
+            } else {
+                remaining.append(entry)
+            }
+        }
+        waiters = remaining
+    }
+
+    func wait(untilAtLeast target: Int) async {
+        if count >= target { return }
+        await withCheckedContinuation { waiters.append((target, $0)) }
+    }
+}
+
+private final class MockSourcePickerSessionClient: SourcePickerSessionClient, @unchecked Sendable {
+    let prepareGate = TestStepGate()
+    let heartbeatSignal = SourcePickerHeartbeatSignal()
+    let log = TestLockedBox<[String]>([])
+    let stoppedSessions = TestLockedBox<[String]>([])
+    let fetchAlternativesCount = TestLockedBox<Int>(0)
+    let sessionIdToReturn: String
+    let prepareTokenToReturn: String
+
+    init(sessionIdToReturn: String = "sess-orphan-1", prepareTokenToReturn: String = "prep-tok-1") {
+        self.sessionIdToReturn = sessionIdToReturn
+        self.prepareTokenToReturn = prepareTokenToReturn
+    }
+
+    func preparePlayback(
+        itemId: String,
+        title: String,
+        seriesTitle: String?,
+        startPositionSeconds: Double?
+    ) async throws -> TvPrepareResponse {
+        await prepareGate.wait(label: "prepare", log: log)
+        let json = """
+        {
+          "ok": true,
+          "status": "ready",
+          "prepareToken": "\(prepareTokenToReturn)",
+          "playbackSession": {
+            "sessionId": "\(sessionIdToReturn)",
+            "streamToken": "stream-placeholder-token",
+            "roomName": "Stua",
+            "hardwareProfile": "hdr10-512",
+            "item": {
+              "itemId": "\(itemId)",
+              "mediaType": "movie",
+              "ids": { "tmdb": 550 },
+              "title": "\(title)"
+            },
+            "selectedCandidate": {
+              "candidateId": "cand-1",
+              "displayHeadline": "4K",
+              "releaseTitle": "Movie.2024.2160p",
+              "source": "nvme"
+            },
+            "stream": { "url": "/api/tv/v1/streams/\(sessionIdToReturn)/master" },
+            "aetherConfig": {
+              "preferDualLayerDolbyVision": false,
+              "dolbyVisionHandling": "baseLayerOnly",
+              "matchContentEnabled": true,
+              "audioBridgeMode": "lossless"
+            }
+          }
+        }
+        """
+        return try JSONDecoder().decode(TvPrepareResponse.self, from: Data(json.utf8))
+    }
+
+    func fetchAlternatives(sessionId: String) async throws -> TvAlternativesResponse {
+        fetchAlternativesCount.withLock { $0 += 1 }
+        let json = """
+        {
+          "ok": true,
+          "sessionId": "\(sessionId)",
+          "roomName": "Stua",
+          "hardwareProfile": "hdr10-512",
+          "activeCandidateId": "cand-1",
+          "alternatives": [
+            {
+              "candidateId": "cand-1",
+              "displayHeadline": "4K",
+              "releaseTitle": "Movie.2024.2160p",
+              "source": "nvme",
+              "isActive": true
+            }
+          ]
+        }
+        """
+        return try JSONDecoder().decode(TvAlternativesResponse.self, from: Data(json.utf8))
+    }
+
+    func sendHeartbeat(
+        sessionId: String,
+        state: String,
+        positionSeconds: Double,
+        durationSeconds: Double,
+        completed: Bool?
+    ) async throws -> TvHeartbeatResponse {
+        if state == "stopped" {
+            stoppedSessions.withLock { $0.append(sessionId) }
+            await heartbeatSignal.record()
+        }
+        let json = """
+        {
+          "ok": true,
+          "sessionId": "\(sessionId)",
+          "state": "\(state)",
+          "vfsLockActive": false
+        }
+        """
+        return try JSONDecoder().decode(TvHeartbeatResponse.self, from: Data(json.utf8))
+    }
+}
 
 final class ClientOriginAndBlurHashTests: XCTestCase {
     @MainActor
@@ -211,5 +337,62 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
                 existingTokenFailed: false
             )
         )
+    }
+
+    @MainActor
+    func testSourcePickerCancellationDuringInFlightPrepareStopsOrphanSessionWithoutLeaking() async {
+        let context = SourcePickerContext(
+            itemId: "movie:tmdb:550",
+            title: "Fight Club"
+        )
+
+        // 1. Sheet dismisses (.onDisappear + task cancel) while preparePlayback is in-flight:
+        //    newly returned sessionId MUST be stopped immediately via sendHeartbeat(state: "stopped")
+        //    and MUST NOT record createdOrphanSessionId or call fetchAlternatives.
+        let cancelledClient = MockSourcePickerSessionClient(
+            sessionIdToReturn: "sess-orphan-cancel-1",
+            prepareTokenToReturn: "prep-cancel-1"
+        )
+        let vm = SourcePickerViewModel()
+        let loadTask = Task { @MainActor in
+            await vm.loadCandidates(context: context, client: cancelledClient, onUnauthorized: {})
+        }
+
+        await cancelledClient.prepareGate.waitUntilStarted()
+        vm.handleDisappear(context: context, client: cancelledClient)
+        loadTask.cancel()
+        await cancelledClient.prepareGate.finish()
+        await loadTask.value
+        await cancelledClient.heartbeatSignal.wait(untilAtLeast: 1)
+
+        XCTAssertEqual(cancelledClient.stoppedSessions.withLock { $0 }, ["sess-orphan-cancel-1"])
+        XCTAssertEqual(cancelledClient.fetchAlternativesCount.withLock { $0 }, 0)
+        XCTAssertNil(vm.createdOrphanSessionId)
+        XCTAssertNil(vm.resolvedPrepareToken)
+        XCTAssertTrue(vm.candidates.isEmpty)
+
+        // 2. Non-cancelled load populates candidates & stops created session once on disappear.
+        let activeClient = MockSourcePickerSessionClient(
+            sessionIdToReturn: "sess-active-2",
+            prepareTokenToReturn: "prep-active-2"
+        )
+        let activeVm = SourcePickerViewModel()
+        let activeTask = Task { @MainActor in
+            await activeVm.loadCandidates(context: context, client: activeClient, onUnauthorized: {})
+        }
+        await activeClient.prepareGate.waitUntilStarted()
+        await activeClient.prepareGate.finish()
+        await activeTask.value
+
+        XCTAssertEqual(activeClient.fetchAlternativesCount.withLock { $0 }, 1)
+        XCTAssertTrue(activeClient.stoppedSessions.withLock { $0 }.isEmpty)
+        XCTAssertEqual(activeVm.createdOrphanSessionId, "sess-active-2")
+        XCTAssertEqual(activeVm.resolvedPrepareToken, "prep-active-2")
+        XCTAssertEqual(activeVm.candidates.count, 1)
+
+        activeVm.handleDisappear(context: context, client: activeClient)
+        await activeClient.heartbeatSignal.wait(untilAtLeast: 1)
+        XCTAssertEqual(activeClient.stoppedSessions.withLock { $0 }, ["sess-active-2"])
+        XCTAssertNil(activeVm.createdOrphanSessionId)
     }
 }

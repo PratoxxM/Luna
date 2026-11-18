@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 public struct SourcePickerContext: Identifiable, Equatable, Hashable, Sendable {
@@ -75,140 +76,42 @@ internal enum SourcePickerTokenPolicy {
     }
 }
 
-struct SourcePickerSheetView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
+internal protocol SourcePickerSessionClient: Sendable {
+    func preparePlayback(
+        itemId: String,
+        title: String,
+        seriesTitle: String?,
+        startPositionSeconds: Double?
+    ) async throws -> TvPrepareResponse
+    func fetchAlternatives(sessionId: String) async throws -> TvAlternativesResponse
+    func sendHeartbeat(
+        sessionId: String,
+        state: String,
+        positionSeconds: Double,
+        durationSeconds: Double,
+        completed: Bool?
+    ) async throws -> TvHeartbeatResponse
+}
 
-    let context: SourcePickerContext
-    let onSelectCandidate: (TvCandidateInfo, String?) -> Void
-    let onCancel: () -> Void
+extension LunaCoreClient: SourcePickerSessionClient {}
 
-    @State private var candidates: [TvCandidateInfo] = []
-    @State private var activeCandidateId: String?
-    @State private var resolvedPrepareToken: String?
-    @State private var existingTokenFailed: Bool = false
-    @State private var createdOrphanSessionId: String?
-    @State private var didSelectCandidate: Bool = false
-    @State private var isLoading: Bool = true
-    @State private var errorMessage: String?
+@MainActor
+internal final class SourcePickerViewModel: ObservableObject {
+    @Published private(set) var candidates: [TvCandidateInfo] = []
+    @Published private(set) var activeCandidateId: String?
+    @Published private(set) var resolvedPrepareToken: String?
+    @Published private(set) var existingTokenFailed: Bool = false
+    @Published private(set) var createdOrphanSessionId: String?
+    @Published private(set) var didSelectCandidate: Bool = false
+    @Published private(set) var isLoading: Bool = true
+    @Published private(set) var errorMessage: String?
 
-    var body: some View {
-        ZStack {
-            LunaTheme.canvas.ignoresSafeArea()
-
-            VStack(alignment: .leading, spacing: 26) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Velg avspillingskilde")
-                            .font(.title2.weight(.bold))
-                            .foregroundStyle(LunaTheme.linen)
-
-                        Text("\(context.displaySubject) · Rangert for \(sessionStore.roomName) (\(sessionStore.activePreset.shortBadgeLabel))")
-                            .font(.callout)
-                            .foregroundStyle(LunaTheme.muted)
-                    }
-
-                    Spacer()
-
-                    LunaPillButton("Lukk", systemImage: "xmark", prominence: .subtleChip) {
-                        onCancel()
-                    }
-                }
-
-                if isLoading {
-                    Spacer()
-                    VStack(spacing: 16) {
-                        ProgressView()
-                        Text("Søker etter beste lokale og Usenet-kilder…")
-                            .font(.headline)
-                            .foregroundStyle(LunaTheme.moonlight)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    Spacer()
-                } else if let errorMessage {
-                    Spacer()
-                    VStack(spacing: 18) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.largeTitle)
-                            .foregroundStyle(LunaTheme.amber)
-                        Text(errorMessage)
-                            .font(.callout)
-                            .foregroundStyle(LunaTheme.moonlight)
-                            .multilineTextAlignment(.center)
-                        LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                            Task { await loadCandidates() }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    Spacer()
-                } else if candidates.isEmpty {
-                    Spacer()
-                    Text("Fant ingen tilgjengelige kilder for denne tittelen.")
-                        .font(.headline)
-                        .foregroundStyle(LunaTheme.muted)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                    Spacer()
-                } else {
-                    ScrollView(.vertical, showsIndicators: false) {
-                        LazyVStack(spacing: 16) {
-                            ForEach(Array(candidates.enumerated()), id: \.element.id) { index, candidate in
-                                let isCurrent = activeCandidateId != nil
-                                    ? (candidate.candidateId == activeCandidateId)
-                                    : (candidate.isActive == true)
-                                CandidateRowButton(
-                                    candidate: candidate,
-                                    isRecommended: index == 0,
-                                    isCurrentWinner: isCurrent
-                                ) {
-                                    didSelectCandidate = true
-                                    if isCurrent, let tok = resolvedPrepareToken {
-                                        createdOrphanSessionId = nil
-                                        onSelectCandidate(candidate, tok)
-                                    } else {
-                                        stopOrphanSessionIfNeeded()
-                                        onSelectCandidate(candidate, nil)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                    }
-                }
-            }
-            .padding(56)
-        }
-        .onExitCommand {
-            onCancel()
-        }
-        .task {
-            await loadCandidates()
-        }
-        .onDisappear {
-            if !didSelectCandidate {
-                stopOrphanSessionIfNeeded()
-            }
-        }
-    }
-
-    private func stopOrphanSessionIfNeeded() {
-        guard (context.existingPrepareToken == nil || existingTokenFailed),
-              let sid = createdOrphanSessionId,
-              let client = sessionStore.makeClient() else {
-            return
-        }
-        createdOrphanSessionId = nil
-        Task.detached(priority: .utility) {
-            _ = try? await client.sendHeartbeat(
-                sessionId: sid,
-                state: "stopped",
-                positionSeconds: 0,
-                durationSeconds: 0
-            )
-        }
-    }
-
-    private func loadCandidates() async {
-        guard let client = sessionStore.makeClient() else {
+    func loadCandidates(
+        context: SourcePickerContext,
+        client: (any SourcePickerSessionClient)?,
+        onUnauthorized: () -> Void
+    ) async {
+        guard let client else {
             isLoading = false
             errorMessage = "Mangler tilkobling til LunaCore."
             return
@@ -233,7 +136,16 @@ struct SourcePickerSheetView: View {
                     seriesTitle: context.seriesTitle,
                     startPositionSeconds: context.startPositionSeconds
                 )
+                if Task.isCancelled {
+                    if let orphanSid = prep.playbackSession?.sessionId {
+                        Self.stopSessionDetached(sessionId: orphanSid, client: client)
+                    }
+                    return
+                }
                 guard let tok = prep.prepareToken, !tok.isEmpty else {
+                    if let orphanSid = prep.playbackSession?.sessionId {
+                        Self.stopSessionDetached(sessionId: orphanSid, client: client)
+                    }
                     candidates = []
                     isLoading = false
                     return
@@ -243,13 +155,35 @@ struct SourcePickerSheetView: View {
                 createdOrphanSessionId = prep.playbackSession?.sessionId
             }
 
+            if Task.isCancelled {
+                if !didSelectCandidate {
+                    stopOrphanSessionIfNeeded(context: context, client: client)
+                }
+                return
+            }
+
             let alt = try await client.fetchAlternatives(sessionId: sessionToken)
+            if Task.isCancelled {
+                if !didSelectCandidate {
+                    stopOrphanSessionIfNeeded(context: context, client: client)
+                }
+                return
+            }
             candidates = alt.alternatives
             activeCandidateId = alt.activeCandidateId
                 ?? alt.alternatives.first(where: { $0.isActive == true })?.candidateId
+        } catch is CancellationError {
+            if !didSelectCandidate {
+                stopOrphanSessionIfNeeded(context: context, client: client)
+            }
+            return
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            if !didSelectCandidate {
+                stopOrphanSessionIfNeeded(context: context, client: client)
+            }
+            return
         } catch LunaCoreError.unauthorized {
-            sessionStore.unpairDevice()
-            onCancel()
+            onUnauthorized()
         } catch {
             if usedExistingToken {
                 existingTokenFailed = true
@@ -258,6 +192,180 @@ struct SourcePickerSheetView: View {
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    func selectCandidate(
+        _ candidate: TvCandidateInfo,
+        isCurrent: Bool,
+        context: SourcePickerContext,
+        client: (any SourcePickerSessionClient)?,
+        onSelectCandidate: (TvCandidateInfo, String?) -> Void
+    ) {
+        didSelectCandidate = true
+        if isCurrent, let tok = resolvedPrepareToken {
+            createdOrphanSessionId = nil
+            onSelectCandidate(candidate, tok)
+        } else {
+            stopOrphanSessionIfNeeded(context: context, client: client)
+            onSelectCandidate(candidate, nil)
+        }
+    }
+
+    func handleDisappear(
+        context: SourcePickerContext,
+        client: (any SourcePickerSessionClient)?
+    ) {
+        if !didSelectCandidate {
+            stopOrphanSessionIfNeeded(context: context, client: client)
+        }
+    }
+
+    func stopOrphanSessionIfNeeded(
+        context: SourcePickerContext,
+        client: (any SourcePickerSessionClient)?
+    ) {
+        guard (context.existingPrepareToken == nil || existingTokenFailed),
+              let sid = createdOrphanSessionId,
+              let client else {
+            return
+        }
+        createdOrphanSessionId = nil
+        Self.stopSessionDetached(sessionId: sid, client: client)
+    }
+
+    private static func stopSessionDetached(
+        sessionId: String,
+        client: any SourcePickerSessionClient
+    ) {
+        Task.detached(priority: .utility) {
+            _ = try? await client.sendHeartbeat(
+                sessionId: sessionId,
+                state: "stopped",
+                positionSeconds: 0,
+                durationSeconds: 0,
+                completed: nil
+            )
+        }
+    }
+}
+
+struct SourcePickerSheetView: View {
+    @EnvironmentObject private var sessionStore: AppSessionStore
+
+    let context: SourcePickerContext
+    let onSelectCandidate: (TvCandidateInfo, String?) -> Void
+    let onCancel: () -> Void
+
+    @StateObject private var viewModel = SourcePickerViewModel()
+
+    var body: some View {
+        ZStack {
+            LunaTheme.canvas.ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 26) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Velg avspillingskilde")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(LunaTheme.linen)
+
+                        Text("\(context.displaySubject) · Rangert for \(sessionStore.roomName) (\(sessionStore.activePreset.shortBadgeLabel))")
+                            .font(.callout)
+                            .foregroundStyle(LunaTheme.muted)
+                    }
+
+                    Spacer()
+
+                    LunaPillButton("Lukk", systemImage: "xmark", prominence: .subtleChip) {
+                        onCancel()
+                    }
+                }
+
+                if viewModel.isLoading {
+                    Spacer()
+                    VStack(spacing: 16) {
+                        ProgressView()
+                        Text("Søker etter beste lokale og Usenet-kilder…")
+                            .font(.headline)
+                            .foregroundStyle(LunaTheme.moonlight)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    Spacer()
+                } else if let errorMessage = viewModel.errorMessage {
+                    Spacer()
+                    VStack(spacing: 18) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.largeTitle)
+                            .foregroundStyle(LunaTheme.amber)
+                        Text(errorMessage)
+                            .font(.callout)
+                            .foregroundStyle(LunaTheme.moonlight)
+                            .multilineTextAlignment(.center)
+                        LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
+                            Task { await loadCandidates() }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    Spacer()
+                } else if viewModel.candidates.isEmpty {
+                    Spacer()
+                    Text("Fant ingen tilgjengelige kilder for denne tittelen.")
+                        .font(.headline)
+                        .foregroundStyle(LunaTheme.muted)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    Spacer()
+                } else {
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVStack(spacing: 16) {
+                            ForEach(Array(viewModel.candidates.enumerated()), id: \.element.id) { index, candidate in
+                                let isCurrent = viewModel.activeCandidateId != nil
+                                    ? (candidate.candidateId == viewModel.activeCandidateId)
+                                    : (candidate.isActive == true)
+                                CandidateRowButton(
+                                    candidate: candidate,
+                                    isRecommended: index == 0,
+                                    isCurrentWinner: isCurrent
+                                ) {
+                                    viewModel.selectCandidate(
+                                        candidate,
+                                        isCurrent: isCurrent,
+                                        context: context,
+                                        client: sessionStore.makeClient(),
+                                        onSelectCandidate: onSelectCandidate
+                                    )
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                    }
+                }
+            }
+            .padding(56)
+        }
+        .onExitCommand {
+            onCancel()
+        }
+        .task {
+            await loadCandidates()
+        }
+        .onDisappear {
+            viewModel.handleDisappear(
+                context: context,
+                client: sessionStore.makeClient()
+            )
+        }
+    }
+
+    private func loadCandidates() async {
+        await viewModel.loadCandidates(
+            context: context,
+            client: sessionStore.makeClient(),
+            onUnauthorized: {
+                sessionStore.unpairDevice()
+                onCancel()
+            }
+        )
     }
 }
 
