@@ -40,7 +40,7 @@ for base in swift_roots:
         swift_files.extend(sorted(base.rglob("*.swift")))
 
 RETIRED_IDENT_RE = re.compile(
-    r"\bBFF[A-Za-z0-9_]*|CatScale|\bCatCompanion[A-Za-z0-9_]*|\bV250[A-Za-z0-9_]*|[A-Za-z0-9_]*FixesTests\b|\b[A-Za-z0-9_]*ActionForTesting\b|\bnativeAudioActivatorForTesting\b"
+    r"\bBFF[A-Za-z0-9_]*|CatScale|\bCatCompanion[A-Za-z0-9_]*|\bV250[A-Za-z0-9_]*|[A-Za-z0-9_]*FixesTests\b|\b[A-Za-z0-9_]*ForTesting\b|\bnativeAudioActivatorForTesting\b"
 )
 
 for sf in swift_files:
@@ -105,11 +105,10 @@ for target in scan_targets:
             errors.append(f"HYGIENE {rel}: private IP address literal found")
         if NAS_PATH_RE.search(content):
             errors.append(f"HYGIENE {rel}: NAS filesystem path found")
-        if not rel.startswith(".github/workflows/"):
-            if SECRET_LITERAL_RE.search(content):
-                errors.append(f"HYGIENE {rel}: internal domain or token prefix found")
-            if RETIRED_BRAND_RE.search(content):
-                errors.append(f"RETIRED {rel}: retired legacy brand reference found")
+        if SECRET_LITERAL_RE.search(content):
+            errors.append(f"HYGIENE {rel}: internal domain or token prefix found")
+        if RETIRED_BRAND_RE.search(content):
+            errors.append(f"RETIRED {rel}: retired legacy brand reference found")
 
 if errors:
     print("LUNA-CHECK FAILED:", file=sys.stderr)

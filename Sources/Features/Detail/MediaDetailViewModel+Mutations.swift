@@ -88,6 +88,8 @@ extension MediaDetailViewModel {
                 if let inlineEpisodes = loaded.episodes,
                    !inlineEpisodes.isEmpty,
                    loaded.selectedSeason == targetSeason {
+                    seasonLoadGeneration &+= 1
+                    isLoadingEpisodes = false
                     episodes = inlineEpisodes
                 } else {
                     await loadSeasonEpisodes(detail: loaded, seasonNumber: targetSeason)
@@ -120,12 +122,18 @@ extension MediaDetailViewModel {
     func loadSeasonEpisodes(detail: TvItemDetail, seasonNumber: Int) async {
         guard let client = refreshedClient(),
               let tmdbId = detail.ids.tmdb else { return }
+        seasonLoadGeneration &+= 1
+        let generation = seasonLoadGeneration
         isLoadingEpisodes = true
         if let seasonRes = try? await client.fetchSeasonEpisodes(tmdbId: tmdbId, seasonNumber: seasonNumber),
-           !Task.isCancelled {
+           !Task.isCancelled,
+           generation == seasonLoadGeneration,
+           selectedSeasonNumber == seasonNumber {
             episodes = seasonRes.episodes
         }
-        isLoadingEpisodes = false
+        if generation == seasonLoadGeneration {
+            isLoadingEpisodes = false
+        }
     }
 
     private func showMutationError(_ error: Error) {

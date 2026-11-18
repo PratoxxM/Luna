@@ -101,9 +101,18 @@ public struct PlaybackResolveSocket: Sendable {
             }
             return url
         }
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            guard var comps = URLComponents(string: trimmed),
+                  let host = comps.host, !host.isEmpty else {
+                return nil
+            }
+            comps.scheme = (comps.scheme?.lowercased() == "https") ? "wss" : "ws"
+            return comps.url
+        }
         let cleanBase = baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let cleanRel = trimmed.hasPrefix("/") ? trimmed : "/\(trimmed)"
-        guard var comps = URLComponents(string: "\(cleanBase)\(cleanRel)") else {
+        guard var comps = URLComponents(string: "\(cleanBase)\(cleanRel)"),
+              let host = comps.host, !host.isEmpty else {
             return nil
         }
         let isSecure = comps.scheme?.lowercased() == "https"

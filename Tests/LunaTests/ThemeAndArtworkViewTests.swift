@@ -116,7 +116,7 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         )
 
         let backdropURL = try XCTUnwrap(URL(string: "http://lunacore.local:8090/api/tv/v1/artwork/backdrop-99"))
-        ArtworkPipeline.shared.insertMemoryCachedImageForTesting(freshMemImg, url: backdropURL, maxPixelSize: 1920)
+        ArtworkPipeline.shared.insertMemoryCachedImage(freshMemImg, url: backdropURL, maxPixelSize: 1920)
         let reusedHit = ArtworkPipeline.shared.anyMemoryCachedImage(for: backdropURL, preferredMaxPixelSize: 960)
         XCTAssertTrue(reusedHit?.image === freshMemImg)
     }

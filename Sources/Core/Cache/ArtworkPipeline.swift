@@ -160,7 +160,7 @@ public actor ArtworkPipeline {
         return nil
     }
 
-    public nonisolated func insertMemoryCachedImageForTesting(_ image: CGImage, url: URL, maxPixelSize: Int) {
+    internal nonisolated func insertMemoryCachedImage(_ image: CGImage, url: URL, maxPixelSize: Int) {
         ramCache.insert(image, forKey: Self.cacheKey(for: url, maxPixelSize: maxPixelSize))
     }
 

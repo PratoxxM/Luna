@@ -150,4 +150,72 @@ final class LunaCoreHTTPTransportTests: XCTestCase {
         XCTAssertEqual(patchReq?.value(forHTTPHeaderField: "Authorization"), "Bearer test-device-token")
         XCTAssertEqual(patchReq?.value(forHTTPHeaderField: "X-Room-Name"), "Stua")
     }
+
+    func testFetchRawImageDataSendsAuthOnlyToSameOriginAndEncodesNonASCIIRoomHeader() async throws {
+        let lanHost = "transport-img-\(UUID().uuidString.lowercased()).local"
+        let cdnHost = "cdn-img-\(UUID().uuidString.lowercased()).example.net"
+        defer {
+            MockURLProtocol.unregister(host: lanHost)
+            MockURLProtocol.unregister(host: cdnHost)
+        }
+
+        let sampleBytes = Data([0x52, 0x49, 0x46, 0x46])
+        MockURLProtocol.register(host: lanHost) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            return (resp, sampleBytes)
+        }
+        MockURLProtocol.register(host: cdnHost) { request in
+            let url = try XCTUnwrap(request.url)
+            if url.path.contains("fail") {
+                let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 404, httpVersion: nil, headerFields: nil))
+                return (resp, Data())
+            }
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            return (resp, sampleBytes)
+        }
+
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        let session = URLSession(configuration: config)
+        let baseURL = try XCTUnwrap(URL(string: "http://\(lanHost):8090"))
+        let client = LunaCoreClient(
+            baseURL: baseURL,
+            deviceID: "luna-test-device",
+            deviceToken: "secret-lan-token",
+            roomName: "Sør-Stua",
+            hardwareProfile: "dv-fel-714",
+            allowSelfSignedLanTLS: true,
+            appVersion: "2.6.0",
+            osVersion: "tvOS 26.0",
+            session: session,
+            imageSession: session
+        )
+
+        let headers = client.streamHTTPHeaders()
+        XCTAssertEqual(headers["Authorization"], "Bearer secret-lan-token")
+        XCTAssertEqual(headers["X-Room-Name"], "S%C3%B8r-Stua")
+
+        let sameOriginURL = try XCTUnwrap(URL(string: "http://\(lanHost):8090/api/tv/v1/img/poster.webp"))
+        let (sameData, _) = try await client.fetchRawImageData(from: sameOriginURL)
+        XCTAssertEqual(sameData, sampleBytes)
+        let lanReq = try XCTUnwrap(MockURLProtocol.requests(forHost: lanHost).last)
+        XCTAssertEqual(lanReq.value(forHTTPHeaderField: "Authorization"), "Bearer secret-lan-token")
+        XCTAssertEqual(lanReq.value(forHTTPHeaderField: "X-Device-Id"), "luna-test-device")
+
+        let externalURL = try XCTUnwrap(URL(string: "https://\(cdnHost)/poster.jpg"))
+        let (extData, _) = try await client.fetchRawImageData(from: externalURL)
+        XCTAssertEqual(extData, sampleBytes)
+        let extReq = try XCTUnwrap(MockURLProtocol.requests(forHost: cdnHost).last)
+        XCTAssertNil(extReq.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertNil(extReq.value(forHTTPHeaderField: "X-Device-Id"))
+
+        let missingExternalURL = try XCTUnwrap(URL(string: "https://\(cdnHost)/fail.jpg"))
+        do {
+            _ = try await client.fetchRawImageData(from: missingExternalURL)
+            XCTFail("Expected HTTP 404 serverMessage")
+        } catch LunaCoreError.serverMessage(let code, _) {
+            XCTAssertEqual(code, 404)
+        }
+    }
 }

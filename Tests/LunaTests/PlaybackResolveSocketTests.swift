@@ -23,9 +23,15 @@ final class PlaybackResolveSocketTests: XCTestCase {
             PlaybackResolveSocket.makeWebSocketURL(baseURL: httpBase, wsPath: "ws://direct.example.test:8090/ws")?.absoluteString,
             "ws://direct.example.test:8090/ws"
         )
+        XCTAssertEqual(
+            PlaybackResolveSocket.makeWebSocketURL(baseURL: httpBase, wsPath: "https://direct.example.test:8920/ws")?.absoluteString,
+            "wss://direct.example.test:8920/ws"
+        )
         XCTAssertNil(PlaybackResolveSocket.makeWebSocketURL(baseURL: httpBase, wsPath: "   "))
         XCTAssertNil(PlaybackResolveSocket.makeWebSocketURL(baseURL: httpBase, wsPath: "/bad path with spaces"))
         XCTAssertNil(PlaybackResolveSocket.makeWebSocketURL(baseURL: httpBase, wsPath: "ws://"))
+        let hostlessBase = try XCTUnwrap(URL(string: "http:///"))
+        XCTAssertNil(PlaybackResolveSocket.makeWebSocketURL(baseURL: hostlessBase, wsPath: "/api/tv/v1/ws/resolve/abc"))
     }
 
     func testEventsStreamThrowsInvalidURLImmediatelyForBlankPath() async throws {

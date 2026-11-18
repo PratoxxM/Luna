@@ -148,8 +148,9 @@ final class MediaDetailViewModelTests: XCTestCase {
         XCTAssertEqual(vm.detail?.monitorMode, "unwatched")
         XCTAssertEqual(context.mutateCalls, 1)
 
-        // Season switch fetches season 2 episodes
+        // Season switch updates selectedSeasonNumber and fetches season 2 episodes
         await vm.selectSeason(2)
+        XCTAssertEqual(vm.selectedSeasonNumber, 2)
         XCTAssertEqual(vm.episodes.count, 1)
         XCTAssertEqual(vm.episodes.first?.title, "Hello, Ms. Cobel")
 
@@ -194,5 +195,118 @@ final class MediaDetailViewModelTests: XCTestCase {
         XCTAssertEqual(context.unpairCalls, 1)
         XCTAssertNil(vm.detail)
         XCTAssertFalse(vm.isLoading)
+    }
+
+    @MainActor
+    func testOutOfOrderSeasonSwitchIgnoresStaleSeasonResponse() async throws {
+        let host = "detail-season-race-\(UUID().uuidString.lowercased()).local"
+        defer { MockURLProtocol.unregister(host: host) }
+
+        let seriesDetailJSON = #"""
+        {
+          "ok": true,
+          "item": {
+            "itemId": "series:tmdb:95396",
+            "mediaType": "series",
+            "ids": { "tmdb": 95396 },
+            "title": "Severance",
+            "inWatchlist": false,
+            "watched": false,
+            "selectedSeason": 1,
+            "seasons": [
+              { "seasonNumber": 1, "name": "Sesong 1", "episodeCount": 1 },
+              { "seasonNumber": 2, "name": "Sesong 2", "episodeCount": 1 }
+            ],
+            "episodes": [
+              {
+                "itemId": "episode:tmdb:95396:s1:e1",
+                "seasonNumber": 1,
+                "episodeNumber": 1,
+                "title": "Good News About Hell",
+                "watched": false
+              }
+            ]
+          }
+        }
+        """#
+        let season1JSON = #"""
+        {
+          "ok": true,
+          "tmdbId": 95396,
+          "seasonNumber": 1,
+          "title": "Sesong 1",
+          "episodes": [
+            {
+              "itemId": "episode:tmdb:95396:s1:e1",
+              "seasonNumber": 1,
+              "episodeNumber": 1,
+              "title": "Good News About Hell",
+              "watched": false
+            }
+          ]
+        }
+        """#
+        let season2JSON = #"""
+        {
+          "ok": true,
+          "tmdbId": 95396,
+          "seasonNumber": 2,
+          "title": "Sesong 2",
+          "episodes": [
+            {
+              "itemId": "episode:tmdb:95396:s2:e1",
+              "seasonNumber": 2,
+              "episodeNumber": 1,
+              "title": "Hello, Ms. Cobel",
+              "watched": false
+            }
+          ]
+        }
+        """#
+
+        let season2Gate = TestStepGate()
+        let seasonLog = TestLockedBox<[String]>([])
+
+        MockURLProtocol.registerAsync(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            switch url.path {
+            case "/api/tv/v1/items/series/series:tmdb:95396":
+                let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+                return (resp, Data(seriesDetailJSON.utf8))
+            case "/api/tv/v1/items/series/95396/seasons/2":
+                await season2Gate.wait(label: "s2", log: seasonLog)
+                let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+                return (resp, Data(season2JSON.utf8))
+            case "/api/tv/v1/items/series/95396/seasons/1":
+                let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+                return (resp, Data(season1JSON.utf8))
+            default:
+                let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+                return (resp, Data(#"{"ok":true}"#.utf8))
+            }
+        }
+
+        let context = MockDetailSessionContext()
+        context.client = try MockURLProtocol.makeClient(host: host)
+        let vm = MediaDetailViewModel(mediaType: "series", itemId: "series:tmdb:95396", initialTitle: "Severance")
+        await vm.handleTaskAppearance(scopeKey: "series#series:tmdb:95396#Kjellerstua#dv-fel-714", sessionContext: context)
+
+        let slowSeason2Task = Task { await vm.selectSeason(2) }
+        await season2Gate.waitUntilStarted()
+        XCTAssertEqual(vm.selectedSeasonNumber, 2)
+        XCTAssertTrue(vm.isLoadingEpisodes)
+
+        await vm.selectSeason(1)
+        XCTAssertEqual(vm.selectedSeasonNumber, 1)
+        XCTAssertEqual(vm.episodes.first?.title, "Good News About Hell")
+        XCTAssertFalse(vm.isLoadingEpisodes)
+
+        await season2Gate.finish()
+        await slowSeason2Task.value
+
+        XCTAssertEqual(vm.selectedSeasonNumber, 1)
+        XCTAssertEqual(vm.episodes.first?.title, "Good News About Hell")
+        XCTAssertFalse(vm.isLoadingEpisodes)
+        XCTAssertEqual(seasonLog.withLock { $0 }, ["s2_start", "s2_end"])
     }
 }

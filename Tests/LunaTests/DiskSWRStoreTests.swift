@@ -178,4 +178,40 @@ final class DiskSWRStoreTests: XCTestCase {
         await DiskSWRStore.drainPendingWrites()
         await DiskSWRStore.clearAllAsync()
     }
+
+    func testLoadHomeAsyncConcurrentWithClearAllAsyncNeverResurrectsMemorySnapshot() async throws {
+        await DiskSWRStore.clearAllAsync()
+        let host = "swr-loadclear-\(UUID().uuidString.lowercased()).local"
+        let rawData = Data(#"{"ok":true,"roomName":"Stua","hardwareProfile":"hdr10-512","rows":[]}"#.utf8)
+
+        for _ in 0..<8 {
+            DiskSWRStore.saveHomeInBackground(
+                rawPayloadData: rawData,
+                etag: "\"etag-load-clear\"",
+                serverHost: host,
+                roomName: "Stua",
+                hardwareProfile: "hdr10-512",
+                decodedPayload: nil
+            )
+            await DiskSWRStore.drainPendingWrites()
+            DiskSWRStore.clearMemory()
+
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    _ = await DiskSWRStore.loadHomeAsync(
+                        serverHost: host,
+                        roomName: "Stua",
+                        hardwareProfile: "hdr10-512"
+                    )
+                }
+                group.addTask {
+                    await DiskSWRStore.clearAllAsync()
+                }
+            }
+
+            XCTAssertNil(DiskSWRStore.memorySnapshot(serverHost: host, roomName: "Stua", hardwareProfile: "hdr10-512"))
+            let diskAfter = await DiskSWRStore.diskUsageBytesAsync()
+            XCTAssertEqual(diskAfter, 0)
+        }
+    }
 }

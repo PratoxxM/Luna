@@ -145,11 +145,16 @@ public enum DiskSWRStore {
         if let hit = memorySnapshot(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile) {
             return hit
         }
+        let startEpoch = pendingWrites.withLock { $0.clearEpoch }
         let legacyKey = legacyFileBaseName(roomName: roomName, hardwareProfile: hardwareProfile)
         guard let loaded = await DiskSWRStorageActor.shared.loadFromDisk(
             primaryBaseName: primaryKey,
             legacyBaseName: legacyKey
         ) else {
+            return nil
+        }
+        let stillValid = pendingWrites.withLock { $0.clearEpoch == startEpoch } && !Task.isCancelled
+        guard stillValid else {
             return nil
         }
         storeMemorySnapshot(loaded, forKey: primaryKey)

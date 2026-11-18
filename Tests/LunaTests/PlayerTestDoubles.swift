@@ -125,11 +125,19 @@ actor TestStepGate {
 
 final class MockURLProtocol: URLProtocol, @unchecked Sendable {
     typealias Handler = @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
+    typealias AsyncHandler = @Sendable (URLRequest) async throws -> (HTTPURLResponse, Data)
 
-    private static let handlers = Mutex<[String: Handler]>([:])
+    private static let handlers = Mutex<[String: AsyncHandler]>([:])
     private static let recordedRequests = Mutex<[String: [URLRequest]]>([:])
+    private static let activeTasks = Mutex<[ObjectIdentifier: Task<Void, Never>]>([:])
 
     static func register(host: String, handler: @escaping Handler) {
+        registerAsync(host: host) { req in
+            try handler(req)
+        }
+    }
+
+    static func registerAsync(host: String, handler: @escaping AsyncHandler) {
         let key = host.lowercased()
         handlers.withLock { $0[key] = handler }
         recordedRequests.withLock { $0[key] = [] }
@@ -137,8 +145,8 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
 
     static func unregister(host: String) {
         let key = host.lowercased()
-        handlers.withLock { $0.removeValue(forKey: key) }
-        recordedRequests.withLock { $0.removeValue(forKey: key) }
+        _ = handlers.withLock { $0.removeValue(forKey: key) }
+        _ = recordedRequests.withLock { $0.removeValue(forKey: key) }
     }
 
     static func requests(forHost host: String) -> [URLRequest] {
@@ -185,15 +193,26 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         Self.recordedRequests.withLock { $0[host, default: []].append(request) }
-        do {
-            let (response, data) = try handler(request)
-            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: data)
-            client?.urlProtocolDidFinishLoading(self)
-        } catch {
-            client?.urlProtocol(self, didFailWithError: error)
+        let taskKey = ObjectIdentifier(self)
+        let req = request
+        let task = Task.detached(priority: .userInitiated) { [self] in
+            defer { _ = Self.activeTasks.withLock { $0.removeValue(forKey: taskKey) } }
+            do {
+                let (response, data) = try await handler(req)
+                guard !Task.isCancelled else { return }
+                self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                self.client?.urlProtocol(self, didLoad: data)
+                self.client?.urlProtocolDidFinishLoading(self)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.client?.urlProtocol(self, didFailWithError: error)
+            }
         }
+        Self.activeTasks.withLock { $0[taskKey] = task }
     }
 
-    override func stopLoading() {}
+    override func stopLoading() {
+        let task = Self.activeTasks.withLock { $0.removeValue(forKey: ObjectIdentifier(self)) }
+        task?.cancel()
+    }
 }

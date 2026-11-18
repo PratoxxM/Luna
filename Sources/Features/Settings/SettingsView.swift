@@ -32,9 +32,9 @@ enum SettingsCategory: String, CaseIterable, Identifiable, Sendable {
 }
 
 struct SettingsView: View {
-    static let keepDisplayModeToggleTitle =
+    nonisolated static let keepDisplayModeToggleTitle =
         "Behold filmens skjerm- og HDR-modus i menyen etter avspilling"
-    static let keepDisplayModeExplanationText =
+    nonisolated static let keepDisplayModeExplanationText =
         "Av (standard) gir jevne 60 Hz-menyer umiddelbart etter avspilling. På unngår HDMI-skifte ut av spilleren på denne TV-en, men låser menyene til 24 Hz etter 24p-film frem til du forlater appen."
 
     @EnvironmentObject private var sessionStore: AppSessionStore

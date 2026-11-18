@@ -51,6 +51,7 @@ final class MediaDetailViewModel: ObservableObject {
     var postPlaybackReloadFallbackTask: Task<Void, Never>?
     var detailLoadTask: Task<Void, Never>?
     var detailLoadGeneration: UInt64 = 0
+    var seasonLoadGeneration: UInt64 = 0
     var loadedScopeKey: String?
     var awaitingPostPlaybackRefresh: Bool = false
     private var preResolveCancellable: AnyCancellable?
@@ -166,14 +167,18 @@ final class MediaDetailViewModel: ObservableObject {
         }
     }
 
-    func handleDisappear() {
+    func handleDisappear(sessionContext: (any MediaDetailSessionContext)? = nil) {
+        if let sessionContext {
+            self.sessionContext = sessionContext
+        }
         bannerClearTask?.cancel()
         postPlaybackReloadFallbackTask?.cancel()
         postPlaybackReloadFallbackTask = nil
         detailLoadTask?.cancel()
         detailLoadTask = nil
+        seasonLoadGeneration &+= 1
 
-        let isLaunchingPlayback = sessionContext?.activePlaybackTarget != nil
+        let isLaunchingPlayback = self.sessionContext?.activePlaybackTarget != nil
         let showingModal = isShowingModal
         let currentClient = refreshedClient()
         preResolve.handleDisappear(
@@ -184,7 +189,7 @@ final class MediaDetailViewModel: ObservableObject {
         PlayerAudioSessionCoordinator.shared.handleDetailDisappear(
             isLaunchingPlayback: isLaunchingPlayback,
             isShowingSourcePicker: showingModal,
-            keepDisplayModeInMenu: sessionContext?.keepDisplayModeInMenuAfterPlayback ?? false
+            keepDisplayModeInMenu: self.sessionContext?.keepDisplayModeInMenuAfterPlayback ?? false
         )
     }
 
@@ -193,6 +198,7 @@ final class MediaDetailViewModel: ObservableObject {
     }
 
     func selectSeason(_ seasonNumber: Int) async {
+        selectedSeasonNumber = seasonNumber
         guard let detail else { return }
         await loadSeasonEpisodes(detail: detail, seasonNumber: seasonNumber)
     }

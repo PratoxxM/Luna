@@ -75,7 +75,8 @@ public enum BlurHashDecoder {
     }
 
     public static func decodeAsync(_ blurHash: String?, width: Int = 32, height: Int = 18, punch: Float = 1.0) async -> CGImage? {
-        guard width > 0, height > 0,
+        guard !Task.isCancelled,
+              width > 0, height > 0,
               let raw = blurHash?.trimmingCharacters(in: .whitespacesAndNewlines),
               raw.count >= 6 else {
             return nil

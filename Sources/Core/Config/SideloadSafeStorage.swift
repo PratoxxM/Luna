@@ -31,9 +31,9 @@ public enum SideloadSafeStorage {
     public static let didMigrateMenu60HzDefaultV240Key = "luna.v1.comfort.migrated_menu_60hz_v240"
     public static let recentSearchesKey = "luna.v1.recent_searches"
 
-    private static let keychainService = "luna.v1.credentials"
-    private static let tokenAccount = "device_bearer_token"
-    private static let fallbackPrefix = "luna.v1.keychain_fallback."
+    internal static let keychainService = "luna.v1.credentials"
+    internal static let tokenAccount = "device_bearer_token"
+    internal static let fallbackPrefix = "luna.v1.keychain_fallback."
 
     public static func ensurePersistentDeviceID(defaults: UserDefaults = .standard) -> String {
         if let existing = defaults.string(forKey: deviceIDKey), !existing.isEmpty {

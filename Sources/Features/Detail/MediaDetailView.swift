@@ -211,8 +211,7 @@ struct MediaDetailView: View {
             viewModel.handlePlaybackTargetChange(oldTarget: oldTarget, newTarget: newTarget)
         }
         .onDisappear {
-            viewModel.bind(sessionContext: sessionStore)
-            viewModel.handleDisappear()
+            viewModel.handleDisappear(sessionContext: sessionStore)
             let isLaunchingPlayback = sessionStore.activePlaybackTarget != nil
             let isShowingModal = viewModel.isShowingModal
             if !isShowingModal {

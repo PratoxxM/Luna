@@ -123,5 +123,19 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         let cancelMetrics = BlurHashDecoder.metricsSnapshot()
         XCTAssertGreaterThanOrEqual(cancelMetrics.actualDecodes, 1)
         XCTAssertLessThanOrEqual(cancelMetrics.actualDecodes, 2)
+
+        // Pre-cancelled caller returns nil deterministically without decoding.
+        BlurHashDecoder.clearCache()
+        BlurHashDecoder.resetMetrics()
+        let preCancelled = Task { () -> CGImage? in
+            while !Task.isCancelled {
+                await Task.yield()
+            }
+            return await BlurHashDecoder.decodeAsync(sampleHash, width: 32, height: 24, punch: 1.0)
+        }
+        preCancelled.cancel()
+        let cancelledResult = await preCancelled.value
+        XCTAssertNil(cancelledResult)
+        XCTAssertEqual(BlurHashDecoder.metricsSnapshot().actualDecodes, 0)
     }
 }
