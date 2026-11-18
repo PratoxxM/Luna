@@ -132,7 +132,7 @@ extension PlayerViewModel {
         !isRestoringFromBackground &&
         !isScrubbing &&
         isForegroundActive &&
-        !engine.needsForegroundVideoRestore &&
+        !transport.needsForegroundVideoRestore &&
         activeSession?.sessionId == expectedSessionId
     }
 
@@ -141,10 +141,10 @@ extension PlayerViewModel {
         cancelPendingPausedRestoreResume()
         cancelPendingScrubCommit()
         if !isScrubbing {
-            let origin = max(0, engine.currentTime)
+            let origin = max(0, transport.currentTime)
             wasPlayingBeforeScrub = (playbackPhase == .playing)
             if wasPlayingBeforeScrub {
-                engine.pause()
+                transport.pause()
             }
             scrubState.originSeconds = origin
             scrubState.targetSeconds = origin
@@ -195,15 +195,10 @@ extension PlayerViewModel {
         scrubCommitToken &+= 1
         let commitToken = scrubCommitToken
         let expectedSessionId = activeSession?.sessionId
-        let customSeek = scrubSeekActionForTesting
 
         scrubCommitTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            if let customSeek {
-                await customSeek(target)
-            } else {
-                await self.engine.seek(to: target, exact: true)
-            }
+            await self.transport.seek(to: target, exact: true)
             guard self.canFinishScrubCommit(expectedToken: commitToken, expectedSessionId: expectedSessionId) else {
                 if self.scrubCommitToken == commitToken {
                     self.scrubCommitTask = nil
@@ -223,18 +218,14 @@ extension PlayerViewModel {
             if self.scrubCommitToken == commitToken {
                 self.scrubCommitTask = nil
             }
-            if let customPlay = self.resumePlayActionForTesting {
-                customPlay()
-            } else if self.engine.state == .paused || self.engine.state == .loading {
-                self.engine.play()
+            if self.transport.state == .paused || self.transport.state == .loading {
+                self.transport.play()
             }
-            if self.isForegroundActive && !self.engine.needsForegroundVideoRestore {
-                self.lastForegroundPlaybackWasPlaying = self.resumePlayActionForTesting != nil
-                    ? true
-                    : Self.isActiveTransportIntent(
-                        playbackPhase: self.engine.playbackPhase,
-                        engineState: self.engine.state
-                    )
+            if self.isForegroundActive && !self.transport.needsForegroundVideoRestore {
+                self.lastForegroundPlaybackWasPlaying = Self.isActiveTransportIntent(
+                    playbackPhase: self.transport.playbackPhase,
+                    engineState: self.transport.state
+                )
             }
         }
     }
@@ -245,7 +236,7 @@ extension PlayerViewModel {
         let shouldResume = wasPlayingBeforeScrub
         resetScrubStateOnSessionChange()
         if shouldResume {
-            engine.play()
+            transport.play()
         }
     }
 

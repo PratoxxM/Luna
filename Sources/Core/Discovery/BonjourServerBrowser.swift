@@ -128,7 +128,7 @@ public final class BonjourServerBrowser: ObservableObject {
         servers.removeAll { !activeKeys.contains($0.id) }
     }
 
-    private static func extractServer(
+    internal nonisolated static func extractServer(
         id: String,
         serviceName: String,
         remoteEndpoint: NWEndpoint?,
@@ -136,7 +136,7 @@ public final class BonjourServerBrowser: ObservableObject {
     ) -> DiscoveredLunaCoreServer? {
         guard case let .hostPort(host, port) = remoteEndpoint else { return nil }
 
-        var rawHost: String
+        let rawHost: String
         switch host {
         case .ipv4(let v4):
             rawHost = "\(v4)"
@@ -152,9 +152,31 @@ public final class BonjourServerBrowser: ObservableObject {
             return nil
         }
 
-        if let pctIndex = rawHost.firstIndex(of: "%") {
-            rawHost = String(rawHost[..<pctIndex])
+        return parseDiscoveredService(
+            id: id,
+            serviceName: serviceName,
+            rawHost: rawHost,
+            port: Int(port.rawValue),
+            txt: txt
+        )
+    }
+
+    internal nonisolated static func parseDiscoveredService(
+        id: String,
+        serviceName: String,
+        rawHost: String,
+        port: Int,
+        txt: [String: String]
+    ) -> DiscoveredLunaCoreServer? {
+        var cleanHost = rawHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanHost.isEmpty else { return nil }
+        if cleanHost.hasPrefix("["), cleanHost.hasSuffix("]"), cleanHost.contains("%") {
+            return nil
         }
+        if let pctIndex = cleanHost.firstIndex(of: "%") {
+            cleanHost = String(cleanHost[..<pctIndex])
+        }
+        guard !cleanHost.isEmpty else { return nil }
 
         let scheme: String
         let effectivePort: Int
@@ -165,10 +187,10 @@ public final class BonjourServerBrowser: ObservableObject {
             effectivePort = httpsPort
         } else {
             scheme = "http"
-            effectivePort = Int(port.rawValue)
+            effectivePort = port
         }
 
-        guard effectivePort > 0, let url = URL(string: "\(scheme)://\(rawHost):\(effectivePort)") else {
+        guard effectivePort > 0, let url = URL(string: "\(scheme)://\(cleanHost):\(effectivePort)") else {
             return nil
         }
 

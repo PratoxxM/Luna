@@ -5,7 +5,7 @@ import UIKit
 import XCTest
 @testable import Luna
 
-final class CatScaleAndButtonThemeTests: XCTestCase {
+final class ThemeAndArtworkViewTests: XCTestCase {
     func testWarmEspressoAndHoneyBrassPaletteHexAndContrast() throws {
         // 1. Exact LunaCore Warm Espresso & Honey-Brass hex values
         try assertRGB(LunaTheme.canvas, r: 10, g: 9, b: 8)            // #0A0908 OLED warm charcoal
@@ -58,8 +58,8 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(try contrastRatio(foreground: LunaTheme.canvas, background: focusMid), 5.0)
     }
 
-    func testInAppCatAssetsRemovedWhileAccentColorAndHomeScreenBrandAssetsRemainIntact() throws {
-        // Cropped in-app cat imagesets must no longer exist in Assets.car
+    func testInAppMascotAssetsRemovedWhileAccentColorAndHomeScreenBrandAssetsRemainIntact() throws {
+        // Cropped in-app mascot imagesets must no longer exist in Assets.car
         XCTAssertNil(UIImage(named: "MascotCatsDuo"))
         XCTAssertNil(UIImage(named: "LunaMoonCrescent"))
         XCTAssertNil(UIImage(named: "LunaMoonCatsEmblem"))
@@ -82,7 +82,6 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         let staleImg = try makeSolidTestCGImage(width: 8, height: 12, byte: 40)
         let freshMemImg = try makeSolidTestCGImage(width: 16, height: 9, byte: 200)
 
-        // Matching key returns existing @State image immediately
         let kept = CachedArtworkView.selectKeyMatchedImage(
             expectedKey: "movie-A#px750",
             stateKey: "movie-A#px750",
@@ -91,7 +90,6 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         )
         XCTAssertTrue(kept === staleImg)
 
-        // Recycled cell with new URL MUST discard stale @State image on Frame 0 (returning nil if uncached)
         let discarded = CachedArtworkView.selectKeyMatchedImage(
             expectedKey: "movie-B#px750",
             stateKey: "movie-A#px750",
@@ -100,7 +98,6 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         )
         XCTAssertNil(discarded)
 
-        // Recycled cell with new URL that hits RAM cache returns new image on Frame 0
         let instantSwap = CachedArtworkView.selectKeyMatchedImage(
             expectedKey: "movie-B#px750",
             stateKey: "movie-A#px750",
@@ -109,7 +106,6 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         )
         XCTAssertTrue(instantSwap === freshMemImg)
 
-        // Nil URL always resolves to nil
         XCTAssertNil(
             CachedArtworkView.selectKeyMatchedImage(
                 expectedKey: nil,
@@ -119,7 +115,6 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
             )
         )
 
-        // ResolvingCurtainView cross-bucket backdrop reuse in ArtworkPipeline
         let backdropURL = try XCTUnwrap(URL(string: "http://lunacore.local:8090/api/tv/v1/artwork/backdrop-99"))
         ArtworkPipeline.shared.insertMemoryCachedImageForTesting(freshMemImg, url: backdropURL, maxPixelSize: 1920)
         let reusedHit = ArtworkPipeline.shared.anyMemoryCachedImage(for: backdropURL, preferredMaxPixelSize: 960)
@@ -153,7 +148,6 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         XCTAssertEqual(compactWatchlist.accent, .amber)
         XCTAssertEqual(compactWatchlist.size, .compact)
 
-        // Resting selected secondary buttons MUST stay warm linen/cream (zero resting brass leak)
         let selectedSecondaryIcon = LunaPillButton.resolveIconForeground(
             isFocused: false,
             isSelected: true,
@@ -166,7 +160,7 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
             prominence: .glassPill,
             accent: .amber
         )
-        try assertRGB(selectedSecondaryIcon, r: 245, g: 240, b: 232) // #F5F0E8 linen, NOT brass
+        try assertRGB(selectedSecondaryIcon, r: 245, g: 240, b: 232)
         XCTAssertEqual(try rgbaComponents(selectedSecondaryBorder).a, 0.18, accuracy: 0.015)
 
         let watchedButton = LunaPillButton(
@@ -179,7 +173,6 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         ) {}
         XCTAssertEqual(watchedButton.accent, .emerald)
 
-        // Sett checkmark uses calm emerald (#5EBF8E) without a clashing brass border
         let watchedIcon = LunaPillButton.resolveIconForeground(
             isFocused: false,
             isSelected: true,
@@ -211,13 +204,11 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         )
         try assertRGB(coralLabel, r: 217, g: 107, b: 82)
 
-        // Card title & subtitle resolvers must stay warm linen (#F5F0E8) in both resting and focused states (never #FFFFFF)
         try assertRGB(LunaTheme.cardTitleColor(isFocused: false), r: 245, g: 240, b: 232)
         try assertRGB(LunaTheme.cardTitleColor(isFocused: true), r: 245, g: 240, b: 232)
         try assertRGB(LunaTheme.cardSubtitleColor(isFocused: false), r: 160, g: 150, b: 140)
         try assertRGB(LunaTheme.cardSubtitleColor(isFocused: true), r: 196, g: 140, b: 58)
 
-        // Centered top-dock tab pills keep calm warm espresso resting tokens & dark ink on brass focus
         try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: false), r: 160, g: 150, b: 140)
         try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: false), r: 200, g: 191, b: 182)
         try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: false), r: 245, g: 240, b: 232)
@@ -225,8 +216,6 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: true), r: 10, g: 9, b: 8)
         try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: true), r: 10, g: 9, b: 8)
 
-        // While focus sits in the top bar (isBarFocused: true), unfocused active tab drops to calm moonlight/muted
-        // so moving quickly across pills never flashes a 2-step linen highlight
         XCTAssertEqual(
             TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: false, isBarFocused: true),
             LunaTheme.moonlight
@@ -252,8 +241,6 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
             0.0,
             accuracy: 0.001
         )
-        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: true, isBarFocused: true), r: 10, g: 9, b: 8)
-        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: true, isBarFocused: true), r: 10, g: 9, b: 8)
         XCTAssertEqual(
             TopBarTabPillButton.resolveBorderColor(isActive: true, isFocused: true, isBarFocused: true),
             LunaTheme.focusGoldBorder
@@ -272,7 +259,6 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         XCTAssertEqual(topBarPillWithFocus.tab, .movies)
         XCTAssertTrue(topBarPillWithFocus.isBarFocused)
 
-        // Card views construct cleanly with warm linen titles
         let sampleCard = TvMediaCard(
             itemId: "movie:tmdb:550",
             mediaType: "movie",

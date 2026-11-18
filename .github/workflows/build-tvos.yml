@@ -16,60 +16,42 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: build-tvos-release
   cancel-in-progress: false
 
 jobs:
+  static-guardrails:
+    name: Static Guardrails (Permissions, LOC & Public Hygiene)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run Luna static guardrails (luna-check)
+        run: |
+          set -euo pipefail
+          bash ops/bin/luna-check
+
   test-tvos:
-    name: Static Guardrails & LunaTests
+    name: LunaTests (tvOS Simulator)
+    needs: static-guardrails
     runs-on: ${{ inputs.runner || 'xcode-27' }}
     timeout-minutes: 30
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Select newest Xcode (26.2+ / 27) with tvOS 26+ SDK
-        run: |
-          set -euo pipefail
-          echo "Installed Xcode bundles:"
-          ls -d /Applications/Xcode*.app || true
-
-          SELECTED_XCODE=""
-          for candidate in $(ls -d /Applications/Xcode*.app | sort -V -r); do
-            if [ -x "$candidate/Contents/Developer/usr/bin/xcodebuild" ]; then
-              SDK_VER=$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version -sdk appletvos SDKVersion 2>/dev/null || echo "0")
-              MAJOR="${SDK_VER%%.*}"
-              echo "  -> $candidate : appletvos SDK $SDK_VER"
-              if [ "${MAJOR:-0}" -ge 26 ]; then
-                SELECTED_XCODE="$candidate"
-                break
-              fi
-            fi
-          done
-
-          if [ -z "$SELECTED_XCODE" ]; then
-            echo "::error::No Xcode installation with appletvos SDK >= 26.0 found on runner!"
-            exit 1
-          fi
-
-          echo "Selecting $SELECTED_XCODE"
-          sudo xcode-select -s "$SELECTED_XCODE"
-          xcodebuild -version
-          swift --version
-
-      - name: Ensure XcodeGen is installed
-        run: |
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install xcodegen
-          fi
-          xcodegen --version
+      - name: Setup tvOS Xcode & XcodeGen
+        uses: ./.github/actions/setup-tvos-xcode
 
       - name: Cache SwiftPM & Compilation Cache (Simulator)
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
@@ -78,37 +60,6 @@ jobs:
           key: tvos-sim-cache-${{ runner.os }}-${{ hashFiles('Packages/AetherBridge/Package.swift', 'project.yml') }}
           restore-keys: |
             tvos-sim-cache-${{ runner.os }}-
-
-      - name: Static Guardrails (LOC, Permissions, Sideload & Public Hygiene)
-        run: |
-          set -euo pipefail
-          while IFS= read -r -d '' f; do
-            lines=$(wc -l < "$f" | tr -d ' ')
-            if [ "$lines" -gt 800 ]; then
-              echo "::error::$f has $lines lines (max 800)"
-              exit 1
-            fi
-            perm=$(stat -f '%Lp' "$f")
-            if [ "$perm" != "644" ]; then
-              echo "::error::$f has permissions $perm (expected 644)"
-              exit 1
-            fi
-          done < <(find Sources Tests Packages -name '*.swift' -print0)
-
-          if grep -rnE 'Bundle\.main\.bundleIdentifier' Sources Tests Packages; then
-            echo "::error::Found forbidden Bundle.main.bundleIdentifier reference!"
-            exit 1
-          fi
-
-          if grep -rnE '\b(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b|/volume[12]/|luna_tv_|skogsrudveien' Sources Tests Packages Config project.yml AGENTS.md README.md docs; then
-            echo "::error::Found forbidden private IP, NAS path, or token literal in repository!"
-            exit 1
-          fi
-
-          if grep -rnEi 'mediaos|media[-_]core' Sources Tests Packages Config project.yml AGENTS.md README.md docs; then
-            echo "::error::Found retired MediaOS reference!"
-            exit 1
-          fi
 
       - name: Generate Luna.xcodeproj from project.yml
         run: xcodegen generate
@@ -177,46 +128,21 @@ jobs:
 
   build-ipa:
     name: Build Unsigned Release IPA (arm64)
+    needs: static-guardrails
     runs-on: ${{ inputs.runner || 'xcode-27' }}
     timeout-minutes: 30
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - name: Select newest Xcode (26.2+ / 27) with tvOS 26+ SDK
-        run: |
-          set -euo pipefail
-          SELECTED_XCODE=""
-          for candidate in $(ls -d /Applications/Xcode*.app | sort -V -r); do
-            if [ -x "$candidate/Contents/Developer/usr/bin/xcodebuild" ]; then
-              SDK_VER=$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version -sdk appletvos SDKVersion 2>/dev/null || echo "0")
-              MAJOR="${SDK_VER%%.*}"
-              if [ "${MAJOR:-0}" -ge 26 ]; then
-                SELECTED_XCODE="$candidate"
-                break
-              fi
-            fi
-          done
-
-          if [ -z "$SELECTED_XCODE" ]; then
-            echo "::error::No Xcode installation with appletvos SDK >= 26.0 found on runner!"
-            exit 1
-          fi
-
-          sudo xcode-select -s "$SELECTED_XCODE"
-          xcodebuild -version
-
-      - name: Ensure XcodeGen is installed
-        run: |
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install xcodegen
-          fi
+      - name: Setup tvOS Xcode & XcodeGen
+        uses: ./.github/actions/setup-tvos-xcode
 
       - name: Cache SwiftPM & Compilation Cache (Release)
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
@@ -301,7 +227,7 @@ jobs:
           cat dist/Luna-unsigned.ipa.sha256
 
       - name: Upload workflow build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Luna-unsigned-ipa
           path: |
@@ -312,16 +238,18 @@ jobs:
   publish-release:
     name: Publish Rolling Latest Release
     runs-on: ubuntu-latest
-    needs: [test-tvos, build-ipa]
+    needs: [static-guardrails, test-tvos, build-ipa]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
     timeout-minutes: 10
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download built IPA artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: Luna-unsigned-ipa
           path: dist

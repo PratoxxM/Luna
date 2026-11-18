@@ -5,6 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
+SKIP_REMOTE=0
+if [[ "${1:-}" == "--local" || "${LUNA_CHECK_SKIP_REMOTE:-0}" == "1" ]]; then
+  SKIP_REMOTE=1
+fi
+
 python3 - "$PROJECT_ROOT" <<'PY'
 import pathlib
 import re
@@ -34,6 +39,10 @@ for base in swift_roots:
     if base.exists():
         swift_files.extend(sorted(base.rglob("*.swift")))
 
+RETIRED_IDENT_RE = re.compile(
+    r"\bBFF[A-Za-z0-9_]*|CatScale|\bCatCompanion[A-Za-z0-9_]*|\bV250[A-Za-z0-9_]*|[A-Za-z0-9_]*FixesTests\b|\b[A-Za-z0-9_]*ActionForTesting\b|\bnativeAudioActivatorForTesting\b"
+)
+
 for sf in swift_files:
     rel = sf.relative_to(root).as_posix()
     text = sf.read_text(encoding="utf-8", errors="replace")
@@ -42,10 +51,12 @@ for sf in swift_files:
         errors.append(f"LOC  {rel}: {lines} lines exceeds 800 LOC budget")
     if "Bundle.main.bundleIdentifier" in text:
         errors.append(f"SIDELOAD {rel}: forbidden Bundle.main.bundleIdentifier reference")
-    if re.search(r"\bBFF[A-Za-z0-9_]*", text):
-        errors.append(f"RETIRED {rel}: forbidden BFF* identifier")
+    if RETIRED_IDENT_RE.search(text):
+        errors.append(f"RETIRED {rel}: forbidden legacy/test-closure identifier")
     if "PlayerSheets" in text or "Watchlist/" in text:
         errors.append(f"RETIRED {rel}: forbidden retired Watchlist/ or PlayerSheets reference")
+
+RETIRED_NAME_RE = re.compile(r"Cat(?!alog|egory)|V250|FixesTests|^BFF|^PlayerSheets")
 
 for check_dir in [root / "Sources", root / "Tests", root / "Packages"]:
     if not check_dir.exists():
@@ -55,7 +66,7 @@ for check_dir in [root / "Sources", root / "Tests", root / "Packages"]:
             continue
         name = item.name
         rel = item.relative_to(root).as_posix()
-        if name.startswith("BFF") or name == "Watchlist" or name.startswith("PlayerSheets"):
+        if name == "Watchlist" or RETIRED_NAME_RE.search(name):
             errors.append(f"RETIRED_PATH {rel}: retired leftover file/directory")
 
 PRIVATE_IP_RE = re.compile(r"\b(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b")
@@ -106,10 +117,10 @@ if errors:
         print(f"  - {err}", file=sys.stderr)
     sys.exit(1)
 
-print(f"  [OK] Permissions, <= 800 LOC ({len(swift_files)} .swift files), sideload & public hygiene checks passed")
+print(f"  [OK] Permissions (0755/0644), <= 800 LOC ({len(swift_files)} .swift files), sideload, retired patterns & public hygiene checks passed")
 PY
 
-if command -v git >/dev/null 2>&1 && git -C "$PROJECT_ROOT" remote get-url origin >/dev/null 2>&1; then
+if [[ "$SKIP_REMOTE" -eq 0 ]] && command -v git >/dev/null 2>&1 && git -C "$PROJECT_ROOT" remote get-url origin >/dev/null 2>&1; then
   REMOTE_TAGS=""
   if command -v timeout >/dev/null 2>&1; then
     if REMOTE_TAGS="$(GIT_TERMINAL_PROMPT=0 timeout 8 git -C "$PROJECT_ROOT" ls-remote --tags origin 2>/dev/null)"; then

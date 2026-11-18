@@ -47,28 +47,21 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
             engine.stop(resetDisplayCriteria: true)
         }
 
+        let transport = MockPlayerTransport(state: .playing, playbackPhase: .playing)
         let comfort = ComfortPreferences(defaults: defaults)
-        let vm = PlayerViewModel(engine: engine, comfort: comfort)
+        let vm = PlayerViewModel(engine: engine, comfort: comfort, transport: transport)
         vm.isResolving = false
         vm.playbackPhase = .playing
-
-        var events: [String] = []
-        vm.pauseActionForTesting = {
-            events.append("pause")
-        }
-        vm.stopActionForTesting = { resetCriteria, finalTeardown in
-            events.append("stop(\(resetCriteria),\(finalTeardown))")
-        }
 
         vm.prepareForDismissal()
         XCTAssertTrue(vm.isDismissing)
         XCTAssertFalse(vm.isTeardownCompleted)
-        XCTAssertEqual(events, ["pause"])
+        XCTAssertEqual(transport.events, ["pause"])
         XCTAssertEqual(vm.playbackPhase, .playing)
 
         // Calling prepareForDismissal twice is idempotent
         vm.prepareForDismissal()
-        XCTAssertEqual(events, ["pause"])
+        XCTAssertEqual(transport.events, ["pause"])
 
         var didComplete = false
         vm.teardownAndStop {
@@ -76,12 +69,11 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
         }
         XCTAssertTrue(vm.isTeardownCompleted)
         XCTAssertTrue(didComplete)
-        // v2.4.0 default returns to 60 Hz menus immediately upon off-screen player exit
-        XCTAssertEqual(events, ["pause", "stop(true,true)"])
+        XCTAssertEqual(transport.events, ["pause", "stop(true,true)"])
 
         // Calling teardownAndStop twice is idempotent
         vm.teardownAndStop()
-        XCTAssertEqual(events, ["pause", "stop(true,true)"])
+        XCTAssertEqual(transport.events, ["pause", "stop(true,true)"])
     }
 
     @MainActor
@@ -99,17 +91,11 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
             engine.stop(resetDisplayCriteria: true)
         }
 
+        let transport1 = MockPlayerTransport(state: .playing, playbackPhase: .playing)
+        let transport2 = MockPlayerTransport(state: .playing, playbackPhase: .playing)
         let comfort = ComfortPreferences(defaults: defaults)
-        let vm1 = PlayerViewModel(engine: engine, comfort: comfort)
-        let vm2 = PlayerViewModel(engine: engine, comfort: comfort)
-
-        var vm1Pauses = 0
-        var vm1Stops = 0
-        var vm2Stops = 0
-
-        vm1.pauseActionForTesting = { vm1Pauses += 1 }
-        vm1.stopActionForTesting = { _, _ in vm1Stops += 1 }
-        vm2.stopActionForTesting = { _, _ in vm2Stops += 1 }
+        let vm1 = PlayerViewModel(engine: engine, comfort: comfort, transport: transport1)
+        let vm2 = PlayerViewModel(engine: engine, comfort: comfort, transport: transport2)
 
         let req1 = PlaybackLaunchRequest(
             itemId: "episode:tmdb:100:s1:e1",
@@ -132,8 +118,7 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
         XCTAssertTrue(PlayerAudioSessionCoordinator.shared.isCurrentEngineOwner(vm1.engineOwnerToken))
 
         vm1.prepareForDismissal()
-        XCTAssertEqual(vm1Pauses, 1)
-        XCTAssertEqual(vm1Stops, 0)
+        XCTAssertEqual(transport1.events, ["pause"])
 
         vm2.start(request: req2, client: nil)
         XCTAssertFalse(PlayerAudioSessionCoordinator.shared.isCurrentEngineOwner(vm1.engineOwnerToken))
@@ -141,11 +126,11 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
 
         vm1.teardownAndStop()
         XCTAssertTrue(vm1.isTeardownCompleted)
-        XCTAssertEqual(vm1Stops, 0)
+        XCTAssertEqual(transport1.events, ["pause"])
 
         vm2.teardownAndStop()
         XCTAssertTrue(vm2.isTeardownCompleted)
-        XCTAssertEqual(vm2Stops, 1)
+        XCTAssertEqual(transport2.events, ["stop(true,true)"])
     }
 
     @MainActor
@@ -157,12 +142,10 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        // Simulate existing paired Apple TV upgrading from v2.3.x where keep_display_mode_in_menu was true
         defaults.set(true, forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey)
         XCTAssertFalse(defaults.bool(forKey: SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key))
 
         let comfort = ComfortPreferences(defaults: defaults)
-        // Settings toggle ($comfort.keepDisplayModeInMenuAfterPlayback) defaults to Av (false) with 60 Hz & 24 Hz explanation
         XCTAssertFalse(comfort.keepDisplayModeInMenuAfterPlayback)
         XCTAssertTrue(comfort.returnTo60HzInMenuAfterPlayback)
         XCTAssertTrue(defaults.bool(forKey: SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key))
@@ -170,23 +153,16 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
         XCTAssertTrue(SettingsView.keepDisplayModeExplanationText.contains("60 Hz"))
         XCTAssertTrue(SettingsView.keepDisplayModeExplanationText.contains("24 Hz"))
 
-        // By default after v2.4.0 migration, exiting the player immediately resets display criteria to 60 Hz
         let engine = try AetherEngine()
         defer {
             PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
             engine.stop(resetDisplayCriteria: true)
         }
-        let defaultVm = PlayerViewModel(engine: engine, comfort: comfort)
-        var defaultStops: [(Bool, Bool)] = []
-        defaultVm.stopActionForTesting = { resetCriteria, finalTeardown in
-            defaultStops.append((resetCriteria, finalTeardown))
-        }
+        let defaultTransport = MockPlayerTransport()
+        let defaultVm = PlayerViewModel(engine: engine, comfort: comfort, transport: defaultTransport)
         defaultVm.teardownAndStop()
-        XCTAssertEqual(defaultStops.count, 1)
-        XCTAssertEqual(defaultStops.first?.0, true)
-        XCTAssertEqual(defaultStops.first?.1, true)
+        XCTAssertEqual(defaultTransport.events, ["stop(true,true)"])
 
-        // Per-TV opt-in ("På" in Settings -> hold film's display mode in menu) persists across restarts
         var syncCalls = 0
         comfort.onSyncRequested = { _ in syncCalls += 1 }
         comfort.keepDisplayModeInMenuAfterPlayback = true
@@ -257,7 +233,6 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
             )
         )
 
-        // When opted out on a specific TV, held display criteria survives detail disappear and flushes on background
         let coordinator = PlayerAudioSessionCoordinator()
         var resetCount = 0
         coordinator.holdDisplayCriteriaUntilBackground(
@@ -277,14 +252,9 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
         coordinator.flushDeferredDisplayCriteriaResetIfIdle()
         XCTAssertEqual(resetCount, 1)
 
-        let optOutVm = PlayerViewModel(engine: engine, comfort: reloaded)
-        var optOutStops: [(Bool, Bool)] = []
-        optOutVm.stopActionForTesting = { resetCriteria, finalTeardown in
-            optOutStops.append((resetCriteria, finalTeardown))
-        }
+        let optOutTransport = MockPlayerTransport()
+        let optOutVm = PlayerViewModel(engine: engine, comfort: reloaded, transport: optOutTransport)
         optOutVm.teardownAndStop()
-        XCTAssertEqual(optOutStops.count, 1)
-        XCTAssertEqual(optOutStops.first?.0, false)
-        XCTAssertEqual(optOutStops.first?.1, true)
+        XCTAssertEqual(optOutTransport.events, ["stop(false,true)"])
     }
 }

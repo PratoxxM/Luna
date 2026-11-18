@@ -67,4 +67,59 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         let invalidCharset = "!EV6nWB2yk8pyo0adR*.7kCMdnj"
         XCTAssertNil(BlurHashDecoder.decode(invalidCharset, width: 32, height: 18, punch: 1.0))
     }
+
+    func testBlurHashDecodeAsyncDeduplicatesConcurrentCallersAndPreservesActiveWaiterOnCancel() async throws {
+        let sampleHash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj"
+        BlurHashDecoder.clearCache()
+        BlurHashDecoder.resetMetrics()
+        defer { BlurHashDecoder.clearCache() }
+
+        let invalid = await BlurHashDecoder.decodeAsync("bad", width: 64, height: 48)
+        XCTAssertNil(invalid)
+        let zeroDim = await BlurHashDecoder.decodeAsync(sampleHash, width: 0, height: 48)
+        XCTAssertNil(zeroDim)
+
+        let results = await withTaskGroup(of: CGImage?.self) { group in
+            for _ in 0..<12 {
+                group.addTask {
+                    await BlurHashDecoder.decodeAsync(sampleHash, width: 64, height: 48, punch: 1.0)
+                }
+            }
+            var collected: [CGImage] = []
+            for await item in group {
+                if let item {
+                    collected.append(item)
+                }
+            }
+            return collected
+        }
+
+        XCTAssertEqual(results.count, 12)
+        let first = try XCTUnwrap(results.first)
+        XCTAssertEqual(first.width, 64)
+        XCTAssertEqual(first.height, 48)
+        for image in results {
+            XCTAssertTrue(image === first, "Concurrent BlurHash callers should share one decoded CGImage")
+        }
+        let metrics = BlurHashDecoder.metricsSnapshot()
+        XCTAssertEqual(metrics.actualDecodes, 1)
+        XCTAssertEqual(metrics.coalescedWaiters + metrics.cacheHits, 11)
+
+        // Cancelling one waiter while a peer is active must still deliver the decoded image to the peer.
+        BlurHashDecoder.clearCache()
+        BlurHashDecoder.resetMetrics()
+        let cancelledTask = Task {
+            await BlurHashDecoder.decodeAsync(sampleHash, width: 48, height: 36, punch: 1.0)
+        }
+        let activeTask = Task {
+            await BlurHashDecoder.decodeAsync(sampleHash, width: 48, height: 36, punch: 1.0)
+        }
+        cancelledTask.cancel()
+        _ = await cancelledTask.value
+        let activeImage = await activeTask.value
+        XCTAssertNotNil(activeImage)
+        XCTAssertEqual(activeImage?.width, 48)
+        XCTAssertEqual(activeImage?.height, 36)
+        XCTAssertEqual(BlurHashDecoder.metricsSnapshot().actualDecodes, 1)
+    }
 }

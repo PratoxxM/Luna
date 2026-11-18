@@ -1,0 +1,43 @@
+name: "Setup tvOS Xcode and XcodeGen"
+description: "Selects Xcode 26.2+/27 with tvOS 26+ SDK and ensures XcodeGen is installed."
+runs:
+  using: "composite"
+  steps:
+    - name: Select newest Xcode (26.2+ / 27) with tvOS 26+ SDK
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "Installed Xcode bundles:"
+        ls -d /Applications/Xcode*.app || true
+
+        SELECTED_XCODE=""
+        for candidate in $(ls -d /Applications/Xcode*.app | sort -V -r); do
+          if [ -x "$candidate/Contents/Developer/usr/bin/xcodebuild" ]; then
+            SDK_VER=$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version -sdk appletvos SDKVersion 2>/dev/null || echo "0")
+            MAJOR="${SDK_VER%%.*}"
+            echo "  -> $candidate : appletvos SDK $SDK_VER"
+            if [ "${MAJOR:-0}" -ge 26 ]; then
+              SELECTED_XCODE="$candidate"
+              break
+            fi
+          fi
+        done
+
+        if [ -z "$SELECTED_XCODE" ]; then
+          echo "::error::No Xcode installation with appletvos SDK >= 26.0 found on runner!"
+          exit 1
+        fi
+
+        echo "Selecting $SELECTED_XCODE"
+        sudo xcode-select -s "$SELECTED_XCODE"
+        xcodebuild -version
+        swift --version
+
+    - name: Ensure XcodeGen is installed
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! command -v xcodegen >/dev/null 2>&1; then
+          HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install xcodegen
+        fi
+        xcodegen --version

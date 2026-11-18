@@ -198,11 +198,6 @@ final class PlayerAudioSessionCoordinator {
         }
     }
 
-    func flushPendingDeferredResetIfEligibleForTesting() {
-        guard deferredResetTask != nil || isHoldingDisplayCriteriaReset else { return }
-        executePendingResetIfEligible()
-    }
-
     private func executePendingResetIfEligible() {
         let shouldExecute = pendingResetCheck
         let action = pendingResetAction

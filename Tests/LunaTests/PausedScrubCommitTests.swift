@@ -1,41 +1,10 @@
 import AetherBridge
 import Foundation
-import os
+import Synchronization
 import XCTest
 @testable import Luna
 
 final class PausedScrubCommitTests: XCTestCase {
-    private actor StepGate {
-        private var startWaiter: CheckedContinuation<Void, Never>?
-        private var releaseGate: CheckedContinuation<Void, Never>?
-        private var started = false
-
-        func reset() {
-            startWaiter = nil
-            releaseGate = nil
-            started = false
-        }
-
-        func wait(label: String, log: OSAllocatedUnfairLock<[String]>) async {
-            log.withLock { $0.append("\(label)_start") }
-            started = true
-            startWaiter?.resume()
-            startWaiter = nil
-            await withCheckedContinuation { releaseGate = $0 }
-            log.withLock { $0.append("\(label)_end") }
-        }
-
-        func waitUntilStarted() async {
-            if started { return }
-            await withCheckedContinuation { startWaiter = $0 }
-        }
-
-        func finish() {
-            releaseGate?.resume()
-            releaseGate = nil
-        }
-    }
-
     @MainActor
     func testCommitTouchScrubOrdersSeekThenNativeAudioActivationThenPlayAndRespectsCancellation() async throws {
         let suite = "luna.test.scrubcommit.\(UUID().uuidString)"
@@ -51,22 +20,29 @@ final class PausedScrubCommitTests: XCTestCase {
             engine.stop(resetDisplayCriteria: true)
         }
 
-        let log = OSAllocatedUnfairLock(initialState: [String]())
-        let seekGate = StepGate()
-        let audioGate = StepGate()
+        let log = Mutex<[String]>([])
+        let seekGate = TestStepGate()
+        let audioGate = TestStepGate()
 
-        let vm = PlayerViewModel(engine: engine, comfort: ComfortPreferences(defaults: defaults))
-        vm.isResolving = false
-        vm.durationSeconds = 180
-        vm.scrubSeekActionForTesting = { target in
+        let transport = MockPlayerTransport(state: .paused, playbackPhase: .paused)
+        transport.onSeek = { target, _ in
             await seekGate.wait(label: "seek(\(Int(target)))", log: log)
         }
-        vm.nativeAudioActivatorForTesting = { _ in
-            await audioGate.wait(label: "activate", log: log)
-        }
-        vm.resumePlayActionForTesting = {
+        transport.onPlay = {
             log.withLock { $0.append("play") }
         }
+        let activator = MockNativeAudioActivator { _ in
+            await audioGate.wait(label: "activate", log: log)
+        }
+
+        let vm = PlayerViewModel(
+            engine: engine,
+            comfort: ComfortPreferences(defaults: defaults),
+            transport: transport,
+            audioActivator: activator
+        )
+        vm.isResolving = false
+        vm.durationSeconds = 180
 
         // 1. Happy path: seek -> native audio activation -> play
         vm.needsNativeAudioActivationAfterPausedRestore = true
@@ -95,6 +71,8 @@ final class PausedScrubCommitTests: XCTestCase {
         log.withLock { $0.removeAll() }
         await seekGate.reset()
         await audioGate.reset()
+        transport.state = .paused
+        transport.playbackPhase = .paused
         vm.needsNativeAudioActivationAfterPausedRestore = true
         vm.beginTouchScrub()
         vm.stepTouchScrub(by: 15)

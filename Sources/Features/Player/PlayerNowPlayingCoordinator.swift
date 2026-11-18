@@ -3,19 +3,14 @@ import MediaPlayer
 import UIKit
 import AetherBridge
 
-private struct SendableCGImageBox: @unchecked Sendable {
-    let cgImage: CGImage
-}
-
 /// Top-level `nonisolated` factory so `MPMediaItemArtwork`'s Objective-C `requestHandler`
 /// never inherits dynamic `@MainActor` isolation under Swift 6 (`SE-0423`) when `MediaPlayer`
 /// requests artwork bitmaps on background `MediaRemote` queues.
 enum NowPlayingArtworkFactory {
     static func makeArtwork(cgImage: CGImage) -> MPMediaItemArtwork {
         let size = CGSize(width: max(1, cgImage.width), height: max(1, cgImage.height))
-        let box = SendableCGImageBox(cgImage: cgImage)
         return MPMediaItemArtwork(boundsSize: size) { @Sendable _ in
-            UIImage(cgImage: box.cgImage)
+            UIImage(cgImage: cgImage)
         }
     }
 }

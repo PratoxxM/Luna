@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 public struct CachedHomeSnapshot: Sendable {
     public let etag: String?
@@ -14,6 +15,9 @@ private struct HomeCacheMetadata: Codable, Sendable {
 private actor DiskSWRStorageActor {
     static let shared = DiskSWRStorageActor()
 
+    private let decoder = JSONDecoder()
+    private let encoder = JSONEncoder()
+
     private nonisolated var swrDirectoryURL: URL {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -25,7 +29,6 @@ private actor DiskSWRStorageActor {
     func loadFromDisk(primaryBaseName: String, legacyBaseName: String) -> CachedHomeSnapshot? {
         let dir = swrDirectoryURL
         let candidates = primaryBaseName == legacyBaseName ? [primaryBaseName] : [primaryBaseName, legacyBaseName]
-        let decoder = JSONDecoder()
 
         for baseName in candidates {
             let payloadURL = dir.appendingPathComponent("\(baseName).json")
@@ -59,7 +62,6 @@ private actor DiskSWRStorageActor {
 
         try? rawPayloadData.write(to: payloadURL, options: .atomic)
         let meta = HomeCacheMetadata(etag: etag, savedAt: Date())
-        let encoder = JSONEncoder()
         if let encodedMeta = try? encoder.encode(meta) {
             try? encodedMeta.write(to: metaURL, options: .atomic)
         }
@@ -94,8 +96,7 @@ private actor DiskSWRStorageActor {
 /// so free Apple ID re-signing via ATVLoadly keeps cache paths stable across renewals.
 /// All disk I/O runs inside `DiskSWRStorageActor`; `@MainActor` reads only from the RAM cache.
 public enum DiskSWRStore {
-    private static let lock = NSLock()
-    private nonisolated(unsafe) static var memoryCache: [String: CachedHomeSnapshot] = [:]
+    private static let memoryCache = Mutex<[String: CachedHomeSnapshot]>([:])
 
     private static func sanitize(_ raw: String) -> String {
         String(raw.lowercased().map { ch in
@@ -122,13 +123,11 @@ public enum DiskSWRStore {
         hardwareProfile: String
     ) -> CachedHomeSnapshot? {
         let key = fileBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
-        return lock.withLock { memoryCache[key] }
+        return memoryCache.withLock { $0[key] }
     }
 
     private static func storeMemorySnapshot(_ snap: CachedHomeSnapshot, forKey key: String) {
-        lock.withLock {
-            memoryCache[key] = snap
-        }
+        memoryCache.withLock { $0[key] = snap }
     }
 
     public static func loadHomeAsync(
@@ -166,7 +165,7 @@ public enum DiskSWRStore {
         }
         Task.detached(priority: .utility) {
             if decodedPayload == nil,
-               let decoded = try? JSONDecoder().decode(TvHomeResponse.self, from: rawPayloadData) {
+               let decoded = try? LunaCoreClient.decodeJSON(TvHomeResponse.self, from: rawPayloadData) {
                 let snap = CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: decoded)
                 storeMemorySnapshot(snap, forKey: primaryKey)
             }
@@ -183,9 +182,7 @@ public enum DiskSWRStore {
     }
 
     public static func clearMemory() {
-        lock.withLock {
-            memoryCache.removeAll()
-        }
+        memoryCache.withLock { $0.removeAll() }
     }
 
     public static func clearAllAsync() async {

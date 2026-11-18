@@ -45,24 +45,11 @@ public struct PlaybackResolveSocket: Sendable {
                 while !Task.isCancelled {
                     do {
                         let msg = try await wsTask.receive()
-                        let data: Data
-                        switch msg {
-                        case .string(let text):
-                            data = Data(text.utf8)
-                        case .data(let raw):
-                            data = raw
-                        @unknown default:
+                        guard let event = try Self.parseMessage(msg) else {
                             continue
                         }
-                        let event: TvResolveSocketEvent
-                        do {
-                            event = try JSONDecoder().decode(TvResolveSocketEvent.self, from: data)
-                        } catch {
-                            continuation.finish(throwing: LunaCoreError.decodingFailed(error.localizedDescription))
-                            return
-                        }
                         continuation.yield(event)
-                        if event.type == "resolve.ready" || event.type == "resolve.failed" {
+                        if Self.isTerminalEvent(event) {
                             continuation.finish()
                             return
                         }
@@ -82,12 +69,35 @@ public struct PlaybackResolveSocket: Sendable {
         }
     }
 
-    private static func makeWebSocketURL(baseURL: URL, wsPath: String) -> URL? {
-        if wsPath.hasPrefix("ws://") || wsPath.hasPrefix("wss://") {
-            return URL(string: wsPath)
+    internal static func parseMessage(_ message: URLSessionWebSocketTask.Message) throws -> TvResolveSocketEvent? {
+        let data: Data
+        switch message {
+        case .string(let text):
+            data = Data(text.utf8)
+        case .data(let raw):
+            data = raw
+        @unknown default:
+            return nil
+        }
+        do {
+            return try LunaCoreClient.decodeJSON(TvResolveSocketEvent.self, from: data)
+        } catch {
+            throw LunaCoreError.decodingFailed(error.localizedDescription)
+        }
+    }
+
+    internal static func isTerminalEvent(_ event: TvResolveSocketEvent) -> Bool {
+        event.type == "resolve.ready" || event.type == "resolve.failed"
+    }
+
+    internal static func makeWebSocketURL(baseURL: URL, wsPath: String) -> URL? {
+        let trimmed = wsPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.hasPrefix("ws://") || trimmed.hasPrefix("wss://") {
+            return URL(string: trimmed)
         }
         let cleanBase = baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let cleanRel = wsPath.hasPrefix("/") ? wsPath : "/\(wsPath)"
+        let cleanRel = trimmed.hasPrefix("/") ? trimmed : "/\(trimmed)"
         guard var comps = URLComponents(string: "\(cleanBase)\(cleanRel)") else {
             return nil
         }

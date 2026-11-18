@@ -5,7 +5,7 @@ import UIKit
 import XCTest
 @testable import Luna
 
-final class V250NavigationSettingsAndDeleteTests: XCTestCase {
+final class NavigationSettingsAndDeleteTests: XCTestCase {
     func testSettingsCategoriesOrderAndPreservedDisplayToggleStrings() {
         XCTAssertEqual(
             SettingsCategory.allCases.map(\.title),
@@ -322,7 +322,6 @@ final class V250NavigationSettingsAndDeleteTests: XCTestCase {
         window.layoutIfNeeded()
         try? await Task.sleep(nanoseconds: 40_000_000)
 
-        // Verify compact segmented pill rows in Settings fit well inside the 940 pt inner panel width
         let speakerRowHost = UIHostingController(
             rootView: HStack(spacing: 8) {
                 ForEach(SpeakerLayoutOverrideMode.allCases) { mode in
@@ -383,7 +382,6 @@ final class V250NavigationSettingsAndDeleteTests: XCTestCase {
             window.rootViewController = nil
         }
 
-        // 1. Verify UINavigationController root + pushed views (including simulated tvOS overscan safe areas)
         let rootView = HomeView()
             .environmentObject(store)
             .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: false))
@@ -426,7 +424,6 @@ final class V250NavigationSettingsAndDeleteTests: XCTestCase {
             window.layoutIfNeeded()
         }
 
-        // 2. Verify live MainNavigationShell mounts BackdropInstallerViewController inside TabView/NavigationStack
         let engine = try LunaApp.makeSharedEngine()
         defer {
             PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()

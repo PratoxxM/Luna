@@ -5,15 +5,6 @@ import SwiftUI
 import Combine
 import AetherBridge
 
-/// Isolated high-frequency scrubbing state so touch-surface updates during
-/// 60–120 Hz Siri Remote panning only invalidate `TimelineScrubberLeafView`.
-@MainActor
-final class PlayerScrubState: ObservableObject {
-    @Published var targetSeconds: Double = 0
-    @Published var originSeconds: Double = 0
-    @Published var previewImage: CGImage?
-}
-
 @MainActor
 final class PlayerViewModel: ObservableObject {
     // Resolve & First-Frame Reveal State
@@ -89,6 +80,8 @@ final class PlayerViewModel: ObservableObject {
 
     let engine: AetherEngine
     let comfort: ComfortPreferences
+    let transport: any PlayerTransportControlling
+    let audioActivator: any NativeAudioActivating
 
     var wasPlayingBeforeScrub: Bool = false
     var pendingScrubPreviewTarget: Double?
@@ -120,22 +113,24 @@ final class PlayerViewModel: ObservableObject {
     var engineOwnerToken: UInt64 = 0
     var isDismissing: Bool = false
     var pendingStopSnapshot: PendingStopSnapshot?
-    private var lastObservedPhase: PlaybackPhase = .idle
+    var lastObservedPhase: PlaybackPhase = .idle
     var isForegroundActive: Bool = true
     var lastForegroundPlaybackWasPlaying: Bool = false
     var userDesiredPlayingDuringRestore: Bool?
     var needsNativeAudioActivationAfterPausedRestore: Bool = false
-    var nativeAudioActivatorForTesting: (@Sendable (VideoRoute) async -> Void)?
-    var resumePlayActionForTesting: (@MainActor () -> Void)?
-    var scrubSeekActionForTesting: (@MainActor (Double) async -> Void)?
-    var pauseActionForTesting: (@MainActor () -> Void)?
-    var stopActionForTesting: (@MainActor (_ resetDisplayCriteria: Bool, _ finalTeardown: Bool) -> Void)?
     var lastReportedServerState: String?
     var onUnauthorized: (() -> Void)?
 
-    init(engine: AetherEngine, comfort: ComfortPreferences) {
+    init(
+        engine: AetherEngine,
+        comfort: ComfortPreferences,
+        transport: (any PlayerTransportControlling)? = nil,
+        audioActivator: any NativeAudioActivating = DefaultNativeAudioActivator()
+    ) {
         self.engine = engine
         self.comfort = comfort
+        self.transport = transport ?? AetherEngineTransport(engine: engine)
+        self.audioActivator = audioActivator
         self.audioDelayMs = comfort.audioDelayMs
         bindEnginePublishers()
     }
@@ -149,7 +144,7 @@ final class PlayerViewModel: ObservableObject {
         if isSwitchingSource {
             return true
         }
-        if isResolving || isRestoringFromBackground || engine.needsForegroundVideoRestore {
+        if isResolving || isRestoringFromBackground || transport.needsForegroundVideoRestore {
             return false
         }
         if firstFrameFallbackUnlocked {
@@ -250,7 +245,7 @@ final class PlayerViewModel: ObservableObject {
         firstFrameFallbackUnlocked = false
 
         let prevSessionId = current.sessionId
-        let finalPos = max(0, engine.currentTime)
+        let finalPos = max(0, transport.currentTime)
         let finalDur = max(0, effectiveDurationSeconds)
         let inCredits = chapters.contains { $0.kind == .credits && finalPos >= $0.startSeconds }
         let isCompleted = playbackPhase == .ended || inCredits || (finalDur > 0 && finalPos / finalDur >= 0.75)
@@ -288,14 +283,7 @@ final class PlayerViewModel: ObservableObject {
 
     func activateNativeAudioForPendingResumeIfNeeded() async {
         guard needsNativeAudioActivationAfterPausedRestore else { return }
-        let videoRoute = engine.videoRoute
-        if let customActivator = nativeAudioActivatorForTesting {
-            await customActivator(videoRoute)
-        } else {
-            await PlayerAudioSessionCoordinator.shared.activateNativePlaybackIfNeeded(
-                videoRoute: videoRoute
-            )
-        }
+        await audioActivator.activateNativePlaybackIfNeeded(videoRoute: transport.videoRoute)
     }
 
     private func beginPausedRestoreResumeWithNativeAudioActivation() {
@@ -305,7 +293,7 @@ final class PlayerViewModel: ObservableObject {
         let resumeToken = pausedRestoreResumeToken
         let expectedSessionId = activeSession?.sessionId
 
-        if isForegroundActive && !engine.needsForegroundVideoRestore {
+        if isForegroundActive && !transport.needsForegroundVideoRestore {
             lastForegroundPlaybackWasPlaying = true
         }
 
@@ -324,23 +312,19 @@ final class PlayerViewModel: ObservableObject {
                   !self.isRestoringFromBackground,
                   !self.isScrubbing,
                   self.isForegroundActive,
-                  !self.engine.needsForegroundVideoRestore,
+                  !self.transport.needsForegroundVideoRestore,
                   self.activeSession?.sessionId == expectedSessionId else {
                 return
             }
             self.needsNativeAudioActivationAfterPausedRestore = false
-            if let customPlay = self.resumePlayActionForTesting {
-                customPlay()
-            } else if self.engine.state == .paused || self.engine.state == .loading {
-                self.engine.play()
+            if self.transport.state == .paused || self.transport.state == .loading {
+                self.transport.play()
             }
-            if self.isForegroundActive && !self.engine.needsForegroundVideoRestore {
-                self.lastForegroundPlaybackWasPlaying = self.resumePlayActionForTesting != nil
-                    ? true
-                    : Self.isActiveTransportIntent(
-                        playbackPhase: self.engine.playbackPhase,
-                        engineState: self.engine.state
-                    )
+            if self.isForegroundActive && !self.transport.needsForegroundVideoRestore {
+                self.lastForegroundPlaybackWasPlaying = Self.isActiveTransportIntent(
+                    playbackPhase: self.transport.playbackPhase,
+                    engineState: self.transport.state
+                )
             }
         }
     }
@@ -356,14 +340,14 @@ final class PlayerViewModel: ObservableObject {
         if pausedRestoreResumeTask != nil || scrubCommitTask != nil {
             cancelPendingPausedRestoreResume()
             cancelPendingScrubCommit()
-            if isForegroundActive && !engine.needsForegroundVideoRestore {
+            if isForegroundActive && !transport.needsForegroundVideoRestore {
                 lastForegroundPlaybackWasPlaying = false
             }
             return
         }
         let wasPlaying = Self.isActiveTransportIntent(
-            playbackPhase: engine.playbackPhase,
-            engineState: engine.state
+            playbackPhase: transport.playbackPhase,
+            engineState: transport.state
         )
         if Self.shouldActivateNativeAudioBeforePlayOnResume(
             wasPlaying: wasPlaying,
@@ -372,11 +356,11 @@ final class PlayerViewModel: ObservableObject {
             beginPausedRestoreResumeWithNativeAudioActivation()
             return
         }
-        engine.togglePlayPause()
-        if isForegroundActive && !engine.needsForegroundVideoRestore {
+        transport.togglePlayPause()
+        if isForegroundActive && !transport.needsForegroundVideoRestore {
             lastForegroundPlaybackWasPlaying = Self.isActiveTransportIntent(
-                playbackPhase: engine.playbackPhase,
-                engineState: engine.state
+                playbackPhase: transport.playbackPhase,
+                engineState: transport.state
             )
         }
     }
@@ -416,7 +400,7 @@ final class PlayerViewModel: ObservableObject {
     func coalesceRelativeSeek(delta: Double) {
         guard !isResolving else { return }
         let dur = effectiveDurationSeconds
-        let base = coalescedSeekPreviewTarget ?? max(0, engine.currentTime)
+        let base = coalescedSeekPreviewTarget ?? max(0, transport.currentTime)
         let accumulatedDelta = coalescedSeekDelta + delta
         let rawTarget = max(0, base + delta)
         let clampedTarget = dur > 1 ? min(dur - 0.5, rawTarget) : rawTarget
@@ -428,8 +412,8 @@ final class PlayerViewModel: ObservableObject {
         coalescedSeekTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 220_000_000)
             guard !Task.isCancelled, let self else { return }
-            let finalTarget = self.coalescedSeekPreviewTarget ?? max(0, self.engine.currentTime)
-            await self.engine.seek(to: finalTarget, exact: false)
+            let finalTarget = self.coalescedSeekPreviewTarget ?? max(0, self.transport.currentTime)
+            await self.transport.seek(to: finalTarget, exact: false)
             try? await Task.sleep(nanoseconds: 450_000_000)
             guard !Task.isCancelled else { return }
             self.coalescedSeekDelta = 0
@@ -438,8 +422,8 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func seekToChapter(_ chapter: PlaybackChapter) {
-        Task { @MainActor in
-            await engine.seek(to: max(0, chapter.startSeconds), exact: true)
+        Task { @MainActor [weak self] in
+            await self?.transport.seek(to: max(0, chapter.startSeconds), exact: true)
         }
     }
 
@@ -447,113 +431,6 @@ final class PlayerViewModel: ObservableObject {
         guard !chapters.isEmpty, timeSeconds.isFinite else { return nil }
         return chapters.first { timeSeconds >= $0.startSeconds && timeSeconds < $0.endSeconds }
             ?? chapters.last { timeSeconds >= $0.startSeconds }
-    }
-
-    // MARK: - Audio & Subtitle Controls
-
-    func selectAudioTrack(_ index: Int) {
-        engine.selectAudioTrack(index: index)
-        activeAudioTrackIndex = index
-        if comfort.smartNordicSubtitleRule && !userManuallySelectedSubtitle {
-            smartRuleTask?.cancel()
-            smartRuleTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 120_000_000)
-                guard !Task.isCancelled else { return }
-                self?.applySmartSubtitleRule()
-            }
-        }
-    }
-
-    func adjustAudioDelay(byMs deltaMs: Int) {
-        applyAudioDelayMs(audioDelayMs + deltaMs, debounceEngineCommit: true)
-    }
-
-    func resetAudioDelay() {
-        applyAudioDelayMs(0, debounceEngineCommit: false)
-    }
-
-    private func applyAudioDelayMs(_ targetMs: Int, debounceEngineCommit: Bool) {
-        let clamped = ComfortPreferences.clampAudioDelayMs(targetMs)
-        audioDelayMs = clamped
-        comfort.audioDelayMs = clamped
-        audioDelayCommitTask?.cancel()
-        audioDelayCommitTask = nil
-
-        guard !isResolving && !isSwitchingSource else {
-            return
-        }
-
-        let targetSeconds = Double(clamped) / 1000.0
-        if !debounceEngineCommit {
-            engine.setAudioDelay(targetSeconds)
-            return
-        }
-
-        audioDelayCommitTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            guard !Task.isCancelled, let self, !self.isResolving, !self.isSwitchingSource else { return }
-            self.engine.setAudioDelay(Double(self.audioDelayMs) / 1000.0)
-            self.audioDelayCommitTask = nil
-        }
-    }
-
-    func setAudioEnhancement(_ mode: AudioEnhancementMode) {
-        audioEnhancement = mode
-        engine.setAudioShaping(comfort.buildAudioShaping(enhancement: mode))
-    }
-
-    func selectSubtitleManually(_ index: Int) {
-        userManuallySelectedSubtitle = true
-        engine.selectSubtitleTrack(index: index)
-        activeSubtitleTrackIndex = index
-    }
-
-    func clearSubtitleManually() {
-        userManuallySelectedSubtitle = true
-        engine.clearSubtitle()
-        activeSubtitleTrackIndex = nil
-    }
-
-    func adjustSubtitleDelay(by delta: Double) {
-        let rounded = ((subtitleDelaySeconds + delta) * 10).rounded() / 10
-        let updated = rounded.clamped(to: -10.0...10.0)
-        engine.setSoftwareSubtitleDelay(updated)
-        subtitleDelaySeconds = engine.softwareSubtitleDelaySeconds
-    }
-
-    func resetSubtitleDelay() {
-        engine.setSoftwareSubtitleDelay(0)
-        subtitleDelaySeconds = engine.softwareSubtitleDelaySeconds
-    }
-
-    func applySmartSubtitleRule() {
-        guard comfort.smartNordicSubtitleRule, !userManuallySelectedSubtitle else { return }
-        let liveAudioTracks = engine.audioTracks
-        let liveAudioIdx = engine.activeAudioTrackIndex
-        let liveSubtitleTracks = engine.subtitleTracks
-        let liveSubIdx = engine.activeSubtitleTrackIndex
-
-        audioTracks = liveAudioTracks
-        activeAudioTrackIndex = liveAudioIdx
-        subtitleTracks = liveSubtitleTracks
-        activeSubtitleTrackIndex = liveSubIdx
-
-        let activeAudio = liveAudioTracks.first(where: { $0.id == liveAudioIdx }) ?? liveAudioTracks.first
-        let decision = SmartTrackRuleEngine.evaluate(activeAudio: activeAudio, subtitleTracks: liveSubtitleTracks)
-        switch decision {
-        case .clearSubtitles:
-            if liveSubIdx != nil {
-                engine.clearSubtitle()
-                activeSubtitleTrackIndex = nil
-            }
-        case .selectTrack(let trackID):
-            if liveSubIdx != trackID {
-                engine.selectSubtitleTrack(index: trackID)
-                activeSubtitleTrackIndex = trackID
-            }
-        case .keepCurrent:
-            break
-        }
     }
 
     func teardownAndStop(onComplete: (@MainActor @Sendable () -> Void)? = nil) {
@@ -573,11 +450,7 @@ final class PlayerViewModel: ObservableObject {
                 keepDisplayModeInMenuAfterPlayback: comfort.keepDisplayModeInMenuAfterPlayback,
                 isForegroundActive: isForegroundActive
             )
-            if let stopOverride = stopActionForTesting {
-                stopOverride(resetOnExit, true)
-            } else {
-                engine.stop(resetDisplayCriteria: resetOnExit, finalTeardown: true)
-            }
+            transport.stop(resetDisplayCriteria: resetOnExit, finalTeardown: true)
             if resetOnExit {
                 PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
             } else {
@@ -620,128 +493,6 @@ final class PlayerViewModel: ObservableObject {
         )
     }
 
-    private func bindEnginePublishers() {
-        engine.$playbackPhase
-            .sink { [weak self] phase in
-                guard let self else { return }
-                let previousPhase = self.lastObservedPhase
-                self.lastObservedPhase = phase
-                self.playbackPhase = phase
-                self.updateIdleTimer(for: phase)
-                if self.isForegroundActive,
-                   !self.isRestoringFromBackground,
-                   !self.isResolving,
-                   !self.isSwitchingSource,
-                   !self.engine.needsForegroundVideoRestore {
-                    self.lastForegroundPlaybackWasPlaying = Self.isActiveTransportIntent(
-                        playbackPhase: phase,
-                        engineState: self.engine.state
-                    )
-                }
-                if case .error(let errMsg) = phase {
-                    guard !self.isRestoringFromBackground else { return }
-                    self.heartbeatTask?.cancel()
-                    self.heartbeatTask = nil
-                    self.isResolving = false
-                    self.isSwitchingSource = false
-                    if self.fatalError == nil {
-                        let cleaned = errMsg.trimmingCharacters(in: .whitespacesAndNewlines)
-                        self.fatalError = cleaned.isEmpty ? "Avspillingsfeil i strømmen." : cleaned
-                    }
-                    Task { @MainActor [weak self] in
-                        await self?.sendHeartbeatOnce(overrideState: "stopped")
-                    }
-                } else if phase == .paused || phase == .ended {
-                    guard !self.isRestoringFromBackground, !self.isDismissing else { return }
-                    Task { @MainActor [weak self] in
-                        await self?.sendHeartbeatOnce(overrideState: phase == .ended ? "stopped" : "paused", completed: phase == .ended)
-                    }
-                } else if phase == .playing, previousPhase != .playing {
-                    guard !self.isRestoringFromBackground else { return }
-                    if self.needsNativeAudioActivationAfterPausedRestore {
-                        self.needsNativeAudioActivationAfterPausedRestore = false
-                        let videoRoute = self.engine.videoRoute
-                        Task {
-                            await PlayerAudioSessionCoordinator.shared.activateNativePlaybackIfNeeded(
-                                videoRoute: videoRoute
-                            )
-                        }
-                    }
-                    if self.lastReportedServerState != nil,
-                       self.lastReportedServerState != "playing" {
-                        Task { @MainActor [weak self] in
-                            await self?.sendHeartbeatOnce(overrideState: "playing")
-                        }
-                    }
-                }
-            }
-            .store(in: &cancellables)
-
-        engine.$hasFirstFrameReadyForDisplay.assign(to: &$hasFirstFrameReadyForDisplay)
-        engine.$isAwaitingDisplaySwitch.assign(to: &$isAwaitingDisplaySwitch)
-        engine.$startupProgress
-            .sink { [weak self] progress in
-                self?.startupState.updateEngineStartupFraction(progress?.fraction)
-            }
-            .store(in: &cancellables)
-
-        engine.$duration
-            .sink { [weak self] dur in
-                guard let self else { return }
-                self.durationSeconds = dur
-                self.rebuildMergedChapters()
-            }
-            .store(in: &cancellables)
-
-        engine.$mediaChapters
-            .sink { [weak self] ch in
-                guard let self else { return }
-                self.engineChapters = ch
-                self.rebuildMergedChapters()
-            }
-            .store(in: &cancellables)
-
-        engine.$videoFormat.assign(to: &$videoFormat)
-        engine.$sourceDVProfile.assign(to: &$sourceDVProfile)
-        engine.$dolbyVisionConversion.assign(to: &$dolbyVisionConversion)
-        engine.$videoRoute.assign(to: &$videoRoute)
-        engine.$audioDelivery.assign(to: &$audioDelivery)
-        engine.$sourceVideoCodecName.assign(to: &$sourceVideoCodecName)
-        engine.$sourceVideoWidth.assign(to: &$sourceVideoWidth)
-        engine.$sourceVideoHeight.assign(to: &$sourceVideoHeight)
-        engine.$sourceVideoFrameRate.assign(to: &$sourceVideoFrameRate)
-        engine.$activeVideoDecoder.assign(to: &$activeVideoDecoder)
-        engine.$activeAudioDecoder.assign(to: &$activeAudioDecoder)
-
-        engine.$audioTracks
-            .sink { [weak self] tracks in
-                guard let self else { return }
-                self.audioTracks = tracks
-                if self.comfort.smartNordicSubtitleRule && !self.userManuallySelectedSubtitle && !self.subtitleTracks.isEmpty {
-                    self.applySmartSubtitleRule()
-                }
-            }
-            .store(in: &cancellables)
-        engine.$activeAudioTrackIndex.assign(to: &$activeAudioTrackIndex)
-        engine.$subtitleTracks
-            .sink { [weak self] tracks in
-                guard let self else { return }
-                self.subtitleTracks = tracks
-                if self.comfort.smartNordicSubtitleRule && !self.userManuallySelectedSubtitle && !tracks.isEmpty {
-                    self.applySmartSubtitleRule()
-                }
-            }
-            .store(in: &cancellables)
-        engine.$activeSubtitleTrackIndex.assign(to: &$activeSubtitleTrackIndex)
-
-        comfort.$audioDelayMs
-            .sink { [weak self] updatedMs in
-                guard let self, self.audioDelayMs != updatedMs else { return }
-                self.audioDelayMs = updatedMs
-            }
-            .store(in: &cancellables)
-    }
-
     func updateIdleTimer(for phase: PlaybackPhase) {
         switch phase {
         case .playing, .loading, .seeking, .rebuffering, .stalled:
@@ -753,11 +504,5 @@ final class PlayerViewModel: ObservableObject {
 
     var isTeardownCompleted: Bool {
         didTeardown
-    }
-}
-
-private extension Comparable {
-    func clamped(to range: ClosedRange<Self>) -> Self {
-        min(max(self, range.lowerBound), range.upperBound)
     }
 }

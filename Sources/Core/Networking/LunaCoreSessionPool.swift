@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 public final class LanURLSessionDelegate: NSObject, URLSessionDelegate, Sendable {
     public let trustedHost: String?
@@ -9,35 +10,46 @@ public final class LanURLSessionDelegate: NSObject, URLSessionDelegate, Sendable
         self.allowSelfSignedTLS = allowSelfSignedTLS
     }
 
+    internal static func shouldTrustServer(
+        host: String,
+        trustedHost: String?,
+        allowSelfSignedTLS: Bool
+    ) -> Bool {
+        guard allowSelfSignedTLS else { return false }
+        let normalized = host.lowercased()
+        guard !normalized.isEmpty else { return false }
+        if let trustedHost = trustedHost?.lowercased(), normalized == trustedHost {
+            return true
+        }
+        return normalized.hasSuffix(".local")
+    }
+
     public func urlSession(
         _ session: URLSession,
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
-        guard allowSelfSignedTLS,
-              challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-              let serverTrust = challenge.protectionSpace.serverTrust else {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let serverTrust = challenge.protectionSpace.serverTrust,
+              Self.shouldTrustServer(
+                  host: challenge.protectionSpace.host,
+                  trustedHost: trustedHost,
+                  allowSelfSignedTLS: allowSelfSignedTLS
+              ) else {
             completionHandler(.performDefaultHandling, nil)
             return
         }
-
-        let host = challenge.protectionSpace.host.lowercased()
-        if host == trustedHost || host.hasSuffix(".local") {
-            completionHandler(.useCredential, URLCredential(trust: serverTrust))
-        } else {
-            completionHandler(.performDefaultHandling, nil)
-        }
+        completionHandler(.useCredential, URLCredential(trust: serverTrust))
     }
 }
 
 /// Shared URLSession pool keyed by `(lane, scheme, host, port, allowSelfSignedLanTLS)`.
 /// Prevents leaking ephemeral URLSessions across SwiftUI view body evaluations and
 /// preserves HTTP keep-alive / TLS session resumption against LunaCore Caddy.
-public final class LunaCoreSessionPool: @unchecked Sendable {
+public final class LunaCoreSessionPool: Sendable {
     public static let shared = LunaCoreSessionPool()
 
-    private let lock = NSLock()
-    private var sessions: [String: URLSession] = [:]
+    private let sessions = Mutex<[String: URLSession]>([:])
 
     private init() {}
 
@@ -73,23 +85,21 @@ public final class LunaCoreSessionPool: @unchecked Sendable {
 
     public func externalArtworkSession() -> URLSession {
         let key = "external|artwork"
-        lock.lock()
-        defer { lock.unlock() }
+        return sessions.withLock { map in
+            if let existing = map[key] {
+                return existing
+            }
+            let config = URLSessionConfiguration.ephemeral
+            config.timeoutIntervalForRequest = 15
+            config.timeoutIntervalForResource = 45
+            config.httpMaximumConnectionsPerHost = 6
+            config.urlCache = nil
+            config.requestCachePolicy = .reloadIgnoringLocalCacheData
 
-        if let existing = sessions[key] {
-            return existing
+            let created = URLSession(configuration: config)
+            map[key] = created
+            return created
         }
-
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 45
-        config.httpMaximumConnectionsPerHost = 6
-        config.urlCache = nil
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-
-        let created = URLSession(configuration: config)
-        sessions[key] = created
-        return created
     }
 
     private func makeOrReuseSession(
@@ -100,35 +110,33 @@ public final class LunaCoreSessionPool: @unchecked Sendable {
         requestTimeout: TimeInterval
     ) -> URLSession {
         let key = "\(lane)|\(baseURL.scheme?.lowercased() ?? "http")://\(baseURL.host?.lowercased() ?? ""):\(baseURL.port ?? -1)|tls:\(allowSelfSignedLanTLS)"
-        lock.lock()
-        defer { lock.unlock() }
+        return sessions.withLock { map in
+            if let existing = map[key] {
+                return existing
+            }
+            let config = URLSessionConfiguration.ephemeral
+            config.timeoutIntervalForRequest = requestTimeout
+            config.timeoutIntervalForResource = 90
+            config.httpMaximumConnectionsPerHost = maxConnections
+            config.urlCache = nil
+            config.requestCachePolicy = .reloadIgnoringLocalCacheData
 
-        if let existing = sessions[key] {
-            return existing
+            let delegate = LanURLSessionDelegate(
+                trustedHost: baseURL.host,
+                allowSelfSignedTLS: allowSelfSignedLanTLS
+            )
+            let created = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+            map[key] = created
+            return created
         }
-
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = requestTimeout
-        config.timeoutIntervalForResource = 90
-        config.httpMaximumConnectionsPerHost = maxConnections
-        config.urlCache = nil
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-
-        let delegate = LanURLSessionDelegate(
-            trustedHost: baseURL.host,
-            allowSelfSignedTLS: allowSelfSignedLanTLS
-        )
-        let created = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
-        sessions[key] = created
-        return created
     }
 
     public func invalidateAll() {
-        lock.lock()
-        let old = Array(sessions.values)
-        sessions.removeAll()
-        lock.unlock()
-
+        let old = sessions.withLock { map in
+            let values = Array(map.values)
+            map.removeAll()
+            return values
+        }
         for session in old {
             session.invalidateAndCancel()
         }
