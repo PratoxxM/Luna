@@ -18,6 +18,10 @@ extension AppSessionStore: MediaDetailSessionContext {
     var keepDisplayModeInMenuAfterPlayback: Bool {
         comfort.keepDisplayModeInMenuAfterPlayback
     }
+
+    func makeClient() -> LunaCoreClient? {
+        makeClient(overrideBaseURL: nil)
+    }
 }
 
 @MainActor
@@ -88,6 +92,10 @@ final class MediaDetailViewModel: ObservableObject {
     func bind(sessionContext: any MediaDetailSessionContext) {
         self.sessionContext = sessionContext
         self.client = sessionContext.makeClient()
+    }
+
+    func setClient(_ next: LunaCoreClient?) {
+        self.client = next
     }
 
     func handleTaskAppearance(

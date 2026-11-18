@@ -1,6 +1,5 @@
 import AetherBridge
 import Foundation
-import Synchronization
 import XCTest
 @testable import Luna
 
@@ -20,7 +19,7 @@ final class PausedScrubCommitTests: XCTestCase {
             engine.stop(resetDisplayCriteria: true)
         }
 
-        let log = Mutex<[String]>([])
+        let log = TestLockedBox<[String]>([])
         let seekGate = TestStepGate()
         let audioGate = TestStepGate()
 

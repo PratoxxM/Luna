@@ -1,6 +1,5 @@
 import AetherBridge
 import Foundation
-import Synchronization
 import XCTest
 @testable import Luna
 
@@ -281,7 +280,7 @@ final class PlaybackRestoreAndAudioSessionTests: XCTestCase {
             engine.stop(resetDisplayCriteria: true)
         }
 
-        let log = Mutex<[String]>([])
+        let log = TestLockedBox<[String]>([])
         let gate = TestStepGate()
         let transport = MockPlayerTransport(state: .paused, playbackPhase: .paused)
         transport.onPlay = { log.withLock { $0.append("play") } }

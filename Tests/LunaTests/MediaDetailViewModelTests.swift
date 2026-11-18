@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 import XCTest
 @testable import Luna
 
@@ -87,7 +86,7 @@ final class MediaDetailViewModelTests: XCTestCase {
         }
         """#
 
-        let monitoredState = Mutex(false)
+        let monitoredState = TestLockedBox(false)
 
         MockURLProtocol.register(host: host) { request in
             let url = try XCTUnwrap(request.url)

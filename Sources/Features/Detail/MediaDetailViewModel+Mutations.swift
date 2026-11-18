@@ -6,7 +6,7 @@ extension MediaDetailViewModel {
     func refreshedClient() -> LunaCoreClient? {
         let latest = sessionContext?.makeClient()
         if latest != nil || client != nil {
-            client = latest
+            setClient(latest)
         }
         return latest
     }

@@ -309,7 +309,7 @@ public actor ArtworkPipeline {
         _ waiterID: UUID,
         key: String,
         entryID: UUID,
-        in mutex: Mutex<[String: InflightTaskEntry<Value>]>
+        in mutex: borrowing Mutex<[String: InflightTaskEntry<Value>]>
     ) {
         let taskToCancel: Task<Value?, Never>? = mutex.withLock { map in
             guard var entry = map[key], entry.id == entryID else { return nil }

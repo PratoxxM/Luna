@@ -78,6 +78,18 @@ struct MockNativeAudioActivator: NativeAudioActivating {
     }
 }
 
+final class TestLockedBox<Value: Sendable>: Sendable {
+    private let storage: Mutex<Value>
+
+    init(_ initialValue: Value) {
+        self.storage = Mutex(initialValue)
+    }
+
+    func withLock<Result: Sendable>(_ body: (inout Value) throws -> Result) rethrows -> Result {
+        try storage.withLock(body)
+    }
+}
+
 actor TestStepGate {
     private var startWaiter: CheckedContinuation<Void, Never>?
     private var releaseGate: CheckedContinuation<Void, Never>?
@@ -89,7 +101,7 @@ actor TestStepGate {
         started = false
     }
 
-    func wait(label: String, log: Mutex<[String]>) async {
+    func wait(label: String, log: TestLockedBox<[String]>) async {
         log.withLock { $0.append("\(label)_start") }
         started = true
         startWaiter?.resume()
