@@ -47,6 +47,7 @@ public struct LunaCoreClient: Sendable {
 
     private let session: URLSession
     private let imageSession: URLSession
+    private let externalImageSession: URLSession
 
     private static let sharedDecoder = Mutex(JSONDecoder())
     private static let sharedEncoder = Mutex(JSONEncoder())
@@ -77,6 +78,7 @@ public struct LunaCoreClient: Sendable {
             for: baseURL,
             allowSelfSignedLanTLS: allowSelfSignedLanTLS
         )
+        self.externalImageSession = LunaCoreSessionPool.shared.externalArtworkSession()
     }
 
     internal init(
@@ -89,7 +91,8 @@ public struct LunaCoreClient: Sendable {
         appVersion: String = AppSessionStore.currentAppVersionString(),
         osVersion: String = "",
         session: URLSession,
-        imageSession: URLSession? = nil
+        imageSession: URLSession? = nil,
+        externalImageSession: URLSession? = nil
     ) {
         self.baseURL = baseURL
         self.deviceID = deviceID
@@ -101,6 +104,7 @@ public struct LunaCoreClient: Sendable {
         self.osVersion = osVersion
         self.session = session
         self.imageSession = imageSession ?? session
+        self.externalImageSession = externalImageSession ?? session
     }
 
     // MARK: - Shared JSON Coding
@@ -183,7 +187,7 @@ public struct LunaCoreClient: Sendable {
                 req.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")
             }
         }
-        let targetSession = sameOrigin ? imageSession : LunaCoreSessionPool.shared.externalArtworkSession()
+        let targetSession = sameOrigin ? imageSession : externalImageSession
         let (data, resp) = try await targetSession.data(for: req)
         let http = resp as? HTTPURLResponse
         if let status = http?.statusCode, status >= 400 {

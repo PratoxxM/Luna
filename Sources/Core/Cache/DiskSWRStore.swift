@@ -90,7 +90,8 @@ private actor DiskSWRStorageActor {
     }
 }
 
-private struct DiskSWRPendingWrites: Sendable {
+private struct DiskSWRState: Sendable {
+    var snapshots: [String: CachedHomeSnapshot] = [:]
     var clearEpoch: UInt64 = 0
     var activeTasks: [UUID: Task<Void, Never>] = [:]
 }
@@ -101,8 +102,7 @@ private struct DiskSWRPendingWrites: Sendable {
 /// so free Apple ID re-signing via ATVLoadly keeps cache paths stable across renewals.
 /// All disk I/O runs inside `DiskSWRStorageActor`; `@MainActor` reads only from the RAM cache.
 public enum DiskSWRStore {
-    private static let memoryCache = Mutex<[String: CachedHomeSnapshot]>([:])
-    private static let pendingWrites = Mutex(DiskSWRPendingWrites())
+    private static let state = Mutex(DiskSWRState())
 
     private static func sanitize(_ raw: String) -> String {
         String(raw.lowercased().map { ch in
@@ -129,11 +129,7 @@ public enum DiskSWRStore {
         hardwareProfile: String
     ) -> CachedHomeSnapshot? {
         let key = fileBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
-        return memoryCache.withLock { $0[key] }
-    }
-
-    private static func storeMemorySnapshot(_ snap: CachedHomeSnapshot, forKey key: String) {
-        memoryCache.withLock { $0[key] = snap }
+        return state.withLock { $0.snapshots[key] }
     }
 
     public static func loadHomeAsync(
@@ -142,10 +138,10 @@ public enum DiskSWRStore {
         hardwareProfile: String
     ) async -> CachedHomeSnapshot? {
         let primaryKey = fileBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
-        if let hit = memorySnapshot(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile) {
-            return hit
+        let (cachedHit, startEpoch) = state.withLock { ($0.snapshots[primaryKey], $0.clearEpoch) }
+        if let cachedHit {
+            return cachedHit
         }
-        let startEpoch = pendingWrites.withLock { $0.clearEpoch }
         let legacyKey = legacyFileBaseName(roomName: roomName, hardwareProfile: hardwareProfile)
         guard let loaded = await DiskSWRStorageActor.shared.loadFromDisk(
             primaryBaseName: primaryKey,
@@ -153,12 +149,13 @@ public enum DiskSWRStore {
         ) else {
             return nil
         }
-        let stillValid = pendingWrites.withLock { $0.clearEpoch == startEpoch } && !Task.isCancelled
-        guard stillValid else {
-            return nil
+        return state.withLock { s in
+            guard s.clearEpoch == startEpoch, !Task.isCancelled else {
+                return nil
+            }
+            s.snapshots[primaryKey] = loaded
+            return loaded
         }
-        storeMemorySnapshot(loaded, forKey: primaryKey)
-        return loaded
     }
 
     public static func saveHomeInBackground(
@@ -170,27 +167,25 @@ public enum DiskSWRStore {
         decodedPayload: TvHomeResponse? = nil
     ) {
         let primaryKey = fileBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
-        if let decodedPayload {
-            let snap = CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: decodedPayload)
-            storeMemorySnapshot(snap, forKey: primaryKey)
-        }
         let taskID = UUID()
-        pendingWrites.withLock { state in
-            let epoch = state.clearEpoch
+        state.withLock { s in
+            if let decodedPayload {
+                s.snapshots[primaryKey] = CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: decodedPayload)
+            }
+            let epoch = s.clearEpoch
             let created = Task.detached(priority: .utility) {
                 defer {
-                    _ = pendingWrites.withLock { $0.activeTasks.removeValue(forKey: taskID) }
+                    _ = state.withLock { $0.activeTasks.removeValue(forKey: taskID) }
                 }
                 guard !Task.isCancelled else { return }
                 if decodedPayload == nil,
                    let decoded = try? LunaCoreClient.decodeJSON(TvHomeResponse.self, from: rawPayloadData) {
-                    let shouldStore = pendingWrites.withLock { $0.clearEpoch == epoch && !Task.isCancelled }
-                    if shouldStore {
-                        let snap = CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: decoded)
-                        storeMemorySnapshot(snap, forKey: primaryKey)
+                    state.withLock { s in
+                        guard s.clearEpoch == epoch, !Task.isCancelled else { return }
+                        s.snapshots[primaryKey] = CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: decoded)
                     }
                 }
-                let shouldWriteDisk = pendingWrites.withLock { $0.clearEpoch == epoch && !Task.isCancelled }
+                let shouldWriteDisk = state.withLock { $0.clearEpoch == epoch && !Task.isCancelled }
                 guard shouldWriteDisk else { return }
                 await DiskSWRStorageActor.shared.saveToDisk(
                     rawPayloadData: rawPayloadData,
@@ -198,7 +193,7 @@ public enum DiskSWRStore {
                     baseName: primaryKey
                 )
             }
-            state.activeTasks[taskID] = created
+            s.activeTasks[taskID] = created
         }
     }
 
@@ -207,12 +202,12 @@ public enum DiskSWRStore {
     }
 
     public static func clearMemory() {
-        memoryCache.withLock { $0.removeAll() }
+        state.withLock { $0.snapshots.removeAll() }
     }
 
     internal static func drainPendingWrites() async {
         while true {
-            let tasks = pendingWrites.withLock { Array($0.activeTasks.values) }
+            let tasks = state.withLock { Array($0.activeTasks.values) }
             if tasks.isEmpty { break }
             for task in tasks {
                 await task.value
@@ -221,13 +216,13 @@ public enum DiskSWRStore {
     }
 
     public static func clearAllAsync() async {
-        let tasksToCancel = pendingWrites.withLock { state -> [Task<Void, Never>] in
-            state.clearEpoch &+= 1
-            let tasks = Array(state.activeTasks.values)
-            state.activeTasks.removeAll()
+        let tasksToCancel = state.withLock { s -> [Task<Void, Never>] in
+            s.clearEpoch &+= 1
+            s.snapshots.removeAll()
+            let tasks = Array(s.activeTasks.values)
+            s.activeTasks.removeAll()
             return tasks
         }
-        clearMemory()
         for task in tasksToCancel {
             task.cancel()
         }
@@ -235,5 +230,9 @@ public enum DiskSWRStore {
             await task.value
         }
         await DiskSWRStorageActor.shared.clearAllDiskFiles()
+        state.withLock { s in
+            s.clearEpoch &+= 1
+            s.snapshots.removeAll()
+        }
     }
 }
