@@ -2,7 +2,7 @@
 
 ## 1. Purpose & Public-Repository Security Rules
 
-`Luna` (`v2.5.1`) is a public, standalone tvOS client powered by `AetherEngine` (`7.69.0`) and backed by the native LunaCore TV API (`/api/tv/v1` on `:8090` / `:8920`).
+`Luna` (`v2.6.0`) is a public, standalone tvOS client powered by `AetherEngine` (`7.69.0`) and backed by the native LunaCore TV API (`/api/tv/v1` on `:8090` / `:8920`).
 
 Because this repository is **public on GitHub**, these rules are hard invariants:
 
@@ -19,32 +19,34 @@ Because this repository is **public on GitHub**, these rules are hard invariants
 
 ## 3. Code Organization & Naming Rules
 
-- **Domain naming only**: Use `LunaCoreClient` / `LunaCoreError` / `LunaCoreSessionPool` for `/api/tv/v1` networking (`Sources/Core/Networking/LunaCoreClient.swift`, `Sources/Core/Networking/LunaCoreSessionPool.swift`) and `DiscoveredLunaCoreServer` in `Sources/Core/Discovery/BonjourServerBrowser.swift`. Never reintroduce retired legacy client names, `BFF*` typealiases, `Hero` banners, or retired `Watchlist/` / `PlayerSheets.swift` views.
-- **File size budget**: Keep every `.swift` source file in `Sources/` strictly `<= 800 LOC` with clear single responsibility.
+- **Domain naming only**: Use `LunaCoreClient` / `LunaCoreError` / `LunaCoreSessionPool` for `/api/tv/v1` networking (`Sources/Core/Networking/LunaCoreHTTPTransport.swift`, `Sources/Core/Networking/LunaCoreClient+HomeCatalog.swift`, `Sources/Core/Networking/LunaCoreClient+LibraryDetail.swift`, `Sources/Core/Networking/LunaCoreClient+Playback.swift`, `Sources/Core/Networking/LunaCoreSessionPool.swift`) and `DiscoveredLunaCoreServer` in `Sources/Core/Discovery/BonjourServerBrowser.swift`. Never reintroduce retired legacy client names, `BFF*` typealiases, `Hero` banners, or retired `Watchlist/` / `PlayerSheets.swift` views.
+- **File size & permission budget**: Keep every `.swift` source/test file and doc strictly `<= 800 LOC` (`0644` permissions; `0755` for `ops/bin/*`), enforced by `./ops/bin/luna-check`.
 - **Shared networking & caching**: Reuse a single `URLSession` per `LunaCoreClient`, decode images off the main actor via `ArtworkPipeline`, and persist `/api/tv/v1/home` ETag/JSON snapshots in `DiskSWRStore` (`.cachesDirectory`).
 
 ## 4. Where to Look First
 
-- **Full module-to-endpoint-to-test index**: [`docs/architecture/CODEBASE_MODULE_MAP.md`](docs/architecture/CODEBASE_MODULE_MAP.md)
-- **App lifecycle & single `@MainActor` engine**: `Sources/App/LunaApp.swift`, `Sources/App/MainNavigationShell.swift`
+- **Full module-to-endpoint-to-test index (enforced 1:1 by `ops/bin/luna-check`)**: [`docs/architecture/CODEBASE_MODULE_MAP.md`](docs/architecture/CODEBASE_MODULE_MAP.md)
+- **App lifecycle & single `@MainActor` engine**: `Sources/App/LunaApp.swift`, `Sources/App/MainNavigationShell.swift`, `Sources/App/LunaTopBarView.swift`
 - **Discovery, pairing & config**: `Sources/Core/Discovery/BonjourServerBrowser.swift`, `Sources/Core/Config/ServerConfiguration.swift`, `Sources/Core/Config/SideloadSafeStorage.swift`, `Sources/Features/Onboarding/PairingOnboardingView.swift`
-- **API client, WebSocket & SWR/image caching**: `Sources/Core/Networking/LunaCoreClient.swift`, `Sources/Core/Networking/LunaCoreSessionPool.swift`, `Sources/Core/Networking/PlaybackResolveSocket.swift`, `Sources/Core/Cache/DiskSWRStore.swift`, `Sources/Core/Cache/ArtworkPipeline.swift`
-- **Player shell & AetherEngine bridge**: `Packages/AetherBridge/Package.swift`, `Sources/Features/Player/PlayerViewModel.swift`, `Sources/Features/Player/PlayerSessionCoordinator.swift`, `Sources/Features/Player/PlayerContainerView.swift`
+- **API client, WebSocket & SWR/image caching**: `Sources/Core/Networking/LunaCoreHTTPTransport.swift`, `Sources/Core/Networking/LunaCoreClient+HomeCatalog.swift`, `Sources/Core/Networking/LunaCoreClient+LibraryDetail.swift`, `Sources/Core/Networking/LunaCoreClient+Playback.swift`, `Sources/Core/Networking/LunaCoreSessionPool.swift`, `Sources/Core/Networking/PlaybackResolveSocket.swift`, `Sources/Core/Cache/DiskSWRStore.swift`, `Sources/Core/Cache/ArtworkPipeline.swift`, `Sources/Core/Cache/BlurHashDecoder.swift`
+- **Player shell & AetherEngine bridge**: `Packages/AetherBridge/Package.swift`, `Packages/AetherBridge/Sources/AetherBridge/Exports.swift`, `Sources/Features/Player/PlayerViewModel.swift`, `Sources/Features/Player/PlayerSessionCoordinator.swift`, `Sources/Features/Player/PlayerContainerView.swift`
 
-## 4. PC / Linux Development Without a Mac
+## 5. PC / Linux Development Without a Mac
 
 Development happens on Linux/Windows without a local macOS SDK:
 
 1. **Ignore local SDK diagnostics**: Any local LSP/compiler errors complaining about missing `SwiftUI`, `UIKit`, `AVFoundation`, `Network`, `tvOS` SDKs, or `AetherEngine` binaries on Linux/Windows are expected and **must be ignored**.
-2. **`project.yml` is the single source of truth**: Never hand-edit or commit `Luna.xcodeproj` or `*.xcworkspace`. XcodeGen generates `Luna.xcodeproj` fresh inside GitHub Actions on every build.
-3. **SPM Traits via `Packages/AetherBridge`**: XcodeGen does not serialize SwiftPM `traits:` on remote packages, and `xcodebuild` has no CLI flag for package traits. All `AetherEngine` version pinning (`exact: "7.69.0"`) and optional traits (`TrueHDObjectAudio`, `DTSXObjectAudio`, `DualLayerDolbyVision`, `DolbyVisionFelCurves`, `DolbyVisionStillReshaping`) MUST stay in `Packages/AetherBridge/Package.swift`.
+2. **Run `./ops/bin/luna-check` locally**: Validates `0644`/`0755` permissions, `<= 800 LOC`, sideload safety, zero private infra/retired patterns, and bidirectional doc-to-disk parity (`CODEBASE_MODULE_MAP.md` <-> `Sources/**/*.swift` & `Tests/LunaTests/*.swift`).
+3. **`project.yml` is the single source of truth**: Never hand-edit or commit `Luna.xcodeproj` or `*.xcworkspace`. XcodeGen generates `Luna.xcodeproj` fresh inside GitHub Actions on every build.
+4. **SPM Traits via `Packages/AetherBridge`**: XcodeGen does not serialize SwiftPM `traits:` on remote packages, and `xcodebuild` has no CLI flag for package traits. All `AetherEngine` version pinning (`exact: "7.69.0"`) and optional traits (`TrueHDObjectAudio`, `DTSXObjectAudio`, `DualLayerDolbyVision`, `DolbyVisionFelCurves`, `DolbyVisionStillReshaping`) MUST stay in `Packages/AetherBridge/Package.swift`.
 
-## 5. Cloud Build & Verification Workflow (`gh` CLI)
+## 6. Cloud Build & Verification Workflow (`gh` CLI)
 
-Every code change is verified in GitHub Actions (`.github/workflows/build-tvos.yml`), which runs static guardrails, compiles and tests `Tests/LunaTests` (`LunaTests`), compiles `Luna` for `generic/platform=tvOS` using Xcode 26.3+ / 27, and uploads `Luna-unsigned.ipa` to the rolling `latest` GitHub Release monitored by ATVLoadly.
+Every code change is verified in GitHub Actions (`.github/workflows/build-tvos.yml` + `.github/actions/setup-tvos-xcode/action.yml`), which runs `./ops/bin/luna-check`, compiles and runs all 22 XCTest suites in `Tests/LunaTests` (`LunaTests`) on tvOS Simulator, compiles `Luna` for `generic/platform=tvOS` using Xcode `26.2+/27` (`tvOS 26+` SDK), and uploads `Luna-unsigned.ipa` to the rolling `latest` GitHub Release monitored by ATVLoadly.
 
 ```bash
-# Push changes and watch the cloud build
+# Run local guardrails & doc-parity gate, push main, and watch the cloud build
+./ops/bin/luna-check
 git push origin main
 gh run list --workflow=build-tvos.yml --limit 5
 gh run watch
@@ -58,7 +60,7 @@ gh api --allow-escape-sequences repos/PratoxxM/Luna/actions/jobs/<job-id>/logs |
 gh release view latest --json assets,publishedAt
 ```
 
-## 6. tvOS 26 & AetherEngine Host Rules
+## 7. tvOS 26 & AetherEngine Host Rules
 
 - Reuse a **single** `@MainActor` `AetherEngine` instance across the app lifetime (`LunaApp.swift`), setting `engine.maximumSubtitleAdvanceSeconds = 0` and `engine.maximumSubtitleDelaySeconds = 10` at initialization and before `engine.load(...)` so active subtitles never open a second parallel 4K HTTP stream.
 - Call `engine.prepareForItemReplacement()` for back-to-back episode transitions and seamless timecode source switches (`HeldStillPresenter`), and `engine.stop(resetDisplayCriteria: true)` when dismissing the player.

@@ -110,13 +110,41 @@ for target in scan_targets:
         if RETIRED_BRAND_RE.search(content):
             errors.append(f"RETIRED {rel}: retired legacy brand reference found")
 
+map_file = root / "docs/architecture/CODEBASE_MODULE_MAP.md"
+if not map_file.is_file():
+    errors.append("DOC_PARITY missing docs/architecture/CODEBASE_MODULE_MAP.md")
+else:
+    map_text = map_file.read_text(encoding="utf-8", errors="replace")
+    doc_refs = set(
+        re.findall(
+            r"`((?:Sources|Tests|Packages)/[A-Za-z0-9_.+-]+(?:/[A-Za-z0-9_.+-]+)*\.swift)`",
+            map_text,
+        )
+    )
+    for ref in sorted(doc_refs):
+        if not (root / ref).is_file():
+            errors.append(f"DOC_PARITY {ref}: documented in CODEBASE_MODULE_MAP.md but missing on disk")
+    expected_swift = {
+        p.relative_to(root).as_posix()
+        for p in sorted(
+            [
+                *(root / "Sources").rglob("*.swift"),
+                *(root / "Tests/LunaTests").glob("*.swift"),
+                *(root / "Packages/AetherBridge/Sources").rglob("*.swift"),
+            ]
+        )
+        if p.is_file()
+    }
+    for rel in sorted(expected_swift - doc_refs):
+        errors.append(f"DOC_PARITY {rel}: exists on disk but undocumented in CODEBASE_MODULE_MAP.md")
+
 if errors:
     print("LUNA-CHECK FAILED:", file=sys.stderr)
     for err in errors:
         print(f"  - {err}", file=sys.stderr)
     sys.exit(1)
 
-print(f"  [OK] Permissions (0755/0644), <= 800 LOC ({len(swift_files)} .swift files), sideload, retired patterns & public hygiene checks passed")
+print(f"  [OK] Permissions (0755/0644), <= 800 LOC ({len(swift_files)} .swift files), doc parity ({len(doc_refs)} modules), sideload, retired patterns & public hygiene checks passed")
 PY
 
 if [[ "$SKIP_REMOTE" -eq 0 ]] && command -v git >/dev/null 2>&1 && git -C "$PROJECT_ROOT" remote get-url origin >/dev/null 2>&1; then
