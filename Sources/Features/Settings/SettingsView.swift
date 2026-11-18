@@ -38,7 +38,6 @@ struct SettingsView: View {
         "Av (standard) gir jevne 60 Hz-menyer umiddelbart etter avspilling. På unngår HDMI-skifte ut av spilleren på denne TV-en, men låser menyene til 24 Hz etter 24p-film frem til du forlater appen."
 
     @EnvironmentObject private var sessionStore: AppSessionStore
-    @EnvironmentObject private var comfort: ComfortPreferences
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
 
     @State private var selectedCategory: SettingsCategory

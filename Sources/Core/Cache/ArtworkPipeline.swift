@@ -2,7 +2,6 @@ import Foundation
 import CryptoKit
 import ImageIO
 import CoreGraphics
-import SwiftUI
 import Synchronization
 
 private final class CGImageBox: NSObject {

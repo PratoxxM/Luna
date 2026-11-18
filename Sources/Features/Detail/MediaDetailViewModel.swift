@@ -1,6 +1,5 @@
 import Combine
 import Foundation
-import SwiftUI
 
 @MainActor
 protocol MediaDetailSessionContext: AnyObject {

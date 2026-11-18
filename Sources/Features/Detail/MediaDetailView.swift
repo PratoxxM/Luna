@@ -1,5 +1,4 @@
 import SwiftUI
-import AetherBridge
 
 struct MediaDetailView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore

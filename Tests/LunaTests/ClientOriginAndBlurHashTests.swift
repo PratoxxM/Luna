@@ -470,5 +470,28 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         failAltVm.handleDisappear(context: context, client: failAltClient)
         await failAltClient.heartbeatSignal.wait(untilAtLeast: 2)
         XCTAssertEqual(failAltClient.stoppedSessions.withLock { $0 }, ["sess-alt-fail", "sess-alt-fail-2"])
+
+        // 5. Whitespace-only existingPrepareToken ("   ") is treated as nil on disappear
+        //    so a newly created orphan session is still stopped cleanly on dismiss.
+        let whitespaceContext = SourcePickerContext(
+            itemId: "movie:tmdb:550",
+            title: "Fight Club",
+            existingPrepareToken: "   "
+        )
+        let whitespaceClient = MockSourcePickerSessionClient(
+            sessionIdToReturn: "sess-whitespace-orphan",
+            prepareTokenToReturn: "prep-whitespace-1"
+        )
+        let whitespaceVm = SourcePickerViewModel()
+        let whitespaceTask = Task { @MainActor in
+            await whitespaceVm.loadCandidates(context: whitespaceContext, client: whitespaceClient, onUnauthorized: {})
+        }
+        await whitespaceClient.prepareGate.waitUntilStarted()
+        await whitespaceClient.prepareGate.finish()
+        await whitespaceTask.value
+        whitespaceVm.handleDisappear(context: whitespaceContext, client: whitespaceClient)
+        await whitespaceClient.heartbeatSignal.wait(untilAtLeast: 1)
+        XCTAssertEqual(whitespaceClient.stoppedSessions.withLock { $0 }, ["sess-whitespace-orphan"])
+        XCTAssertNil(whitespaceVm.createdOrphanSessionId)
     }
 }

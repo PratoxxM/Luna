@@ -245,7 +245,11 @@ internal final class SourcePickerViewModel: ObservableObject {
         context: SourcePickerContext,
         client: (any SourcePickerSessionClient)?
     ) {
-        guard (context.existingPrepareToken == nil || existingTokenFailed),
+        let activeExistingToken = SourcePickerTokenPolicy.effectiveExistingPrepareToken(
+            rawExistingToken: context.existingPrepareToken,
+            existingTokenFailed: existingTokenFailed
+        )
+        guard activeExistingToken == nil,
               let sid = createdOrphanSessionId,
               let client else {
             return
