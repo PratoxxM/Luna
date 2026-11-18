@@ -332,32 +332,41 @@ private struct PrimaryPlayLabel: View {
     let isWarmReady: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Image(systemName: "play.fill")
-                .font(.system(size: 31, weight: .black))
+                .font(.system(size: 18, weight: .bold))
             Text(title)
-                .font(.system(size: 35, weight: .bold))
+                .font(.system(size: 21, weight: .bold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.86)
             if isWarmReady {
                 Circle()
                     .fill(LunaTheme.canvas.opacity(0.68))
-                    .frame(width: 8, height: 8)
+                    .frame(width: 7, height: 7)
             }
         }
         .foregroundStyle(LunaTheme.canvas)
-        .padding(.horizontal, 32)
-        .padding(.vertical, 15)
+        .transaction { $0.animation = nil }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 11)
         .background(
-            Capsule()
-                .fill(focused ? LunaTheme.playFocusGradient : LunaTheme.primaryAmberGradient)
+            ZStack {
+                Capsule()
+                    .fill(LunaTheme.primaryAmberGradient)
+                    .opacity(focused ? 0 : 1)
+                Capsule()
+                    .fill(LunaTheme.playFocusGradient)
+                    .opacity(focused ? 1 : 0)
+            }
+            .transaction { $0.animation = nil }
         )
         .overlay(
             Capsule()
                 .strokeBorder(
                     focused ? LunaTheme.focusGoldBorder : LunaTheme.focusGoldBorder.opacity(0.45),
-                    lineWidth: focused ? 2.4 : 1.0
+                    lineWidth: focused ? 2.2 : 1.0
                 )
+                .transaction { $0.animation = nil }
         )
         .shadow(
             color: focused ? Color.black.opacity(0.42) : .clear,
@@ -365,7 +374,7 @@ private struct PrimaryPlayLabel: View {
             x: 0,
             y: focused ? 5 : 0
         )
-        .scaleEffect(focused ? 1.065 : 1.0)
+        .scaleEffect(focused ? 1.03 : 1.0)
         .animation(.spring(response: 0.22, dampingFraction: 0.78), value: focused)
     }
 }

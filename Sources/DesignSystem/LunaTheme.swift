@@ -310,34 +310,36 @@ private struct LunaPillLabel: View {
 
     var body: some View {
         let isCompact = size == .compact
-        HStack(spacing: isCompact ? 8 : 10) {
+        HStack(spacing: isCompact ? 7 : 9) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(isCompact ? .system(size: 21, weight: .semibold) : .callout.weight(.semibold))
+                    .font(.system(size: isCompact ? 15 : 17, weight: .semibold))
                     .foregroundStyle(iconForegroundColor)
             }
             if !title.isEmpty {
                 Text(title)
-                    .font(isCompact ? .system(size: 24, weight: .semibold) : .callout.weight(.semibold))
+                    .font(.system(size: isCompact ? 17 : 19, weight: .medium))
                     .foregroundStyle(labelForegroundColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.88)
             }
             if let badgeText, !badgeText.isEmpty {
                 Text(badgeText)
-                    .font(.caption2.weight(.bold).monospacedDigit())
+                    .font(.system(size: 14, weight: .bold).monospacedDigit())
                     .foregroundStyle(badgeForegroundColor)
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(badgeBackground, in: Capsule())
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(badgeBackground))
             }
         }
-        .padding(.horizontal, title.isEmpty ? (isCompact ? 15 : 18) : (isCompact ? 18 : 22))
-        .padding(.vertical, isCompact ? 11 : 12)
+        .transaction { $0.animation = nil }
+        .padding(.horizontal, title.isEmpty ? (isCompact ? 13 : 15) : (isCompact ? 16 : 19))
+        .padding(.vertical, isCompact ? 8 : 9)
         .background(backgroundView)
         .overlay(
             Capsule()
                 .strokeBorder(borderColor, lineWidth: borderWidth)
+                .transaction { $0.animation = nil }
         )
         .shadow(
             color: isFocused ? Color.black.opacity(0.34) : .clear,
@@ -345,7 +347,7 @@ private struct LunaPillLabel: View {
             x: 0,
             y: isFocused ? 4 : 0
         )
-        .scaleEffect(isFocused ? 1.045 : 1.0)
+        .scaleEffect(isFocused ? 1.02 : 1.0)
         .animation(.spring(response: 0.22, dampingFraction: 0.80), value: isFocused)
     }
 
@@ -377,20 +379,30 @@ private struct LunaPillLabel: View {
         return LunaTheme.muted
     }
 
-    @ViewBuilder
-    private var backgroundView: some View {
-        if isFocused {
-            Capsule().fill(LunaTheme.focusGoldGradient)
-        } else {
-            switch prominence {
-            case .primaryAmber:
-                Capsule().fill(LunaTheme.primaryAmberGradient)
-            case .glassPill:
-                Capsule().fill(isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
-            case .subtleChip:
-                Capsule().fill(isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceSubtle)
-            }
+    private var restingSolidColor: Color {
+        switch prominence {
+        case .primaryAmber:
+            return .clear
+        case .glassPill:
+            return isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised
+        case .subtleChip:
+            return isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceSubtle
         }
+    }
+
+    private var backgroundView: some View {
+        ZStack {
+            Capsule()
+                .fill(restingSolidColor)
+                .opacity(!isFocused && prominence != .primaryAmber ? 1 : 0)
+            Capsule()
+                .fill(LunaTheme.primaryAmberGradient)
+                .opacity(!isFocused && prominence == .primaryAmber ? 1 : 0)
+            Capsule()
+                .fill(LunaTheme.focusGoldGradient)
+                .opacity(isFocused ? 1 : 0)
+        }
+        .transaction { $0.animation = nil }
     }
 
     private var borderColor: Color {

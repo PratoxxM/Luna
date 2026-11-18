@@ -288,6 +288,78 @@ final class V250NavigationSettingsAndDeleteTests: XCTestCase {
     }
 
     @MainActor
+    func testSettingsAndTopBarLayoutRenderInHostingWindow() async {
+        let suite = "luna.test.settingshost.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = AppSessionStore(defaults: defaults)
+        let windowScene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first
+        let window = windowScene.map { UIWindow(windowScene: $0) }
+            ?? UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        let topBarHost = UIHostingController(
+            rootView: LunaTopBarView(selectedTab: .constant(.settings))
+        )
+        let topBarFit = topBarHost.sizeThatFits(in: CGSize(width: 1920, height: 1080))
+        XCTAssertGreaterThan(topBarFit.width, 400)
+        XCTAssertLessThanOrEqual(topBarFit.width, 1300)
+        XCTAssertGreaterThan(topBarFit.height, 44)
+        XCTAssertLessThanOrEqual(topBarFit.height, 80)
+
+        window.rootViewController = topBarHost
+        window.makeKeyAndVisible()
+        window.layoutIfNeeded()
+        try? await Task.sleep(nanoseconds: 40_000_000)
+
+        // Verify compact segmented pill rows in Settings fit well inside the 940 pt inner panel width
+        let speakerRowHost = UIHostingController(
+            rootView: HStack(spacing: 8) {
+                ForEach(SpeakerLayoutOverrideMode.allCases) { mode in
+                    LunaPillButton(mode.displayTitle, isSelected: mode == .auto, prominence: .glassPill, size: .compact) {}
+                }
+            }
+        )
+        let speakerRowSize = speakerRowHost.sizeThatFits(in: CGSize(width: 1920, height: 200))
+        XCTAssertLessThanOrEqual(speakerRowSize.width, 720)
+        XCTAssertLessThanOrEqual(speakerRowSize.height, 56)
+
+        let hdrPresetRowHost = UIHostingController(
+            rootView: HStack(spacing: 8) {
+                ForEach(HDRSubtitlePreset.allCases) { preset in
+                    LunaPillButton(preset.displayTitle, isSelected: preset == .warm75, prominence: .glassPill, size: .compact) {}
+                }
+            }
+        )
+        let hdrPresetRowSize = hdrPresetRowHost.sizeThatFits(in: CGSize(width: 1920, height: 200))
+        XCTAssertLessThanOrEqual(hdrPresetRowSize.width, 720)
+        XCTAssertLessThanOrEqual(hdrPresetRowSize.height, 56)
+
+        store.localProfileOverride = "hdr10-512"
+        for category in SettingsCategory.allCases {
+            let settingsHost = UIHostingController(
+                rootView: SettingsView(initialCategory: category)
+                    .environmentObject(store)
+                    .environmentObject(store.comfort)
+            )
+            window.rootViewController = settingsHost
+            window.layoutIfNeeded()
+            try? await Task.sleep(nanoseconds: 25_000_000)
+            XCTAssertEqual(settingsHost.view.bounds.size, CGSize(width: 1920, height: 1080))
+        }
+    }
+
+    @MainActor
     func testNavigationContainerBackdropsApplyCanvasColorAcrossUIKitStackAndWindow() async throws {
         let suite = "luna.test.navbackdrop.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else {

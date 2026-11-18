@@ -225,6 +225,53 @@ final class CatScaleAndButtonThemeTests: XCTestCase {
         try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: true), r: 10, g: 9, b: 8)
         try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: true), r: 10, g: 9, b: 8)
 
+        // While focus sits in the top bar (isBarFocused: true), unfocused active tab drops to calm moonlight/muted
+        // so moving quickly across pills never flashes a 2-step linen highlight
+        XCTAssertEqual(
+            TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: false, isBarFocused: true),
+            LunaTheme.moonlight
+        )
+        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: false, isBarFocused: true), r: 160, g: 150, b: 140)
+        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: false, isBarFocused: true), r: 200, g: 191, b: 182)
+        XCTAssertEqual(
+            try rgbaComponents(TopBarTabPillButton.resolveBorderColor(isActive: true, isFocused: false, isBarFocused: true)).a,
+            0.0,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            try rgbaComponents(TopBarTabPillButton.resolveBorderColor(isActive: true, isFocused: false, isBarFocused: false)).a,
+            0.18,
+            accuracy: 0.015
+        )
+        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: true, isBarFocused: true), r: 10, g: 9, b: 8)
+        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: true, isBarFocused: true), r: 10, g: 9, b: 8)
+        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: false, isBarFocused: true), r: 160, g: 150, b: 140)
+        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: false, isBarFocused: true), r: 200, g: 191, b: 182)
+        XCTAssertEqual(
+            try rgbaComponents(TopBarTabPillButton.resolveBorderColor(isActive: false, isFocused: false, isBarFocused: true)).a,
+            0.0,
+            accuracy: 0.001
+        )
+        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: true, isBarFocused: true), r: 10, g: 9, b: 8)
+        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: true, isBarFocused: true), r: 10, g: 9, b: 8)
+        XCTAssertEqual(
+            TopBarTabPillButton.resolveBorderColor(isActive: true, isFocused: true, isBarFocused: true),
+            LunaTheme.focusGoldBorder
+        )
+        XCTAssertEqual(
+            TopBarTabPillButton.resolveBorderColor(isActive: false, isFocused: true, isBarFocused: true),
+            LunaTheme.focusGoldBorder
+        )
+
+        let topBarPillWithFocus = TopBarTabPillButton(
+            tab: .movies,
+            isActive: true,
+            isFocused: false,
+            isBarFocused: true
+        ) {}
+        XCTAssertEqual(topBarPillWithFocus.tab, .movies)
+        XCTAssertTrue(topBarPillWithFocus.isBarFocused)
+
         // Card views construct cleanly with warm linen titles
         let sampleCard = TvMediaCard(
             itemId: "movie:tmdb:550",

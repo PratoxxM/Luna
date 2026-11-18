@@ -1,4 +1,4 @@
-# Luna (`v2.5.0`) — Codebase Module Map
+# Luna (`v2.5.1`) — Codebase Module Map
 
 Quick lookup mapping relative repository paths to their responsibilities, **LunaCore** `/api/tv/v1` endpoints, and `Tests/LunaTests` coverage.
 
@@ -40,7 +40,7 @@ Quick lookup mapping relative repository paths to their responsibilities, **Luna
 
 ## 3. Build Configuration & Cloud CI
 
-- `project.yml`: XcodeGen specification (`MARKETING_VERSION: "2.5.0"`, `CURRENT_PROJECT_VERSION: "52"`, `bundleIdPrefix: local.lunacore`, `PRODUCT_BUNDLE_IDENTIFIER: local.lunacore.luna`).
+- `project.yml`: XcodeGen specification (`MARKETING_VERSION: "2.5.1"`, `CURRENT_PROJECT_VERSION: "53"`, `bundleIdPrefix: local.lunacore`, `PRODUCT_BUNDLE_IDENTIFIER: local.lunacore.luna`).
 - `Config/Info.plist`: App Transport Security (`NSAllowsArbitraryLoads`) & Bonjour service type (`_lunacore._tcp`).
 - `Packages/AetherBridge/Package.swift`: Local SwiftPM wrapper pinning `AetherEngine` `7.69.0` and its 5 media/audio/DV traits.
 - `.github/workflows/build-tvos.yml`: Static guardrails (800 LOC, `0644`, no `Bundle.main.bundleIdentifier`, zero private infra leaks, zero retired legacy brand references), `LunaTests`, unsigned tvOS Release archive, and publishing `Luna-unsigned.ipa` to the rolling `latest` release.

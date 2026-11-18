@@ -39,7 +39,7 @@ public enum ScrollTopZone: Equatable, Sendable {
     case scrolledDown
 
     public nonisolated static let revealThreshold: CGFloat = 36
-    public nonisolated static let collapseThreshold: CGFloat = 104
+    public nonisolated static let collapseThreshold: CGFloat = 88
 
     public nonisolated static func classify(scrolledOffsetY: CGFloat) -> ScrollTopZone {
         if scrolledOffsetY <= revealThreshold {
@@ -296,7 +296,7 @@ private struct LunaRootScrollTopBarModifier: ViewModifier {
 }
 
 struct LunaTopBarView: View {
-    static let contentTopPadding: CGFloat = 96
+    static let contentTopPadding: CGFloat = 82
     static let focusDebounceNanoseconds: UInt64 = 180_000_000
 
     @Binding var selectedTab: MainNavigationTab
@@ -310,20 +310,21 @@ struct LunaTopBarView: View {
     @Namespace private var topBarFocusNamespace
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 14) {
             emblemView
 
             Rectangle()
                 .fill(LunaTheme.warmBorder)
-                .frame(width: 1, height: 28)
+                .frame(width: 1, height: 20)
                 .allowsHitTesting(false)
 
-            HStack(spacing: 10) {
+            HStack(spacing: 6) {
                 ForEach(MainNavigationTab.allCases) { tab in
                     TopBarTabPillButton(
                         tab: tab,
                         isActive: selectedTab == tab,
-                        isFocused: focusedTab == tab
+                        isFocused: focusedTab == tab,
+                        isBarFocused: focusedTab != nil
                     ) {
                         tabDebounceTask?.cancel()
                         tabDebounceTask = nil
@@ -337,8 +338,8 @@ struct LunaTopBarView: View {
                 }
             }
         }
-        .padding(.horizontal, 26)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 7)
         .background(Capsule().fill(LunaTheme.cinemaGlass))
         .overlay(
             Capsule()
@@ -346,7 +347,7 @@ struct LunaTopBarView: View {
         )
         .shadow(color: Color.black.opacity(0.42), radius: 18, x: 0, y: 8)
         .padding(.horizontal, LunaTheme.horizontalGutter)
-        .padding(.top, 8)
+        .padding(.top, 6)
         .defaultFocus($focusedTab, selectedTab as MainNavigationTab?)
         .focusScope(topBarFocusNamespace)
         .focusSection()
@@ -358,31 +359,18 @@ struct LunaTopBarView: View {
                 tabDebounceTask = nil
                 return
             }
-            if !wasBarFocused {
-                wasBarFocused = true
-                tabDebounceTask?.cancel()
+            wasBarFocused = true
+            tabDebounceTask?.cancel()
+            guard selectedTab != newTab else {
                 tabDebounceTask = nil
-                if newTab != selectedTab {
-                    let targetTab = selectedTab
-                    Task { @MainActor in
-                        if wasBarFocused && focusedTab == newTab && selectedTab == targetTab {
-                            focusedTab = targetTab
-                        }
-                    }
-                }
-            } else {
-                tabDebounceTask?.cancel()
-                guard selectedTab != newTab else {
-                    tabDebounceTask = nil
-                    return
-                }
-                let debounceNs = Self.focusDebounceNanoseconds
-                tabDebounceTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: debounceNs)
-                    guard !Task.isCancelled, wasBarFocused, focusedTab == newTab else { return }
-                    if selectedTab != newTab {
-                        selectedTab = newTab
-                    }
+                return
+            }
+            let debounceNs = Self.focusDebounceNanoseconds
+            tabDebounceTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: debounceNs)
+                guard !Task.isCancelled, wasBarFocused, focusedTab == newTab else { return }
+                if selectedTab != newTab {
+                    selectedTab = newTab
                 }
             }
         }
@@ -405,9 +393,11 @@ struct LunaTopBarView: View {
             }
         }
         .onAppear {
+            wasBarFocused = (focusedTab != nil)
             onFocusPresenceChanged(focusedTab != nil)
         }
         .onDisappear {
+            wasBarFocused = false
             tabDebounceTask?.cancel()
             tabDebounceTask = nil
             focusRetryTask?.cancel()
@@ -416,11 +406,11 @@ struct LunaTopBarView: View {
     }
 
     private var emblemView: some View {
-        HStack(spacing: 11) {
-            LunaCrescentMarkView(size: 34, color: LunaTheme.amber)
+        HStack(spacing: 8) {
+            LunaCrescentMarkView(size: 24, color: LunaTheme.amber)
 
             Text("Luna")
-                .font(.system(size: 29, weight: .bold, design: .rounded))
+                .font(.system(size: 21, weight: .semibold, design: .rounded))
                 .foregroundStyle(LunaTheme.linen)
         }
         .padding(.leading, 4)
@@ -433,47 +423,80 @@ struct TopBarTabPillButton: View {
     let tab: MainNavigationTab
     let isActive: Bool
     let isFocused: Bool
+    var isBarFocused: Bool = false
     let action: () -> Void
 
-    nonisolated static func resolveIconColor(isActive: Bool, isFocused: Bool) -> Color {
+    nonisolated static func resolveIconColor(
+        isActive: Bool,
+        isFocused: Bool,
+        isBarFocused: Bool = false
+    ) -> Color {
         if isFocused { return LunaTheme.canvas }
-        if isActive { return LunaTheme.linen }
+        if isActive && !isBarFocused { return LunaTheme.linen }
         return LunaTheme.muted
     }
 
-    nonisolated static func resolveTextColor(isActive: Bool, isFocused: Bool) -> Color {
+    nonisolated static func resolveTextColor(
+        isActive: Bool,
+        isFocused: Bool,
+        isBarFocused: Bool = false
+    ) -> Color {
         if isFocused { return LunaTheme.canvas }
-        if isActive { return LunaTheme.linen }
+        if isActive && !isBarFocused { return LunaTheme.linen }
         return LunaTheme.moonlight
     }
 
-    nonisolated static func resolveBorderColor(isActive: Bool, isFocused: Bool) -> Color {
+    nonisolated static func resolveBorderColor(
+        isActive: Bool,
+        isFocused: Bool,
+        isBarFocused: Bool = false
+    ) -> Color {
         if isFocused { return LunaTheme.focusGoldBorder }
-        if isActive { return LunaTheme.warmBorderStrong }
+        if isActive && !isBarFocused { return LunaTheme.warmBorderStrong }
         return Color.clear
     }
 
     var body: some View {
+        let showActiveRest = isActive && !isBarFocused
+
         Button(action: action) {
-            HStack(spacing: 9) {
+            HStack(spacing: 7) {
                 Image(systemName: tab.systemImage)
-                    .font(.system(size: 21, weight: .semibold))
-                    .foregroundStyle(Self.resolveIconColor(isActive: isActive, isFocused: isFocused))
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(
+                        Self.resolveIconColor(
+                            isActive: isActive,
+                            isFocused: isFocused,
+                            isBarFocused: isBarFocused
+                        )
+                    )
 
                 Text(tab.title)
-                    .font(.system(size: 26, weight: isActive || isFocused ? .semibold : .medium))
-                    .foregroundStyle(Self.resolveTextColor(isActive: isActive, isFocused: isFocused))
+                    .font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(
+                        Self.resolveTextColor(
+                            isActive: isActive,
+                            isFocused: isFocused,
+                            isBarFocused: isBarFocused
+                        )
+                    )
                     .lineLimit(1)
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 13)
-            .background(pillBackground)
+            .transaction { $0.animation = nil }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .background(pillBackground(showActiveRest: showActiveRest))
             .overlay(
                 Capsule()
                     .strokeBorder(
-                        Self.resolveBorderColor(isActive: isActive, isFocused: isFocused),
+                        Self.resolveBorderColor(
+                            isActive: isActive,
+                            isFocused: isFocused,
+                            isBarFocused: isBarFocused
+                        ),
                         lineWidth: isFocused ? 2.0 : 1.0
                     )
+                    .transaction { $0.animation = nil }
             )
             .shadow(
                 color: isFocused ? Color.black.opacity(0.32) : .clear,
@@ -481,23 +504,23 @@ struct TopBarTabPillButton: View {
                 x: 0,
                 y: isFocused ? 4 : 0
             )
-            .scaleEffect(isFocused ? 1.04 : 1.0)
+            .scaleEffect(isFocused ? 1.02 : 1.0)
             .animation(.spring(response: 0.22, dampingFraction: 0.80), value: isFocused)
-            .animation(.easeOut(duration: 0.16), value: isActive)
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(Capsule())
         .focusEffectDisabled(true)
     }
 
-    @ViewBuilder
-    private var pillBackground: some View {
-        if isFocused {
-            Capsule().fill(LunaTheme.focusGoldGradient)
-        } else if isActive {
-            Capsule().fill(LunaTheme.surfaceSelected)
-        } else {
-            Capsule().fill(Color.clear)
+    private func pillBackground(showActiveRest: Bool) -> some View {
+        ZStack {
+            Capsule()
+                .fill(LunaTheme.surfaceSelected)
+                .opacity(!isFocused && showActiveRest ? 1 : 0)
+            Capsule()
+                .fill(LunaTheme.focusGoldGradient)
+                .opacity(isFocused ? 1 : 0)
         }
+        .transaction { $0.animation = nil }
     }
 }

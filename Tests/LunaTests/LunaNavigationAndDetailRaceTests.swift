@@ -269,13 +269,13 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
     func testTopBarScrollCollapseMenuWakeupTabFreshnessAndSubpagePlaybackGuard() {
         // 1. ~180 ms top bar focus debounce, 10-foot dock clearance & scroll zone hysteresis deadband
         XCTAssertEqual(LunaTopBarView.focusDebounceNanoseconds, 180_000_000)
-        XCTAssertEqual(LunaTopBarView.contentTopPadding, 96)
-        XCTAssertEqual(ScrollTopZone.collapseThreshold, 104)
+        XCTAssertEqual(LunaTopBarView.contentTopPadding, 82)
+        XCTAssertEqual(ScrollTopZone.collapseThreshold, 88)
         XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: -12), .atTop)
         XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: 36), .atTop)
         XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: 54), .midBand)
-        XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: 88), .midBand)
-        XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: 104), .scrolledDown)
+        XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: 87), .midBand)
+        XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: 88), .scrolledDown)
         XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: 420), .scrolledDown)
 
         // 2. Siri Remote «Menu/Tilbake» from root-tab content (both un-scrolled & scrolled) vs top bar exit
