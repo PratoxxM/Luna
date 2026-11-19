@@ -47,8 +47,13 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
         XCTAssertEqual(MainNavigationTab.allCases.count, 6)
         XCTAssertEqual(
             MainNavigationTab.allCases.map(\.title),
-            ["Hjem", "Filmer", "Serier", "Mitt bibliotek", "Søk", "Innstillinger"]
+            ["Hjem", "Filmer", "Serier", "Bibliotek", "Søk", "Innstillinger"]
         )
+        XCTAssertEqual(MainNavigationTab.primaryTabs, [.home, .movies, .series, .library])
+        XCTAssertEqual(MainNavigationTab.utilityTabs, [.search, .settings])
+        XCTAssertTrue(MainNavigationTab.search.isIconOnlyInTopBar)
+        XCTAssertTrue(MainNavigationTab.settings.isIconOnlyInTopBar)
+        XCTAssertFalse(MainNavigationTab.home.isIconOnlyInTopBar)
 
         let visibility = LunaNavigationBarVisibility()
         XCTAssertFalse(visibility.isTopBarHidden)

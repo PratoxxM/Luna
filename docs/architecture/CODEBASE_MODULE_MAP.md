@@ -7,8 +7,9 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | Module Path | Responsibility | `/api/tv/v1` Endpoints & Protocols | Unit Test Coverage |
 | :--- | :--- | :--- | :--- |
 | `Sources/App/LunaApp.swift` | Owns single `@MainActor AetherEngine`, root `AppSessionStore`, `ComfortPreferences` | — | — |
-| `Sources/App/MainNavigationShell.swift` | Custom top bar + hidden stock tab bar, bootstrap sync, display-criteria reset & player sheet | `GET /api/tv/v1/bootstrap` | `LunaNavigationAndDetailRaceTests.swift`, `PlayerOverlayAndCacheTests.swift` |
-| `Sources/App/LunaTopBarView.swift` | Warm-espresso & honey-brass top navigation dock, 180 ms focus-debounce & scroll auto-hide | — | `LunaNavigationAndDetailRaceTests.swift` |
+| `Sources/App/MainNavigationShell.swift` | Custom top bar + hidden stock tab bar, room atmosphere env, bootstrap sync & player sheet | `GET /api/tv/v1/bootstrap` | `LunaNavigationAndDetailRaceTests.swift`, `PlayerOverlayAndCacheTests.swift` |
+| `Sources/App/LunaNavigationBarVisibility.swift` | `MainNavigationTab` (*Hjem · Filmer · Serier · Bibliotek* + *Søk/Innstillinger*), scroll collapse & Menu-wakeup policy | — | `LunaNavigationAndDetailRaceTests.swift` |
+| `Sources/App/LunaTopBarView.swift` | Warm-espresso & honey-brass top navigation dock with room crescent mark & icon utility triggers | — | `LunaNavigationAndDetailRaceTests.swift`, `ThemeAndArtworkViewTests.swift` |
 | `Sources/Core/Discovery/BonjourServerBrowser.swift` | `NWBrowser` discovery for `_lunacore._tcp`, publishes `DiscoveredLunaCoreServer` | mDNS `_lunacore._tcp` (`api`, `https_port`) | `BonjourServerBrowserTests.swift` |
 | `Sources/Core/Config/SideloadSafeStorage.swift` | Bundle-ID-independent `UserDefaults` + Keychain persistence (`luna.v1.*`) | — | `SideloadSafeStorageTests.swift` |
 | `Sources/Core/Config/ServerConfiguration.swift` | `AppSessionStore`, URL normalization, LAN TLS evaluator & `LunaCoreClient` factory | — | `ClientOriginAndBlurHashTests.swift`, `PlayerOverlayAndCacheTests.swift` |
@@ -42,7 +43,10 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | Module Path | Responsibility | `/api/tv/v1` Endpoints | Unit Test Coverage |
 | :--- | :--- | :--- | :--- |
 | `Sources/DesignSystem/Tokens/LunaTokens.swift` | Generated platform-scaled colors, typography, radii & focus springs from `design/tokens.json` | — | `DesignTokensAndCopyTests.swift` |
-| `Sources/DesignSystem/LunaTheme.swift` | Warm espresso & honey-brass OLED/HDR palette, `warn`/`danger`, `Font` scale & pill buttons | — | `ThemeAndArtworkViewTests.swift`, `DesignTokensAndCopyTests.swift` |
+| `Sources/DesignSystem/LunaTheme.swift` | Warm espresso & honey-brass OLED/HDR palette, `LunaRoomAtmosphere` & card tint resolvers | — | `ThemeAndArtworkViewTests.swift`, `DesignTokensAndCopyTests.swift` |
+| `Sources/DesignSystem/LunaThemeTypography.swift` | `LunaTheme.Font` 10-foot typography & role tokens (`heroSerif`, `tabTitle`, `posterTitle`, `pairingCode`, `subtitleCue`) | — | `DesignTokensAndCopyTests.swift` |
+| `Sources/DesignSystem/LunaCrescentMarkView.swift` | Clean vector crescent moon brand mark (`LunaCrescentMarkView`) | — | `ThemeAndArtworkViewTests.swift` |
+| `Sources/DesignSystem/LunaPillButton.swift` | Focus-safe `LunaChromelessButtonStyle`, `LunaPillButton`, `LunaButtonProminence/Accent/Size` | — | `ThemeAndArtworkViewTests.swift`, `DesignTokensAndCopyTests.swift` |
 | `Sources/DesignSystem/CachedArtworkView.swift` | Off-main-actor key-matched artwork view preventing 1-frame recycled cell flash | — | `ThemeAndArtworkViewTests.swift` |
 | `Sources/DesignSystem/LunaFocusStyle.swift` | Shared `0.32/0.86` tvOS focus spring, inner gold border & warm under-glow modifier | — | `DesignTokensAndCopyTests.swift` |
 | `Sources/DesignSystem/LunaCopy.swift` | Norwegian pluralization, comma decimal formatter, room/tier labels & greetings | — | `DesignTokensAndCopyTests.swift` |

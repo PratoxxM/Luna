@@ -122,6 +122,7 @@ struct MainNavigationShell: View {
 
             LunaTopBarView(
                 selectedTab: $selectedTab,
+                roomName: sessionStore.roomName,
                 focusRequestNonce: navBarVisibility.focusRequestNonce,
                 onFocusPresenceChanged: { isFocused in
                     navBarVisibility.updateTopBarFocused(isFocused)
@@ -131,10 +132,11 @@ struct MainNavigationShell: View {
             .offset(y: hideTopBar ? -24 : 0)
             .allowsHitTesting(!hideTopBar)
             .disabled(hideTopBar)
-            .animation(.spring(response: 0.26, dampingFraction: 0.88), value: hideTopBar)
+            .animation(LunaFocusStyle.focusSpring, value: hideTopBar)
             .zIndex(10)
         }
         .environment(\.lunaSubpageVisibility, navBarVisibility.sink)
+        .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
         .environmentObject(sessionStore.comfort)
         .onChange(of: selectedTab) { _, newTab in
             navBarVisibility.syncActiveTab(newTab)
@@ -151,6 +153,7 @@ struct MainNavigationShell: View {
                     sessionStore.activePlaybackTarget = nil
                 }
             )
+            .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
             .environmentObject(sessionStore)
             .environmentObject(sessionStore.comfort)
             .preferredColorScheme(.dark)

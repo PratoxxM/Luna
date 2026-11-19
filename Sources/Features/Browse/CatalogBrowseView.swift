@@ -298,6 +298,7 @@ struct CatalogBrowseView: View {
         .ignoresSafeArea(edges: .horizontal)
         .lunaRootScrollTopBarTracking(tab: rootNavigationTab, isEnabled: isRootTab)
         .safeAreaPadding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 0)
+        .focusSection()
         .lunaNavigationContainerBackdrop(
             isEnabled: !isRootTab,
             mode: .ambient(isPaused: sessionStore.activePlaybackTarget != nil)

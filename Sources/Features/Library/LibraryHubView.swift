@@ -193,6 +193,7 @@ struct LibraryHubView: View {
         .ignoresSafeArea(edges: .horizontal)
         .lunaRootScrollTopBarTracking(tab: .library)
         .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
+        .focusSection()
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
@@ -661,15 +662,7 @@ private struct LibraryCustomListTileButton: View {
                 RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
                     .fill(isFocused ? LunaTheme.surfaceElevated : LunaTheme.surface)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
-                    .strokeBorder(
-                        isFocused ? LunaTheme.focusGoldBorder : LunaTheme.warmBorderSubtle,
-                        lineWidth: isFocused ? 2.2 : 1.0
-                    )
-            )
-            .scaleEffect(isFocused ? 1.02 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.84), value: isFocused)
+            .lunaFocusSurface(.listRow, isFocused: isFocused, cornerRadius: LunaTheme.cardRadius)
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))

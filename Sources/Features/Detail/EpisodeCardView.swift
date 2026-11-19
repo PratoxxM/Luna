@@ -30,7 +30,7 @@ struct EpisodeCardView: View {
                     )
                     .frame(width: 420, height: 236)
                     .clipped()
-                    .opacity(upcoming ? 0.65 : 1.0)
+                    .opacity(upcoming ? 0.65 : (isFocused ? 1.0 : LunaTokens.Layout.restPosterBrightness))
 
                     LinearGradient(
                         colors: [.clear, Color.black.opacity(0.75)],
@@ -66,23 +66,19 @@ struct EpisodeCardView: View {
                         if pct > 1 && !upcoming {
                             let trackWidth: CGFloat = 392
                             ZStack(alignment: .leading) {
-                                Capsule().fill(LunaTheme.warmBorderBase.opacity(0.22))
+                                Capsule().fill(LunaTokens.Edge.progressTrack)
                                 Capsule()
                                     .fill(LunaTheme.amber)
                                     .frame(width: trackWidth * CGFloat(pct / 100.0))
                             }
-                            .frame(width: trackWidth, height: 5)
+                            .frame(width: trackWidth, height: 6)
                             .padding(.horizontal, 14)
                             .padding(.bottom, 10)
                         }
                     }
                 }
                 .frame(width: 420, height: 236)
-                .clipShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
-                        .strokeBorder(LunaTheme.cardBorderColor(isFocused: isFocused), lineWidth: 1)
-                )
+                .lunaCardFocusFrame(cornerRadius: LunaTheme.cardRadius, isFocused: isFocused)
             }
             .buttonStyle(.card)
             .focused($isFocused)

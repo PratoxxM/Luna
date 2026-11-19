@@ -11,7 +11,7 @@ struct SettingsRoomDisplaySectionView: View {
         SettingsSectionPanel(title: "Rom & Skjerm") {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Romprofil")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(LunaTheme.Font.settingsSubLabel)
                     .foregroundStyle(LunaTheme.muted)
 
                 let matchingProfileCount = Dictionary(
@@ -141,7 +141,7 @@ struct SettingsAudioSyncSectionView: View {
             ) {
                 VStack(alignment: .trailing, spacing: 8) {
                     Text(comfort.formattedAudioDelayLabel)
-                        .font(.system(size: 16, weight: .bold).monospacedDigit())
+                        .font(LunaTheme.Font.settingsAudioDelay)
                         .foregroundStyle(comfort.audioDelayMs == 0 ? LunaTheme.muted : LunaTheme.amber)
 
                     HStack(spacing: 8) {

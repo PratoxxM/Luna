@@ -504,7 +504,7 @@ struct PlayerContainerView: View {
 
             VStack(spacing: 24) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 52))
+                    .font(LunaTheme.Font.largeStatusIcon)
                     .foregroundStyle(LunaTheme.danger)
 
                 Text("Avspilling kunne ikke starte")

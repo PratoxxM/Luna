@@ -214,7 +214,9 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         try assertRGB(LunaTheme.cardTitleColor(isFocused: false), r: 245, g: 240, b: 232)
         try assertRGB(LunaTheme.cardTitleColor(isFocused: true), r: 245, g: 240, b: 232)
         try assertRGB(LunaTheme.cardSubtitleColor(isFocused: false), r: 160, g: 150, b: 140)
-        try assertRGB(LunaTheme.cardSubtitleColor(isFocused: true), r: 196, g: 140, b: 58)
+        try assertRGB(LunaTheme.cardSubtitleColor(isFocused: true), r: 200, g: 191, b: 182)
+        XCTAssertEqual(LunaTheme.horizontalGutter, 90)
+        XCTAssertEqual(LunaTheme.posterRadius, 16)
 
         try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: false), r: 160, g: 150, b: 140)
         try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: false), r: 200, g: 191, b: 182)

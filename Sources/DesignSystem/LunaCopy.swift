@@ -57,9 +57,33 @@ public enum LunaCopy: Sendable {
     }
 
     public nonisolated static func roomEquipmentLabel(hardwareProfile: String) -> String {
+        roomEquipmentLabel(hardwareProfile: hardwareProfile, roomName: nil, serverLabel: nil)
+    }
+
+    public nonisolated static func roomEquipmentLabel(
+        hardwareProfile: String,
+        roomName: String? = nil,
+        serverLabel: String? = nil
+    ) -> String {
+        if let serverLabel {
+            let trimmed = serverLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
         let clean = hardwareProfile.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if clean == "hdr10-512" || clean == "livingroom" || clean == "living" || clean == "stua" {
             return "Samsung Frame · HDR10+ · 5.1.2"
+        }
+        if clean == "dv-fel-714" || clean == "cinema" || clean == "kjellerstua" {
+            return "LG OLED · Dolby Vision · 7.1.4"
+        }
+        let roomClean = (roomName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if roomClean.contains("stua") && !roomClean.contains("kjeller") {
+            return "Samsung Frame · HDR10+ · 5.1.2"
+        }
+        if roomClean.contains("kjeller") {
+            return "LG OLED · Dolby Vision · 7.1.4"
         }
         return "LG OLED · Dolby Vision · 7.1.4"
     }

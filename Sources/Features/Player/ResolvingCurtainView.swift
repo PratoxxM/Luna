@@ -99,7 +99,7 @@ struct ResolvingCurtainView: View {
                         }
                         if let mainTitle = curtainDisplay.mainLine {
                             Text(mainTitle)
-                                .font(.system(size: 46, weight: .bold, design: .rounded))
+                                .font(LunaTheme.Font.curtainTitle)
                                 .foregroundStyle(LunaTheme.linen)
                                 .multilineTextAlignment(.center)
                                 .lineLimit(2)

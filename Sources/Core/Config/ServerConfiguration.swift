@@ -45,6 +45,8 @@ public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable 
             TvRoomDefinition(
                 roomName: preset.defaultRoomName,
                 hardwareProfile: preset.rawValue,
+                equipmentLabel: LunaCopy.roomEquipmentLabel(hardwareProfile: preset.rawValue),
+                atmosphere: preset == .hdr10512 ? "living" : "cinema",
                 label: preset.displayTitle,
                 description: preset.technicalSummary
             )
@@ -61,6 +63,8 @@ public final class AppSessionStore: ObservableObject {
     @Published public var roomName: String
     @Published public var hardwareProfile: String
     @Published public var localProfileOverride: String?
+    @Published public var serverEquipmentLabel: String? = nil
+    @Published public var serverAtmosphere: String? = nil
     @Published public var deviceOverrides: TvDeviceOverrides? = nil
     @Published public private(set) var availableRooms: [TvRoomDefinition] = HardwareProfilePreset.fallbackRooms
     @Published public private(set) var homeRefreshNonce: Int = 0
@@ -98,6 +102,30 @@ public final class AppSessionStore: ObservableObject {
 
     public var activePreset: HardwareProfilePreset {
         HardwareProfilePreset(rawValue: effectiveHardwareProfile) ?? .dvFel714
+    }
+
+    public var effectiveEquipmentLabel: String {
+        let matchedRoom = availableRooms.first {
+            $0.roomName == roomName && $0.hardwareProfile == effectiveHardwareProfile
+        } ?? availableRooms.first { $0.hardwareProfile == effectiveHardwareProfile }
+        let preferredLabel = (localProfileOverride == nil ? serverEquipmentLabel : nil) ?? matchedRoom?.equipmentLabel
+        return LunaCopy.roomEquipmentLabel(
+            hardwareProfile: effectiveHardwareProfile,
+            roomName: roomName,
+            serverLabel: preferredLabel
+        )
+    }
+
+    public var effectiveRoomAtmosphere: LunaRoomAtmosphere {
+        let matchedRoom = availableRooms.first {
+            $0.roomName == roomName && $0.hardwareProfile == effectiveHardwareProfile
+        } ?? availableRooms.first { $0.hardwareProfile == effectiveHardwareProfile }
+        let rawAtmos = (localProfileOverride == nil ? serverAtmosphere : nil) ?? matchedRoom?.atmosphere
+        return LunaRoomAtmosphere.resolve(
+            atmosphere: rawAtmos,
+            hardwareProfile: effectiveHardwareProfile,
+            roomName: roomName
+        )
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -198,6 +226,8 @@ public final class AppSessionStore: ObservableObject {
         self.deviceName = pairedDevice.deviceName
         self.roomName = pairedDevice.roomName
         self.hardwareProfile = pairedDevice.hardwareProfile
+        self.serverEquipmentLabel = pairedDevice.equipmentLabel
+        self.serverAtmosphere = pairedDevice.atmosphere
         self.deviceOverrides = pairedDevice.overrides
         self.comfort.adoptServerOverrides(pairedDevice.overrides)
         self.localProfileOverride = nil
@@ -228,6 +258,12 @@ public final class AppSessionStore: ObservableObject {
                 self.hardwareProfile = device.hardwareProfile
                 defaults.set(device.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
                 clientInputsChanged = true
+            }
+            if device.equipmentLabel != serverEquipmentLabel {
+                self.serverEquipmentLabel = device.equipmentLabel
+            }
+            if device.atmosphere != serverAtmosphere {
+                self.serverAtmosphere = device.atmosphere
             }
         }
         if overrideSyncTask == nil {
@@ -350,6 +386,8 @@ public final class AppSessionStore: ObservableObject {
         DiskSWRStore.clearMemory()
         Task { await DiskSWRStore.clearAllAsync() }
         deviceToken = nil
+        serverEquipmentLabel = nil
+        serverAtmosphere = nil
         availableRooms = HardwareProfilePreset.fallbackRooms
         activePlaybackTarget = nil
         homeRefreshNonce &+= 1

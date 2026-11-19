@@ -81,7 +81,7 @@ struct SettingsServerDiagnosticsSectionView: View {
 
                 if cacheClearedNotice {
                     Text("Hurtigbuffer tømt")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(LunaTheme.Font.settingsStatusTag)
                         .foregroundStyle(LunaTheme.amber)
                         .lineLimit(1)
                         .fixedSize()

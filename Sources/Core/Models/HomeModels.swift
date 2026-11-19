@@ -467,6 +467,8 @@ public struct TvLibraryResponse: Codable, Equatable, Sendable {
 public struct TvRoomDefinition: Codable, Identifiable, Equatable, Sendable {
     public let roomName: String
     public let hardwareProfile: String
+    public let equipmentLabel: String?
+    public let atmosphere: String?
     public let label: String?
     public let description: String?
 
@@ -475,11 +477,15 @@ public struct TvRoomDefinition: Codable, Identifiable, Equatable, Sendable {
     public init(
         roomName: String,
         hardwareProfile: String,
+        equipmentLabel: String? = nil,
+        atmosphere: String? = nil,
         label: String? = nil,
         description: String? = nil
     ) {
         self.roomName = roomName
         self.hardwareProfile = hardwareProfile
+        self.equipmentLabel = equipmentLabel
+        self.atmosphere = atmosphere
         self.label = label
         self.description = description
     }

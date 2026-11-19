@@ -23,7 +23,7 @@ struct PairingOnboardingView: View {
                     LunaCrescentMarkView(size: 62, color: LunaTheme.amber)
 
                     Text("Luna")
-                        .font(.system(size: 56, weight: .bold, design: .rounded))
+                        .font(LunaTheme.Font.heroDisplay)
                         .foregroundStyle(LunaTheme.linen)
 
                     Text("Dedikert hjemmekino for LunaCore · Dolby Vision FEL & Spatial Audio")
@@ -128,7 +128,7 @@ struct PairingOnboardingView: View {
                 .foregroundStyle(isCodeExpired ? LunaTheme.warn : LunaTheme.linen)
 
             Text(isCodeExpired ? "------" : pairingInfo.displayCode)
-                .font(.system(size: 88, weight: .heavy, design: .monospaced))
+                .font(LunaTheme.Font.pairingCode)
                 .tracking(8)
                 .foregroundStyle(isCodeExpired ? LunaTheme.muted : LunaTheme.amber)
                 .padding(.horizontal, 48)

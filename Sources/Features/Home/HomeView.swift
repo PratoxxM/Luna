@@ -137,6 +137,7 @@ struct HomeView: View {
         .ignoresSafeArea(edges: .horizontal)
         .lunaRootScrollTopBarTracking(tab: .home)
         .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
+        .focusSection()
         .focusScope(homeFocusNamespace)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)

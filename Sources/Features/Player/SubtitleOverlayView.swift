@@ -127,7 +127,7 @@ struct SubtitleOverlayView: View {
         case .text(let plain):
             styledTextBox(
                 content: Text(plain)
-                    .font(.system(size: pointSize, weight: .semibold, design: .rounded))
+                    .font(LunaTheme.Font.subtitleCue(size: pointSize))
                     .foregroundStyle(comfort.hdrSubtitlePreset.foregroundColor(isHDR: isHDR)),
                 boxAlpha: boxAlpha
             )

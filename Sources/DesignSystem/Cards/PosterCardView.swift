@@ -49,6 +49,7 @@ public struct PosterCardView: View {
                         contentMode: .fill
                     )
                     .frame(width: width, height: height)
+                    .opacity(isFocused ? 1.0 : LunaTokens.Layout.restPosterBrightness)
                     .clipped()
 
                     VStack {
@@ -65,7 +66,7 @@ public struct PosterCardView: View {
 
                             if let storageBadge = storageBadgeLabel {
                                 Text(storageBadge)
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .font(LunaTheme.Font.tierBadge)
                                     .foregroundStyle(storageBadgeForeground)
                                     .padding(.horizontal, 9)
                                     .padding(.vertical, 4)
@@ -82,23 +83,19 @@ public struct PosterCardView: View {
                         if pct > 2 && pct < 95 {
                             let trackWidth = max(0, width - 24)
                             ZStack(alignment: .leading) {
-                                Capsule().fill(Color.black.opacity(0.55))
+                                Capsule().fill(LunaTokens.Edge.progressTrack)
                                 Capsule()
                                     .fill(LunaTheme.amber)
                                     .frame(width: trackWidth * CGFloat(pct / 100.0))
                             }
-                            .frame(width: trackWidth, height: 5)
+                            .frame(width: trackWidth, height: 6)
                             .padding(.horizontal, 12)
                             .padding(.bottom, 10)
                         }
                     }
                 }
                 .frame(width: width, height: height)
-                .clipShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
-                        .strokeBorder(LunaTheme.cardBorderColor(isFocused: isFocused), lineWidth: 1)
-                )
+                .lunaCardFocusFrame(cornerRadius: LunaTheme.posterRadius, isFocused: isFocused)
             }
             .buttonStyle(.card)
             .focused($isFocused)
@@ -108,7 +105,7 @@ public struct PosterCardView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(card.title)
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(LunaTheme.Font.posterTitle)
                     .foregroundStyle(LunaTheme.cardTitleColor(isFocused: isFocused))
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
@@ -116,13 +113,11 @@ public struct PosterCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(subtitleText)
-                    .font(.system(size: 19, weight: .medium))
+                    .font(LunaTheme.Font.posterSubtitle)
                     .foregroundStyle(LunaTheme.cardSubtitleColor(isFocused: isFocused))
                     .lineLimit(1)
             }
             .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: 92, alignment: .topLeading)
-            .offset(y: isFocused ? 6 : 0)
-            .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
         }
     }
 

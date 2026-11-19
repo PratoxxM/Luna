@@ -263,7 +263,7 @@ private struct SeeAllShelfCardButton: View {
         Button(action: action) {
             VStack(spacing: 14) {
                 Image(systemName: "arrow.right")
-                    .font(.system(size: 34, weight: .semibold))
+                    .font(LunaTheme.Font.sectionTitle)
                     .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.moonlight)
 
                 Text("Se alle")
@@ -279,21 +279,7 @@ private struct SeeAllShelfCardButton: View {
                             : AnyShapeStyle(LunaTheme.surface)
                     )
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
-                    .strokeBorder(
-                        isFocused ? LunaTheme.focusGoldBorder : LunaTheme.warmBorder,
-                        lineWidth: isFocused ? 2.0 : 1.0
-                    )
-            )
-            .shadow(
-                color: isFocused ? Color.black.opacity(0.36) : .clear,
-                radius: isFocused ? 12 : 0,
-                x: 0,
-                y: isFocused ? 5 : 0
-            )
-            .scaleEffect(isFocused ? 1.04 : 1.0)
-            .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
+            .lunaFocusSurface(.secondaryPill, isFocused: isFocused, cornerRadius: LunaTheme.cardRadius)
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))

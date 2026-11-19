@@ -20,7 +20,7 @@ struct DetailDeleteSheetView: View {
             VStack(alignment: .leading, spacing: 26) {
                 HStack(spacing: 16) {
                     Image(systemName: "trash.circle.fill")
-                        .font(.system(size: 40, weight: .semibold))
+                        .font(LunaTheme.Font.sheetHeaderIcon)
                         .foregroundStyle(LunaTheme.coral)
 
                     VStack(alignment: .leading, spacing: 4) {

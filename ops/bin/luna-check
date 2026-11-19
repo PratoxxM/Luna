@@ -165,8 +165,8 @@ for sf in sorted((root / "Sources").rglob("*.swift")):
             errors.append(f"COPY_GATE {rel}:{i}: hardcoded Norwegian plural interpolation")
         if "mediefil" in ln and "? \"l\"" in ln:
             errors.append(f"COPY_GATE {rel}:{i}: inline ternary plural hack")
-if sys_font_calls > 43:
-    errors.append(f"RATCHET .font(.system(size: count {sys_font_calls} exceeds M1 baseline 43")
+if sys_font_calls > 0:
+    errors.append(f"RATCHET .font(.system(size: count {sys_font_calls} exceeds M8 0 ceiling")
 
 if errors:
     print("LUNA-CHECK FAILED:", file=sys.stderr)
@@ -174,7 +174,7 @@ if errors:
         print(f"  - {err}", file=sys.stderr)
     sys.exit(1)
 
-print(f"  [OK] Permissions (0755/0644), <= 800 LOC ({len(swift_files)} .swift files), doc parity ({len(doc_refs)} modules), sideload, retired patterns, copy/ratchet ({sys_font_calls}<=43) & public hygiene checks passed")
+print(f"  [OK] Permissions (0755/0644), <= 800 LOC ({len(swift_files)} .swift files), doc parity ({len(doc_refs)} modules), sideload, retired patterns, copy/ratchet ({sys_font_calls}<=0) & public hygiene checks passed")
 PY
 
 python3 -B "$SCRIPT_DIR/luna-design-tokens" --check

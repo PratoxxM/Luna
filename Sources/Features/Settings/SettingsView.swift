@@ -57,7 +57,7 @@ struct SettingsView: View {
         HStack(alignment: .top, spacing: 36) {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Innstillinger")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(LunaTheme.Font.settingsHeading)
                     .foregroundStyle(LunaTheme.linen)
                     .padding(.leading, 4)
 
@@ -177,12 +177,12 @@ private struct SettingsCategoryRowButton: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: category.systemImage)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(LunaTheme.Font.settingsRowIcon)
                     .foregroundStyle(isSelected || isFocused ? LunaTheme.amber : LunaTheme.muted)
                     .frame(width: 22)
 
                 Text(category.title)
-                    .font(.system(size: 18, weight: .medium))
+                    .font(LunaTheme.Font.settingsRowTitle)
                     .foregroundStyle(LunaTheme.linen)
                     .lineLimit(1)
 
@@ -190,7 +190,7 @@ private struct SettingsCategoryRowButton: View {
 
                 if isSelected {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(LunaTheme.Font.microChevron)
                         .foregroundStyle(LunaTheme.amber)
                 }
             }
@@ -198,7 +198,7 @@ private struct SettingsCategoryRowButton: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous)
                     .fill(
                         isFocused
                             ? LunaTheme.surfaceElevated
@@ -206,18 +206,7 @@ private struct SettingsCategoryRowButton: View {
                     )
                     .transaction { $0.animation = nil }
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(
-                        isFocused
-                            ? LunaTheme.focusGoldBorder
-                            : (isSelected ? LunaTheme.warmBorderStrong : LunaTheme.warmBorderSubtle),
-                        lineWidth: isFocused ? 2.0 : 1.0
-                    )
-                    .transaction { $0.animation = nil }
-            )
-            .scaleEffect(isFocused ? 1.015 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.84), value: isFocused)
+            .lunaFocusSurface(.listRow, isFocused: isFocused, cornerRadius: LunaTokens.Radius.chip)
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))

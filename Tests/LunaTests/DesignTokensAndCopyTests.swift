@@ -25,6 +25,30 @@ final class DesignTokensAndCopyTests: XCTestCase {
         let _ = LunaTheme.Font.subtitle
         let _ = LunaTheme.Font.caption
         let _ = LunaTheme.Font.badge
+        let _ = LunaTheme.Font.brandSerif
+        let _ = LunaTheme.Font.pairingCode
+        let _ = LunaTheme.Font.subtitleCue(size: 42)
+        let _ = LunaTheme.Font.tabTitle
+        let _ = LunaTheme.Font.primaryPlayLabel
+    }
+
+    func testRoomAtmosphereCalibrationAndEquipmentLabels() {
+        XCTAssertEqual(
+            LunaRoomAtmosphere.resolve(atmosphere: nil, hardwareProfile: "dv-fel-714", roomName: "Kjellerstua"),
+            .cinema
+        )
+        XCTAssertEqual(
+            LunaRoomAtmosphere.resolve(atmosphere: nil, hardwareProfile: "hdr10-512", roomName: "Stua"),
+            .living
+        )
+        XCTAssertEqual(
+            LunaRoomAtmosphere.resolve(atmosphere: "living", hardwareProfile: "custom", roomName: "Loft"),
+            .living
+        )
+        XCTAssertEqual(
+            LunaCopy.roomEquipmentLabel(hardwareProfile: "dv-fel-714", roomName: "Kjellerstua", serverLabel: "Egen kino"),
+            "Egen kino"
+        )
     }
 
     @MainActor

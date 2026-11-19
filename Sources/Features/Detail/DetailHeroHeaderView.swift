@@ -6,7 +6,7 @@ struct DetailHeroHeaderView: View {
     let primaryPlayTitle: String
     let watchedButtonTitle: String
     let isPreResolvedReady: Bool
-    var horizontalGutter: CGFloat = 90
+    var horizontalGutter: CGFloat = LunaTheme.horizontalGutter
     let focusNamespace: Namespace.ID
 
     var hasLocalEpisodes: Bool = false
@@ -67,7 +67,7 @@ struct DetailHeroHeaderView: View {
                 .frame(maxWidth: 520, maxHeight: 118, alignment: .bottomLeading)
             } else {
                 Text(item.title)
-                    .font(.system(size: 52, weight: .bold, design: .rounded))
+                    .font(LunaTheme.Font.heroSerif)
                     .foregroundStyle(LunaTheme.linen)
                     .lineLimit(2)
                     .frame(maxWidth: 980, alignment: .leading)
@@ -334,9 +334,9 @@ private struct PrimaryPlayLabel: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "play.fill")
-                .font(.system(size: 18, weight: .bold))
+                .font(LunaTheme.Font.primaryPlayIcon)
             Text(title)
-                .font(.system(size: 21, weight: .bold))
+                .font(LunaTheme.Font.primaryPlayLabel)
                 .lineLimit(1)
                 .minimumScaleFactor(0.86)
             if isWarmReady {
@@ -360,21 +360,6 @@ private struct PrimaryPlayLabel: View {
             }
             .transaction { $0.animation = nil }
         )
-        .overlay(
-            Capsule()
-                .strokeBorder(
-                    focused ? LunaTheme.focusGoldBorder : LunaTheme.focusGoldBorder.opacity(0.45),
-                    lineWidth: focused ? 2.2 : 1.0
-                )
-                .transaction { $0.animation = nil }
-        )
-        .shadow(
-            color: focused ? Color.black.opacity(0.42) : .clear,
-            radius: focused ? 12 : 0,
-            x: 0,
-            y: focused ? 5 : 0
-        )
-        .scaleEffect(focused ? 1.03 : 1.0)
-        .animation(.spring(response: 0.22, dampingFraction: 0.78), value: focused)
+        .lunaFocusSurface(.primaryPlay, isFocused: focused, cornerRadius: LunaTokens.Radius.pill)
     }
 }

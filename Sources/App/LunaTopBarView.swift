@@ -1,305 +1,13 @@
 import SwiftUI
 
-public enum MainNavigationTab: String, CaseIterable, Identifiable, Hashable, Sendable {
-    case home
-    case movies
-    case series
-    case library
-    case search
-    case settings
-
-    public var id: String { rawValue }
-
-    public var title: String {
-        switch self {
-        case .home: return "Hjem"
-        case .movies: return "Filmer"
-        case .series: return "Serier"
-        case .library: return "Mitt bibliotek"
-        case .search: return "Søk"
-        case .settings: return "Innstillinger"
-        }
-    }
-
-    public var systemImage: String {
-        switch self {
-        case .home: return "sparkles.tv"
-        case .movies: return "film"
-        case .series: return "tv"
-        case .library: return "books.vertical.fill"
-        case .search: return "magnifyingglass"
-        case .settings: return "gearshape.fill"
-        }
-    }
-}
-
-public enum ScrollTopZone: Equatable, Sendable {
-    case atTop
-    case midBand
-    case scrolledDown
-
-    public nonisolated static let revealThreshold: CGFloat = 36
-    public nonisolated static let collapseThreshold: CGFloat = 88
-
-    public nonisolated static func classify(scrolledOffsetY: CGFloat) -> ScrollTopZone {
-        if scrolledOffsetY <= revealThreshold {
-            return .atTop
-        }
-        if scrolledOffsetY >= collapseThreshold {
-            return .scrolledDown
-        }
-        return .midBand
-    }
-}
-
-public struct ScrollTopSample: Equatable, Sendable {
-    public let zone: ScrollTopZone
-    public let downwardBucket: Int
-
-    public nonisolated static let stepPoints: CGFloat = 48
-
-    public nonisolated static func capture(scrolledOffsetY: CGFloat) -> ScrollTopSample {
-        let zone = ScrollTopZone.classify(scrolledOffsetY: scrolledOffsetY)
-        let bucket = zone == .scrolledDown ? max(1, Int((scrolledOffsetY / stepPoints).rounded(.down))) : 0
-        return ScrollTopSample(zone: zone, downwardBucket: bucket)
-    }
-}
-
-public enum SubpageVisibilityPolicy {
-    public nonisolated static func shouldLeaveSubpageOnDisappear(
-        isRootTab: Bool = false,
-        hasPushedChildDestination: Bool,
-        hasActivePlayback: Bool,
-        isShowingModalSheet: Bool = false
-    ) -> Bool {
-        !isRootTab && !hasPushedChildDestination && !hasActivePlayback && !isShowingModalSheet
-    }
-}
-
-public enum TabContentFreshnessPolicy {
-    public nonisolated static let defaultFreshnessInterval: TimeInterval = 120
-
-    public nonisolated static func isCacheFresh(
-        hasCachedContent: Bool,
-        lastValidatedAt: Date,
-        now: Date = Date(),
-        cachedRefreshNonce: Int,
-        currentRefreshNonce: Int,
-        freshnessInterval: TimeInterval = defaultFreshnessInterval
-    ) -> Bool {
-        guard hasCachedContent, cachedRefreshNonce == currentRefreshNonce else {
-            return false
-        }
-        return now.timeIntervalSince(lastValidatedAt) < freshnessInterval
-    }
-}
-
-@MainActor
-final class LunaNavigationBarVisibility: ObservableObject {
-    nonisolated static let menuFocusBounceGraceSeconds: TimeInterval = 0.14
-
-    @Published private(set) var activeSubpageTokens: Set<UUID> = []
-    @Published private(set) var activeModalTokens: Set<UUID> = []
-    @Published private(set) var isCollapsedByScroll: Bool = false
-    @Published private(set) var isTopBarFocused: Bool = false
-    @Published private(set) var focusRequestNonce: Int = 0
-
-    private var scrollZonesByTab: [MainNavigationTab: ScrollTopZone] = [:]
-    private var activeTab: MainNavigationTab = .home
-    private var menuRevealGraceUntil: Date = .distantPast
-    private(set) var pendingMenuBypassExit: Bool = false
-
-    var isSubpageActive: Bool {
-        !activeSubpageTokens.isEmpty
-    }
-
-    var isModalActive: Bool {
-        !activeModalTokens.isEmpty
-    }
-
-    var isTopBarHidden: Bool {
-        isSubpageActive || (isCollapsedByScroll && !isTopBarFocused)
-    }
-
-    var sink: LunaSubpageVisibilitySink {
-        LunaSubpageVisibilitySink(
-            enterSubpage: { [weak self] token in
-                self?.enterSubpage(token)
-            },
-            leaveSubpage: { [weak self] token in
-                self?.leaveSubpage(token)
-            },
-            enterModal: { [weak self] token in
-                self?.enterModal(token)
-            },
-            leaveModal: { [weak self] token in
-                self?.leaveModal(token)
-            },
-            reportScrollSample: { [weak self] oldSample, newSample, tab in
-                self?.reportScrollSample(oldSample, newSample, for: tab)
-            }
-        )
-    }
-
-    func enterSubpage(_ token: UUID) {
-        guard !activeSubpageTokens.contains(token) else { return }
-        activeSubpageTokens.insert(token)
-        pendingMenuBypassExit = false
-    }
-
-    func leaveSubpage(_ token: UUID) {
-        guard activeSubpageTokens.contains(token) else { return }
-        activeSubpageTokens.remove(token)
-    }
-
-    func enterModal(_ token: UUID) {
-        guard !activeModalTokens.contains(token) else { return }
-        activeModalTokens.insert(token)
-        pendingMenuBypassExit = false
-    }
-
-    func leaveModal(_ token: UUID) {
-        guard activeModalTokens.contains(token) else { return }
-        activeModalTokens.remove(token)
-    }
-
-    func syncActiveTab(_ tab: MainNavigationTab) {
-        activeTab = tab
-        pendingMenuBypassExit = false
-        if isTopBarFocused {
-            if isCollapsedByScroll {
-                isCollapsedByScroll = false
-            }
-        } else {
-            let shouldCollapse = (scrollZonesByTab[tab] == .scrolledDown)
-            if isCollapsedByScroll != shouldCollapse {
-                isCollapsedByScroll = shouldCollapse
-            }
-        }
-    }
-
-    func reportScrollZone(_ zone: ScrollTopZone, for tab: MainNavigationTab, now: Date = Date()) {
-        let syntheticBucket = zone == .scrolledDown ? 2 : 0
-        reportScrollSample(nil, ScrollTopSample(zone: zone, downwardBucket: syntheticBucket), for: tab, now: now)
-    }
-
-    func reportScrollSample(
-        _ oldSample: ScrollTopSample?,
-        _ newSample: ScrollTopSample,
-        for tab: MainNavigationTab,
-        now: Date = Date()
-    ) {
-        scrollZonesByTab[tab] = newSample.zone
-        guard tab == activeTab else { return }
-        if now >= menuRevealGraceUntil {
-            pendingMenuBypassExit = false
-        }
-
-        switch newSample.zone {
-        case .atTop:
-            if isCollapsedByScroll {
-                isCollapsedByScroll = false
-            }
-        case .scrolledDown:
-            let scrolledFurtherDown = (oldSample == nil)
-                || (oldSample?.zone != .scrolledDown)
-                || (newSample.downwardBucket > (oldSample?.downwardBucket ?? 0))
-            if scrolledFurtherDown, !isTopBarFocused, now >= menuRevealGraceUntil, !isCollapsedByScroll {
-                isCollapsedByScroll = true
-            }
-        case .midBand:
-            break
-        }
-    }
-
-    func updateTopBarFocused(_ focused: Bool, now: Date = Date()) {
-        guard isTopBarFocused != focused else { return }
-        isTopBarFocused = focused
-        if focused {
-            pendingMenuBypassExit = false
-            if isCollapsedByScroll {
-                isCollapsedByScroll = false
-            }
-        } else if now < menuRevealGraceUntil {
-            pendingMenuBypassExit = true
-        } else if scrollZonesByTab[activeTab] == .scrolledDown {
-            isCollapsedByScroll = true
-        }
-    }
-
-    func shouldInterceptMenuPress(hasActivePlayback: Bool) -> Bool {
-        !isTopBarFocused &&
-        !hasActivePlayback &&
-        !isSubpageActive &&
-        !isModalActive &&
-        !pendingMenuBypassExit
-    }
-
-    func handleMenuPressToRevealTopBar(now: Date = Date()) {
-        isCollapsedByScroll = false
-        pendingMenuBypassExit = true
-        menuRevealGraceUntil = now.addingTimeInterval(Self.menuFocusBounceGraceSeconds)
-        focusRequestNonce &+= 1
-    }
-}
-
-public struct LunaSubpageVisibilitySink: Sendable {
-    public let enterSubpage: @MainActor @Sendable (UUID) -> Void
-    public let leaveSubpage: @MainActor @Sendable (UUID) -> Void
-    public let enterModal: @MainActor @Sendable (UUID) -> Void
-    public let leaveModal: @MainActor @Sendable (UUID) -> Void
-    public let reportScrollSample: @MainActor @Sendable (ScrollTopSample?, ScrollTopSample, MainNavigationTab) -> Void
-
-    public static let noop = LunaSubpageVisibilitySink(
-        enterSubpage: { _ in },
-        leaveSubpage: { _ in },
-        enterModal: { _ in },
-        leaveModal: { _ in },
-        reportScrollSample: { _, _, _ in }
-    )
-}
-
-private struct LunaSubpageVisibilitySinkKey: EnvironmentKey {
-    static let defaultValue: LunaSubpageVisibilitySink = .noop
-}
-
-public extension EnvironmentValues {
-    var lunaSubpageVisibility: LunaSubpageVisibilitySink {
-        get { self[LunaSubpageVisibilitySinkKey.self] }
-        set { self[LunaSubpageVisibilitySinkKey.self] = newValue }
-    }
-}
-
-extension View {
-    func lunaRootScrollTopBarTracking(tab: MainNavigationTab, isEnabled: Bool = true) -> some View {
-        modifier(LunaRootScrollTopBarModifier(tab: tab, isEnabled: isEnabled))
-    }
-}
-
-private struct LunaRootScrollTopBarModifier: ViewModifier {
-    @Environment(\.lunaSubpageVisibility) private var visibilitySink
-    let tab: MainNavigationTab
-    let isEnabled: Bool
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if isEnabled {
-            content.onScrollGeometryChange(for: ScrollTopSample.self) { geo in
-                ScrollTopSample.capture(scrolledOffsetY: geo.contentOffset.y + geo.contentInsets.top)
-            } action: { oldSample, newSample in
-                visibilitySink.reportScrollSample(oldSample, newSample, tab)
-            }
-        } else {
-            content
-        }
-    }
-}
-
 struct LunaTopBarView: View {
     static let contentTopPadding: CGFloat = 82
     static let focusDebounceNanoseconds: UInt64 = 180_000_000
 
+    @Environment(\.lunaRoomAtmosphere) private var environmentAtmosphere
+
     @Binding var selectedTab: MainNavigationTab
+    var roomName: String? = nil
     var focusRequestNonce: Int = 0
     var onFocusPresenceChanged: (Bool) -> Void = { _ in }
 
@@ -313,28 +21,19 @@ struct LunaTopBarView: View {
         HStack(spacing: 14) {
             emblemView
 
-            Rectangle()
-                .fill(LunaTheme.warmBorder)
-                .frame(width: 1, height: 20)
-                .allowsHitTesting(false)
+            dividerView
 
-            HStack(spacing: 6) {
-                ForEach(MainNavigationTab.allCases) { tab in
-                    TopBarTabPillButton(
-                        tab: tab,
-                        isActive: selectedTab == tab,
-                        isFocused: focusedTab == tab,
-                        isBarFocused: focusedTab != nil
-                    ) {
-                        tabDebounceTask?.cancel()
-                        tabDebounceTask = nil
-                        if selectedTab != tab {
-                            selectedTab = tab
-                        }
-                        focusedTab = tab
-                    }
-                    .focused($focusedTab, equals: tab)
-                    .prefersDefaultFocus(selectedTab == tab, in: topBarFocusNamespace)
+            HStack(spacing: 8) {
+                ForEach(MainNavigationTab.primaryTabs) { tab in
+                    tabButton(for: tab, isIconOnly: false)
+                }
+            }
+
+            dividerView
+
+            HStack(spacing: 8) {
+                ForEach(MainNavigationTab.utilityTabs) { tab in
+                    tabButton(for: tab, isIconOnly: true)
                 }
             }
         }
@@ -405,13 +104,46 @@ struct LunaTopBarView: View {
         }
     }
 
-    private var emblemView: some View {
-        HStack(spacing: 8) {
-            LunaCrescentMarkView(size: 24, color: LunaTheme.amber)
+    @ViewBuilder
+    private func tabButton(for tab: MainNavigationTab, isIconOnly: Bool) -> some View {
+        TopBarTabPillButton(
+            tab: tab,
+            isActive: selectedTab == tab,
+            isFocused: focusedTab == tab,
+            isBarFocused: focusedTab != nil,
+            isIconOnly: isIconOnly
+        ) {
+            tabDebounceTask?.cancel()
+            tabDebounceTask = nil
+            if selectedTab != tab {
+                selectedTab = tab
+            }
+            focusedTab = tab
+        }
+        .focused($focusedTab, equals: tab)
+        .prefersDefaultFocus(selectedTab == tab, in: topBarFocusNamespace)
+    }
 
-            Text("Luna")
-                .font(.system(size: 21, weight: .semibold, design: .rounded))
-                .foregroundStyle(LunaTheme.linen)
+    private var dividerView: some View {
+        Rectangle()
+            .fill(LunaTheme.warmBorder)
+            .frame(width: 1, height: 22)
+            .allowsHitTesting(false)
+    }
+
+    private var emblemView: some View {
+        let displayLabel: String = {
+            let trimmed = (roomName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "Luna" : trimmed
+        }()
+
+        return HStack(spacing: 10) {
+            LunaCrescentMarkView(size: 26, color: environmentAtmosphere.lampColor)
+
+            Text(displayLabel)
+                .font(LunaTheme.Font.brandSerif)
+                .foregroundStyle(LunaTheme.moonlight)
+                .lineLimit(1)
         }
         .padding(.leading, 4)
         .padding(.trailing, 2)
@@ -420,10 +152,13 @@ struct LunaTopBarView: View {
 }
 
 struct TopBarTabPillButton: View {
+    @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
+
     let tab: MainNavigationTab
     let isActive: Bool
     let isFocused: Bool
     var isBarFocused: Bool = false
+    var isIconOnly: Bool = false
     let action: () -> Void
 
     nonisolated static func resolveIconColor(
@@ -460,31 +195,35 @@ struct TopBarTabPillButton: View {
         let showActiveRest = isActive && !isBarFocused
 
         Button(action: action) {
-            HStack(spacing: 7) {
-                Image(systemName: tab.systemImage)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(
-                        Self.resolveIconColor(
-                            isActive: isActive,
-                            isFocused: isFocused,
-                            isBarFocused: isBarFocused
+            HStack(spacing: isIconOnly ? 0 : 8) {
+                if isIconOnly || tab == .home {
+                    Image(systemName: tab.systemImage)
+                        .font(LunaTheme.Font.tabIcon)
+                        .foregroundStyle(
+                            Self.resolveIconColor(
+                                isActive: isActive,
+                                isFocused: isFocused,
+                                isBarFocused: isBarFocused
+                            )
                         )
-                    )
+                }
 
-                Text(tab.title)
-                    .font(.system(size: 19, weight: .medium))
-                    .foregroundStyle(
-                        Self.resolveTextColor(
-                            isActive: isActive,
-                            isFocused: isFocused,
-                            isBarFocused: isBarFocused
+                if !isIconOnly {
+                    Text(tab.title)
+                        .font(LunaTheme.Font.tabTitle)
+                        .foregroundStyle(
+                            Self.resolveTextColor(
+                                isActive: isActive,
+                                isFocused: isFocused,
+                                isBarFocused: isBarFocused
+                            )
                         )
-                    )
-                    .lineLimit(1)
+                        .lineLimit(1)
+                }
             }
             .transaction { $0.animation = nil }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 9)
+            .padding(.horizontal, isIconOnly ? 14 : 18)
+            .padding(.vertical, 8)
             .background(pillBackground(showActiveRest: showActiveRest))
             .overlay(
                 Capsule()
@@ -494,22 +233,23 @@ struct TopBarTabPillButton: View {
                             isFocused: isFocused,
                             isBarFocused: isBarFocused
                         ),
-                        lineWidth: isFocused ? 2.0 : 1.0
+                        lineWidth: isFocused ? LunaFocusStyle.borderWidth : 1.0
                     )
                     .transaction { $0.animation = nil }
             )
             .shadow(
-                color: isFocused ? Color.black.opacity(0.32) : .clear,
-                radius: isFocused ? 8 : 0,
+                color: isFocused ? roomAtmosphere.lampColor.opacity(roomAtmosphere.lampStrength) : .clear,
+                radius: isFocused ? 20 : 0,
                 x: 0,
-                y: isFocused ? 4 : 0
+                y: isFocused ? 8 : 0
             )
-            .scaleEffect(isFocused ? 1.02 : 1.0)
-            .animation(.spring(response: 0.22, dampingFraction: 0.80), value: isFocused)
+            .scaleEffect(isFocused ? 1.03 : 1.0)
+            .animation(LunaFocusStyle.focusSpring, value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(Capsule())
         .focusEffectDisabled(true)
+        .accessibilityLabel(tab.title)
     }
 
     private func pillBackground(showActiveRest: Bool) -> some View {

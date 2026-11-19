@@ -58,6 +58,7 @@ public struct BackdropCardView: View {
                         contentMode: .fill
                     )
                     .frame(width: width, height: height)
+                    .opacity(isFocused ? 1.0 : LunaTokens.Layout.restPosterBrightness)
                     .clipped()
 
                     VStack(spacing: 0) {
@@ -69,7 +70,7 @@ public struct BackdropCardView: View {
                                 Spacer(minLength: 4)
                                 if let storageBadge = storageBadgeLabel {
                                     Text(storageBadge)
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .font(LunaTheme.Font.tierBadge)
                                         .foregroundStyle(storageBadgeForeground)
                                         .padding(.horizontal, 9)
                                         .padding(.vertical, 4)
@@ -101,12 +102,12 @@ public struct BackdropCardView: View {
                                 if pct > 0 {
                                     let trackWidth = max(0, width - 28)
                                     ZStack(alignment: .leading) {
-                                        Capsule().fill(LunaTheme.warmBorderBase.opacity(0.24))
+                                        Capsule().fill(LunaTokens.Edge.progressTrack)
                                         Capsule()
                                             .fill(LunaTheme.amber)
                                             .frame(width: trackWidth * CGFloat(pct / 100.0))
                                     }
-                                    .frame(width: trackWidth, height: 5)
+                                    .frame(width: trackWidth, height: 6)
                                     .padding(.horizontal, 14)
                                 }
                             }
@@ -123,11 +124,7 @@ public struct BackdropCardView: View {
                     }
                 }
                 .frame(width: width, height: height)
-                .clipShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
-                        .strokeBorder(LunaTheme.cardBorderColor(isFocused: isFocused), lineWidth: 1)
-                )
+                .lunaCardFocusFrame(cornerRadius: LunaTheme.cardRadius, isFocused: isFocused)
             }
             .buttonStyle(.card)
             .focused($isFocused)
@@ -141,7 +138,7 @@ public struct BackdropCardView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(card.title)
-                    .font(.system(size: 28, weight: .bold))
+                    .font(LunaTheme.Font.backdropTitle)
                     .foregroundStyle(LunaTheme.cardTitleColor(isFocused: isFocused))
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
@@ -149,13 +146,11 @@ public struct BackdropCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(subtitleLine)
-                    .font(.system(size: 21, weight: .medium))
+                    .font(LunaTheme.Font.backdropSubtitle)
                     .foregroundStyle(LunaTheme.cardSubtitleColor(isFocused: isFocused))
                     .lineLimit(1)
             }
             .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: 68, alignment: .topLeading)
-            .offset(y: isFocused ? 7 : 0)
-            .animation(.spring(response: 0.22, dampingFraction: 0.8), value: isFocused)
         }
     }
 
@@ -163,10 +158,10 @@ public struct BackdropCardView: View {
         let urgent = card.isUrgentUpcoming
         return HStack(spacing: 7) {
             Image(systemName: "calendar")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(LunaTheme.Font.cardMicroIcon)
                 .foregroundStyle(urgent ? LunaTheme.canvas : LunaTheme.amber)
             Text(card.upcomingPillText)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(LunaTheme.Font.cardMicroLabel)
                 .foregroundStyle(urgent ? LunaTheme.canvas : LunaTheme.linen)
                 .lineLimit(1)
         }

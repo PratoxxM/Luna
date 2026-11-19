@@ -99,6 +99,8 @@ public struct TvPairedDeviceInfo: Codable, Equatable, Sendable {
     public let deviceName: String
     public let roomName: String
     public let hardwareProfile: String
+    public let equipmentLabel: String?
+    public let atmosphere: String?
     public let overrides: TvDeviceOverrides?
 
     public init(
@@ -106,12 +108,16 @@ public struct TvPairedDeviceInfo: Codable, Equatable, Sendable {
         deviceName: String,
         roomName: String,
         hardwareProfile: String,
+        equipmentLabel: String? = nil,
+        atmosphere: String? = nil,
         overrides: TvDeviceOverrides? = nil
     ) {
         self.deviceId = deviceId
         self.deviceName = deviceName
         self.roomName = roomName
         self.hardwareProfile = hardwareProfile
+        self.equipmentLabel = equipmentLabel
+        self.atmosphere = atmosphere
         self.overrides = overrides
     }
 }
