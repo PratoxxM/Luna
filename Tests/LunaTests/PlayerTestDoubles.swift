@@ -176,7 +176,7 @@ final class MockURLProtocol: URLProtocol {
             roomName: "Stua",
             hardwareProfile: "hdr10-512",
             allowSelfSignedLanTLS: true,
-            appVersion: "2.6.0",
+            appVersion: "2.7.0",
             osVersion: "tvOS 26.0",
             session: session,
             imageSession: session

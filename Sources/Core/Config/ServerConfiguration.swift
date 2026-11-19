@@ -337,7 +337,7 @@ public final class AppSessionStore: ObservableObject {
                 return trimmed
             }
         }
-        return "2.6.0"
+        return "2.7.0"
     }
 
     public nonisolated static func currentBuildNumberString() -> String? {

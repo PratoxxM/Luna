@@ -1,4 +1,4 @@
-# Luna (`v2.6.0`) — Codebase Module Map
+# Luna (`v2.7.0`) — Codebase Module Map
 
 Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced bidirectionally by `ops/bin/luna-check`).
 
@@ -99,7 +99,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 
 ## 4. Build, Guardrails, Actions & `LunaTests` (`Tests/LunaTests/`)
 
-- **Build, Tokens & CI**: `project.yml` (`MARKETING_VERSION: "2.6.0"`, `CURRENT_PROJECT_VERSION: "57"`, `bundleIdPrefix: local.lunacore`), `design/tokens.json`, `Resources/Localizable.xcstrings`, `ops/bin/luna-design-tokens`, `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, sideload, zero private infra leaks, token parity & bidirectional doc parity).
+- **Build, Tokens & CI**: `project.yml` (`MARKETING_VERSION: "2.7.0"`, `CURRENT_PROJECT_VERSION: "58"`, `bundleIdPrefix: local.lunacore`), `design/tokens.json`, `Resources/Localizable.xcstrings`, `ops/bin/luna-design-tokens`, `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, sideload, zero private infra leaks, token parity & bidirectional doc parity).
 - **23 XCTest Suites + Test Doubles (`Tests/LunaTests/`)**:
   - `Tests/LunaTests/BonjourServerBrowserTests.swift`
   - `Tests/LunaTests/ChapterClassificationTests.swift`
