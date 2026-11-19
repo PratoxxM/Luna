@@ -53,6 +53,9 @@ public enum LunaCopy: Sendable {
         let norm = (tier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if norm == "ssd" || norm == "nvme" { return "Starter umiddelbart" }
         if norm == "archive" { return "Fra arkivet" }
+        if norm == "usenet" || norm == "nzbfast" || norm == "newznab" { return "Strømmes fra Usenet" }
+        if norm == "remote" || norm == "http" { return "Strømmes ved start" }
+        if norm == "local" { return "Lokalt hos oss" }
         return "Strømmes ved start"
     }
 

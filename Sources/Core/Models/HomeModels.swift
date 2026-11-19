@@ -25,10 +25,12 @@ public struct TvNextUpPointer: Codable, Equatable, Hashable, Sendable {
 public struct TvAvailabilityInfo: Codable, Equatable, Hashable, Sendable {
     public let state: String
     public let tier: String?
+    public let benefitLabel: String?
 
-    public init(state: String, tier: String? = nil) {
+    public init(state: String, tier: String? = nil, benefitLabel: String? = nil) {
         self.state = state
         self.tier = tier
+        self.benefitLabel = benefitLabel
     }
 
     public var isLocalNvme: Bool {
@@ -47,7 +49,17 @@ public struct TvAvailabilityInfo: Codable, Equatable, Hashable, Sendable {
 
     public var isLocalVfs: Bool {
         let norm = (tier ?? "").lowercased()
-        return norm == "vfs" || norm == "infinidysk"
+        return norm == "vfs" || norm == "infinidysk" || norm == "usenet" || norm == "remote"
+    }
+
+    public var resolvedBenefitLabel: String {
+        if let benefitLabel {
+            let trimmed = benefitLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return LunaCopy.tierBenefitLabel(tier: tier, state: state)
     }
 
     public var householdBadgeLabel: String {
@@ -93,6 +105,31 @@ public struct TvDirectPlayTarget: Codable, Equatable, Hashable, Sendable {
     public let mode: String?
     public let title: String?
     public let seriesTitle: String?
+    public let prepareToken: String?
+
+    public init(
+        itemId: String,
+        mediaType: String? = nil,
+        tmdbId: Int? = nil,
+        season: Int? = nil,
+        episode: Int? = nil,
+        startPositionSeconds: Double? = nil,
+        mode: String? = nil,
+        title: String? = nil,
+        seriesTitle: String? = nil,
+        prepareToken: String? = nil
+    ) {
+        self.itemId = itemId
+        self.mediaType = mediaType
+        self.tmdbId = tmdbId
+        self.season = season
+        self.episode = episode
+        self.startPositionSeconds = startPositionSeconds
+        self.mode = mode
+        self.title = title
+        self.seriesTitle = seriesTitle
+        self.prepareToken = prepareToken
+    }
 }
 
 public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable {
@@ -118,6 +155,10 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
     public let episodeCode: String?
     public let episodeTitle: String?
     public let airDateBadge: String?
+    public let origin: String?
+    public let originLabel: String?
+    public let preparedSessionId: String?
+    public let tonightReason: String?
     public let directPlayTarget: TvDirectPlayTarget?
     public let nextUp: TvNextUpPointer?
     public let availability: TvAvailabilityInfo?
@@ -148,6 +189,10 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         episodeCode: String? = nil,
         episodeTitle: String? = nil,
         airDateBadge: String? = nil,
+        origin: String? = nil,
+        originLabel: String? = nil,
+        preparedSessionId: String? = nil,
+        tonightReason: String? = nil,
         directPlayTarget: TvDirectPlayTarget? = nil,
         nextUp: TvNextUpPointer? = nil,
         availability: TvAvailabilityInfo? = nil,
@@ -175,6 +220,10 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         self.episodeCode = episodeCode
         self.episodeTitle = episodeTitle
         self.airDateBadge = airDateBadge
+        self.origin = origin
+        self.originLabel = originLabel
+        self.preparedSessionId = preparedSessionId
+        self.tonightReason = tonightReason
         self.directPlayTarget = directPlayTarget
         self.nextUp = nextUp
         self.availability = availability
@@ -359,21 +408,90 @@ public struct TvShelfRow: Codable, Identifiable, Equatable, Hashable, Sendable {
     public var id: String { rowId }
 }
 
+public struct TvTonightPayload: Codable, Equatable, Sendable {
+    public let ok: Bool?
+    public let roomName: String?
+    public let hardwareProfile: String?
+    public let equipmentLabel: String?
+    public let atmosphere: String?
+    public let reason: String?
+    public let reasonLabel: String?
+    public let preparedFromPhone: TvMediaCard?
+    public let item: TvMediaCard?
+
+    public init(
+        ok: Bool? = nil,
+        roomName: String? = nil,
+        hardwareProfile: String? = nil,
+        equipmentLabel: String? = nil,
+        atmosphere: String? = nil,
+        reason: String? = nil,
+        reasonLabel: String? = nil,
+        preparedFromPhone: TvMediaCard? = nil,
+        item: TvMediaCard? = nil
+    ) {
+        self.ok = ok
+        self.roomName = roomName
+        self.hardwareProfile = hardwareProfile
+        self.equipmentLabel = equipmentLabel
+        self.atmosphere = atmosphere
+        self.reason = reason
+        self.reasonLabel = reasonLabel
+        self.preparedFromPhone = preparedFromPhone
+        self.item = item
+    }
+}
+
 public struct TvHomeResponse: Codable, Equatable, Sendable {
     public let ok: Bool
     public let generatedAt: String?
+    public let layout: String?
     public let layoutMode: String?
     public let roomName: String
     public let hardwareProfile: String
+    public let equipmentLabel: String?
+    public let atmosphere: String?
+    public let tonight: TvTonightPayload?
     public let rows: [TvShelfRow]
+
+    public var effectiveLayout: String? {
+        layout ?? layoutMode
+    }
+
+    public init(
+        ok: Bool,
+        generatedAt: String? = nil,
+        layout: String? = nil,
+        layoutMode: String? = nil,
+        roomName: String,
+        hardwareProfile: String,
+        equipmentLabel: String? = nil,
+        atmosphere: String? = nil,
+        tonight: TvTonightPayload? = nil,
+        rows: [TvShelfRow]
+    ) {
+        self.ok = ok
+        self.generatedAt = generatedAt
+        self.layout = layout
+        self.layoutMode = layoutMode
+        self.roomName = roomName
+        self.hardwareProfile = hardwareProfile
+        self.equipmentLabel = equipmentLabel
+        self.atmosphere = atmosphere
+        self.tonight = tonight
+        self.rows = rows
+    }
 
     /// Ignores transient `generatedAt` timestamps when checking whether a home
     /// response actually changed the visible shelves or room/profile state.
     public func isSemanticallyEqual(to other: TvHomeResponse) -> Bool {
         ok == other.ok
-            && layoutMode == other.layoutMode
+            && effectiveLayout == other.effectiveLayout
             && roomName == other.roomName
             && hardwareProfile == other.hardwareProfile
+            && equipmentLabel == other.equipmentLabel
+            && atmosphere == other.atmosphere
+            && tonight == other.tonight
             && rows == other.rows
     }
 }

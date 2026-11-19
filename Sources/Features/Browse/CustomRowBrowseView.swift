@@ -16,6 +16,8 @@ internal enum CustomRowContextPolicy {
             || lower == "upcoming-episodes"
             || lower == "medialogg-upcoming"
             || lower.contains("pagaende")
+            || lower.contains("active")
+            || lower.contains("continue")
     }
 
     nonisolated static func removeActionTitle(
@@ -58,7 +60,7 @@ struct CustomRowBrowseView: View {
 
     private let pageSize = 36
     private let columns = [
-        GridItem(.adaptive(minimum: 236, maximum: 272), spacing: 34)
+        GridItem(.adaptive(minimum: 260, maximum: 296), spacing: LunaTokens.Layout.cardGap)
     ]
 
     var body: some View {
@@ -94,12 +96,12 @@ struct CustomRowBrowseView: View {
                         .foregroundStyle(LunaTheme.muted)
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else {
-                    LazyVGrid(columns: columns, spacing: 42) {
+                    LazyVGrid(columns: columns, spacing: 34) {
                         ForEach(items) { card in
                             PosterCardView(
                                 card: card,
                                 client: client,
-                                width: 244,
+                                width: LunaTokens.Layout.posterW,
                                 showStorageBadge: true,
                                 onSelect: {
                                     selectedCard = card

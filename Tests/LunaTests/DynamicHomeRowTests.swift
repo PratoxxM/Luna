@@ -112,4 +112,72 @@ final class DynamicHomeRowTests: XCTestCase {
         let b = try JSONDecoder().decode(TvHomeResponse.self, from: Data(changedJson.utf8))
         XCTAssertFalse(a.isSemanticallyEqual(to: b))
     }
+
+    func testHomePrepareVisibleRowsDeduplicatesWatchlistAndPrioritizesContinueFromPhone() throws {
+        let json = #"""
+        {
+          "ok": true,
+          "roomName": "Kjellerstua",
+          "hardwareProfile": "dv-fel-714",
+          "tonight": {
+            "ok": true,
+            "preparedFromPhone": {
+              "itemId": "movie:tmdb:693134",
+              "mediaType": "movie",
+              "ids": { "tmdb": 693134 },
+              "title": "Dune: Part Two",
+              "origin": "phone",
+              "originLabel": "Fra iPhone",
+              "preparedSessionId": "prep-99"
+            }
+          },
+          "rows": [
+            {
+              "rowId": "medialogg-watchlist",
+              "title": "Huskeliste",
+              "rowStyle": "poster",
+              "sourceKind": "watchlist",
+              "items": [
+                { "itemId": "movie:tmdb:550", "mediaType": "movie", "ids": { "tmdb": 550 }, "title": "Fight Club" }
+              ]
+            },
+            {
+              "rowId": "medialogg-local",
+              "title": "Lokalt på NAS",
+              "rowStyle": "poster",
+              "sourceKind": "local_library",
+              "items": [
+                { "itemId": "movie:tmdb:550", "mediaType": "movie", "ids": { "tmdb": 550 }, "title": "Fight Club" }
+              ]
+            },
+            {
+              "rowId": "custom:lokal-4k",
+              "title": "Lokale 4K-filmer",
+              "rowStyle": "poster",
+              "sourceKind": "local_library",
+              "items": [
+                { "itemId": "movie:tmdb:771", "mediaType": "movie", "ids": { "tmdb": 771 }, "title": "Home Alone" }
+              ]
+            },
+            {
+              "rowId": "medialogg-continue",
+              "title": "Fortsett å se",
+              "rowStyle": "continue_backdrop",
+              "sourceKind": "system_continue",
+              "items": [
+                { "itemId": "series:tmdb:95396", "mediaType": "series", "ids": { "tmdb": 95396 }, "title": "Severance", "origin": "tonight", "originLabel": "I kveld" }
+              ]
+            }
+          ]
+        }
+        """#
+
+        let payload = try JSONDecoder().decode(TvHomeResponse.self, from: Data(json.utf8))
+        let rows = HomeView.prepareVisibleRows(from: payload)
+
+        XCTAssertEqual(rows.map(\.rowId), ["medialogg-continue", "custom:lokal-4k"])
+        XCTAssertEqual(rows[0].items.map(\.itemId), ["movie:tmdb:693134", "series:tmdb:95396"])
+        XCTAssertEqual(rows[0].items.first?.origin, "phone")
+        XCTAssertEqual(LibrarySidebarSection.allCases.map(\.label), ["Lokalt", "Filmer", "Serier", "Huskeliste", "Egne lister"])
+    }
 }

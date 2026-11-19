@@ -116,6 +116,42 @@ final class SeriesFlowAndHomePolicyTests: XCTestCase {
         )
     }
 
+    func testInitialResumeBannerEligibilityWindowAndOneShotSessionGuard() {
+        XCTAssertNil(
+            SeriesFlowEligibility.initialResumeBannerSeconds(
+                sessionId: nil,
+                streamStartPositionSeconds: 1200,
+                requestStartPositionSeconds: 1200,
+                shownForSessionID: nil
+            )
+        )
+        XCTAssertNil(
+            SeriesFlowEligibility.initialResumeBannerSeconds(
+                sessionId: "sess-1",
+                streamStartPositionSeconds: 10,
+                requestStartPositionSeconds: nil,
+                shownForSessionID: nil
+            )
+        )
+        XCTAssertEqual(
+            SeriesFlowEligibility.initialResumeBannerSeconds(
+                sessionId: "sess-1",
+                streamStartPositionSeconds: 1390,
+                requestStartPositionSeconds: 600,
+                shownForSessionID: nil
+            ),
+            1390
+        )
+        XCTAssertNil(
+            SeriesFlowEligibility.initialResumeBannerSeconds(
+                sessionId: "sess-1",
+                streamStartPositionSeconds: 1390,
+                requestStartPositionSeconds: 1390,
+                shownForSessionID: "sess-1"
+            )
+        )
+    }
+
     func testNextEpisodePromptEligibilityWindowAndCredits() {
         let totalDuration: Double = 2400
         let chapters: [PlaybackChapter] = [

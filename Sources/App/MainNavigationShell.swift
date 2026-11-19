@@ -69,9 +69,11 @@ struct MainNavigationShell: View {
                 .tag(MainNavigationTab.series)
 
                 NavigationStack {
-                    LibraryHubView(isActiveTab: selectedTab == .library)
-                        .toolbar(.hidden, for: .tabBar)
-                        .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
+                    LibraryHubView(isActiveTab: selectedTab == .library) { targetTab in
+                        selectedTab = targetTab
+                    }
+                    .toolbar(.hidden, for: .tabBar)
+                    .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
                 }
                 .toolbar(.hidden, for: .tabBar)
                 .tabItem {

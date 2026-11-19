@@ -1,5 +1,46 @@
 import SwiftUI
 
+public struct LunaTierMarkView: View {
+    let availability: TvAvailabilityInfo
+
+    public init(availability: TvAvailabilityInfo) {
+        self.availability = availability
+    }
+
+    public var body: some View {
+        let color = tierColor
+        ZStack {
+            Circle()
+                .fill(LunaTheme.cinemaGlass)
+                .frame(width: 28, height: 28)
+            Circle()
+                .strokeBorder(color.opacity(0.45), lineWidth: 1)
+                .frame(width: 28, height: 28)
+
+            if availability.isLocalNvme {
+                Circle()
+                    .fill(color)
+                    .frame(width: 11, height: 11)
+            } else if availability.isLocalArchive {
+                Circle()
+                    .strokeBorder(color, lineWidth: 2)
+                    .frame(width: 11, height: 11)
+            } else {
+                Image(systemName: "waveform")
+                    .font(LunaTheme.Font.tierBadge)
+                    .foregroundStyle(color)
+            }
+        }
+        .accessibilityLabel(availability.resolvedBenefitLabel)
+    }
+
+    private var tierColor: Color {
+        if availability.isLocalNvme { return LunaTheme.tierNvme }
+        if availability.isLocalArchive { return LunaTheme.tierArchive }
+        return LunaTheme.tierStream
+    }
+}
+
 public struct PosterCardView: View {
     let card: TvMediaCard
     let client: LunaCoreClient?
@@ -13,7 +54,7 @@ public struct PosterCardView: View {
     public init(
         card: TvMediaCard,
         client: LunaCoreClient?,
-        width: CGFloat = 248,
+        width: CGFloat = LunaTokens.Layout.posterW,
         showStorageBadge: Bool = false,
         onSelect: @escaping () -> Void,
         onPlayShortcut: (() -> Void)? = nil
@@ -34,7 +75,7 @@ public struct PosterCardView: View {
         let posterURL = client?.resolveArtworkURL(card.preferredPosterPath)
         let pct = min(100.0, max(0.0, card.progress?.percent ?? 0))
 
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Button(action: onSelect) {
                 ZStack {
                     LunaTheme.surface
@@ -60,28 +101,19 @@ public struct PosterCardView: View {
                                     .foregroundStyle(LunaTheme.emerald)
                                     .padding(6)
                                     .background(LunaTheme.cinemaGlass, in: Circle())
-                            }
-
-                            Spacer(minLength: 4)
-
-                            if let storageBadge = storageBadgeLabel {
-                                Text(storageBadge)
-                                    .font(LunaTheme.Font.tierBadge)
-                                    .foregroundStyle(storageBadgeForeground)
-                                    .padding(.horizontal, 9)
-                                    .padding(.vertical, 4)
-                                    .background(LunaTheme.cinemaGlass, in: Capsule())
-                                    .overlay(
-                                        Capsule().strokeBorder(storageBadgeForeground.opacity(0.32), lineWidth: 1)
-                                    )
+                            } else if showStorageBadge, let avail = card.availability,
+                                      avail.isPhysicalLocal || avail.isLocalVfs {
+                                Spacer(minLength: 4)
+                                LunaTierMarkView(availability: avail)
                             }
                         }
-                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
 
                         Spacer()
 
                         if pct > 2 && pct < 95 {
-                            let trackWidth = max(0, width - 24)
+                            let trackWidth = max(0, width - 28)
                             ZStack(alignment: .leading) {
                                 Capsule().fill(LunaTokens.Edge.progressTrack)
                                 Capsule()
@@ -89,8 +121,8 @@ public struct PosterCardView: View {
                                     .frame(width: trackWidth * CGFloat(pct / 100.0))
                             }
                             .frame(width: trackWidth, height: 6)
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 10)
+                            .padding(.horizontal, 14)
+                            .padding(.bottom, 12)
                         }
                     }
                 }
@@ -107,17 +139,18 @@ public struct PosterCardView: View {
                 Text(card.title)
                     .font(LunaTheme.Font.posterTitle)
                     .foregroundStyle(LunaTheme.cardTitleColor(isFocused: isFocused))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 Text(subtitleText)
                     .font(LunaTheme.Font.posterSubtitle)
                     .foregroundStyle(LunaTheme.cardSubtitleColor(isFocused: isFocused))
                     .lineLimit(1)
             }
-            .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: 92, alignment: .topLeading)
+            .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: 82, maxHeight: 82, alignment: .topLeading)
+            .opacity(isFocused ? 1.0 : 0.0)
+            .animation(LunaFocusStyle.focusFade, value: isFocused)
+            .allowsHitTesting(false)
         }
     }
 
@@ -130,22 +163,5 @@ public struct PosterCardView: View {
             return String(year)
         }
         return ""
-    }
-
-    private var storageBadgeLabel: String? {
-        guard showStorageBadge, let avail = card.availability else {
-            return nil
-        }
-        if avail.isPhysicalLocal {
-            return avail.householdBadgeLabel
-        }
-        return nil
-    }
-
-    private var storageBadgeForeground: Color {
-        if let avail = card.availability, avail.isLocalNvme {
-            return LunaTheme.emerald
-        }
-        return LunaTheme.moonlight
     }
 }

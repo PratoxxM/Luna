@@ -144,6 +144,9 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
     public let sizeBytes: Int64?
     public let tvScore: Int?
     public let isActive: Bool?
+    public let explanationChips: [String]?
+    public let releaseGroup: String?
+    public let isNorwegian: Bool?
 
     public var id: String { candidateId }
 
@@ -158,14 +161,27 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
     }
 
     public var sourceBadgeLabel: String {
-        let normTier = (tier ?? "").lowercased()
-        let normSource = source.lowercased()
+        let normTier = (tier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normSource = source.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if normTier == "vfs" || normTier == "infinidysk" || normSource.contains("infinidysk") || normSource == "vfs" {
             return "InfiniDysk Strøm"
         }
-        if normTier == "ssd" || normTier == "nvme" { return "På NVMe" }
-        if normTier == "archive" { return "I Arkiv" }
-        return source.uppercased()
+        if normTier == "ssd" || normTier == "nvme" || normSource == "ssd" || normSource == "nvme" {
+            return "På NVMe"
+        }
+        if normTier == "archive" || normSource == "archive" {
+            return "I Arkiv"
+        }
+        if normTier == "usenet" || normSource == "usenet" || normSource == "nzbfast" || normSource == "newznab" {
+            return "Strømmes fra Usenet"
+        }
+        if normTier == "remote" || normSource == "remote" || normSource == "http" {
+            return "Strømmes ved start"
+        }
+        if normSource == "local" {
+            return "Lokalt hos oss"
+        }
+        return LunaCopy.tierBenefitLabel(tier: normTier.isEmpty ? normSource : normTier)
     }
 
     public var capabilityBadges: [String] {

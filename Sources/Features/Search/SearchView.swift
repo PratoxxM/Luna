@@ -22,7 +22,7 @@ struct SearchView: View {
     @State private var bannerClearTask: Task<Void, Never>?
 
     private let columns = [
-        GridItem(.adaptive(minimum: 236, maximum: 272), spacing: 34)
+        GridItem(.adaptive(minimum: 260, maximum: 296), spacing: LunaTokens.Layout.cardGap)
     ]
 
     init(initialQuery: String = "", isRootTab: Bool = false) {
@@ -124,18 +124,28 @@ struct SearchView: View {
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                         .padding(.top, 12)
                     } else if !isSearching && results.isEmpty {
-                        Text("Ingen treff for «\(trimmedQuery)».")
-                            .font(.title3)
-                            .foregroundStyle(LunaTheme.muted)
-                            .padding(.horizontal, LunaTheme.horizontalGutter)
-                            .padding(.top, 20)
+                        VStack(spacing: 18) {
+                            LunaCrescentMarkView(size: 64, color: LunaTheme.amber.opacity(0.62))
+                            Text("Fant ikke «\(trimmedQuery)»")
+                                .font(LunaTheme.Font.heroSerif)
+                                .foregroundStyle(LunaTheme.linen)
+                            Text("Prøv originaltittelen eller en annen stavemåte.")
+                                .font(LunaTheme.Font.body)
+                                .foregroundStyle(LunaTheme.moonlight)
+                            LunaPillButton("Tøm søk", systemImage: "xmark.circle", prominence: .subtleChip) {
+                                query = ""
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, LunaTheme.horizontalGutter)
+                        .padding(.top, 48)
                     } else {
-                        LazyVGrid(columns: columns, spacing: 42) {
+                        LazyVGrid(columns: columns, spacing: 34) {
                             ForEach(results) { card in
                                 PosterCardView(
                                     card: card,
                                     client: client,
-                                    width: 244,
+                                    width: LunaTokens.Layout.posterW,
                                     showStorageBadge: true,
                                     onSelect: {
                                         selectedCard = card

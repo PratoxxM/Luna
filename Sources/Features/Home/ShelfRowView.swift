@@ -16,13 +16,11 @@ struct ShelfRowView: View {
     let onSeeAllRow: (TvShelfRow) -> Void
 
     private var isOngoingRow: Bool {
-        row.rowId == "medialogg-continue"
-            || row.rowId == "continue-watching"
-            || row.rowId == "upcoming-episodes"
-            || row.rowId == "medialogg-upcoming"
-            || row.sourceKind == "system_continue"
-            || row.sourceKind == "system_upcoming"
-            || row.sourceKind == "active_series"
+        CustomRowContextPolicy.isOngoingList(
+            explicitFlag: false,
+            rowId: row.rowId,
+            sourceKind: row.sourceKind
+        )
     }
 
     private var rowRemoveActionTitle: String? {
@@ -40,21 +38,21 @@ struct ShelfRowView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 18) {
             Text(row.title)
-                .font(.title3.weight(.bold))
+                .font(LunaTheme.Font.sectionTitle)
                 .foregroundStyle(LunaTheme.linen)
                 .padding(.horizontal, LunaTheme.horizontalGutter)
 
             if row.rowStyle == "continue_backdrop" {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 32) {
+                    LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
                         ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
                             BackdropCardView(
                                 card: card,
                                 client: client,
                                 variant: .continueWatching,
-                                width: 468,
+                                width: LunaTokens.Layout.backdropW,
                                 onPrimaryAction: {
                                     onPlayContinueCard(card)
                                 }
@@ -94,25 +92,25 @@ struct ShelfRowView: View {
                         }
 
                         if row.hasMore == true {
-                            SeeAllShelfCardButton(width: 240, height: 263) {
+                            SeeAllShelfCardButton(width: 260, height: LunaTokens.Layout.backdropH) {
                                 onSeeAllRow(row)
                             }
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 18)
+                    .padding(.vertical, 22)
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
             } else if row.rowStyle == "upcoming_backdrop" {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 32) {
+                    LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
                         ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
                             BackdropCardView(
                                 card: card,
                                 client: client,
                                 variant: .upcomingEpisode,
-                                width: 468,
+                                width: LunaTokens.Layout.backdropW,
                                 onPrimaryAction: {
                                     onSelectCard(card)
                                 }
@@ -134,25 +132,25 @@ struct ShelfRowView: View {
                         }
 
                         if row.hasMore == true {
-                            SeeAllShelfCardButton(width: 240, height: 263) {
+                            SeeAllShelfCardButton(width: 260, height: LunaTokens.Layout.backdropH) {
                                 onSeeAllRow(row)
                             }
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 18)
+                    .padding(.vertical, 22)
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
             } else if row.rowStyle == "backdrop" {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 32) {
+                    LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
                         ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
                             BackdropCardView(
                                 card: card,
                                 client: client,
                                 variant: .standard,
-                                width: 468,
+                                width: LunaTokens.Layout.backdropW,
                                 showStorageBadge: row.sourceKind == "local_library",
                                 onPrimaryAction: {
                                     onSelectCard(card)
@@ -186,24 +184,24 @@ struct ShelfRowView: View {
                         }
 
                         if row.hasMore == true {
-                            SeeAllShelfCardButton(width: 240, height: 263) {
+                            SeeAllShelfCardButton(width: 260, height: LunaTokens.Layout.backdropH) {
                                 onSeeAllRow(row)
                             }
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 18)
+                    .padding(.vertical, 22)
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 30) {
+                    LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
                         ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
                             PosterCardView(
                                 card: card,
                                 client: client,
-                                width: 248,
+                                width: LunaTokens.Layout.posterW,
                                 showStorageBadge: row.sourceKind == "local_library",
                                 onSelect: {
                                     onSelectCard(card)
@@ -237,13 +235,13 @@ struct ShelfRowView: View {
                         }
 
                         if row.hasMore == true {
-                            SeeAllShelfCardButton(width: 248, height: 372) {
+                            SeeAllShelfCardButton(width: LunaTokens.Layout.posterW, height: LunaTokens.Layout.posterH) {
                                 onSeeAllRow(row)
                             }
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 18)
+                    .padding(.vertical, 22)
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()

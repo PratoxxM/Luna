@@ -222,6 +222,9 @@ struct PlayerContainerView: View {
                         revealBottomBarTemporarily()
                         restoreCanvasFocusSoon()
                     },
+                    onSilentReturnFocusToCanvas: {
+                        restoreCanvasFocusSoon()
+                    },
                     onOpenTopDrawer: {
                         openTopDrawer()
                     },
@@ -463,7 +466,7 @@ struct PlayerContainerView: View {
     private func restoreCanvasFocusSoon() {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 60_000_000)
-            if shouldEnableCanvasAnchor {
+            if shouldEnableCanvasAnchor && !hasSeriesPrompt {
                 isCanvasFocused = true
             }
         }

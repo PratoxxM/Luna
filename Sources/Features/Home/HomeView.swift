@@ -41,8 +41,108 @@ struct HomeView: View {
 
     @Namespace private var homeFocusNamespace
 
+    private nonisolated static let duplicateWatchlistRowIds: Set<String> = [
+        "medialogg-watchlist",
+        "custom:medialogg-watchlist",
+        "system-watchlist",
+        "custom:system-watchlist",
+        "watchlist",
+    ]
+
+    private nonisolated static let duplicateGenericLocalRowIds: Set<String> = [
+        "medialogg-local",
+        "custom:medialogg-local",
+        "system-local",
+        "custom:system-local",
+        "local-library",
+    ]
+
+    private nonisolated static let duplicateGenericLocalTitles: Set<String> = [
+        "lokalt",
+        "lokalt på nas",
+        "lokalt hos oss",
+        "lokal samling",
+        "mitt bibliotek",
+        "bibliotek",
+        "hele samlingen",
+    ]
+
     nonisolated static func filterVisibleRows(_ rows: [TvShelfRow]) -> [TvShelfRow] {
-        rows.filter { !$0.items.isEmpty }
+        rows.filter { row in
+            guard !row.items.isEmpty else { return false }
+            let lowerId = row.rowId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let lowerSource = (row.sourceKind ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let lowerTitle = row.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+            // Én ting på ett sted: Huskeliste og full lokal samling bor i Bibliotek
+            if lowerSource == "watchlist" || duplicateWatchlistRowIds.contains(lowerId) {
+                return false
+            }
+            if duplicateGenericLocalRowIds.contains(lowerId) {
+                return false
+            }
+            if lowerSource == "local_library" && duplicateGenericLocalTitles.contains(lowerTitle) {
+                return false
+            }
+            return true
+        }
+    }
+
+    nonisolated static func prepareVisibleRows(from payload: TvHomeResponse?) -> [TvShelfRow] {
+        var rows = filterVisibleRows(payload?.rows ?? [])
+        let continueIdx = rows.firstIndex { row in
+            row.rowId == "medialogg-continue" || row.sourceKind == "system_continue"
+        }
+
+        if let idx = continueIdx {
+            var contRow = rows.remove(at: idx)
+            let prioritizedItems = prioritizeContinueCards(
+                contRow.items,
+                preparedFromPhone: payload?.tonight?.preparedFromPhone
+            )
+            contRow = TvShelfRow(
+                rowId: contRow.rowId,
+                title: contRow.title,
+                rowStyle: contRow.rowStyle,
+                sourceKind: contRow.sourceKind,
+                listMode: contRow.listMode,
+                hasMore: contRow.hasMore,
+                nextPath: contRow.nextPath,
+                items: prioritizedItems,
+                genres: contRow.genres
+            )
+            rows.insert(contRow, at: 0)
+        } else if let prepared = payload?.tonight?.preparedFromPhone {
+            let synthetic = TvShelfRow(
+                rowId: "medialogg-continue",
+                title: "Fortsett å se",
+                rowStyle: "continue_backdrop",
+                sourceKind: "system_continue",
+                listMode: "smart",
+                hasMore: false,
+                nextPath: nil,
+                items: [prepared],
+                genres: nil
+            )
+            rows.insert(synthetic, at: 0)
+        }
+
+        return rows
+    }
+
+    nonisolated static func prioritizeContinueCards(
+        _ items: [TvMediaCard],
+        preparedFromPhone: TvMediaCard?
+    ) -> [TvMediaCard] {
+        var merged = items
+        if let prepared = preparedFromPhone {
+            merged.removeAll { $0.itemId == prepared.itemId }
+            merged.insert(prepared, at: 0)
+        }
+        let phone = merged.filter { $0.origin == "phone" }
+        let tonight = merged.filter { $0.origin == "tonight" }
+        let rest = merged.filter { $0.origin != "phone" && $0.origin != "tonight" }
+        return phone + tonight + rest
     }
 
     init(
@@ -62,7 +162,7 @@ struct HomeView: View {
     }
 
     private var visibleRows: [TvShelfRow] {
-        Self.filterVisibleRows(homePayload?.rows ?? [])
+        Self.prepareVisibleRows(from: homePayload)
     }
 
     var body: some View {
@@ -143,11 +243,11 @@ struct HomeView: View {
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
         .navigationDestination(item: $selectedSeeAllRow) { row in
-            let isOngoing = row.rowId == "medialogg-continue"
-                || row.rowId == "upcoming-episodes"
-                || row.sourceKind == "system_continue"
-                || row.sourceKind == "system_upcoming"
-                || row.sourceKind == "active_series"
+            let isOngoing = CustomRowContextPolicy.isOngoingList(
+                explicitFlag: false,
+                rowId: row.rowId,
+                sourceKind: row.sourceKind
+            )
             if row.nextPath?.contains("/rows/") == true {
                 CustomRowBrowseView(title: row.title, pathOrRowId: row.nextPath ?? row.rowId, isOngoingList: isOngoing)
             } else if row.rowId == "popular-movies"

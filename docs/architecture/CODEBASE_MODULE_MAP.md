@@ -51,15 +51,16 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/DesignSystem/LunaFocusStyle.swift` | Shared `0.32/0.86` tvOS focus spring, inner gold border & warm under-glow modifier | — | `DesignTokensAndCopyTests.swift` |
 | `Sources/DesignSystem/LunaCopy.swift` | Norwegian pluralization, comma decimal formatter, room/tier labels & greetings | — | `DesignTokensAndCopyTests.swift` |
 | `Sources/DesignSystem/AmbientBackdropView.swift` | Static warm charcoal/espresso ambient glow backdrop (paused during playback) | — | `ThemeAndArtworkViewTests.swift` |
-| `Sources/DesignSystem/Cards/PosterCardView.swift` | Isolated `@FocusState` poster card with 1 pt warm frame & context menu | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
-| `Sources/DesignSystem/Cards/BackdropCardView.swift` | Isolated `@FocusState` 16:9 episode/backdrop card with progress bar | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
+| `Sources/DesignSystem/Cards/PosterCardView.swift` | Isolated `@FocusState` 280×420 poster card (`LunaTierMarkView`, focus-only titles, gold ring & warm glow) | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
+| `Sources/DesignSystem/Cards/BackdropCardView.swift` | Isolated `@FocusState` 520×293 16:9 card (internal titles, `Fra iPhone`/`I kveld` pill & progress bar) | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
 | `Sources/Features/Shared/MediaCardComponents.swift` | `TransientErrorBanner`, `MediaCardMutator` & shared context-menu mutations | `POST /api/tv/v1/{watchlist,watched,continue/remove,rows/:id/remove}` | `NavigationSettingsAndDeleteTests.swift` |
 | `Sources/Features/Onboarding/PairingOnboardingView.swift` | `_lunacore._tcp` auto-discovery & 6-digit pairing flow | `POST /api/tv/v1/pair/request`, `GET /pair/poll/:code` | `ClientOriginAndBlurHashTests.swift` |
 | `Sources/Features/Home/HomeView.swift` | 4-row evening home with SWR instant paint & context-menu shelf mutators | `GET /api/tv/v1/home` | `SeriesFlowAndHomePolicyTests.swift`, `DynamicHomeRowTests.swift` |
 | `Sources/Features/Home/ShelfRowView.swift` | Horizontal focus-safe shelf carousel supporting poster & backdrop styles | — | `DynamicHomeRowTests.swift` |
 | `Sources/Features/Browse/CatalogBrowseView.swift` | Paginated genre & sort catalog browser | `GET /api/tv/v1/catalog/{movies,series}` | `SeriesFlowAndHomePolicyTests.swift` |
 | `Sources/Features/Browse/CustomRowBrowseView.swift` | Paginated custom row browser | `GET /api/tv/v1/rows/:id` | `DynamicHomeRowTests.swift` |
-| `Sources/Features/Library/LibraryHubView.swift` | *Mitt bibliotek*: *Huskeliste*, *Egne lister*, and *Lokalt på NAS* | `GET /api/tv/v1/library?section={watchlist,lists,local}` | `NavigationSettingsAndDeleteTests.swift` |
+| `Sources/Features/Library/LibraryHubView.swift` | Split 2-column Bibliotek hub (*Lokalt · Filmer · Serier · Huskeliste · Egne lister*) | `GET /api/tv/v1/library?section={watchlist,lists,local}` | `NavigationSettingsAndDeleteTests.swift`, `DynamicHomeRowTests.swift` |
+| `Sources/Features/Library/LibrarySidebarAndEmptyViews.swift` | Focus-driven Bibliotek sidebar rows, list tiles & crescent-serif empty states | — | `DynamicHomeRowTests.swift` |
 | `Sources/Features/Search/SearchView.swift` | Instant search across local library & TMDB catalog | `GET /api/tv/v1/search` | `LunaNavigationAndDetailRaceTests.swift` |
 | `Sources/Features/Detail/MediaDetailView.swift` | Title detail container coordinating hero, seasons, source picker & delete sheet | `GET /api/tv/v1/items/*` | `LunaNavigationAndDetailRaceTests.swift` |
 | `Sources/Features/Detail/MediaDetailViewModel.swift` | Observable detail state, episode loading & pre-resolve orchestration | `GET /items/*`, `GET /playback/:id/alternatives` | `MediaDetailViewModelTests.swift`, `LunaNavigationAndDetailRaceTests.swift` |

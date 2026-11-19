@@ -340,4 +340,79 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(hb.nextEpisodePrewarmStarted, true)
         XCTAssertEqual(hb.nextEpisodePrewarmReady, false)
     }
+
+    func testDecodeM7aPhoneOriginBenefitLabelAndNorwegianCandidateTiers() throws {
+        let json = #"""
+        {
+          "ok": true,
+          "layout": "rows_first",
+          "roomName": "Kjellerstua",
+          "hardwareProfile": "dv-fel-714",
+          "equipmentLabel": "LG OLED · Dolby Vision · 7.1.4",
+          "atmosphere": "cinema",
+          "tonight": {
+            "ok": true,
+            "reason": "next_episode",
+            "reasonLabel": "Neste klare episode",
+            "preparedFromPhone": {
+              "itemId": "series:tmdb:95396",
+              "mediaType": "series",
+              "ids": { "tmdb": 95396 },
+              "title": "Severance",
+              "origin": "phone",
+              "originLabel": "Fra iPhone",
+              "preparedSessionId": "prep-phone-42",
+              "availability": {
+                "state": "instant",
+                "tier": "ssd",
+                "benefitLabel": "Starter umiddelbart"
+              },
+              "directPlayTarget": {
+                "itemId": "episode:tmdb:95396:s2:e4",
+                "mediaType": "episode",
+                "season": 2,
+                "episode": 4,
+                "startPositionSeconds": 1390,
+                "mode": "resume",
+                "prepareToken": "prep-phone-42"
+              }
+            }
+          },
+          "rows": []
+        }
+        """#
+
+        let decoded = try JSONDecoder().decode(TvHomeResponse.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.effectiveLayout, "rows_first")
+        XCTAssertEqual(decoded.atmosphere, "cinema")
+        XCTAssertEqual(decoded.equipmentLabel, "LG OLED · Dolby Vision · 7.1.4")
+        let phoneCard = try XCTUnwrap(decoded.tonight?.preparedFromPhone)
+        XCTAssertEqual(phoneCard.origin, "phone")
+        XCTAssertEqual(phoneCard.originLabel, "Fra iPhone")
+        XCTAssertEqual(phoneCard.directPlayTarget?.prepareToken, "prep-phone-42")
+        XCTAssertEqual(phoneCard.availability?.resolvedBenefitLabel, "Starter umiddelbart")
+
+        let candJson = #"""
+        [
+          {
+            "candidateId": "u-1",
+            "displayHeadline": "4K WEB-DL",
+            "releaseTitle": "Example.2026.2160p",
+            "source": "usenet",
+            "tier": "usenet"
+          },
+          {
+            "candidateId": "r-1",
+            "displayHeadline": "1080p",
+            "releaseTitle": "Example.2026.1080p",
+            "source": "remote"
+          }
+        ]
+        """#
+        let cands = try JSONDecoder().decode([TvCandidateInfo].self, from: Data(candJson.utf8))
+        XCTAssertEqual(cands[0].sourceBadgeLabel, "Strømmes fra Usenet")
+        XCTAssertEqual(cands[1].sourceBadgeLabel, "Strømmes ved start")
+        XCTAssertFalse(cands.map(\.sourceBadgeLabel).contains("USENET"))
+        XCTAssertFalse(cands.map(\.sourceBadgeLabel).contains("REMOTE"))
+    }
 }

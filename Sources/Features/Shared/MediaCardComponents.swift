@@ -108,6 +108,7 @@ enum MediaCardMutator {
             season: resolved.season,
             episode: resolved.episode,
             startPositionSeconds: resolved.startPos,
+            prepareToken: card.directPlayTarget?.prepareToken ?? card.preparedSessionId,
             backdropUrl: card.preferredLandscapePath,
             logoUrl: card.logoUrl
         )
@@ -258,7 +259,7 @@ struct StandardPosterContextMenuItems: View {
 
         if let onRequestDelete {
             Button(role: .destructive, action: onRequestDelete) {
-                Label("Slett fra NAS…", systemImage: "trash")
+                Label("Slett fra samlingen…", systemImage: "trash")
             }
         }
     }

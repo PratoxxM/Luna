@@ -75,15 +75,20 @@ struct CatalogBrowseView: View {
     @State private var selectedCard: TvMediaCard?
 
     private let columns = [
-        GridItem(.adaptive(minimum: 236, maximum: 272), spacing: 34)
+        GridItem(.adaptive(minimum: 260, maximum: 296), spacing: LunaTokens.Layout.cardGap)
     ]
 
-    private let sortOptions: [(id: String, label: String)] = [
-        ("popular", "Mest populære"),
-        ("top_rated", "Høyest rangert"),
-        ("newest", "Nyeste"),
-        ("local_recent", "Lokalt hos oss"),
-    ]
+    private var sortOptions: [(id: String, label: String)] {
+        let base: [(id: String, label: String)] = [
+            ("popular", "Mest populære"),
+            ("top_rated", "Høyest rangert"),
+            ("newest", "Nyeste"),
+        ]
+        if isRootTab {
+            return base
+        }
+        return base + [("local_recent", "Lokalt hos oss")]
+    }
 
     init(
         mediaType: String,
@@ -148,12 +153,14 @@ struct CatalogBrowseView: View {
                             .frame(width: 1, height: 26)
                             .padding(.horizontal, 6)
 
-                        LunaPillButton(
-                            "Kun lokalt",
-                            systemImage: localOnly ? "checkmark" : nil,
-                            isSelected: localOnly
-                        ) {
-                            localOnly.toggle()
+                        if !isRootTab {
+                            LunaPillButton(
+                                "Kun lokalt",
+                                systemImage: localOnly ? "checkmark" : nil,
+                                isSelected: localOnly
+                            ) {
+                                localOnly.toggle()
+                            }
                         }
 
                         LunaPillButton(
@@ -241,13 +248,13 @@ struct CatalogBrowseView: View {
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 48)
                 } else {
-                    LazyVGrid(columns: columns, spacing: 42) {
+                    LazyVGrid(columns: columns, spacing: 34) {
                         ForEach(items) { card in
                             PosterCardView(
                                 card: card,
                                 client: client,
-                                width: 244,
-                                showStorageBadge: localOnly || selectedSort == "local_recent",
+                                width: LunaTokens.Layout.posterW,
+                                showStorageBadge: !isRootTab && (localOnly || selectedSort == "local_recent"),
                                 onSelect: {
                                     selectedCard = card
                                 },
