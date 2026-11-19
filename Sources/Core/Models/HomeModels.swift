@@ -66,7 +66,7 @@ public struct TvAvailabilityInfo: Codable, Equatable, Hashable, Sendable {
         if state == "upcoming" { return "Kommer" }
         if isLocalNvme { return "På NVMe" }
         if isLocalArchive { return "I Arkiv" }
-        return "Strømmes ved valg"
+        return "Strømmes ved start"
     }
 }
 
@@ -250,10 +250,10 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         if let rating = imdbRating, rating > 0 {
             parts.append(LunaCopy.formatRating(rating))
         }
-        if let code = episodeCode, !code.isEmpty {
+        if let code = LunaCopy.formatListEpisodeCode(episodeCode) {
             parts.append(code)
-        } else if let nextUp {
-            parts.append(String(format: "S%02dE%02d", nextUp.season, nextUp.episode))
+        } else if let nextUp, let code = LunaCopy.formatListEpisodeCode(season: nextUp.season, episode: nextUp.episode) {
+            parts.append(code)
         }
         return parts.joined(separator: " · ")
     }
@@ -328,7 +328,8 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
     }
 
     public var cleanContinueSubtitle: String {
-        let code = episodeCode ?? nextUp.map { String(format: "S%02dE%02d", $0.season, $0.episode) }
+        let code = LunaCopy.formatListEpisodeCode(episodeCode)
+            ?? nextUp.flatMap { LunaCopy.formatListEpisodeCode(season: $0.season, episode: $0.episode) }
         let isResume = (progress?.percent ?? 0) > 1.0 || directPlayTarget?.mode == "resume"
 
         if mediaType == "movie" {
@@ -368,7 +369,8 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
     }
 
     public var cleanUpcomingSubtitle: String {
-        let code = episodeCode ?? nextUp.map { String(format: "S%02dE%02d", $0.season, $0.episode) }
+        let code = LunaCopy.formatListEpisodeCode(episodeCode)
+            ?? nextUp.flatMap { LunaCopy.formatListEpisodeCode(season: $0.season, episode: $0.episode) }
         if let epName = nonGenericEpisodeTitle {
             return code.map { "\($0) · \(epName)" } ?? epName
         }

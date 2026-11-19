@@ -44,7 +44,7 @@ struct ScrubPreviewBubbleView: View {
 
             HStack(spacing: 6) {
                 Text(TimelineScrubberLeafView.formatSeconds(targetSeconds))
-                    .font(.callout.monospacedDigit().weight(.bold))
+                    .font(LunaTheme.Font.subtitle.monospacedDigit())
                     .foregroundStyle(LunaTheme.linen)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
@@ -52,8 +52,8 @@ struct ScrubPreviewBubbleView: View {
                 let delta = targetSeconds - originSeconds
                 if abs(delta) >= 1.0 {
                     Text(Self.formatSignedDelta(delta))
-                        .font(.caption.monospacedDigit().weight(.bold))
-                        .foregroundStyle(LunaTheme.amber)
+                        .font(LunaTheme.Font.badge.monospacedDigit())
+                        .foregroundStyle(LunaTheme.moonlight)
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
                 }
@@ -61,7 +61,7 @@ struct ScrubPreviewBubbleView: View {
 
             if let chapterTitle, !chapterTitle.isEmpty {
                 Text(chapterTitle)
-                    .font(.caption2.weight(.medium))
+                    .font(LunaTheme.Font.badge)
                     .foregroundStyle(LunaTheme.muted)
                     .lineLimit(1)
                     .frame(maxWidth: preferredWidth - 20)
@@ -71,18 +71,19 @@ struct ScrubPreviewBubbleView: View {
         .padding(.vertical, 10)
         .frame(width: preferredWidth)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: LunaTokens.Radius.poster, style: .continuous)
                 .fill(LunaTheme.cinemaGlass)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(LunaTheme.amber.opacity(0.45), lineWidth: 1)
+        .lunaTopLightEdge(
+            cornerRadius: LunaTokens.Radius.poster,
+            topColor: LunaTokens.Edge.top3,
+            sideColor: LunaTokens.Edge.top1
         )
         .allowsHitTesting(false)
     }
 
     private static func formatSignedDelta(_ delta: Double) -> String {
-        let sign = delta >= 0 ? "+" : "-"
+        let sign = delta >= 0 ? "+" : "−"
         let absTotal = Int(abs(delta).rounded())
         let h = absTotal / 3600
         let m = (absTotal % 3600) / 60

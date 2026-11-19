@@ -3,7 +3,6 @@ import AetherBridge
 
 enum SettingsCategory: String, CaseIterable, Identifiable, Sendable {
     case roomAndDisplay = "room"
-    case audioAndSync = "audio"
     case subtitles = "subtitles"
     case playback = "playback"
     case system = "system"
@@ -13,8 +12,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .roomAndDisplay: return "Rom & Skjerm"
-        case .audioAndSync: return "Lyd & Synk"
+        case .roomAndDisplay: return "Rom og skjerm"
         case .subtitles: return "Undertekster"
         case .playback: return "Avspilling"
         case .system: return "System"
@@ -25,7 +23,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable, Sendable {
     var systemImage: String {
         switch self {
         case .roomAndDisplay: return "tv"
-        case .audioAndSync: return "speaker.wave.2"
         case .subtitles: return "captions.bubble"
         case .playback: return "play.circle"
         case .system: return "gearshape"
@@ -48,6 +45,8 @@ struct SettingsView: View {
     @State private var cacheClearedNotice: Bool = false
     @State private var showReconnectDialog: Bool = false
     @State private var modalToken = UUID()
+    @FocusState private var focusedCategory: SettingsCategory?
+    @Namespace private var settingsSidebarNamespace
 
     init(initialCategory: SettingsCategory = .roomAndDisplay) {
         _selectedCategory = State(initialValue: initialCategory)
@@ -63,31 +62,36 @@ struct SettingsView: View {
                     .foregroundStyle(LunaTheme.linen)
                     .padding(.leading, 4)
 
-                VStack(spacing: 6) {
+                VStack(spacing: 8) {
                     ForEach(SettingsCategory.allCases) { category in
                         SettingsCategoryRowButton(
                             category: category,
-                            isSelected: selectedCategory == category
+                            isSelected: selectedCategory == category,
+                            focusedCategory: $focusedCategory
                         ) {
                             selectedCategory = category
                         }
+                        .prefersDefaultFocus(selectedCategory == category, in: settingsSidebarNamespace)
                     }
                 }
+                .defaultFocus($focusedCategory, selectedCategory as SettingsCategory?, priority: .userInitiated)
 
                 Spacer(minLength: 0)
             }
-            .frame(width: 270, alignment: .topLeading)
+            .frame(width: 340, alignment: .topLeading)
+            .focusScope(settingsSidebarNamespace)
             .focusSection()
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 24) {
                     selectedCategoryPanel(caps: caps)
                 }
-                .frame(maxWidth: 980, alignment: .topLeading)
+                .frame(maxWidth: 1240, alignment: .topLeading)
                 .padding(.top, 2)
                 .padding(.horizontal, 4)
                 .padding(.bottom, 56)
             }
+            .scrollClipDisabled()
             .contentMargins(.zero, for: .scrollContent)
             .id(selectedCategory)
             .lunaRootScrollTopBarTracking(tab: .settings)
@@ -110,7 +114,7 @@ struct SettingsView: View {
             }
             Button("Avbryt", role: .cancel) {}
         } message: {
-            Text("Velg om du vil pare denne Apple TV-en på nytt med samme server, eller nullstille både serveradresse og paringstoken.")
+            Text("Velg om du vil pare denne Apple TV-en på nytt med samme server, eller nullstille både serveradresse og tilkobling.")
         }
         .task {
             await refreshCacheMetricsAsync()
@@ -134,8 +138,6 @@ struct SettingsView: View {
         switch selectedCategory {
         case .roomAndDisplay:
             SettingsRoomDisplaySectionView(caps: caps)
-        case .audioAndSync:
-            SettingsAudioSyncSectionView()
         case .subtitles:
             SettingsSubtitlesSectionView()
         case .playback:
@@ -162,18 +164,22 @@ struct SettingsView: View {
 private struct SettingsCategoryRowButton: View {
     let category: SettingsCategory
     let isSelected: Bool
+    var focusedCategory: FocusState<SettingsCategory?>.Binding
     let action: () -> Void
 
-    @FocusState private var isFocused: Bool
     @State private var focusTask: Task<Void, Never>?
+
+    private var isFocused: Bool {
+        focusedCategory.wrappedValue == category
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: category.systemImage)
                     .font(LunaTheme.Font.settingsRowIcon)
-                    .foregroundStyle(isSelected || isFocused ? LunaTheme.amber : LunaTheme.muted)
-                    .frame(width: 22)
+                    .foregroundStyle(isSelected || isFocused ? LunaTheme.linen : LunaTheme.muted)
+                    .frame(width: 26)
 
                 Text(category.title)
                     .font(LunaTheme.Font.settingsRowTitle)
@@ -185,12 +191,12 @@ private struct SettingsCategoryRowButton: View {
                 if isSelected {
                     Image(systemName: "chevron.right")
                         .font(LunaTheme.Font.microChevron)
-                        .foregroundStyle(LunaTheme.amber)
+                        .foregroundStyle(LunaTheme.moonlight)
                 }
             }
             .transaction { $0.animation = nil }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
             .background(
                 RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous)
                     .fill(
@@ -203,9 +209,9 @@ private struct SettingsCategoryRowButton: View {
             .lunaFocusSurface(.listRow, isFocused: isFocused, cornerRadius: LunaTokens.Radius.chip)
         }
         .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous))
         .focusEffectDisabled(true)
-        .focused($isFocused)
+        .focused(focusedCategory, equals: category)
         .onChange(of: isFocused) { _, focused in
             focusTask?.cancel()
             focusTask = nil

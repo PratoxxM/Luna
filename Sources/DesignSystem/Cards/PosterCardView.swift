@@ -12,19 +12,19 @@ public struct LunaTierMarkView: View {
         ZStack {
             Circle()
                 .fill(LunaTheme.cinemaGlass)
-                .frame(width: 28, height: 28)
+                .frame(width: 34, height: 34)
             Circle()
                 .strokeBorder(color.opacity(0.45), lineWidth: 1)
-                .frame(width: 28, height: 28)
+                .frame(width: 34, height: 34)
 
             if availability.isLocalNvme {
                 Circle()
                     .fill(color)
-                    .frame(width: 11, height: 11)
+                    .frame(width: 12, height: 12)
             } else if availability.isLocalArchive {
                 Circle()
                     .strokeBorder(color, lineWidth: 2)
-                    .frame(width: 11, height: 11)
+                    .frame(width: 12, height: 12)
             } else {
                 Image(systemName: "waveform")
                     .font(LunaTheme.Font.tierBadge)
@@ -42,6 +42,8 @@ public struct LunaTierMarkView: View {
 }
 
 public struct PosterCardView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let card: TvMediaCard
     let client: LunaCoreClient?
     let width: CGFloat
@@ -75,7 +77,7 @@ public struct PosterCardView: View {
         let posterURL = client?.resolveArtworkURL(card.preferredPosterPath)
         let pct = min(100.0, max(0.0, card.progress?.percent ?? 0))
 
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 24) {
             Button(action: onSelect) {
                 ZStack {
                     LunaTheme.surface
@@ -97,7 +99,7 @@ public struct PosterCardView: View {
                         HStack(alignment: .top, spacing: 6) {
                             if card.progress?.watched == true {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.caption.weight(.bold))
+                                    .font(LunaTheme.Font.cardMicroIcon)
                                     .foregroundStyle(LunaTheme.emerald)
                                     .padding(6)
                                     .background(LunaTheme.cinemaGlass, in: Circle())
@@ -127,10 +129,16 @@ public struct PosterCardView: View {
                     }
                 }
                 .frame(width: width, height: height)
-                .lunaCardFocusFrame(cornerRadius: LunaTheme.posterRadius, isFocused: isFocused)
+                .lunaCardFocusFrame(
+                    cornerRadius: LunaTheme.posterRadius,
+                    isFocused: isFocused,
+                    showRestingTopEdge: false
+                )
             }
             .buttonStyle(.card)
+            .lunaCardLampGlow(isFocused: isFocused)
             .focused($isFocused)
+            .accessibilityLabel(card.title)
             .onPlayPauseCommand {
                 onPlayShortcut?()
             }
@@ -149,7 +157,12 @@ public struct PosterCardView: View {
             }
             .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: 82, maxHeight: 82, alignment: .topLeading)
             .opacity(isFocused ? 1.0 : 0.0)
-            .animation(LunaFocusStyle.focusFade, value: isFocused)
+            .animation(
+                reduceMotion
+                    ? .linear(duration: 0.01)
+                    : (isFocused ? LunaFocusStyle.focusFade.delay(0.06) : .easeOut(duration: 0.12)),
+                value: isFocused
+            )
             .allowsHitTesting(false)
         }
     }

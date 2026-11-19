@@ -37,7 +37,7 @@ final class ModelDecodingTests: XCTestCase {
         let card = try XCTUnwrap(decoded.rows.first?.items.first)
         XCTAssertEqual(card.availability?.isLocalVfs, true)
         XCTAssertEqual(card.availability?.isPhysicalLocal, false)
-        XCTAssertEqual(card.availability?.householdBadgeLabel, "Strømmes ved valg")
+        XCTAssertEqual(card.availability?.householdBadgeLabel, "Strømmes ved start")
         XCTAssertEqual(card.progress?.percent ?? 0, 16.6, accuracy: 0.01)
     }
 
@@ -134,7 +134,7 @@ final class ModelDecodingTests: XCTestCase {
         ]
         """#
         let candidates = try JSONDecoder().decode([TvCandidateInfo].self, from: Data(vfsJson.utf8))
-        XCTAssertEqual(candidates.map(\.sourceBadgeLabel), ["InfiniDysk Strøm", "InfiniDysk Strøm"])
+        XCTAssertEqual(candidates.map(\.sourceBadgeLabel), ["Strømmes ved start", "Strømmes ved start"])
 
         let nvmeAvail = TvAvailabilityInfo(state: "instant", tier: "nvme")
         XCTAssertTrue(nvmeAvail.isPhysicalLocal)
@@ -143,7 +143,7 @@ final class ModelDecodingTests: XCTestCase {
         let vfsAvail = TvAvailabilityInfo(state: "on_demand", tier: "vfs")
         XCTAssertFalse(vfsAvail.isPhysicalLocal)
         XCTAssertTrue(vfsAvail.isLocalVfs)
-        XCTAssertEqual(vfsAvail.householdBadgeLabel, "Strømmes ved valg")
+        XCTAssertEqual(vfsAvail.householdBadgeLabel, "Strømmes ved start")
     }
 
     @MainActor
@@ -219,7 +219,7 @@ final class ModelDecodingTests: XCTestCase {
             nextUp: TvNextUpPointer(season: 5, episode: 13)
         )
         XCTAssertNil(genericContinue.nonGenericEpisodeTitle)
-        XCTAssertEqual(genericContinue.cleanContinueSubtitle, "Neste · S05E13")
+        XCTAssertEqual(genericContinue.cleanContinueSubtitle, "Neste · S5 · E13")
 
         let epAliasCard = TvMediaCard(
             itemId: "series:tmdb:101",
@@ -253,7 +253,7 @@ final class ModelDecodingTests: XCTestCase {
             nextUp: TvNextUpPointer(season: 5, episode: 13)
         )
         XCTAssertEqual(namedContinue.nonGenericEpisodeTitle, "Finaleuke")
-        XCTAssertEqual(namedContinue.cleanContinueSubtitle, "Neste · S05E13 · Finaleuke")
+        XCTAssertEqual(namedContinue.cleanContinueSubtitle, "Neste · S5 · E13 · Finaleuke")
 
         let inProgressSeries = TvMediaCard(
             itemId: "series:tmdb:104",
@@ -265,7 +265,7 @@ final class ModelDecodingTests: XCTestCase {
             nextUp: TvNextUpPointer(season: 28, episode: 5),
             progress: TvWatchProgress(positionSeconds: 900, durationSeconds: 2700, percent: 33.3, season: 28, episode: 5, watched: false)
         )
-        XCTAssertEqual(inProgressSeries.cleanContinueSubtitle, "S28E05 · 30 min igjen")
+        XCTAssertEqual(inProgressSeries.cleanContinueSubtitle, "S28 · E5 · 30 min igjen")
 
         let upcomingGeneric = TvMediaCard(
             itemId: "series:tmdb:105",
@@ -295,7 +295,7 @@ final class ModelDecodingTests: XCTestCase {
         )
         XCTAssertEqual(upcomingUrgent.upcomingPillText, "I morgen")
         XCTAssertTrue(upcomingUrgent.isUrgentUpcoming)
-        XCTAssertEqual(upcomingUrgent.cleanUpcomingSubtitle, "S02E06 · Finaleuke")
+        XCTAssertEqual(upcomingUrgent.cleanUpcomingSubtitle, "S2 · E6 · Finaleuke")
     }
 
     func testDetailRatingsAndHeartbeatPrewarmReadyDecoding() throws {
@@ -410,7 +410,7 @@ final class ModelDecodingTests: XCTestCase {
         ]
         """#
         let cands = try JSONDecoder().decode([TvCandidateInfo].self, from: Data(candJson.utf8))
-        XCTAssertEqual(cands[0].sourceBadgeLabel, "Strømmes fra Usenet")
+        XCTAssertEqual(cands[0].sourceBadgeLabel, "Strømmes ved start")
         XCTAssertEqual(cands[1].sourceBadgeLabel, "Strømmes ved start")
         XCTAssertFalse(cands.map(\.sourceBadgeLabel).contains("USENET"))
         XCTAssertFalse(cands.map(\.sourceBadgeLabel).contains("REMOTE"))

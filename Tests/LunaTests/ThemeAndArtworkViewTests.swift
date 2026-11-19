@@ -210,6 +210,27 @@ final class ThemeAndArtworkViewTests: XCTestCase {
             accent: .coral
         )
         try assertRGB(coralLabel, r: 217, g: 107, b: 82)
+        let coralFocusedLabel = LunaPillButton.resolveLabelForeground(
+            isFocused: true,
+            isSelected: false,
+            prominence: .subtleChip,
+            accent: .coral
+        )
+        try assertRGB(coralFocusedLabel, r: 217, g: 107, b: 82)
+        let secondaryFocusedLabel = LunaPillButton.resolveLabelForeground(
+            isFocused: true,
+            isSelected: false,
+            prominence: .glassPill,
+            accent: .amber
+        )
+        try assertRGB(secondaryFocusedLabel, r: 245, g: 240, b: 232)
+        let primaryFocusedLabel = LunaPillButton.resolveLabelForeground(
+            isFocused: true,
+            isSelected: false,
+            prominence: .primaryAmber,
+            accent: .amber
+        )
+        try assertRGB(primaryFocusedLabel, r: 10, g: 9, b: 8)
 
         try assertRGB(LunaTheme.cardTitleColor(isFocused: false), r: 245, g: 240, b: 232)
         try assertRGB(LunaTheme.cardTitleColor(isFocused: true), r: 245, g: 240, b: 232)
@@ -222,8 +243,8 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: false), r: 200, g: 191, b: 182)
         try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: false), r: 245, g: 240, b: 232)
         try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: false), r: 245, g: 240, b: 232)
-        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: true), r: 10, g: 9, b: 8)
-        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: true), r: 10, g: 9, b: 8)
+        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: true), r: 245, g: 240, b: 232)
+        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: true), r: 245, g: 240, b: 232)
 
         XCTAssertEqual(
             TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: false, isBarFocused: true),
@@ -241,8 +262,8 @@ final class ThemeAndArtworkViewTests: XCTestCase {
             0.18,
             accuracy: 0.015
         )
-        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: true, isBarFocused: true), r: 10, g: 9, b: 8)
-        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: true, isBarFocused: true), r: 10, g: 9, b: 8)
+        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: true, isBarFocused: true), r: 245, g: 240, b: 232)
+        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: true, isBarFocused: true), r: 245, g: 240, b: 232)
         try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: false, isBarFocused: true), r: 160, g: 150, b: 140)
         try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: false, isBarFocused: true), r: 200, g: 191, b: 182)
         XCTAssertEqual(
@@ -251,12 +272,14 @@ final class ThemeAndArtworkViewTests: XCTestCase {
             accuracy: 0.001
         )
         XCTAssertEqual(
-            TopBarTabPillButton.resolveBorderColor(isActive: true, isFocused: true, isBarFocused: true),
-            LunaTheme.focusGoldBorder
+            try rgbaComponents(TopBarTabPillButton.resolveBorderColor(isActive: true, isFocused: true, isBarFocused: true)).a,
+            LunaFocusStyle.borderOpacity,
+            accuracy: 0.015
         )
         XCTAssertEqual(
-            TopBarTabPillButton.resolveBorderColor(isActive: false, isFocused: true, isBarFocused: true),
-            LunaTheme.focusGoldBorder
+            try rgbaComponents(TopBarTabPillButton.resolveBorderColor(isActive: false, isFocused: true, isBarFocused: true)).a,
+            LunaFocusStyle.borderOpacity,
+            accuracy: 0.015
         )
 
         let topBarPillWithFocus = TopBarTabPillButton(

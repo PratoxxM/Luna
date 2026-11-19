@@ -29,6 +29,8 @@ struct LibraryHubView: View {
     @State private var modalToken = UUID()
     @State private var reloadTask: Task<Void, Never>?
     @State private var reloadGeneration: UInt64 = 0
+    @FocusState private var focusedSidebarSection: LibrarySidebarSection?
+    @Namespace private var sidebarFocusNamespace
 
     init(isActiveTab: Bool = true, onSelectTab: ((MainNavigationTab) -> Void)? = nil) {
         self.isActiveTab = isActiveTab
@@ -36,9 +38,10 @@ struct LibraryHubView: View {
     }
 
     private let pageSize = 36
-    private let columns = [
-        GridItem(.adaptive(minimum: 260, maximum: 296), spacing: LunaTokens.Layout.cardGap)
-    ]
+    private let columns = Array(
+        repeating: GridItem(.fixed(LunaTokens.Layout.posterW), spacing: LunaTokens.Layout.cardGap, alignment: .topLeading),
+        count: 4
+    )
 
     private var activeMediaTypeFilter: String {
         activeSection == .watchlist ? watchlistTypeFilter : activeSection.apiMediaType
@@ -62,19 +65,19 @@ struct LibraryHubView: View {
                     ) {
                         activeSection = section
                     }
+                    .focused($focusedSidebarSection, equals: section)
+                    .prefersDefaultFocus(activeSection == section, in: sidebarFocusNamespace)
                 }
                 Spacer(minLength: 0)
             }
             .frame(width: 340, alignment: .topLeading)
             .padding(.top, 18)
+            .defaultFocus($focusedSidebarSection, activeSection as LibrarySidebarSection?, priority: .userInitiated)
+            .focusScope(sidebarFocusNamespace)
             .focusSection()
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 24) {
-                    if let mutationErrorBanner {
-                        TransientErrorBanner(message: mutationErrorBanner)
-                    }
-
                     if activeSection == .localAll || activeSection == .localMovies || activeSection == .localSeries {
                         LibraryLocalFilterBar(
                             counts: counts,
@@ -96,6 +99,7 @@ struct LibraryHubView: View {
                     } else if let errorMessage, libraryPayload == nil {
                         VStack(alignment: .leading, spacing: 14) {
                             Text(errorMessage)
+                                .font(LunaTheme.Font.body)
                                 .foregroundStyle(LunaTheme.danger)
                             LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                                 scheduleReloadLibrary(forceNetwork: true)
@@ -107,16 +111,26 @@ struct LibraryHubView: View {
                         sectionGrid(client: client)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 12)
                 .padding(.bottom, 72)
             }
             .contentMargins(.zero, for: .scrollContent)
+            .scrollClipDisabled()
             .lunaRootScrollTopBarTracking(tab: .library)
             .focusSection()
         }
         .padding(.horizontal, LunaTheme.horizontalGutter)
         .ignoresSafeArea(edges: .horizontal)
         .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
+        .overlay(alignment: .topTrailing) {
+            if let mutationErrorBanner {
+                TransientErrorBanner(message: mutationErrorBanner)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.top, LunaTopBarView.contentTopPadding + 8)
+                    .allowsHitTesting(false)
+            }
+        }
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
@@ -227,7 +241,7 @@ struct LibraryHubView: View {
         if activeItems.isEmpty {
             emptyStateCard
         } else {
-            LazyVGrid(columns: columns, spacing: 34) {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 34) {
                 ForEach(activeItems) { card in
                     PosterCardView(
                         card: card,
@@ -302,6 +316,7 @@ struct LibraryHubView: View {
             headline: activeSection.emptyHeadline,
             subtitle: activeSection.emptySubtitle,
             actionTitle: buttonTitle,
+            actionSymbol: activeSection == .localSeries ? "tv" : "film",
             onAction: buttonTitle == nil ? nil : {
                 if hasActiveLocalFilter {
                     localTierFilter = "all"
@@ -389,7 +404,7 @@ struct LibraryHubView: View {
         } catch {
             guard !Task.isCancelled, (generation == nil || generation == reloadGeneration) else { return }
             if libraryPayload == nil {
-                errorMessage = error.localizedDescription
+                errorMessage = LunaCopy.friendlyErrorMessage(error)
             }
         }
         if generation == nil || generation == reloadGeneration {
@@ -426,7 +441,7 @@ struct LibraryHubView: View {
 
     private func showMutationError(_ error: Error) {
         mutationBannerTask?.cancel()
-        mutationErrorBanner = "Kunne ikke lagre endring: \(error.localizedDescription)"
+        mutationErrorBanner = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
         mutationBannerTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             guard !Task.isCancelled else { return }

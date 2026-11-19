@@ -233,7 +233,7 @@ public struct CachedArtworkView: View {
                     endPoint: .bottomTrailing
                 )
                 Image(systemName: placeholderSymbol)
-                    .font(.title2)
+                    .font(LunaTheme.Font.cardPlaceholderIcon)
                     .foregroundStyle(LunaTheme.muted.opacity(0.45))
             }
         }

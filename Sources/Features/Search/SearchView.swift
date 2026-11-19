@@ -21,9 +21,10 @@ struct SearchView: View {
     @State private var searchTask: Task<Void, Never>?
     @State private var bannerClearTask: Task<Void, Never>?
 
-    private let columns = [
-        GridItem(.adaptive(minimum: 260, maximum: 296), spacing: LunaTokens.Layout.cardGap)
-    ]
+    private let columns = Array(
+        repeating: GridItem(.fixed(LunaTokens.Layout.posterW), spacing: LunaTokens.Layout.cardGap, alignment: .topLeading),
+        count: 5
+    )
 
     init(initialQuery: String = "", isRootTab: Bool = false) {
         self.initialQuery = initialQuery
@@ -49,17 +50,12 @@ struct SearchView: View {
                 .padding(.horizontal, LunaTheme.horizontalGutter)
                 .padding(.top, 4)
 
-                if let mutationErrorBanner {
-                    TransientErrorBanner(message: mutationErrorBanner)
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                }
-
                 if trimmedQuery.count < 2 {
                     if !recentSearches.isEmpty {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack(spacing: 16) {
                                 Text("Tidligere søk")
-                                    .font(.headline.weight(.semibold))
+                                    .font(LunaTheme.Font.cardTitle)
                                     .foregroundStyle(LunaTheme.moonlight)
                                 LunaPillButton("Tøm logg", systemImage: "trash", prominence: .subtleChip, accent: .coral) {
                                     clearRecentSearches()
@@ -78,11 +74,12 @@ struct SearchView: View {
                             }
                             .contentMargins(.zero, for: .scrollContent)
                             .scrollClipDisabled()
+                            .focusSection()
                         }
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                     } else {
                         Text("Skriv minst to tegn for å søke i bibliotek og katalog.")
-                            .font(.callout)
+                            .font(LunaTheme.Font.body)
                             .foregroundStyle(LunaTheme.muted)
                             .padding(.horizontal, LunaTheme.horizontalGutter)
                             .padding(.top, 8)
@@ -91,8 +88,8 @@ struct SearchView: View {
                     if !results.isEmpty {
                         HStack(spacing: 12) {
                             if localCount > 0 {
-                                Text("\(localCount) i lokalt bibliotek")
-                                    .font(.caption.weight(.semibold))
+                                Text("\(localCount) i Lokalt")
+                                    .font(LunaTheme.Font.badge)
                                     .foregroundStyle(LunaTheme.moonlight)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 5)
@@ -100,7 +97,7 @@ struct SearchView: View {
                                     .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
                             }
                             Text("\(LunaCopy.searchHits(results.count)) totalt")
-                                .font(.caption)
+                                .font(LunaTheme.Font.caption)
                                 .foregroundStyle(LunaTheme.muted)
                         }
                         .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -110,12 +107,14 @@ struct SearchView: View {
                         HStack(spacing: 14) {
                             ProgressView()
                             Text("Søker…")
+                                .font(LunaTheme.Font.body)
                                 .foregroundStyle(LunaTheme.moonlight)
                         }
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                     } else if let errorMessage, results.isEmpty {
                         VStack(alignment: .leading, spacing: 14) {
                             Text(errorMessage)
+                                .font(LunaTheme.Font.body)
                                 .foregroundStyle(LunaTheme.danger)
                             LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                                 triggerSearch(trimmedQuery, debounceNanoseconds: 0)
@@ -125,9 +124,9 @@ struct SearchView: View {
                         .padding(.top, 12)
                     } else if !isSearching && results.isEmpty {
                         VStack(spacing: 18) {
-                            LunaCrescentMarkView(size: 64, color: LunaTheme.amber.opacity(0.62))
+                            LunaCrescentMarkView(size: 64, color: LunaTheme.moonlight.opacity(0.65))
                             Text("Fant ikke «\(trimmedQuery)»")
-                                .font(LunaTheme.Font.heroSerif)
+                                .font(isRootTab ? LunaTheme.Font.pageTitle : LunaTheme.Font.heroSerif)
                                 .foregroundStyle(LunaTheme.linen)
                             Text("Prøv originaltittelen eller en annen stavemåte.")
                                 .font(LunaTheme.Font.body)
@@ -140,7 +139,7 @@ struct SearchView: View {
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                         .padding(.top, 48)
                     } else {
-                        LazyVGrid(columns: columns, spacing: 34) {
+                        LazyVGrid(columns: columns, alignment: .leading, spacing: 34) {
                             ForEach(results) { card in
                                 PosterCardView(
                                     card: card,
@@ -180,9 +179,18 @@ struct SearchView: View {
             }
         }
         .contentMargins(.zero, for: .scrollContent)
+        .scrollClipDisabled()
         .ignoresSafeArea(edges: .horizontal)
         .lunaRootScrollTopBarTracking(tab: .search, isEnabled: isRootTab)
         .safeAreaPadding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 0)
+        .overlay(alignment: .topLeading) {
+            if let mutationErrorBanner {
+                TransientErrorBanner(message: mutationErrorBanner)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.top, (isRootTab ? LunaTopBarView.contentTopPadding : 24) + 8)
+                    .allowsHitTesting(false)
+            }
+        }
         .focusSection()
         .lunaNavigationContainerBackdrop(
             isEnabled: !isRootTab,
@@ -256,7 +264,7 @@ struct SearchView: View {
                 sessionStore.unpairDevice()
             } catch {
                 guard !Task.isCancelled else { return }
-                errorMessage = error.localizedDescription
+                errorMessage = LunaCopy.friendlyErrorMessage(error)
             }
 
             if !Task.isCancelled {
@@ -288,7 +296,7 @@ struct SearchView: View {
 
     private func showMutationError(_ error: Error) {
         bannerClearTask?.cancel()
-        mutationErrorBanner = "Kunne ikke lagre endring: \(error.localizedDescription)"
+        mutationErrorBanner = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
         bannerClearTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             guard !Task.isCancelled else { return }

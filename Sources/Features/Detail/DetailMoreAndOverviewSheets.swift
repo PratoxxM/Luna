@@ -3,12 +3,25 @@ import SwiftUI
 struct DetailMoreSheetView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
 
+    private enum ActionRowID: Hashable {
+        case pickSource
+        case monitor
+        case deleteSeason
+        case deleteTitle
+    }
+
     let item: TvItemDetail
     let hasLocalEpisodes: Bool
+    var selectedSeasonNumber: Int? = nil
+    var canDeleteSelectedSeason: Bool = false
     let onPickSource: () -> Void
     let onToggleMonitor: () -> Void
+    var onDeleteSeason: ((Int) -> Void)? = nil
     let onDeleteTitle: () -> Void
     let onClose: () -> Void
+
+    @FocusState private var focusedAction: ActionRowID?
+    @Namespace private var moreSheetFocusNamespace
 
     private var shouldShowMonitorButton: Bool {
         if item.mediaType == "series" { return true }
@@ -27,22 +40,14 @@ struct DetailMoreSheetView: View {
             LunaTheme.canvas.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 26) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Mer")
-                            .font(LunaTheme.Font.pageTitle)
-                            .foregroundStyle(LunaTheme.linen)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Mer")
+                        .font(LunaTheme.Font.pageTitle)
+                        .foregroundStyle(LunaTheme.linen)
 
-                        Text("\(item.title) · \(sessionStore.roomName) (\(sessionStore.effectiveEquipmentLabel))")
-                            .font(LunaTheme.Font.caption)
-                            .foregroundStyle(LunaTheme.moonlight)
-                    }
-
-                    Spacer()
-
-                    LunaPillButton("Lukk", systemImage: "xmark", prominence: .subtleChip) {
-                        onClose()
-                    }
+                    Text("\(item.title) · \(sessionStore.roomName)")
+                        .font(LunaTheme.Font.subtitle)
+                        .foregroundStyle(LunaTheme.moonlight)
                 }
 
                 Divider().overlay(LunaTheme.warmBorderSubtle)
@@ -55,6 +60,8 @@ struct DetailMoreSheetView: View {
                     ) {
                         onPickSource()
                     }
+                    .focused($focusedAction, equals: .pickSource)
+                    .prefersDefaultFocus(true, in: moreSheetFocusNamespace)
 
                     if shouldShowMonitorButton {
                         DetailMoreActionRowButton(
@@ -64,6 +71,19 @@ struct DetailMoreSheetView: View {
                         ) {
                             onToggleMonitor()
                         }
+                        .focused($focusedAction, equals: .monitor)
+                    }
+
+                    if canDeleteSelectedSeason, let seasonNum = selectedSeasonNumber, let onDeleteSeason {
+                        DetailMoreActionRowButton(
+                            title: "Slett sesong \(seasonNum)",
+                            subtitle: "Frigjør lagringsplass for valgt sesong etter bekreftelse",
+                            systemImage: "trash",
+                            isDestructive: true
+                        ) {
+                            onDeleteSeason(seasonNum)
+                        }
+                        .focused($focusedAction, equals: .deleteSeason)
                     }
 
                     if shouldShowDeleteButton {
@@ -75,6 +95,7 @@ struct DetailMoreSheetView: View {
                         ) {
                             onDeleteTitle()
                         }
+                        .focused($focusedAction, equals: .deleteTitle)
                     }
                 }
 
@@ -86,10 +107,16 @@ struct DetailMoreSheetView: View {
                 RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
                     .fill(LunaTheme.surface)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
-                    .strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1.5)
+            .lunaTopLightEdge(
+                cornerRadius: LunaTokens.Radius.panel,
+                topColor: LunaTokens.Edge.top3,
+                sideColor: LunaTokens.Edge.top1
             )
+            .defaultFocus($focusedAction, .pickSource, priority: .userInitiated)
+            .focusScope(moreSheetFocusNamespace)
+        }
+        .onAppear {
+            focusedAction = .pickSource
         }
         .onExitCommand {
             onClose()
@@ -100,14 +127,14 @@ struct DetailMoreSheetView: View {
         if item.mediaType == "series" {
             return item.isMonitoredFlag ? "Slutt å følge serien" : "Følg serien"
         }
-        return item.isMonitoredFlag ? "Avbryt nedlasting" : "Gjør klar på forhånd"
+        return item.isMonitoredFlag ? "Avbryt klargjøring" : "Gjør klar på forhånd"
     }
 
     private var monitorSubtitle: String {
         if item.mediaType == "series" {
-            return item.isMonitoredFlag ? "Nye episoder hentes automatisk nå" : "Nye episoder hentes automatisk når de kommer"
+            return item.isMonitoredFlag ? "Nye episoder hentes automatisk" : "Nye episoder hentes automatisk når de kommer"
         }
-        return item.isMonitoredFlag ? "Hentes til rask lokal lagring" : "Starter umiddelbart neste gang dere skal se"
+        return item.isMonitoredFlag ? "Lagres på NVMe for umiddelbar start" : "Starter umiddelbart neste gang dere skal se"
     }
 
     private var monitorIcon: String {
@@ -132,7 +159,7 @@ private struct DetailMoreActionRowButton: View {
             HStack(spacing: 18) {
                 Image(systemName: systemImage)
                     .font(LunaTheme.Font.cardTitle)
-                    .foregroundStyle(isDestructive ? LunaTheme.coral : (isFocused ? LunaTheme.amber : LunaTheme.moonlight))
+                    .foregroundStyle(isDestructive ? LunaTheme.coral : (isFocused ? LunaTheme.linen : LunaTheme.moonlight))
                     .frame(width: 34)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -149,7 +176,7 @@ private struct DetailMoreActionRowButton: View {
 
                 Image(systemName: "chevron.right")
                     .font(LunaTheme.Font.microChevron)
-                    .foregroundStyle(isFocused ? (isDestructive ? LunaTheme.coral : LunaTheme.amber) : LunaTheme.muted)
+                    .foregroundStyle(isFocused ? (isDestructive ? LunaTheme.coral : LunaTheme.linen) : LunaTheme.muted)
             }
             .padding(.horizontal, 26)
             .padding(.vertical, 20)
@@ -176,50 +203,119 @@ struct DetailOverviewSheetView: View {
     let overview: String
     let onClose: () -> Void
 
+    @FocusState private var focusedChunkIndex: Int?
+    @Namespace private var overviewFocusNamespace
+
+    private var focusableParagraphs: [String] {
+        Self.makeFocusableChunks(from: overview)
+    }
+
+    nonisolated static func makeFocusableChunks(from raw: String) -> [String] {
+        let explicit = raw
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        var chunks: [String] = []
+        for block in explicit {
+            if block.count <= 280 {
+                chunks.append(block)
+                continue
+            }
+            var current = ""
+            for sentence in block.components(separatedBy: ". ") {
+                let piece = sentence.hasSuffix(".") ? sentence : "\(sentence)."
+                if current.isEmpty {
+                    current = piece
+                } else if current.count + piece.count + 1 <= 280 {
+                    current += " \(piece)"
+                } else {
+                    chunks.append(current)
+                    current = piece
+                }
+            }
+            if !current.isEmpty {
+                if !block.hasSuffix(".") && current.hasSuffix(".") {
+                    current.removeLast()
+                }
+                chunks.append(current)
+            }
+        }
+        return chunks.isEmpty ? [raw] : chunks
+    }
+
     var body: some View {
+        let paragraphs = focusableParagraphs
+
         ZStack {
             LunaTheme.canvas.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 24) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(item.title)
-                        .font(LunaTheme.Font.heroSerif)
-                        .foregroundStyle(LunaTheme.linen)
-                        .lineLimit(2)
-
-                    Spacer()
-
-                    LunaPillButton("Lukk", systemImage: "xmark", prominence: .subtleChip) {
-                        onClose()
-                    }
-                }
+                Text(item.title)
+                    .font(LunaTheme.Font.heroSerif)
+                    .foregroundStyle(LunaTheme.linen)
+                    .lineLimit(2)
 
                 Divider().overlay(LunaTheme.warmBorderSubtle)
 
-                ScrollView(.vertical, showsIndicators: false) {
-                    Text(overview)
-                        .font(LunaTheme.Font.body)
-                        .foregroundStyle(LunaTheme.moonlight)
-                        .lineSpacing(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, paragraph in
+                            OverviewParagraphChunkView(
+                                text: paragraph,
+                                isFocused: focusedChunkIndex == index,
+                                isMultiChunk: paragraphs.count > 1
+                            )
+                            .focusable(true)
+                            .focusEffectDisabled(true)
+                            .focused($focusedChunkIndex, equals: index)
+                            .prefersDefaultFocus(index == 0, in: overviewFocusNamespace)
+                        }
+                    }
+                    .padding(.vertical, 6)
                 }
-                .frame(maxHeight: 520)
-
-                Spacer(minLength: 0)
+                .scrollClipDisabled()
+                .frame(maxHeight: 680)
+                .defaultFocus($focusedChunkIndex, 0, priority: .userInitiated)
+                .focusScope(overviewFocusNamespace)
             }
             .padding(52)
-            .frame(maxWidth: 960)
+            .frame(maxWidth: 980)
             .background(
                 RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
                     .fill(LunaTheme.surface)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
-                    .strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1.5)
+            .lunaTopLightEdge(
+                cornerRadius: LunaTokens.Radius.panel,
+                topColor: LunaTokens.Edge.top3,
+                sideColor: LunaTokens.Edge.top1
             )
+        }
+        .onAppear {
+            focusedChunkIndex = 0
         }
         .onExitCommand {
             onClose()
         }
+    }
+}
+
+private struct OverviewParagraphChunkView: View {
+    let text: String
+    let isFocused: Bool
+    let isMultiChunk: Bool
+
+    var body: some View {
+        Text(text)
+            .font(LunaTheme.Font.body)
+            .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
+            .lineSpacing(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, isMultiChunk ? 16 : 0)
+            .padding(.vertical, isMultiChunk ? 10 : 0)
+            .background(
+                RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous)
+                    .fill(isMultiChunk && isFocused ? LunaTheme.surfaceRaised : Color.clear)
+            )
     }
 }

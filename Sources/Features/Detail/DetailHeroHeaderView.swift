@@ -66,13 +66,15 @@ struct DetailHeroHeaderView: View {
                 if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
                     HStack(spacing: 6) {
                         Image(systemName: "calendar")
+                            .foregroundStyle(LunaTheme.moonlight)
                         Text("Kommer: \(upcomingBadge)")
+                            .foregroundStyle(LunaTheme.linen)
                     }
                     .font(LunaTheme.Font.badge)
-                    .foregroundStyle(LunaTheme.canvas)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 5)
-                    .background(LunaTheme.amber, in: Capsule())
+                    .background(LunaTheme.surfaceRaised, in: Capsule())
+                    .overlay(Capsule().strokeBorder(LunaTheme.warmBorder, lineWidth: 1))
                 } else if let avail = item.availability {
                     HStack(spacing: 8) {
                         LunaTierMarkView(availability: avail)
@@ -113,7 +115,7 @@ struct DetailHeroHeaderView: View {
                 DetailCircleIconButton(
                     systemImage: item.inWatchlist ? "bookmark.fill" : "bookmark",
                     isSelected: item.inWatchlist,
-                    accentColor: LunaTheme.amber,
+                    accentColor: LunaTheme.linen,
                     accessibilityLabel: item.inWatchlist ? "Fjern fra huskeliste" : "Legg til i huskeliste",
                     action: onToggleWatchlist
                 )
@@ -129,7 +131,7 @@ struct DetailHeroHeaderView: View {
                 DetailCircleIconButton(
                     systemImage: "ellipsis",
                     isSelected: false,
-                    accentColor: LunaTheme.amber,
+                    accentColor: LunaTheme.linen,
                     accessibilityLabel: "Mer",
                     action: {
                         if let onOpenMore {
@@ -141,6 +143,7 @@ struct DetailHeroHeaderView: View {
                 )
             }
             .padding(.top, 10)
+            .focusSection()
             .onPlayPauseCommand {
                 onPlay()
             }
@@ -232,7 +235,7 @@ struct DetailHeroHeaderView: View {
         if let runtime = item.formattedRuntime, !runtime.isEmpty {
             parts.append(runtime)
         } else if let seasons = item.seasons, !seasons.isEmpty {
-            parts.append(LunaCopy.plural(seasons.count, "sesong", "sesonger"))
+            parts.append(LunaCopy.seasonsCount(seasons.count))
         }
         if let disp = item.displayRating {
             parts.append(LunaCopy.formatRating(disp.value, prefix: disp.isImdb ? "IMDb ★" : "★"))
@@ -298,8 +301,8 @@ private struct PrimaryPlayLabel: View {
         }
         .foregroundStyle(LunaTheme.canvas)
         .transaction { $0.animation = nil }
-        .padding(.horizontal, 32)
-        .padding(.vertical, 20)
+        .padding(.horizontal, 34)
+        .padding(.vertical, 22)
         .background(
             ZStack {
                 Capsule()
@@ -323,30 +326,45 @@ private struct DetailCircleIconButton: View {
     let action: () -> Void
 
     @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(LunaTheme.Font.sectionTitle)
+                .font(LunaTheme.Font.cardTitle)
                 .foregroundStyle(
                     isFocused
-                        ? LunaTheme.linen
+                        ? (isSelected && accentColor == LunaTheme.emerald ? LunaTheme.emerald : LunaTheme.linen)
                         : (isSelected ? accentColor : LunaTheme.moonlight)
                 )
-                .frame(width: 76, height: 76)
+                .frame(width: 74, height: 74)
                 .background(
                     Circle()
-                        .fill(isFocused ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
+                        .fill(isFocused ? LunaTheme.surfaceElevated : (isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised))
                 )
                 .overlay(
-                    Circle()
-                        .strokeBorder(
-                            isFocused
-                                ? LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity)
-                                : (isSelected ? accentColor.opacity(0.45) : LunaTheme.warmBorder),
-                            lineWidth: isFocused ? LunaFocusStyle.borderWidth : 1.0
-                        )
+                    Group {
+                        if isFocused {
+                            Circle()
+                                .strokeBorder(
+                                    LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity),
+                                    lineWidth: LunaFocusStyle.borderWidth
+                                )
+                        } else if isSelected {
+                            Circle()
+                                .strokeBorder(
+                                    accentColor == LunaTheme.emerald ? LunaTheme.emerald.opacity(0.42) : LunaTheme.warmBorderStrong,
+                                    lineWidth: 1.0
+                                )
+                        } else {
+                            Circle()
+                                .strokeBorder(
+                                    LunaTheme.topLightEdgeGradient(topColor: LunaTokens.Edge.top3, sideColor: LunaTokens.Edge.top1),
+                                    lineWidth: 1.0
+                                )
+                        }
+                    }
                 )
                 .shadow(
                     color: isFocused ? roomAtmosphere.lampColor.opacity(roomAtmosphere.lampStrength) : .clear,
@@ -354,8 +372,8 @@ private struct DetailCircleIconButton: View {
                     x: 0,
                     y: isFocused ? LunaFocusStyle.glowOffsetY : 0
                 )
-                .scaleEffect(isFocused ? 1.04 : 1.0)
-                .animation(LunaFocusStyle.focusSpring, value: isFocused)
+                .scaleEffect(isFocused ? 1.03 : 1.0)
+                .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(Circle())

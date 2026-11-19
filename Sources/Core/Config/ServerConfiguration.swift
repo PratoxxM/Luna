@@ -34,9 +34,9 @@ public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable 
     public var technicalSummary: String {
         switch self {
         case .dvFel714:
-            return "4K BluRay Remux · Dual-Layer DV P7 FEL / P8 · TrueHD Atmos & DTS:X (7.1.4)"
+            return "4K BluRay Remux · Dual-Layer DV P7 FEL / P8 · TrueHD Atmos og DTS:X (7.1.4)"
         case .hdr10512:
-            return "4K HDR10+ / HDR10 · DV Base-Layer · Atmos / Lossless (5.1.2)"
+            return "4K HDR10+ / HDR10 · DV Base-Layer · Atmos og tapsfri lyd (5.1.2)"
         }
     }
 
@@ -337,7 +337,7 @@ public final class AppSessionStore: ObservableObject {
                 return trimmed
             }
         }
-        return "2.7.0"
+        return "2.7.1"
     }
 
     public nonisolated static func currentBuildNumberString() -> String? {

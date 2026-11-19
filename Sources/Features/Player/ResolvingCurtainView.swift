@@ -6,7 +6,7 @@ import SwiftUI
 @MainActor
 final class PlayerStartupState: ObservableObject {
     @Published var resolveStageKey: String = "searching"
-    @Published var resolveStageLabel: String = "Klargjør strøm…"
+    @Published var resolveStageLabel: String = "Klargjør avspilling…"
     @Published var resolvePercent: Int = 12
     @Published var resolveHeadline: String?
     @Published private(set) var engineStartupPercentBucket: Int = 50
@@ -87,15 +87,15 @@ struct ResolvingCurtainView: View {
 
                     if let episodeContext = curtainDisplay.mainLine {
                         Text(episodeContext)
-                            .font(.title3.weight(.semibold))
+                            .font(LunaTheme.Font.cardTitle)
                             .foregroundStyle(LunaTheme.moonlight)
                     }
                 } else {
                     VStack(spacing: 8) {
                         if let series = curtainDisplay.seriesLine {
                             Text(series)
-                                .font(.title3.weight(.semibold))
-                                .foregroundStyle(LunaTheme.amber)
+                                .font(LunaTheme.Font.cardTitle)
+                                .foregroundStyle(LunaTheme.moonlight)
                         }
                         if let mainTitle = curtainDisplay.mainLine {
                             Text(mainTitle)
@@ -173,12 +173,12 @@ private struct ResolvingProgressClusterLeafView: View {
             .frame(width: Self.trackWidth, height: Self.trackHeight)
 
             Text(statusLineText)
-                .font(.callout)
+                .font(LunaTheme.Font.body)
                 .foregroundStyle(LunaTheme.muted)
 
             if let headline = startupState.resolveHeadline, !headline.isEmpty {
                 Text(headline)
-                    .font(.caption.weight(.medium))
+                    .font(LunaTheme.Font.caption)
                     .foregroundStyle(LunaTheme.moonlight)
                     .lineLimit(1)
                     .padding(.horizontal, 14)
@@ -202,7 +202,7 @@ private struct ResolvingProgressClusterLeafView: View {
     private var statusLineText: String {
         if isRestoringFromBackground {
             if isAwaitingDisplaySwitch {
-                return "Tilpasser skjermens HDR og bildefrekvens…"
+                return "Tilpasser skjermen…"
             }
             return "Gjenoppretter avspilling…"
         }
@@ -211,11 +211,11 @@ private struct ResolvingProgressClusterLeafView: View {
                 return "Klargjør første bilde…"
             }
             if isAwaitingDisplaySwitch {
-                return "Tilpasser skjermens HDR og bildefrekvens…"
+                return "Tilpasser skjermen…"
             }
             return "Starter avspilling…"
         }
         let stage = startupState.resolveStageLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-        return stage.isEmpty ? "Klargjør strøm…" : stage
+        return stage.isEmpty ? "Klargjør avspilling…" : stage
     }
 }

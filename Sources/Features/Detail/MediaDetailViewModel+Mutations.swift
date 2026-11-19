@@ -112,7 +112,7 @@ extension MediaDetailViewModel {
             sessionContext?.unpairDevice()
         } catch {
             guard generation == detailLoadGeneration else { return }
-            errorMessage = error.localizedDescription
+            errorMessage = LunaCopy.friendlyErrorMessage(error)
         }
         if generation == detailLoadGeneration {
             isLoading = false
@@ -138,7 +138,7 @@ extension MediaDetailViewModel {
 
     private func showMutationError(_ error: Error) {
         bannerClearTask?.cancel()
-        mutationErrorBanner = "Kunne ikke lagre endring: \(error.localizedDescription)"
+        mutationErrorBanner = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
         bannerClearTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             guard !Task.isCancelled else { return }

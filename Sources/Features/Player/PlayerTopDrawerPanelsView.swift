@@ -9,14 +9,23 @@ extension PlayerTopDrawerView {
         let item = session?.item
         let headlineTitle = item?.seriesTitle ?? viewModel.currentRequest?.seriesTitle ?? item?.title ?? viewModel.currentRequest?.title ?? "Avspilling"
         let roomDisplay = session.map {
-            "\($0.roomName) · \(LunaCopy.roomEquipmentLabel(hardwareProfile: $0.hardwareProfile, roomName: $0.roomName))"
+            let eq = LunaCopy.roomEquipmentLabel(
+                hardwareProfile: $0.hardwareProfile,
+                roomName: $0.roomName,
+                serverLabel: roomEquipmentOverride
+            )
+            return "\($0.roomName) · \(eq)"
         }
         let benefitLine = session.map {
             LunaCopy.tierBenefitLabel(tier: $0.selectedCandidate.tier ?? $0.selectedCandidate.source)
         }
+        let subtitleColumns = [
+            GridItem(.flexible(minimum: 200), spacing: 10),
+            GridItem(.flexible(minimum: 200), spacing: 10),
+        ]
 
         return HStack(alignment: .top, spacing: 40) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 14) {
                 Text(headlineTitle)
                     .font(LunaTheme.Font.heroSerif)
                     .foregroundStyle(LunaTheme.linen)
@@ -29,51 +38,53 @@ extension PlayerTopDrawerView {
                 }
 
                 HStack(spacing: 10) {
-                    infoBadgePill(viewModel.videoFormatBadge, isAccent: true)
-                    infoBadgePill(viewModel.audioFormatBadge)
-                    if let sourceLabel = session?.selectedCandidate.sourceBadgeLabel {
-                        infoBadgePill(sourceLabel)
+                    infoBadgePill(viewModel.videoFormatBadge)
+                    if !viewModel.audioFormatBadge.isEmpty {
+                        infoBadgePill(viewModel.audioFormatBadge)
                     }
-                    if let container = session?.stream.container, !container.isEmpty {
-                        infoBadgePill(container.uppercased())
+                    if let tierShort = session.map({
+                        LunaCopy.tierShortLabel(
+                            tier: $0.selectedCandidate.tier,
+                            source: $0.selectedCandidate.source
+                        )
+                    }) {
+                        infoBadgePill(tierShort)
                     }
                 }
                 .padding(.top, 4)
 
-                if let selected = session?.selectedCandidate {
-                    Text(selected.displayHeadline)
-                        .font(LunaTheme.Font.caption)
-                        .foregroundStyle(LunaTheme.muted)
-                        .lineLimit(2)
-                        .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 8) {
+                    sectionHeader("Kveldslys")
+                    LazyVGrid(columns: subtitleColumns, alignment: .leading, spacing: 8) {
+                        ForEach(HDRSubtitlePreset.allCases) { preset in
+                            LunaPillButton(
+                                preset.displayTitle,
+                                isSelected: comfort.hdrSubtitlePreset == preset,
+                                prominence: comfort.hdrSubtitlePreset == preset ? .glassPill : .subtleChip,
+                                size: .compact
+                            ) {
+                                comfort.hdrSubtitlePreset = preset
+                            }
+                        }
+                    }
                 }
+                .padding(.top, 6)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 14) {
                 if let roomDisplay {
-                    infoSummaryRow(title: "Rom & oppsett", value: roomDisplay)
+                    infoSummaryRow(title: "Rom og oppsett", value: roomDisplay)
                 }
                 if let benefitLine {
-                    infoSummaryRow(title: "Kilde & levering", value: benefitLine)
+                    infoSummaryRow(title: "Levering", value: benefitLine)
                 }
                 infoSummaryRow(
                     title: "Varighet",
                     value: TimelineScrubberLeafView.formatSeconds(viewModel.effectiveDurationSeconds)
                 )
-
-                LunaPillButton(
-                    comfort.showNerdHUD ? "Skjul teknisk HUD" : "Vis teknisk status (HUD)",
-                    systemImage: comfort.showNerdHUD ? "info.circle.fill" : "info.circle",
-                    isSelected: comfort.showNerdHUD,
-                    prominence: comfort.showNerdHUD ? .glassPill : .subtleChip,
-                    size: .compact
-                ) {
-                    comfort.showNerdHUD.toggle()
-                }
-                .padding(.top, 4)
             }
-            .frame(width: 560, alignment: .leading)
+            .frame(width: 600, alignment: .leading)
         }
     }
 
@@ -87,10 +98,10 @@ extension PlayerTopDrawerView {
 
         return HStack(alignment: .top, spacing: 28) {
             VStack(alignment: .leading, spacing: 10) {
-                sectionHeader("Undertekstspor")
+                sectionHeader("Undertekster")
 
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 10) {
                         DrawerTrackRowButton(
                             title: "Av",
                             subtitle: "Ingen undertekster",
@@ -111,20 +122,22 @@ extension PlayerTopDrawerView {
                             }
                         }
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
                 }
-                .frame(maxHeight: 270)
+                .scrollClipDisabled()
+                .frame(maxHeight: 280)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .focusSection()
 
             VStack(alignment: .leading, spacing: 10) {
                 sectionHeader("Lydspor")
 
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 10) {
                         if viewModel.audioTracks.isEmpty {
-                            Text("Ingen separate lydspor rapportert.")
+                            Text("Ingen separate lydspor funnet.")
                                 .font(LunaTheme.Font.caption)
                                 .foregroundStyle(LunaTheme.muted)
                         } else {
@@ -140,16 +153,18 @@ extension PlayerTopDrawerView {
                             }
                         }
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
                 }
-                .frame(maxHeight: 270)
+                .scrollClipDisabled()
+                .frame(maxHeight: 280)
             }
             .frame(width: 470, alignment: .leading)
+            .focusSection()
 
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 8) {
-                    sectionHeader("Kveldslys i HDR / Dolby Vision")
+                    sectionHeader("Kveldslys")
                     LazyVGrid(columns: subtitleColumns, alignment: .leading, spacing: 8) {
                         ForEach(HDRSubtitlePreset.allCases) { preset in
                             LunaPillButton(
@@ -165,7 +180,7 @@ extension PlayerTopDrawerView {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    sectionHeader("Klang & Nattmodus")
+                    sectionHeader("Klang og nattmodus")
                     HStack(spacing: 8) {
                         ForEach(AudioEnhancementMode.allCases) { mode in
                             LunaPillButton(
@@ -183,14 +198,18 @@ extension PlayerTopDrawerView {
                 HStack(alignment: .top, spacing: 18) {
                     VStack(alignment: .leading, spacing: 6) {
                         let delay = abs(viewModel.subtitleDelaySeconds) < 0.05 ? 0.0 : viewModel.subtitleDelaySeconds
-                        let delaySign = delay > 0 ? "+" : (delay == 0 ? "+" : "")
-                        sectionHeader("Tekstsynk (\(delaySign)\(LunaCopy.formatDecimal(delay, decimals: 1)) s)")
+                        let delayText: String = {
+                            if delay == 0 { return "0,0 s" }
+                            if delay > 0 { return "+\(LunaCopy.formatDecimal(delay, decimals: 1)) s" }
+                            return "−\(LunaCopy.formatDecimal(abs(delay), decimals: 1)) s"
+                        }()
+                        sectionHeader("Tekstsynk (\(delayText))")
                         HStack(spacing: 6) {
-                            LunaPillButton("-0,1 s", prominence: .subtleChip, size: .compact) {
+                            LunaPillButton("−0,1 s", prominence: .subtleChip, size: .compact) {
                                 viewModel.adjustSubtitleDelay(by: -0.1)
                             }
                             LunaPillButton(
-                                "0",
+                                "0 s",
                                 isSelected: abs(viewModel.subtitleDelaySeconds) < 0.01,
                                 prominence: abs(viewModel.subtitleDelaySeconds) < 0.01 ? .glassPill : .subtleChip,
                                 size: .compact
@@ -205,32 +224,33 @@ extension PlayerTopDrawerView {
 
                     VStack(alignment: .leading, spacing: 6) {
                         let ms = viewModel.audioDelayMs
-                        sectionHeader("Lydsynk (\(ComfortPreferences.formatAudioDelayMs(ms)))")
+                        let msHeader = ms < 0 ? "−\(abs(ms)) ms" : (ms > 0 ? "+\(ms) ms" : "0 ms")
+                        sectionHeader("Lydsynk (\(msHeader))")
                         HStack(spacing: 6) {
-                            LunaPillButton("-25", prominence: .subtleChip, size: .compact) {
+                            LunaPillButton("−25 ms", prominence: .subtleChip, size: .compact) {
                                 viewModel.adjustAudioDelay(byMs: -25)
                             }
                             LunaPillButton(
-                                "0",
+                                "0 ms",
                                 isSelected: ms == 0,
                                 prominence: ms == 0 ? .glassPill : .subtleChip,
                                 size: .compact
                             ) {
                                 viewModel.resetAudioDelay()
                             }
-                            LunaPillButton("+25", prominence: .subtleChip, size: .compact) {
+                            LunaPillButton("+25 ms", prominence: .subtleChip, size: .compact) {
                                 viewModel.adjustAudioDelay(byMs: 25)
                             }
                         }
                     }
                 }
 
-                let audioChainDetail = viewModel.activeAudioDecoder ?? viewModel.audioDelivery.rawValue
                 ObjectAudioStatusLeafView(
-                    fallbackBadge: "\(viewModel.audioFormatBadge) (\(audioChainDetail))"
+                    fallbackBadge: formattedAudioChainSummary
                 )
             }
-            .frame(width: 560, alignment: .leading)
+            .frame(width: 580, alignment: .leading)
+            .focusSection()
         }
     }
 
@@ -242,12 +262,12 @@ extension PlayerTopDrawerView {
         return VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    sectionHeader("Avspillingskilde (sømløst bytte på samme tidskode)")
+                    sectionHeader("Velg kilde (bytter på samme tidspunkt)")
                     Spacer()
                     if let room = viewModel.activeSession?.roomName {
                         Text(room)
                             .font(LunaTheme.Font.caption)
-                            .foregroundStyle(LunaTheme.amber)
+                            .foregroundStyle(LunaTheme.moonlight)
                     }
                 }
 
@@ -286,12 +306,14 @@ extension PlayerTopDrawerView {
                                 }
                             }
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
                     }
-                    .frame(maxHeight: 240)
+                    .scrollClipDisabled()
+                    .frame(maxHeight: 250)
                 }
             }
+            .focusSection()
 
             VStack(alignment: .leading, spacing: 8) {
                 sectionHeader("Lavoppløst oppskalering (neste start)")
@@ -309,6 +331,7 @@ extension PlayerTopDrawerView {
                     }
                 }
             }
+            .focusSection()
         }
     }
 
@@ -327,7 +350,7 @@ extension PlayerTopDrawerView {
                 sectionHeader(LunaCopy.chaptersHeader(viewModel.chapters.count))
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 14) {
+                        HStack(spacing: 16) {
                             ForEach(viewModel.chapters) { ch in
                                 ChapterPillCardButton(
                                     chapter: ch,
@@ -339,10 +362,11 @@ extension PlayerTopDrawerView {
                                 .id(ch.id)
                             }
                         }
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 14)
                     }
                     .contentMargins(.zero, for: .scrollContent)
                     .scrollClipDisabled()
+                    .focusSection()
                     .onAppear {
                         chapterSnapshotTime = max(0, viewModel.engine.currentTime)
                         if let targetID = viewModel.activeChapter(at: chapterSnapshotTime)?.id {
@@ -356,11 +380,19 @@ extension PlayerTopDrawerView {
 
     // MARK: - Info & Track Formatting Helpers
 
+    private var formattedAudioChainSummary: String {
+        let badge = viewModel.audioFormatBadge
+        if let decoder = viewModel.activeAudioDecoder, !decoder.isEmpty {
+            return badge.isEmpty ? decoder : "\(badge) · \(decoder)"
+        }
+        return badge.isEmpty ? "Direkte lydutgang" : badge
+    }
+
     private func infoMetadataLine(session: TvPlaybackSession?) -> String? {
         var parts: [String] = []
         let season = session?.item.season ?? viewModel.currentRequest?.season
         let episode = session?.item.episode ?? viewModel.currentRequest?.episode
-        if let code = EpisodeTitleFormatter.formatEpisodeCode(season: season, episode: episode) {
+        if let code = LunaCopy.formatListEpisodeCode(season: season, episode: episode) {
             let epTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
                 session?.item.title ?? viewModel.currentRequest?.title,
                 seriesTitle: session?.item.seriesTitle ?? viewModel.currentRequest?.seriesTitle,
@@ -379,20 +411,14 @@ extension PlayerTopDrawerView {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    private func infoBadgePill(_ label: String, isAccent: Bool = false) -> some View {
+    private func infoBadgePill(_ label: String) -> some View {
         Text(label)
             .font(LunaTheme.Font.badge)
-            .foregroundStyle(isAccent ? LunaTheme.amber : LunaTheme.linen)
+            .foregroundStyle(LunaTheme.linen)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(
-                isAccent ? LunaTheme.amber.opacity(0.18) : LunaTheme.surfaceRaised,
-                in: Capsule()
-            )
-            .overlay(
-                Capsule()
-                    .strokeBorder(isAccent ? LunaTheme.amber.opacity(0.45) : LunaTheme.warmBorderSubtle, lineWidth: 1)
-            )
+            .background(LunaTheme.surfaceRaised, in: Capsule())
+            .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
     }
 
     private func infoSummaryRow(title: String, value: String) -> some View {
@@ -406,13 +432,10 @@ extension PlayerTopDrawerView {
                 .foregroundStyle(LunaTheme.linen)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
         .background(LunaTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous)
-                .strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1)
-        )
+        .lunaTopLightEdge(cornerRadius: LunaTokens.Radius.chip)
     }
 
     private func sourceCandidateSubtitle(_ cand: TvCandidateInfo) -> String {
@@ -420,7 +443,7 @@ extension PlayerTopDrawerView {
         if let chips = cand.explanationChips, !chips.isEmpty {
             return "\(benefit) · \(chips.joined(separator: " · "))"
         }
-        return "\(benefit) · \(cand.releaseTitle)"
+        return benefit
     }
 
     func formatAudioTitle(_ track: TrackInfo) -> String {
@@ -437,13 +460,13 @@ extension PlayerTopDrawerView {
         }
         if let profile = track.profile, !profile.isEmpty {
             parts.append(profile)
-        } else {
+        } else if !track.codec.isEmpty {
             parts.append(track.codec.uppercased())
         }
         if let layout = track.channelLayout, !layout.isEmpty {
             parts.append(layout)
         } else if track.channels > 0 {
-            parts.append("\(track.channels) ch")
+            parts.append(LunaCopy.plural(track.channels, "kanal", "kanaler"))
         }
         return parts.joined(separator: " · ")
     }
@@ -468,7 +491,10 @@ extension PlayerTopDrawerView {
         if let lang = languageDisplayName(track.language) {
             parts.append(lang)
         }
-        parts.append(track.codec.uppercased())
+        let codecUpper = track.codec.uppercased()
+        if !codecUpper.isEmpty && codecUpper != "UNKNOWN" {
+            parts.append(codecUpper)
+        }
         return parts.joined(separator: " · ")
     }
 
@@ -476,16 +502,14 @@ extension PlayerTopDrawerView {
         var b: [String] = []
         let c = track.codec.lowercased()
         if track.isExternal {
-            b.append("Ekstern .srt")
+            b.append("Ekstern")
         } else if c.contains("pgs") {
             b.append("PGS")
         } else if c.contains("ass") || c.contains("ssa") {
             b.append("ASS")
-        } else {
-            b.append("SRT")
         }
         if track.isForced { b.append("Tvunget") }
-        if track.isHearingImpaired { b.append("SDH") }
+        if track.isHearingImpaired { b.append("Hørselshemmede") }
         return b
     }
 

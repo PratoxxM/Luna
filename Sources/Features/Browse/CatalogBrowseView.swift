@@ -74,9 +74,10 @@ struct CatalogBrowseView: View {
 
     @State private var selectedCard: TvMediaCard?
 
-    private let columns = [
-        GridItem(.adaptive(minimum: 260, maximum: 296), spacing: LunaTokens.Layout.cardGap)
-    ]
+    private let columns = Array(
+        repeating: GridItem(.fixed(LunaTokens.Layout.posterW), spacing: LunaTokens.Layout.cardGap, alignment: .topLeading),
+        count: 5
+    )
 
     private var sortOptions: [(id: String, label: String)] {
         let base: [(id: String, label: String)] = [
@@ -87,7 +88,7 @@ struct CatalogBrowseView: View {
         if isRootTab {
             return base
         }
-        return base + [("local_recent", "Lokalt hos oss")]
+        return base + [("local_recent", "Lokalt")]
     }
 
     init(
@@ -125,13 +126,8 @@ struct CatalogBrowseView: View {
 
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
-                if let mutationErrorBanner {
-                    TransientErrorBanner(message: mutationErrorBanner)
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                }
-
                 Text(headerTitle)
-                    .font(.title2.weight(.bold))
+                    .font(LunaTheme.Font.pageTitle)
                     .foregroundStyle(LunaTheme.linen)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
 
@@ -176,6 +172,7 @@ struct CatalogBrowseView: View {
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
+                .focusSection()
 
                 // Pure text genre strip (zero icon clutter)
                 if !availableGenres.isEmpty {
@@ -212,6 +209,7 @@ struct CatalogBrowseView: View {
                     }
                     .contentMargins(.zero, for: .scrollContent)
                     .scrollClipDisabled()
+                    .focusSection()
                 }
 
                 // Content Grid
@@ -219,7 +217,7 @@ struct CatalogBrowseView: View {
                     HStack(spacing: 16) {
                         ProgressView()
                         Text("Henter utvalg…")
-                            .font(.headline)
+                            .font(LunaTheme.Font.cardTitle)
                             .foregroundStyle(LunaTheme.moonlight)
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -227,6 +225,7 @@ struct CatalogBrowseView: View {
                 } else if let errorMessage, items.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
                         Text(errorMessage)
+                            .font(LunaTheme.Font.body)
                             .foregroundStyle(LunaTheme.danger)
                         LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                             scheduleReloadFirstPage(forceNetwork: true)
@@ -235,20 +234,22 @@ struct CatalogBrowseView: View {
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else if items.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Ingen treff med valgte filtre.")
-                            .font(.title3.weight(.semibold))
+                        Text("Ingenting passer akkurat disse filtrene.")
+                            .font(LunaTheme.Font.cardTitle)
                             .foregroundStyle(LunaTheme.linen)
-                        if localOnly || unwatchedOnly {
-                            LunaPillButton("Nullstill hurtigfiltre", systemImage: "xmark.circle", prominence: .subtleChip) {
+                        if localOnly || unwatchedOnly || selectedGenreSlug != nil {
+                            LunaPillButton("Nullstill filtre", systemImage: "xmark.circle", prominence: .subtleChip) {
                                 localOnly = false
                                 unwatchedOnly = false
+                                selectedGenreSlug = nil
+                                selectedGenreLabel = nil
                             }
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 48)
                 } else {
-                    LazyVGrid(columns: columns, spacing: 34) {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 34) {
                         ForEach(items) { card in
                             PosterCardView(
                                 card: card,
@@ -302,9 +303,18 @@ struct CatalogBrowseView: View {
             .padding(.bottom, 64)
         }
         .contentMargins(.zero, for: .scrollContent)
+        .scrollClipDisabled()
         .ignoresSafeArea(edges: .horizontal)
         .lunaRootScrollTopBarTracking(tab: rootNavigationTab, isEnabled: isRootTab)
         .safeAreaPadding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 0)
+        .overlay(alignment: .topLeading) {
+            if let mutationErrorBanner {
+                TransientErrorBanner(message: mutationErrorBanner)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.top, (isRootTab ? LunaTopBarView.contentTopPadding : 24) + 8)
+                    .allowsHitTesting(false)
+            }
+        }
         .focusSection()
         .lunaNavigationContainerBackdrop(
             isEnabled: !isRootTab,
@@ -449,7 +459,7 @@ struct CatalogBrowseView: View {
         } catch {
             guard !Task.isCancelled, (generation == nil || generation == reloadGeneration) else { return }
             if items.isEmpty {
-                errorMessage = error.localizedDescription
+                errorMessage = LunaCopy.friendlyErrorMessage(error)
             }
         }
         if generation == nil || generation == reloadGeneration {
@@ -486,7 +496,7 @@ struct CatalogBrowseView: View {
 
     private func showMutationError(_ error: Error) {
         mutationBannerTask?.cancel()
-        mutationErrorBanner = "Kunne ikke lagre endring: \(error.localizedDescription)"
+        mutationErrorBanner = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
         mutationBannerTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             guard !Task.isCancelled else { return }

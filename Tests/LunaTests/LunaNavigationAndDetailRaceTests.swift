@@ -38,7 +38,7 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
 
         XCTAssertEqual(
             AppSessionStore.currentAppVersionDisplayString(infoDictionary: nil),
-            "2.7.0"
+            "2.7.1"
         )
     }
 
@@ -274,7 +274,7 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
     func testTopBarScrollCollapseMenuWakeupTabFreshnessAndSubpagePlaybackGuard() {
         // 1. ~180 ms top bar focus debounce, 10-foot dock clearance & scroll zone hysteresis deadband
         XCTAssertEqual(LunaTopBarView.focusDebounceNanoseconds, 180_000_000)
-        XCTAssertEqual(LunaTopBarView.contentTopPadding, 82)
+        XCTAssertEqual(LunaTopBarView.contentTopPadding, 86)
         XCTAssertEqual(ScrollTopZone.collapseThreshold, 88)
         XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: -12), .atTop)
         XCTAssertEqual(ScrollTopZone.classify(scrolledOffsetY: 36), .atTop)

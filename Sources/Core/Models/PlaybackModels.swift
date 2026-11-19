@@ -163,23 +163,23 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
     public var sourceBadgeLabel: String {
         let normTier = (tier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let normSource = source.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if normTier == "vfs" || normTier == "infinidysk" || normSource.contains("infinidysk") || normSource == "vfs" {
-            return "InfiniDysk Strøm"
-        }
         if normTier == "ssd" || normTier == "nvme" || normSource == "ssd" || normSource == "nvme" {
             return "På NVMe"
         }
         if normTier == "archive" || normSource == "archive" {
             return "I Arkiv"
         }
+        if normTier == "vfs" || normTier == "infinidysk" || normSource.contains("infinidysk") || normSource == "vfs" {
+            return "Strømmes ved start"
+        }
         if normTier == "usenet" || normSource == "usenet" || normSource == "nzbfast" || normSource == "newznab" {
-            return "Strømmes fra Usenet"
+            return "Strømmes ved start"
         }
         if normTier == "remote" || normSource == "remote" || normSource == "http" {
             return "Strømmes ved start"
         }
         if normSource == "local" {
-            return "Lokalt hos oss"
+            return "Lokalt"
         }
         return LunaCopy.tierBenefitLabel(tier: normTier.isEmpty ? normSource : normTier)
     }

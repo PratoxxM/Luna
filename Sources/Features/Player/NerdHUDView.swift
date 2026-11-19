@@ -14,11 +14,11 @@ struct NerdHUDView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(LunaTheme.amber)
-                    .frame(width: 7, height: 7)
-                Text("Luna teknisk status · \(viewModel.activeSession?.roomName ?? "TV")")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(LunaTheme.amber)
+                    .fill(LunaTheme.emerald)
+                    .frame(width: 8, height: 8)
+                Text("Teknisk oversikt · \(viewModel.activeSession?.roomName ?? "TV")")
+                    .font(LunaTheme.Font.badge)
+                    .foregroundStyle(LunaTheme.linen)
             }
 
             hudRow("Video", value: videoSummary)
@@ -32,14 +32,11 @@ struct NerdHUDView: View {
             hudRow("HTTP 206 / Buffer", value: bufferAndNetworkSummary)
             hudRow("Kilde / Minne", value: sourceAndMemorySummary)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 14)
-        .frame(width: 500, alignment: .leading)
-        .background(LunaTheme.cinemaGlass, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1)
-        )
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .frame(width: 580, alignment: .leading)
+        .background(LunaTheme.cinemaGlass, in: RoundedRectangle(cornerRadius: LunaTokens.Radius.poster, style: .continuous))
+        .lunaTopLightEdge(cornerRadius: LunaTokens.Radius.poster)
         .allowsHitTesting(false)
         .onReceive(engine.diagnostics.$liveTelemetry) { telemetry = $0 }
         .onReceive(engine.diagnostics.$sessionCacheStatus) { cacheStatus = $0 }
@@ -107,11 +104,11 @@ struct NerdHUDView: View {
     private func hudRow(_ key: String, value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(key)
-                .font(.caption2.monospaced())
+                .font(LunaTheme.Font.badge.monospaced())
                 .foregroundStyle(LunaTheme.muted)
-                .frame(width: 118, alignment: .leading)
+                .frame(width: 152, alignment: .leading)
             Text(value)
-                .font(.caption2.weight(.semibold).monospacedDigit())
+                .font(LunaTheme.Font.badge.monospacedDigit())
                 .foregroundStyle(LunaTheme.moonlight)
                 .lineLimit(1)
             Spacer(minLength: 0)

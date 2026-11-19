@@ -214,10 +214,9 @@ struct SubtitleOverlayView: View {
 
         for run in runs {
             var part = AttributedString(run.text)
-            let baseFont = Font.system(
+            let baseFont = LunaTheme.Font.subtitleCue(
                 size: pointSize,
-                weight: run.isBold ? .bold : .semibold,
-                design: .rounded
+                weight: run.isBold ? .bold : .semibold
             )
             part.font = run.isItalic ? baseFont.italic() : baseFont
 

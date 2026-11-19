@@ -11,10 +11,10 @@ public enum HDRSubtitlePreset: String, CaseIterable, Identifiable, Sendable {
 
     public var displayTitle: String {
         switch self {
-        case .white100: return "100 % Hvit"
-        case .warm75: return "75 % Varmhvit"
-        case .warm60: return "60 % Dempet kveld"
-        case .soft50: return "50 % Nattkino"
+        case .white100: return "100 % hvit"
+        case .warm75: return "75 % varmhvit"
+        case .warm60: return "60 % dempet kveld"
+        case .soft50: return "50 % nattkino"
         }
     }
 
@@ -153,8 +153,8 @@ public enum SpeakerLayoutOverrideMode: String, CaseIterable, Identifiable, Senda
     public var displayTitle: String {
         switch self {
         case .auto: return "Auto fra romprofil"
-        case .l714: return "7.1.4 Objektlyd"
-        case .l512: return "5.1.2 Objektlyd"
+        case .l714: return "7.1.4 objektlyd"
+        case .l512: return "5.1.2 objektlyd"
         case .stereo: return "Stereo 2.0"
         }
     }
@@ -177,9 +177,9 @@ public enum AudioEnhancementMode: String, CaseIterable, Identifiable, Sendable {
 
     public var subtitle: String {
         switch self {
-        case .reference: return "Ubehandlet dynamikk & objektlyd"
+        case .reference: return "Ubehandlet dynamikk og objektlyd"
         case .dialogueLift: return "+4 dB senterkanal"
-        case .nightMode: return "Myk kompressor + tydelig tale"
+        case .nightMode: return "Myk kompressor og tydelig tale"
         }
     }
 }
@@ -195,7 +195,7 @@ public enum LowResUpscaleMode: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .off: return "Av"
         case .auto: return "Auto MetalFX"
-        case .animeLineArt: return "Anime & Strek"
+        case .animeLineArt: return "Anime og strek"
         }
     }
 

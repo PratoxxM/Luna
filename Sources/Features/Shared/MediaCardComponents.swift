@@ -5,7 +5,7 @@ struct TransientErrorBanner: View {
 
     var body: some View {
         Text(message)
-            .font(.callout.weight(.semibold))
+            .font(LunaTheme.Font.subtitle)
             .foregroundStyle(LunaTheme.danger)
             .padding(.horizontal, 22)
             .padding(.vertical, 12)

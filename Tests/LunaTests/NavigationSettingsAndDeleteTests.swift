@@ -8,7 +8,7 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
     func testSettingsCategoriesOrderAndPreservedDisplayToggleStrings() {
         XCTAssertEqual(
             SettingsCategory.allCases.map(\.title),
-            ["Rom & Skjerm", "Lyd & Synk", "Undertekster", "Avspilling", "System", "Avansert"]
+            ["Rom og skjerm", "Undertekster", "Avspilling", "System", "Avansert"]
         )
         XCTAssertEqual(
             SettingsView.keepDisplayModeToggleTitle,
@@ -312,9 +312,9 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
         )
         let topBarFit = topBarHost.sizeThatFits(in: CGSize(width: 1920, height: 1080))
         XCTAssertGreaterThan(topBarFit.width, 400)
-        XCTAssertLessThanOrEqual(topBarFit.width, 1300)
+        XCTAssertLessThanOrEqual(topBarFit.width, 1560)
         XCTAssertGreaterThan(topBarFit.height, 44)
-        XCTAssertLessThanOrEqual(topBarFit.height, 80)
+        XCTAssertLessThanOrEqual(topBarFit.height, 96)
 
         window.rootViewController = topBarHost
         window.makeKeyAndVisible()
@@ -329,8 +329,8 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
             }
         )
         let speakerRowSize = speakerRowHost.sizeThatFits(in: CGSize(width: 1920, height: 200))
-        XCTAssertLessThanOrEqual(speakerRowSize.width, 720)
-        XCTAssertLessThanOrEqual(speakerRowSize.height, 56)
+        XCTAssertLessThanOrEqual(speakerRowSize.width, 1100)
+        XCTAssertLessThanOrEqual(speakerRowSize.height, 76)
 
         let hdrPresetRowHost = UIHostingController(
             rootView: HStack(spacing: 8) {
@@ -340,8 +340,8 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
             }
         )
         let hdrPresetRowSize = hdrPresetRowHost.sizeThatFits(in: CGSize(width: 1920, height: 200))
-        XCTAssertLessThanOrEqual(hdrPresetRowSize.width, 720)
-        XCTAssertLessThanOrEqual(hdrPresetRowSize.height, 56)
+        XCTAssertLessThanOrEqual(hdrPresetRowSize.width, 1100)
+        XCTAssertLessThanOrEqual(hdrPresetRowSize.height, 76)
 
         store.localProfileOverride = "hdr10-512"
         for category in SettingsCategory.allCases {

@@ -1,4 +1,4 @@
-# Luna (`v2.7.0`) — Codebase Module Map
+# Luna (`v2.7.1`) — Codebase Module Map
 
 Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced bidirectionally by `ops/bin/luna-check`).
 
@@ -72,8 +72,8 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Features/Detail/DetailPreResolveController.swift` | Background pre-resolve + WebSocket progress bridge | `POST /playback/prepare`, `WS /ws/playback/:id` | `PlaybackResolveSocketTests.swift` |
 | `Sources/Features/Detail/SourcePickerSheetView.swift` | Focusable release/source selector sheet with room equipment & human explanation | `GET /playback/:id/alternatives` | `ClientOriginAndBlurHashTests.swift` |
 | `Sources/Features/Detail/DetailDeleteSheetView.swift` | Confined media deletion sheet with preflight byte summary | `POST /delete/{preflight,}` | `NavigationSettingsAndDeleteTests.swift` |
-| `Sources/Features/Settings/SettingsView.swift` | 2-column settings root (*Rom & Skjerm · Lyd & Synk · Undertekster · Avspilling · System · Avansert*) | `PATCH /api/tv/v1/device/profile`, `GET /bootstrap` | `NavigationSettingsAndDeleteTests.swift` |
-| `Sources/Features/Settings/SettingsComfortSectionView.swift` | Everyday room/upscaling, calm audio overview, Kveldslys subtitles & autoplay controls | `PATCH /api/tv/v1/device/profile` | `PlayerOverlayAndCacheTests.swift` |
+| `Sources/Features/Settings/SettingsView.swift` | 2-column settings root (*Rom og skjerm · Undertekster · Avspilling · System · Avansert*) | `PATCH /api/tv/v1/device/profile`, `GET /bootstrap` | `NavigationSettingsAndDeleteTests.swift` |
+| `Sources/Features/Settings/SettingsComfortSectionView.swift` | Everyday room/upscaling, Kveldslys subtitles & autoplay controls | `PATCH /api/tv/v1/device/profile` | `PlayerOverlayAndCacheTests.swift` |
 | `Sources/Features/Settings/SettingsAdvancedSectionView.swift` | Room override, DV P7 FEL, speaker/eARC sync, Nerd HUD & LAN self-signed TLS controls | `PATCH /api/tv/v1/device/profile` | `NavigationSettingsAndDeleteTests.swift` |
 | `Sources/Features/Settings/SettingsServerDiagnosticsSectionView.swift` | Server connection, room equipment summary, cache clear & unified reconnect trigger | `GET /api/tv/v1/bootstrap` | `NavigationSettingsAndDeleteTests.swift` |
 | `Sources/Features/Settings/SettingsComponents.swift` | Shared settings row & pill primitives | — | — |
@@ -99,7 +99,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 
 ## 4. Build, Guardrails, Actions & `LunaTests` (`Tests/LunaTests/`)
 
-- **Build, Tokens & CI**: `project.yml` (`MARKETING_VERSION: "2.7.0"`, `CURRENT_PROJECT_VERSION: "58"`, `bundleIdPrefix: local.lunacore`), `design/tokens.json`, `Resources/Localizable.xcstrings`, `ops/bin/luna-design-tokens`, `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, sideload, zero private infra leaks, token parity & bidirectional doc parity).
+- **Build, Tokens & CI**: `project.yml` (`MARKETING_VERSION: "2.7.1"`, `CURRENT_PROJECT_VERSION: "59"`, `bundleIdPrefix: local.lunacore`), `design/tokens.json`, `Resources/Localizable.xcstrings`, `ops/bin/luna-design-tokens`, `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, `>= 22 pt` tvOS font floor, sideload, zero private infra leaks, token parity & bidirectional doc parity).
 - **23 XCTest Suites + Test Doubles (`Tests/LunaTests/`)**:
   - `Tests/LunaTests/BonjourServerBrowserTests.swift`
   - `Tests/LunaTests/ChapterClassificationTests.swift`

@@ -15,6 +15,7 @@ public enum LunaFocusStyle {
     public static let glowBlur: CGFloat = LunaTokens.Layout.focusGlowBlur
     public static let glowOffsetY: CGFloat = LunaTokens.Layout.focusGlowOffsetY
     public static let fadeSeconds: Double = LunaTokens.Motion.focusFadeSeconds
+    public static let listMarkerWidth: CGFloat = 3.0
 
     public static var focusSpring: Animation {
         .spring(response: springResponse, dampingFraction: springDamping)
@@ -38,7 +39,7 @@ public enum LunaFocusStyle {
 
     public nonisolated static func borderColor(for kind: LunaFocusKind, isFocused: Bool, accentColor: Color = LunaTheme.amber) -> Color {
         guard isFocused else {
-            return kind == .listRow ? .clear : LunaTheme.warmBorderSubtle
+            return .clear
         }
         return accentColor.opacity(borderOpacity)
     }
@@ -83,32 +84,50 @@ public struct LunaFocusSurfaceModifier: ViewModifier {
     }
 
     public func body(content: Content) -> some View {
-        let resolvedAccent = customAccent ? accentColor : roomAtmosphere.lampColor
+        let resolvedGlow = customAccent ? accentColor : roomAtmosphere.lampColor
         let resolvedStrength = customAccent ? LunaTokens.Glow.lampStrength : roomAtmosphere.lampStrength
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let borderBase = customAccent ? accentColor : LunaTheme.focusGoldBorder
         let activeBorderColor = LunaFocusStyle.borderColor(
             for: kind,
             isFocused: isFocused,
-            accentColor: kind == .card ? LunaTheme.focusGoldBorder : resolvedAccent
+            accentColor: borderBase
         )
-        let glowColor: Color = isFocused ? resolvedAccent.opacity(resolvedStrength) : .clear
+        let markerColor = customAccent ? accentColor : LunaTheme.amber
+        let glowColor: Color = isFocused ? resolvedGlow.opacity(resolvedStrength) : .clear
         let scale = LunaFocusStyle.scaleEffect(for: kind, isFocused: isFocused)
 
         content
             .overlay(
                 Group {
-                    if kind == .listRow && isFocused {
-                        HStack {
-                            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                .fill(resolvedAccent)
-                                .frame(width: 4)
-                                .padding(.vertical, 8)
-                            Spacer(minLength: 0)
+                    if isFocused {
+                        if kind == .listRow {
+                            HStack {
+                                Capsule()
+                                    .fill(markerColor)
+                                    .frame(width: LunaFocusStyle.listMarkerWidth)
+                                    .padding(.vertical, 10)
+                                Spacer(minLength: 0)
+                            }
+                            .overlay(
+                                shape.strokeBorder(
+                                    LunaTheme.topLightEdgeGradient(topColor: LunaTokens.Edge.top3),
+                                    lineWidth: 1.0
+                                )
+                            )
+                        } else {
+                            shape.strokeBorder(activeBorderColor, lineWidth: LunaFocusStyle.borderWidth)
                         }
                     } else {
-                        shape.strokeBorder(activeBorderColor, lineWidth: isFocused ? LunaFocusStyle.borderWidth : 1.0)
+                        shape.strokeBorder(
+                            LunaTheme.topLightEdgeGradient(
+                                topColor: kind == .listRow ? LunaTokens.Edge.top1 : LunaTokens.Edge.top2
+                            ),
+                            lineWidth: 1.0
+                        )
                     }
                 }
+                .allowsHitTesting(false)
                 .transaction { $0.animation = nil }
             )
             .shadow(
@@ -122,15 +141,15 @@ public struct LunaFocusSurfaceModifier: ViewModifier {
     }
 }
 
-/// Companion focus chrome applied around `.buttonStyle(.card)` labels so Apple TV's native
-/// lift & parallax remain intact while adding the `1.5 pt` gold frame and warm under-glow.
+/// Inner focus frame applied to `.buttonStyle(.card)` labels: zero resting border on posters
+/// (so posters truly ignite on focus) and `1.5 pt` 70% gold frame when focused.
 @MainActor
 private struct LunaCardFocusFrameModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
 
     let cornerRadius: CGFloat
     let isFocused: Bool
+    let showRestingTopEdge: Bool
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -138,33 +157,43 @@ private struct LunaCardFocusFrameModifier: ViewModifier {
         content
             .clipShape(shape)
             .overlay(
-                shape.strokeBorder(
-                    isFocused
-                        ? LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity)
-                        : LunaTheme.warmBorderSubtle,
-                    lineWidth: isFocused ? LunaFocusStyle.borderWidth : 1.0
-                )
+                Group {
+                    if isFocused {
+                        shape.strokeBorder(
+                            LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity),
+                            lineWidth: LunaFocusStyle.borderWidth
+                        )
+                    } else if showRestingTopEdge {
+                        shape.strokeBorder(
+                            LunaTheme.topLightEdgeGradient(topColor: LunaTokens.Edge.top2),
+                            lineWidth: 1.0
+                        )
+                    }
+                }
+                .allowsHitTesting(false)
                 .transaction { $0.animation = nil }
             )
-            .overlay(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(isFocused ? 0.10 : 0.0),
-                        Color.clear,
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .center
-                )
-                .clipShape(shape)
-                .allowsHitTesting(false)
-            )
+            .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
+    }
+}
+
+/// Outer warm lamp glow placed outside `.buttonStyle(.card)` so tvOS's card mask never clips the under-glow.
+@MainActor
+private struct LunaCardLampGlowModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
+
+    let isFocused: Bool
+
+    func body(content: Content) -> some View {
+        content
             .shadow(
                 color: isFocused ? roomAtmosphere.lampColor.opacity(roomAtmosphere.lampStrength) : .clear,
                 radius: isFocused ? LunaFocusStyle.glowBlur : 0,
                 x: 0,
                 y: isFocused ? LunaFocusStyle.glowOffsetY : 0
             )
-            .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusFade, value: isFocused)
+            .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
     }
 }
 
@@ -188,13 +217,19 @@ public extension View {
 
     func lunaCardFocusFrame(
         cornerRadius: CGFloat = LunaTokens.Radius.card,
-        isFocused: Bool
+        isFocused: Bool,
+        showRestingTopEdge: Bool = false
     ) -> some View {
         modifier(
             LunaCardFocusFrameModifier(
                 cornerRadius: cornerRadius,
-                isFocused: isFocused
+                isFocused: isFocused,
+                showRestingTopEdge: showRestingTopEdge
             )
         )
+    }
+
+    func lunaCardLampGlow(isFocused: Bool) -> some View {
+        modifier(LunaCardLampGlowModifier(isFocused: isFocused))
     }
 }

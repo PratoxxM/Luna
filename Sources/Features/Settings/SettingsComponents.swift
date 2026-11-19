@@ -5,24 +5,25 @@ struct SettingsSectionPanel<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             Text(title)
                 .font(LunaTheme.Font.settingsSectionTitle)
                 .foregroundStyle(LunaTheme.linen)
                 .padding(.leading, 4)
 
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 16) {
                 content()
             }
-            .padding(20)
+            .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: LunaTokens.Radius.poster, style: .continuous)
+                RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
                     .fill(LunaTheme.surface)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: LunaTokens.Radius.poster, style: .continuous)
-                    .strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1)
+            .lunaTopLightEdge(
+                cornerRadius: LunaTokens.Radius.panel,
+                topColor: LunaTokens.Edge.top2,
+                sideColor: LunaTokens.Edge.top1
             )
         }
     }
@@ -41,27 +42,41 @@ struct SettingsControlRow<Controls: View>: View {
     var subtitle: String? = nil
     @ViewBuilder let controls: () -> Controls
 
-    var body: some View {
-        HStack(alignment: .center, spacing: 20) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(LunaTheme.Font.settingsRowTitle)
-                    .foregroundStyle(LunaTheme.linen)
+    private var labelBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(LunaTheme.Font.settingsRowTitle)
+                .foregroundStyle(LunaTheme.linen)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(LunaTheme.Font.settingsRowSubtitle)
+                    .foregroundStyle(LunaTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
-
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(LunaTheme.Font.settingsRowSubtitle)
-                        .foregroundStyle(LunaTheme.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            controls()
-                .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(.vertical, 2)
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 20) {
+                labelBlock
+                    .frame(minWidth: 280, maxWidth: .infinity, alignment: .leading)
+
+                controls()
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                labelBlock
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                controls()
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -112,14 +127,14 @@ struct SettingsRoomRowButton: View {
                     if isSelected {
                         Text("Aktiv")
                             .font(LunaTheme.Font.settingsStatusTag)
-                            .foregroundStyle(LunaTheme.amber)
+                            .foregroundStyle(LunaTheme.moonlight)
                             .lineLimit(1)
                     }
 
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                         .font(LunaTheme.Font.settingsRowIcon)
                         .foregroundStyle(
-                            isSelected ? LunaTheme.amber : (isFocused ? LunaTheme.linen : LunaTheme.muted)
+                            isSelected ? LunaTheme.emerald : (isFocused ? LunaTheme.linen : LunaTheme.muted)
                         )
                 }
                 .fixedSize()
@@ -174,20 +189,20 @@ struct SettingsToggleRowButton: View {
 
                 Text(isOn ? "På" : "Av")
                     .font(LunaTheme.Font.settingsToggleState)
-                    .foregroundStyle(isOn ? LunaTheme.canvas : LunaTheme.muted)
+                    .foregroundStyle(isOn ? LunaTheme.linen : LunaTheme.muted)
                     .lineLimit(1)
-                    .frame(minWidth: 22)
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 5)
+                    .frame(minWidth: 28)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
                     .fixedSize()
                     .background(
                         Capsule()
-                            .fill(isOn ? LunaTheme.amber : LunaTheme.surface)
+                            .fill(isOn ? LunaTokens.Status.okBg : LunaTheme.surface)
                     )
                     .overlay(
                         Capsule()
                             .strokeBorder(
-                                !isOn ? LunaTheme.warmBorderSubtle : Color.clear,
+                                isOn ? LunaTokens.Status.okBorder : LunaTheme.warmBorderSubtle,
                                 lineWidth: 1
                             )
                     )

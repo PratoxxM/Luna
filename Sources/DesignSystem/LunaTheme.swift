@@ -59,7 +59,7 @@ public enum LunaRoomAtmosphere: String, CaseIterable, Equatable, Sendable {
         switch self {
         case .cinema: return LunaTokens.Room.cinemaAmbientOpacity
         case .living: return LunaTokens.Room.livingAmbientOpacity
-        case .neutral: return 0.065
+        case .neutral: return (LunaTokens.Room.cinemaAmbientOpacity + LunaTokens.Room.livingAmbientOpacity) * 0.5
         }
     }
 }
@@ -79,7 +79,7 @@ public enum LunaTheme {
     /// Near-black warm charcoal menu base (`#0A0908`) — protects LG OLED black floor with zero cold blue cast.
     public static let canvas = LunaTokens.Surface.canvas
     /// Pure black (`#000000`) reserved for OLED video surface & startup curtain.
-    public static let pureBlack = Color.black
+    public static let pureBlack = LunaTokens.Surface.pureBlack
     /// Calm matte espresso surface (`#14110F`) for cards, panels, and shelves.
     public static let surface = LunaTokens.Surface.lv1
     /// Slightly softer matte espresso (`#181412`) for subtle filter & genre chips.
@@ -88,7 +88,7 @@ public enum LunaTheme {
     public static let surfaceRaised = LunaTokens.Surface.lv2
     /// Warm roasted espresso (`#2A231E`) for active/selected secondary controls without competing with «Spill av».
     public static let surfaceSelected = LunaTokens.Surface.selected
-    /// Elevated roasted espresso (`#241E1A`) for focused wide settings, drawer, and source-picker rows.
+    /// Elevated roasted espresso (`#241E1A`) for focused secondary controls, wide settings, drawer, and source-picker rows.
     public static let surfaceElevated = LunaTokens.Surface.lv3
     /// Dark HDR/Dolby Vision-safe warm cinema glass (`#120F0D` @ 92%) — avoids tvOS `.ultraThinMaterial` 203-nit washout.
     public static let cinemaGlass = LunaTokens.Surface.glass
@@ -127,7 +127,7 @@ public enum LunaTheme {
     public static let warmBorder = LunaTokens.Edge.top2
     public static let warmBorderStrong = LunaTokens.Edge.top3
 
-    /// Calm antique bronze Siri Remote focus fill (`#C48C3A -> #9E6E27`) without bright lemon-yellow glare.
+    /// Calm antique bronze Siri Remote focus fill (`#C48C3A -> #9E6E27`) reserved for primary actions.
     public static let focusGoldTop = amber
     public static let focusGoldBottom = amberDeep
     public static let focusGoldBorder = LunaTokens.Accent.line
@@ -162,8 +162,24 @@ public enum LunaTheme {
         )
     }
 
+    public static func topLightEdgeGradient(
+        topColor: Color = LunaTokens.Edge.top2,
+        sideColor: Color = .clear
+    ) -> LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: topColor, location: 0.0),
+                .init(color: topColor.opacity(0.32), location: 0.14),
+                .init(color: sideColor, location: 0.42),
+                .init(color: sideColor, location: 1.0),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
     public static func cardBorderColor(isFocused: Bool) -> Color {
-        isFocused ? focusGoldBorder.opacity(LunaTokens.Layout.focusBorderOpacity) : warmBorderSubtle
+        isFocused ? focusGoldBorder.opacity(LunaTokens.Layout.focusBorderOpacity) : .clear
     }
 
     public static func cardTitleColor(isFocused: Bool) -> Color {
@@ -189,5 +205,25 @@ public enum LunaTheme {
         let g = Double((rgb >> 8) & 0xFF) / 255.0
         let b = Double(rgb & 0xFF) / 255.0
         return Color(red: r, green: g, blue: b)
+    }
+}
+
+public extension View {
+    /// True 1 pt overhead lamp highlight along the top edge (`Edge.top2` fading downward),
+    /// giving OLED surfaces physical depth without cold black drop shadows.
+    func lunaTopLightEdge(
+        cornerRadius: CGFloat = LunaTokens.Radius.card,
+        topColor: Color = LunaTokens.Edge.top2,
+        sideColor: Color = .clear,
+        lineWidth: CGFloat = 1.0
+    ) -> some View {
+        overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(
+                    LunaTheme.topLightEdgeGradient(topColor: topColor, sideColor: sideColor),
+                    lineWidth: lineWidth
+                )
+                .allowsHitTesting(false)
+        )
     }
 }

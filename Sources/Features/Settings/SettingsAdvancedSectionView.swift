@@ -7,7 +7,7 @@ struct SettingsAdvancedSectionView: View {
     var body: some View {
         SettingsSectionPanel(title: "Avansert") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Romoverstyring på denne TV-en")
+                Text("Velg annet rom på denne TV-en")
                     .font(LunaTheme.Font.settingsSubLabel)
                     .foregroundStyle(LunaTheme.muted)
 
@@ -40,7 +40,7 @@ struct SettingsAdvancedSectionView: View {
 
                 if sessionStore.localProfileOverride != nil {
                     LunaPillButton(
-                        "Bruk rom valgt i LunaCore Web",
+                        "Bruk rom valgt i LunaCore",
                         systemImage: "arrow.uturn.backward",
                         prominence: .glassPill,
                         size: .compact
@@ -72,7 +72,7 @@ struct SettingsAdvancedSectionView: View {
 
             SettingsSectionDivider()
 
-            SettingsControlRow(title: "Høyttaleroppsett & Objektlyd") {
+            SettingsControlRow(title: "Høyttaleroppsett og objektlyd") {
                 HStack(spacing: 8) {
                     ForEach(SpeakerLayoutOverrideMode.allCases) { mode in
                         LunaPillButton(
@@ -91,18 +91,18 @@ struct SettingsAdvancedSectionView: View {
 
             SettingsControlRow(
                 title: "Fast lydsynk for denne Apple TV-en (HDMI / eARC)",
-                subtitle: "Negativ verdi (f.eks. -25 til -75 ms) sender lyden tidligere ut på HDMI for å hente inn eARC- og Dolby MAT/LPCM-forsinkelse i TV og lydplanke."
+                subtitle: "Negativ verdi (f.eks. −25 til −75 ms) sender lyden tidligere ut på HDMI for å hente inn eARC- og Dolby MAT/LPCM-forsinkelse i TV og lydplanke."
             ) {
                 VStack(alignment: .trailing, spacing: 8) {
-                    Text(comfort.formattedAudioDelayLabel)
+                    Text(comfort.formattedAudioDelayLabel.replacingOccurrences(of: "-", with: "−"))
                         .font(LunaTheme.Font.settingsAudioDelay)
-                        .foregroundStyle(comfort.audioDelayMs == 0 ? LunaTheme.muted : LunaTheme.amber)
+                        .foregroundStyle(comfort.audioDelayMs == 0 ? LunaTheme.muted : LunaTheme.linen)
 
                     HStack(spacing: 8) {
-                        LunaPillButton("-25 ms", prominence: .subtleChip, size: .compact) {
+                        LunaPillButton("−25 ms", prominence: .subtleChip, size: .compact) {
                             comfort.adjustAudioDelay(byMs: -25)
                         }
-                        LunaPillButton("-10 ms", prominence: .subtleChip, size: .compact) {
+                        LunaPillButton("−10 ms", prominence: .subtleChip, size: .compact) {
                             comfort.adjustAudioDelay(byMs: -10)
                         }
                         LunaPillButton(
@@ -126,8 +126,8 @@ struct SettingsAdvancedSectionView: View {
             SettingsSectionDivider()
 
             SettingsToggleRowButton(
-                title: "Vis teknisk status i spilleren (Nerd HUD)",
-                subtitle: "Sanntids bilde-, lyd- og buffertelemetri under avspilling",
+                title: "Vis teknisk oversikt i spilleren",
+                subtitle: "Sanntids bilde-, lyd- og bufferoversikt under avspilling",
                 isOn: $comfort.showNerdHUD
             )
 

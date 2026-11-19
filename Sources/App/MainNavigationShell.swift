@@ -16,7 +16,7 @@ struct MainNavigationShell: View {
         let hideTopBar = navBarVisibility.isTopBarHidden
         let interceptMenu = navBarVisibility.shouldInterceptMenuPress(hasActivePlayback: isPlaybackActive)
 
-        ZStack(alignment: .top) {
+        ZStack(alignment: .topLeading) {
             AmbientBackdropView(isPaused: isPlaybackActive)
 
             TabView(selection: $selectedTab) {

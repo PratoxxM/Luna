@@ -44,13 +44,13 @@ struct PlayerBottomBarView: View {
                     ProgressView()
                         .scaleEffect(0.8)
                     Text("Bytter kilde…")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(LunaTheme.amber)
+                        .font(LunaTheme.Font.caption)
+                        .foregroundStyle(LunaTheme.moonlight)
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 9)
                 .background(LunaTheme.cinemaGlass, in: Capsule())
-                .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.45), lineWidth: 1))
+                .overlay(Capsule().strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, LunaTheme.horizontalGutter)
                 .padding(.top, 42)
@@ -60,40 +60,43 @@ struct PlayerBottomBarView: View {
 
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .lastTextBaseline, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        if let seriesLine = titleDisplay.seriesLine {
-                            Text(seriesLine)
-                                .font(.callout.weight(.semibold))
-                                .foregroundStyle(LunaTheme.moonlight)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            if let seriesLine = titleDisplay.seriesLine {
+                                Text(seriesLine)
+                                    .font(LunaTheme.Font.subtitle)
+                                    .foregroundStyle(LunaTheme.moonlight)
+                                    .lineLimit(1)
+                            }
+
+                            if !viewModel.chapters.isEmpty && !viewModel.isScrubbing {
+                                ActiveChapterLabelLeafView(
+                                    engine: viewModel.engine,
+                                    chapters: viewModel.chapters,
+                                    hasLeadingSeriesLine: titleDisplay.seriesLine != nil
+                                )
+                            }
                         }
 
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
                             if isPaused && !viewModel.isScrubbing {
                                 Image(systemName: "pause.fill")
-                                    .font(.callout.weight(.semibold))
+                                    .font(LunaTheme.Font.subtitle)
                                     .foregroundStyle(LunaTheme.pauseWarmLine)
                             }
 
                             Text(titleDisplay.titleLine)
-                                .font(.title2.weight(.semibold))
+                                .font(LunaTheme.Font.sectionTitle)
                                 .foregroundStyle(LunaTheme.linen)
                                 .lineLimit(1)
-
-                            if !viewModel.chapters.isEmpty && !viewModel.isScrubbing {
-                                ActiveChapterLabelLeafView(
-                                    engine: viewModel.engine,
-                                    chapters: viewModel.chapters
-                                )
-                            }
+                                .truncationMode(.tail)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Spacer()
-
-                    EndsAtAndFormatLeafView(
+                    EndsAtLeafView(
                         engine: viewModel.engine,
-                        duration: duration,
-                        formatSummary: compactFormatSummary
+                        duration: duration
                     )
                 }
 
@@ -112,8 +115,8 @@ struct PlayerBottomBarView: View {
                 LinearGradient(
                     colors: [
                         Color.clear,
-                        Color.black.opacity(0.58),
-                        Color.black.opacity(0.90),
+                        LunaTheme.pureBlack.opacity(0.58),
+                        LunaTheme.pureBlack.opacity(0.90),
                     ],
                     startPoint: .top,
                     endPoint: .bottom
@@ -123,23 +126,13 @@ struct PlayerBottomBarView: View {
         }
         .allowsHitTesting(false)
     }
-
-    private var compactFormatSummary: String {
-        let video = viewModel.videoFormatBadge
-        let audio = viewModel.audioFormatBadge
-        if audio.isEmpty {
-            return video
-        }
-        return "\(video) · \(audio)"
-    }
 }
 
 // MARK: - Isolated & Bucketed Clock Leaf Views
 
-private struct EndsAtAndFormatLeafView: View {
+private struct EndsAtLeafView: View {
     let engine: AetherEngine
     let duration: Double
-    let formatSummary: String
 
     @State private var currentTime: Double = 0
     @State private var lastTimeBucket: Int = -1
@@ -147,43 +140,43 @@ private struct EndsAtAndFormatLeafView: View {
     private static let formatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "nb_NO")
-        f.dateFormat = "HH:mm"
+        f.dateFormat = "HH.mm"
         return f
     }()
 
     var body: some View {
-        let text: String = {
-            guard duration > 30 else { return formatSummary }
-            let remaining = max(0, duration - currentTime)
-            let finishClock = Self.formatter.string(from: Date().addingTimeInterval(remaining))
-            return "Ferdig \(finishClock) · \(formatSummary)"
-        }()
-
-        Text(text)
-            .font(.callout.weight(.medium).monospacedDigit())
-            .foregroundStyle(LunaTheme.muted)
-            .lineLimit(1)
-            .onReceive(engine.clock.$currentTime) { t in
-                let bucket = Int(max(0, t) / 5.0)
-                if bucket != lastTimeBucket {
-                    lastTimeBucket = bucket
-                    currentTime = t
-                }
+        Group {
+            if duration > 30 {
+                let remaining = max(0, duration - currentTime)
+                let finishClock = Self.formatter.string(from: Date().addingTimeInterval(remaining))
+                Text("Ferdig kl. \(finishClock)")
+                    .font(LunaTheme.Font.subtitle.monospacedDigit())
+                    .foregroundStyle(LunaTheme.muted)
+                    .lineLimit(1)
             }
+        }
+        .onReceive(engine.clock.$currentTime) { t in
+            let bucket = Int(max(0, t) / 5.0)
+            if bucket != lastTimeBucket {
+                lastTimeBucket = bucket
+                currentTime = t
+            }
+        }
     }
 }
 
 private struct ActiveChapterLabelLeafView: View {
     let engine: AetherEngine
     let chapters: [PlaybackChapter]
+    let hasLeadingSeriesLine: Bool
 
     @State private var currentTime: Double = 0
 
     var body: some View {
         Group {
             if let active = chapters.first(where: { currentTime >= $0.startSeconds && currentTime < $0.endSeconds }) {
-                Text("· \(active.title)")
-                    .font(.callout.weight(.medium))
+                Text(hasLeadingSeriesLine ? "· \(active.title)" : active.title)
+                    .font(LunaTheme.Font.subtitle)
                     .foregroundStyle(LunaTheme.muted)
                     .lineLimit(1)
             } else {
@@ -251,12 +244,11 @@ struct TimelineScrubberLeafView: View {
                         )
                         .frame(width: totalWidth * CGFloat(progressRatio))
 
-                    // Subtle chapter tick marks
                     ForEach(viewModel.chapters) { ch in
                         if ch.startSeconds > 2 && ch.startSeconds < effectiveDuration - 2 {
                             let xPos = totalWidth * CGFloat(ch.startSeconds / effectiveDuration)
                             Rectangle()
-                                .fill(Color.black.opacity(0.76))
+                                .fill(LunaTheme.pureBlack.opacity(0.76))
                                 .frame(width: 2.0, height: barHeight)
                                 .offset(x: xPos)
                         }
@@ -300,13 +292,13 @@ struct TimelineScrubberLeafView: View {
 
             HStack(alignment: .center) {
                 Text(Self.formatSeconds(displayTime))
-                    .font(.callout.monospacedDigit().weight(.medium))
+                    .font(LunaTheme.Font.subtitle.monospacedDigit())
                     .foregroundStyle(isScrubbing ? LunaTheme.amber : LunaTheme.moonlight)
 
                 Spacer()
 
                 if isScrubbing {
-                    Text("Klikk for å spille herfra · Menyknappen avbryter")
+                    Text("Klikk for å spille herfra")
                         .font(LunaTheme.Font.caption)
                         .foregroundStyle(LunaTheme.muted)
                 } else if showFirstTimeScrubHint {
@@ -317,8 +309,8 @@ struct TimelineScrubberLeafView: View {
 
                 Spacer()
 
-                Text("-\(Self.formatSeconds(max(0, effectiveDuration - displayTime)))")
-                    .font(.callout.monospacedDigit().weight(.medium))
+                Text("−\(Self.formatSeconds(max(0, effectiveDuration - displayTime)))")
+                    .font(LunaTheme.Font.subtitle.monospacedDigit())
                     .foregroundStyle(LunaTheme.muted)
             }
         }

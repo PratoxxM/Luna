@@ -34,10 +34,13 @@ struct PlayerTopDrawerView: View {
     @ObservedObject var viewModel: PlayerViewModel
     @ObservedObject var comfort: ComfortPreferences
     @Binding var selectedTab: PlayerTopDrawerTab
+    var roomEquipmentOverride: String? = nil
     let onClose: () -> Void
 
     @FocusState private var focusedTab: PlayerTopDrawerTab?
+    @State private var tabDebounceTask: Task<Void, Never>?
     @State var chapterSnapshotTime: Double = 0
+    @Namespace private var drawerTabFocusNamespace
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,40 +53,44 @@ struct PlayerTopDrawerView: View {
                             isSelected: selectedTab == tab,
                             prominence: selectedTab == tab ? .glassPill : .subtleChip
                         ) {
-                            withAnimation(.easeOut(duration: 0.16)) {
+                            tabDebounceTask?.cancel()
+                            tabDebounceTask = nil
+                            withAnimation(.easeOut(duration: 0.12)) {
                                 selectedTab = tab
                             }
                         }
                         .focused($focusedTab, equals: tab)
+                        .prefersDefaultFocus(selectedTab == tab, in: drawerTabFocusNamespace)
                     }
 
                     Spacer()
-
-                    Text("Menyknappen lukker")
-                        .font(LunaTheme.Font.caption)
-                        .foregroundStyle(LunaTheme.muted)
-
-                    LunaPillButton("Lukk", systemImage: "chevron.up", prominence: .subtleChip) {
-                        onClose()
-                    }
                 }
+                .defaultFocus($focusedTab, selectedTab as PlayerTopDrawerTab?, priority: .userInitiated)
+                .focusScope(drawerTabFocusNamespace)
+                .focusSection()
 
                 Divider()
                     .overlay(LunaTheme.warmBorderSubtle)
 
-                Group {
+                ZStack(alignment: .topLeading) {
                     switch selectedTab {
                     case .info:
                         infoTabContent
+                            .transition(.opacity)
                     case .audioAndSubtitles:
                         audioAndSubtitlesTabContent
+                            .transition(.opacity)
                     case .source:
                         sourceTabContent
+                            .transition(.opacity)
                     case .chapters:
                         chaptersTabContent
+                            .transition(.opacity)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
+                .animation(.easeOut(duration: 0.12), value: selectedTab)
+                .focusSection()
             }
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.top, 38)
@@ -95,15 +102,31 @@ struct PlayerTopDrawerView: View {
             }
             .overlay(alignment: .bottom) {
                 Rectangle()
-                    .fill(LunaTheme.warmBorder)
+                    .fill(LunaTokens.Edge.top2)
                     .frame(height: 1)
                     .ignoresSafeArea(edges: .horizontal)
             }
 
             Spacer()
         }
+        .onChange(of: focusedTab) { _, newTab in
+            tabDebounceTask?.cancel()
+            tabDebounceTask = nil
+            guard let newTab, newTab != selectedTab else { return }
+            tabDebounceTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 160_000_000)
+                guard !Task.isCancelled, focusedTab == newTab else { return }
+                withAnimation(.easeOut(duration: 0.12)) {
+                    selectedTab = newTab
+                }
+            }
+        }
         .onAppear {
             focusedTab = selectedTab
+        }
+        .onDisappear {
+            tabDebounceTask?.cancel()
+            tabDebounceTask = nil
         }
         .task(id: viewModel.activeSession?.sessionId) {
             chapterSnapshotTime = max(0, viewModel.engine.currentTime)
@@ -137,7 +160,7 @@ struct DrawerTrackRowButton: View {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(LunaTheme.Font.tabIcon)
                     .foregroundStyle(
-                        isSelected ? LunaTheme.amber : (isFocused ? LunaTheme.linen : LunaTheme.muted)
+                        isSelected ? LunaTheme.emerald : (isFocused ? LunaTheme.linen : LunaTheme.muted)
                     )
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -158,10 +181,10 @@ struct DrawerTrackRowButton: View {
                         Text(badge)
                             .font(LunaTheme.Font.badge)
                             .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
-                            .padding(.horizontal, 9)
+                            .padding(.horizontal, 10)
                             .padding(.vertical, 4)
                             .background(
-                                isFocused ? LunaTheme.amber.opacity(0.22) : LunaTheme.warmBorderBase.opacity(0.09),
+                                LunaTheme.warmBorderBase.opacity(isFocused ? 0.14 : 0.08),
                                 in: Capsule()
                             )
                     }
@@ -177,23 +200,7 @@ struct DrawerTrackRowButton: View {
                             : (isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
                     )
             }
-            .overlay(
-                RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous)
-                    .strokeBorder(
-                        isFocused
-                            ? LunaTheme.focusGoldBorder
-                            : (isSelected ? LunaTheme.warmBorderStrong : LunaTheme.warmBorderSubtle),
-                        lineWidth: isFocused ? 2.0 : 1.0
-                    )
-            )
-            .shadow(
-                color: isFocused ? Color.black.opacity(0.32) : .clear,
-                radius: isFocused ? 10 : 0,
-                x: 0,
-                y: isFocused ? 4 : 0
-            )
-            .scaleEffect(isFocused ? 1.012 : 1.0)
-            .animation(LunaFocusStyle.focusSpring, value: isFocused)
+            .lunaFocusSurface(.listRow, isFocused: isFocused, cornerRadius: LunaTokens.Radius.chip)
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous))
@@ -215,65 +222,38 @@ struct ChapterPillCardButton: View {
                 HStack(spacing: 8) {
                     Text(TimelineScrubberLeafView.formatSeconds(chapter.startSeconds))
                         .font(LunaTheme.Font.badge.monospacedDigit())
-                        .foregroundStyle(isFocused ? LunaTheme.canvas.opacity(0.84) : LunaTheme.amber)
+                        .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
 
                     if isActive {
                         Text("Spiller nå")
                             .font(LunaTheme.Font.badge)
-                            .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.canvas)
-                            .padding(.horizontal, 8)
+                            .foregroundStyle(LunaTheme.emerald)
+                            .padding(.horizontal, 9)
                             .padding(.vertical, 2)
-                            .background(
-                                isFocused ? LunaTheme.canvas : LunaTheme.amber,
-                                in: Capsule()
-                            )
+                            .background(LunaTokens.Status.okBg, in: Capsule())
                     } else if let kindLabel = chapter.kind.badgeLabel {
                         Text(kindLabel)
                             .font(LunaTheme.Font.badge)
-                            .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.canvas)
-                            .padding(.horizontal, 8)
+                            .foregroundStyle(LunaTheme.linen)
+                            .padding(.horizontal, 9)
                             .padding(.vertical, 2)
-                            .background(
-                                isFocused ? LunaTheme.canvas : LunaTheme.amber,
-                                in: Capsule()
-                            )
+                            .background(LunaTheme.warmBorderBase.opacity(0.12), in: Capsule())
                     }
                 }
 
                 Text(chapter.title)
                     .font(LunaTheme.Font.settingsRowTitle)
-                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.linen)
+                    .foregroundStyle(LunaTheme.linen)
                     .lineLimit(1)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
-            .frame(minWidth: 204, alignment: .leading)
-            .background {
-                if isFocused {
-                    RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous)
-                        .fill(LunaTheme.focusGoldGradient)
-                } else {
-                    RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous)
-                        .fill(isActive ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
-                }
-            }
-            .overlay(
+            .frame(minWidth: 220, alignment: .leading)
+            .background(
                 RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous)
-                    .strokeBorder(
-                        isFocused
-                            ? LunaTheme.focusGoldBorder
-                            : (isActive ? LunaTheme.warmBorderStrong : LunaTheme.warmBorderSubtle),
-                        lineWidth: isFocused ? 2.0 : 1.0
-                    )
+                    .fill(isFocused ? LunaTheme.surfaceElevated : (isActive ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised))
             )
-            .shadow(
-                color: isFocused ? Color.black.opacity(0.34) : .clear,
-                radius: isFocused ? 10 : 0,
-                x: 0,
-                y: isFocused ? 4 : 0
-            )
-            .scaleEffect(isFocused ? 1.025 : 1.0)
-            .animation(LunaFocusStyle.focusSpring, value: isFocused)
+            .lunaFocusSurface(.secondaryPill, isFocused: isFocused, cornerRadius: LunaTokens.Radius.chip)
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous))
@@ -288,8 +268,9 @@ struct ObjectAudioStatusLeafView: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "dot.radiowaves.left.and.right")
-                .foregroundStyle(LunaTheme.amber)
-            Text("Aktiv lydkjede: \(fallbackBadge)")
+                .font(LunaTheme.Font.pillIcon)
+                .foregroundStyle(LunaTheme.moonlight)
+            Text("Lyd ut: \(fallbackBadge)")
                 .font(LunaTheme.Font.caption)
                 .foregroundStyle(LunaTheme.moonlight)
         }

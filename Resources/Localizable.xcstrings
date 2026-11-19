@@ -102,13 +102,13 @@
               "one" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld festet"
+                  "value" : "%lld tittel festet"
                 }
               },
               "other" : {
                 "stringUnit" : {
                   "state" : "translated",
-                  "value" : "%lld festede"
+                  "value" : "%lld titler festet"
                 }
               }
             }

@@ -144,6 +144,7 @@ else:
 import json
 
 xcstrings_path = root / "Resources/Localizable.xcstrings"
+xc_keys = set()
 if not xcstrings_path.is_file():
     errors.append("COPY_GATE missing Resources/Localizable.xcstrings")
 else:
@@ -151,20 +152,63 @@ else:
         xc_data = json.loads(xcstrings_path.read_text(encoding="utf-8"))
         if xc_data.get("sourceLanguage") != "nb" or not isinstance(xc_data.get("strings"), dict) or len(xc_data["strings"]) < 5:
             errors.append("COPY_GATE Resources/Localizable.xcstrings must declare sourceLanguage='nb' with plural entries")
+        else:
+            xc_keys = set(xc_data["strings"].keys())
     except Exception as exc:
         errors.append(f"COPY_GATE invalid Localizable.xcstrings JSON: {exc}")
 
+tokens_path = root / "design/tokens.json"
+if not tokens_path.is_file():
+    errors.append("TYPO_FLOOR missing design/tokens.json")
+else:
+    try:
+        tokens_data = json.loads(tokens_path.read_text(encoding="utf-8"))
+        tvos_typo = tokens_data.get("platform", {}).get("tvos", {}).get("typography", {})
+        if not tvos_typo:
+            errors.append("TYPO_FLOOR missing platform.tvos.typography in design/tokens.json")
+        for role_name, pt_val in sorted(tvos_typo.items()):
+            if not isinstance(pt_val, (int, float)) or float(pt_val) < 22.0:
+                errors.append(f"TYPO_FLOOR design/tokens.json platform.tvos.typography.{role_name}={pt_val} < 22.0 pt minimum")
+    except Exception as exc:
+        errors.append(f"TYPO_FLOOR invalid design/tokens.json: {exc}")
+
 PLURAL_BUG_RE = re.compile(r"\\\([^)]+\)\s*(?:lokale\s+|aktive\s+)?(?:filmer|serier|episoder|sesonger|tjenester|titler|kilder|dager|mediefiler|festet|kapitler|treff)\b")
+RAW_FONT_STYLE_RE = re.compile(r"\.font\(\.(?:caption2?|footnote|subheadline|callout|body|headline|title[23]?|largeTitle)\b")
 sys_font_calls = 0
+typo_sizes_checked = 0
+all_sources_concat = []
+
 for sf in sorted((root / "Sources").rglob("*.swift")):
     rel = sf.relative_to(root).as_posix()
     text = sf.read_text(encoding="utf-8", errors="replace")
+    all_sources_concat.append(text)
     sys_font_calls += len(re.findall(r"\.font\(\.system\(size:", text))
+    if RAW_FONT_STYLE_RE.search(text):
+        errors.append(f"TYPO_FLOOR {rel}: raw SwiftUI text style (.font(.caption/.title/...)) forbidden; use LunaTheme.Font.*")
+    if rel == "Sources/DesignSystem/LunaThemeTypography.swift":
+        for m in re.finditer(r"size:\s*(\d+(?:\.\d+)?)", text):
+            pt = float(m.group(1))
+            typo_sizes_checked += 1
+            if pt < 22.0:
+                errors.append(f"TYPO_FLOOR {rel}: font size {pt} pt is below 22.0 pt tvOS floor")
+    else:
+        if re.search(r"Font\.system\s*\(", text) or re.search(r"\.font\(\s*\.system\s*\(", text):
+            errors.append(f"TYPO_FLOOR {rel}: direct .system(...) font outside LunaThemeTypography.swift")
     for i, ln in enumerate(text.splitlines(), 1):
         if PLURAL_BUG_RE.search(ln):
             errors.append(f"COPY_GATE {rel}:{i}: hardcoded Norwegian plural interpolation")
         if "mediefil" in ln and "? \"l\"" in ln:
             errors.append(f"COPY_GATE {rel}:{i}: inline ternary plural hack")
+
+if typo_sizes_checked < 15:
+    errors.append(f"TYPO_FLOOR expected >= 15 typography definitions in LunaThemeTypography.swift, found {typo_sizes_checked}")
+
+joined_sources = "\n".join(all_sources_concat)
+for key in sorted(xc_keys):
+    prefix = key.split(" ")[0]
+    if prefix not in joined_sources:
+        errors.append(f"COPY_GATE Resources/Localizable.xcstrings key '{key}' is unused in Sources/")
+
 if sys_font_calls > 0:
     errors.append(f"RATCHET .font(.system(size: count {sys_font_calls} exceeds M8 0 ceiling")
 

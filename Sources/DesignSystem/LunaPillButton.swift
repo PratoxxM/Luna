@@ -75,11 +75,14 @@ public struct LunaPillButton: View {
         prominence: LunaButtonProminence,
         accent: LunaButtonAccent
     ) -> Color {
-        if isFocused || prominence == .primaryAmber {
+        if prominence == .primaryAmber {
             return LunaTheme.canvas
         }
         if accent == .coral {
             return LunaTheme.coral
+        }
+        if isFocused {
+            return accent == .emerald && isSelected ? LunaTheme.emerald : LunaTheme.linen
         }
         if accent == .warn {
             return LunaTheme.warn
@@ -96,11 +99,14 @@ public struct LunaPillButton: View {
         prominence: LunaButtonProminence,
         accent: LunaButtonAccent
     ) -> Color {
-        if isFocused || prominence == .primaryAmber {
+        if prominence == .primaryAmber {
             return LunaTheme.canvas
         }
         if accent == .coral {
             return LunaTheme.coral
+        }
+        if isFocused {
+            return LunaTheme.linen
         }
         if accent == .warn {
             return LunaTheme.warn
@@ -118,7 +124,10 @@ public struct LunaPillButton: View {
         accent: LunaButtonAccent
     ) -> Color {
         if isFocused {
-            return LunaTheme.focusGoldBorder
+            if accent == .coral && prominence != .primaryAmber {
+                return LunaTheme.coral.opacity(0.85)
+            }
+            return LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity)
         }
         switch prominence {
         case .primaryAmber:
@@ -157,6 +166,7 @@ public struct LunaPillButton: View {
 
 private struct LunaPillLabel: View {
     @Environment(\.isFocused) private var isFocused
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
 
     let title: String
@@ -169,7 +179,11 @@ private struct LunaPillLabel: View {
 
     var body: some View {
         let isCompact = size == .compact
-        HStack(spacing: isCompact ? 7 : 9) {
+        let scale: CGFloat = isFocused
+            ? (prominence == .primaryAmber ? 1.04 : 1.03)
+            : 1.0
+
+        HStack(spacing: isCompact ? 8 : 10) {
             if let systemImage {
                 Image(systemName: systemImage)
                     .font(isCompact ? LunaTheme.Font.compactPillIcon : LunaTheme.Font.pillIcon)
@@ -186,28 +200,41 @@ private struct LunaPillLabel: View {
                 Text(badgeText)
                     .font(LunaTheme.Font.compactPillBadge)
                     .foregroundStyle(badgeForegroundColor)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3)
                     .background(Capsule().fill(badgeBackground))
             }
         }
         .transaction { $0.animation = nil }
-        .padding(.horizontal, title.isEmpty ? (isCompact ? 13 : 15) : (isCompact ? 16 : 19))
-        .padding(.vertical, isCompact ? 8 : 9)
+        .padding(.horizontal, title.isEmpty ? (isCompact ? 14 : 16) : (isCompact ? 16 : 20))
+        .padding(.vertical, isCompact ? 9 : 11)
         .background(backgroundView)
         .overlay(
-            Capsule()
-                .strokeBorder(borderColor, lineWidth: borderWidth)
-                .transaction { $0.animation = nil }
+            Group {
+                if isFocused || prominence == .primaryAmber || isSelected || accent == .coral || accent == .warn {
+                    Capsule()
+                        .strokeBorder(borderColor, lineWidth: borderWidth)
+                } else {
+                    Capsule()
+                        .strokeBorder(
+                            LunaTheme.topLightEdgeGradient(
+                                topColor: prominence == .glassPill ? LunaTokens.Edge.top3 : LunaTokens.Edge.top2,
+                                sideColor: LunaTokens.Edge.top1.opacity(0.45)
+                            ),
+                            lineWidth: 1.0
+                        )
+                }
+            }
+            .transaction { $0.animation = nil }
         )
         .shadow(
             color: isFocused ? glowAccentColor.opacity(roomAtmosphere.lampStrength) : .clear,
-            radius: isFocused ? 22 : 0,
+            radius: isFocused ? LunaFocusStyle.glowBlur : 0,
             x: 0,
-            y: isFocused ? 8 : 0
+            y: isFocused ? LunaFocusStyle.glowOffsetY : 0
         )
-        .scaleEffect(isFocused ? 1.03 : 1.0)
-        .animation(LunaFocusStyle.focusSpring, value: isFocused)
+        .scaleEffect(scale)
+        .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
     }
 
     private var glowAccentColor: Color {
@@ -238,10 +265,13 @@ private struct LunaPillLabel: View {
     }
 
     private var badgeForegroundColor: Color {
-        if isFocused || prominence == .primaryAmber {
+        if prominence == .primaryAmber {
             return LunaTheme.canvas
         }
-        if isSelected {
+        if accent == .coral {
+            return LunaTheme.coral
+        }
+        if isFocused || isSelected {
             return LunaTheme.linen
         }
         return LunaTheme.muted
@@ -258,17 +288,26 @@ private struct LunaPillLabel: View {
         }
     }
 
+    private var focusedSecondaryFill: Color {
+        if accent == .coral {
+            return LunaTokens.Status.dangerBg
+        }
+        return LunaTheme.surfaceElevated
+    }
+
     private var backgroundView: some View {
         ZStack {
-            Capsule()
-                .fill(restingSolidColor)
-                .opacity(!isFocused && prominence != .primaryAmber ? 1 : 0)
-            Capsule()
-                .fill(LunaTheme.primaryAmberGradient)
-                .opacity(!isFocused && prominence == .primaryAmber ? 1 : 0)
-            Capsule()
-                .fill(LunaTheme.focusGoldGradient)
-                .opacity(isFocused ? 1 : 0)
+            if prominence == .primaryAmber {
+                Capsule()
+                    .fill(LunaTheme.primaryAmberGradient)
+                    .opacity(isFocused ? 0 : 1)
+                Capsule()
+                    .fill(LunaTheme.playFocusGradient)
+                    .opacity(isFocused ? 1 : 0)
+            } else {
+                Capsule()
+                    .fill(isFocused ? focusedSecondaryFill : restingSolidColor)
+            }
         }
         .transaction { $0.animation = nil }
     }
@@ -287,10 +326,10 @@ private struct LunaPillLabel: View {
     }
 
     private var badgeBackground: Color {
-        if isFocused || prominence == .primaryAmber {
+        if prominence == .primaryAmber {
             return LunaTheme.canvas.opacity(0.16)
         }
-        if isSelected {
+        if isFocused || isSelected {
             return LunaTheme.warmBorderBase.opacity(0.14)
         }
         return LunaTheme.warmBorderBase.opacity(0.08)

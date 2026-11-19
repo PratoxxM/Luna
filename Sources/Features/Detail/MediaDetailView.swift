@@ -16,12 +16,13 @@ struct MediaDetailView: View {
 
     private enum PendingMoreSheetAction {
         case pickSource
+        case deleteSeason(Int)
         case deleteTitle
     }
 
     @Namespace private var detailFocusNamespace
 
-    private let detailGutter: CGFloat = 90
+    private let detailGutter: CGFloat = LunaTheme.horizontalGutter
 
     init(mediaType: String, itemId: String, initialTitle: String) {
         self.mediaType = mediaType
@@ -115,7 +116,7 @@ struct MediaDetailView: View {
                         HStack(spacing: 16) {
                             ProgressView()
                             Text("Henter detaljer for \(initialTitle)…")
-                                .font(.title3)
+                                .font(LunaTheme.Font.cardTitle)
                                 .foregroundStyle(LunaTheme.moonlight)
                         }
                         .padding(.horizontal, detailGutter)
@@ -123,6 +124,7 @@ struct MediaDetailView: View {
                     } else if let errorMessage = viewModel.errorMessage {
                         VStack(alignment: .leading, spacing: 16) {
                             Text(errorMessage)
+                                .font(LunaTheme.Font.body)
                                 .foregroundStyle(LunaTheme.danger)
                             LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                                 Task { await viewModel.reloadFromError() }
@@ -187,6 +189,8 @@ struct MediaDetailView: View {
             switch action {
             case .pickSource:
                 viewModel.openPrimarySourcePicker()
+            case .deleteSeason(let seasonNumber):
+                viewModel.requestDeleteSeason(seasonNumber)
             case .deleteTitle:
                 viewModel.requestDeleteTitle()
             case nil:
@@ -194,9 +198,14 @@ struct MediaDetailView: View {
             }
         }) {
             if let detail = viewModel.detail {
+                let seasonHasLocal = viewModel.episodes.contains {
+                    $0.availability?.isPhysicalLocal == true || $0.availability?.isLocalVfs == true
+                }
                 DetailMoreSheetView(
                     item: detail,
                     hasLocalEpisodes: viewModel.hasLocalEpisodes,
+                    selectedSeasonNumber: detail.mediaType == "series" ? viewModel.selectedSeasonNumber : nil,
+                    canDeleteSelectedSeason: detail.mediaType == "series" && seasonHasLocal,
                     onPickSource: {
                         pendingMoreAction = .pickSource
                         viewModel.showMoreSheet = false
@@ -204,6 +213,10 @@ struct MediaDetailView: View {
                     onToggleMonitor: {
                         viewModel.showMoreSheet = false
                         Task { await viewModel.toggleMonitor() }
+                    },
+                    onDeleteSeason: { seasonNum in
+                        pendingMoreAction = .deleteSeason(seasonNum)
+                        viewModel.showMoreSheet = false
                     },
                     onDeleteTitle: {
                         pendingMoreAction = .deleteTitle

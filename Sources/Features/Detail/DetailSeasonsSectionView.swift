@@ -13,16 +13,11 @@ struct DetailSeasonsSectionView: View {
     let onPlayEpisode: (TvEpisodeCard) -> Void
     let onPickEpisodeSource: (TvEpisodeCard) -> Void
     let onToggleEpisodeWatched: (TvEpisodeCard) -> Void
-    let onDeleteSeason: (Int) -> Void
+    var onDeleteSeason: (Int) -> Void = { _ in }
     let onDeleteEpisode: (TvEpisodeCard) -> Void
 
+    @Namespace private var seasonsFocusNamespace
     @Namespace private var episodesFocusNamespace
-
-    private var hasRemovableEpisodesInSeason: Bool {
-        episodes.contains { (ep: TvEpisodeCard) in
-            ep.availability?.isPhysicalLocal == true || ep.availability?.isLocalVfs == true
-        }
-    }
 
     private var nextEpisodeTargetID: String? {
         if let next = detail.nextUp,
@@ -50,37 +45,29 @@ struct DetailSeasonsSectionView: View {
                             selectedSeasonNumber = season.seasonNumber
                             onSelectSeason(season.seasonNumber)
                         }
-                    }
-
-                    if hasRemovableEpisodesInSeason {
-                        LunaPillButton(
-                            "Slett sesong \(selectedSeasonNumber)",
-                            systemImage: "trash",
-                            prominence: .subtleChip,
-                            accent: .coral
-                        ) {
-                            onDeleteSeason(selectedSeasonNumber)
-                        }
+                        .prefersDefaultFocus(selected, in: seasonsFocusNamespace)
                     }
                 }
                 .padding(.horizontal, detailGutter)
-                .padding(.vertical, 10)
+                .padding(.vertical, 14)
             }
             .contentMargins(.zero, for: .scrollContent)
             .scrollClipDisabled()
+            .focusScope(seasonsFocusNamespace)
+            .focusSection()
 
             if isLoadingEpisodes && episodes.isEmpty {
                 HStack(spacing: 14) {
                     ProgressView()
                     Text("Henter episoder…")
-                        .font(.callout)
+                        .font(LunaTheme.Font.body)
                         .foregroundStyle(LunaTheme.muted)
                 }
                 .padding(.horizontal, detailGutter)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: LunaTokens.Layout.cardGap) {
+                        LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
                             ForEach(episodes) { ep in
                                 EpisodeCardView(
                                     episode: ep,
@@ -97,7 +84,7 @@ struct DetailSeasonsSectionView: View {
                             }
                         }
                         .padding(.horizontal, detailGutter)
-                        .padding(.vertical, 18)
+                        .padding(.vertical, 26)
                     }
                     .contentMargins(.zero, for: .scrollContent)
                     .scrollClipDisabled()

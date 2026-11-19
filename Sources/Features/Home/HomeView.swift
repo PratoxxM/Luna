@@ -170,16 +170,11 @@ struct HomeView: View {
 
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 38) {
-                if let mutationErrorMessage {
-                    TransientErrorBanner(message: mutationErrorMessage)
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                }
-
                 if visibleRows.isEmpty && isInitialColdFetch {
                     HStack(spacing: 16) {
                         ProgressView()
                         Text("Henter innhold…")
-                            .font(.title3)
+                            .font(LunaTheme.Font.cardTitle)
                             .foregroundStyle(LunaTheme.moonlight)
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -189,7 +184,7 @@ struct HomeView: View {
                 if let errorMessage, visibleRows.isEmpty {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(errorMessage)
-                            .font(.callout)
+                            .font(LunaTheme.Font.body)
                             .foregroundStyle(LunaTheme.danger)
                         LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                             scheduleRevalidateHome(forceUnconditional: true)
@@ -234,9 +229,18 @@ struct HomeView: View {
             .padding(.bottom, 84)
         }
         .contentMargins(.zero, for: .scrollContent)
+        .scrollClipDisabled()
         .ignoresSafeArea(edges: .horizontal)
         .lunaRootScrollTopBarTracking(tab: .home)
         .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
+        .overlay(alignment: .topLeading) {
+            if let mutationErrorMessage {
+                TransientErrorBanner(message: mutationErrorMessage)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.top, LunaTopBarView.contentTopPadding + 8)
+                    .allowsHitTesting(false)
+            }
+        }
         .focusSection()
         .focusScope(homeFocusNamespace)
         .navigationDestination(item: $selectedCard) { card in
@@ -418,9 +422,7 @@ struct HomeView: View {
                 lastValidatedAt = Date()
                 validatedScopeKey = resolvedScope
                 if !(homePayload?.isSemanticallyEqual(to: payload) ?? false) {
-                    withAnimation(.easeOut(duration: 0.22)) {
-                        homePayload = payload
-                    }
+                    homePayload = payload
                 }
                 DiskSWRStore.saveHomeInBackground(
                     rawPayloadData: rawData,
@@ -438,7 +440,7 @@ struct HomeView: View {
         } catch {
             guard !Task.isCancelled, (generation == nil || generation == reloadGeneration) else { return }
             if homePayload == nil {
-                errorMessage = error.localizedDescription
+                errorMessage = LunaCopy.friendlyErrorMessage(error)
             }
         }
         if generation == nil || generation == reloadGeneration {
@@ -462,7 +464,7 @@ struct HomeView: View {
 
     private func showMutationError(_ error: Error) {
         mutationBannerTask?.cancel()
-        mutationErrorMessage = "Kunne ikke lagre endring: \(error.localizedDescription)"
+        mutationErrorMessage = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
         mutationBannerTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             guard !Task.isCancelled else { return }

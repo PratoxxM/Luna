@@ -94,11 +94,11 @@ public enum LibrarySidebarSection: String, CaseIterable, Identifiable, Sendable 
         case .watchlist:
             return "Legg til noe dere vil se, så ligger det klart her."
         case .lists:
-            return "Opprett egne lister i LunaCore Web, så dukker de opp her."
+            return "Opprett egne lister i LunaCore på iPhone, så dukker de opp her."
         case .localMovies:
-            return "Filmer som er lagret hos dere vises her uten å vekke arkivdiskene."
+            return "Filmer som er lagret lokalt vises her så snart de er på plass."
         case .localSeries:
-            return "Serier som er lagret hos dere vises her så snart de er klare."
+            return "Serier som er lagret lokalt vises her så snart de er klare."
         case .localAll:
             return "Juster filtrene over eller utforsk katalogen for å legge til noe nytt."
         }
@@ -135,6 +135,7 @@ struct LibraryWatchlistTypeBar: View {
             }
         }
         .padding(.vertical, 4)
+        .focusSection()
     }
 }
 
@@ -195,6 +196,7 @@ struct LibraryLocalFilterBar: View {
         }
         .contentMargins(.zero, for: .scrollContent)
         .scrollClipDisabled()
+        .focusSection()
     }
 }
 
@@ -268,7 +270,7 @@ struct LibraryCustomListTileButton: View {
         switch list.mediaType?.lowercased() {
         case "movie": return "Filmer"
         case "series": return "Serier"
-        default: return "Filmer & Serier"
+        default: return "Filmer og serier"
         }
     }
 
@@ -276,10 +278,10 @@ struct LibraryCustomListTileButton: View {
         Button(action: action) {
             HStack(spacing: 16) {
                 Image(systemName: "rectangle.stack.fill")
-                    .font(.title2)
-                    .foregroundStyle(LunaTheme.amber)
-                    .frame(width: 44, height: 44)
-                    .background(LunaTheme.amber.opacity(0.14), in: RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous))
+                    .font(LunaTheme.Font.cardTitle)
+                    .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
+                    .frame(width: 48, height: 48)
+                    .background(LunaTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(list.name)
@@ -297,7 +299,7 @@ struct LibraryCustomListTileButton: View {
 
                 Image(systemName: "chevron.right")
                     .font(LunaTheme.Font.microChevron)
-                    .foregroundStyle(isFocused ? LunaTheme.amber : LunaTheme.muted)
+                    .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.muted)
             }
             .padding(.horizontal, 22)
             .padding(.vertical, 20)
@@ -318,14 +320,15 @@ struct LibraryEmptyStateView: View {
     let headline: String
     let subtitle: String
     var actionTitle: String? = nil
+    var actionSymbol: String = "film"
     var onAction: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 22) {
-            LunaCrescentMarkView(size: 80, color: LunaTheme.amber.opacity(0.62))
+            LunaCrescentMarkView(size: 80, color: LunaTheme.moonlight.opacity(0.65))
 
             Text(headline)
-                .font(LunaTheme.Font.heroSerif)
+                .font(LunaTheme.Font.pageTitle)
                 .foregroundStyle(LunaTheme.linen)
                 .multilineTextAlignment(.center)
 
@@ -336,7 +339,7 @@ struct LibraryEmptyStateView: View {
                 .frame(maxWidth: 680)
 
             if let actionTitle, let onAction {
-                LunaPillButton(actionTitle, systemImage: "sparkles.tv", prominence: .glassPill) {
+                LunaPillButton(actionTitle, systemImage: actionSymbol, prominence: .glassPill) {
                     onAction()
                 }
                 .padding(.top, 8)

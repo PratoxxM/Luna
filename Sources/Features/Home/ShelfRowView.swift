@@ -62,7 +62,7 @@ struct ShelfRowView: View {
                                 Button {
                                     onPlayContinueCard(card)
                                 } label: {
-                                    Label("Spill av nå", systemImage: "play.fill")
+                                    Label("Spill av", systemImage: "play.fill")
                                 }
 
                                 Button {
@@ -74,7 +74,7 @@ struct ShelfRowView: View {
                                 Button {
                                     onPickSourceForCard(card)
                                 } label: {
-                                    Label("Bytt kilde…", systemImage: "arrow.triangle.2.circlepath")
+                                    Label("Velg kilde…", systemImage: "arrow.triangle.2.circlepath")
                                 }
 
                                 Button {
@@ -92,16 +92,17 @@ struct ShelfRowView: View {
                         }
 
                         if row.hasMore == true {
-                            SeeAllShelfCardButton(width: 260, height: LunaTokens.Layout.backdropH) {
+                            SeeAllShelfCardButton(width: LunaTokens.Layout.posterW, height: LunaTokens.Layout.backdropH) {
                                 onSeeAllRow(row)
                             }
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 22)
+                    .padding(.vertical, 28)
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
+                .focusSection()
             } else if row.rowStyle == "upcoming_backdrop" {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
@@ -120,7 +121,7 @@ struct ShelfRowView: View {
                                 Button {
                                     onSelectCard(card)
                                 } label: {
-                                    Label("Åpne serie og sesonger", systemImage: "tv")
+                                    Label("Åpne detaljer", systemImage: "tv")
                                 }
 
                                 Button {
@@ -132,16 +133,17 @@ struct ShelfRowView: View {
                         }
 
                         if row.hasMore == true {
-                            SeeAllShelfCardButton(width: 260, height: LunaTokens.Layout.backdropH) {
+                            SeeAllShelfCardButton(width: LunaTokens.Layout.posterW, height: LunaTokens.Layout.backdropH) {
                                 onSeeAllRow(row)
                             }
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 22)
+                    .padding(.vertical, 28)
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
+                .focusSection()
             } else if row.rowStyle == "backdrop" {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
@@ -184,16 +186,17 @@ struct ShelfRowView: View {
                         }
 
                         if row.hasMore == true {
-                            SeeAllShelfCardButton(width: 260, height: LunaTokens.Layout.backdropH) {
+                            SeeAllShelfCardButton(width: LunaTokens.Layout.posterW, height: LunaTokens.Layout.backdropH) {
                                 onSeeAllRow(row)
                             }
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 22)
+                    .padding(.vertical, 28)
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
+                .focusSection()
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
@@ -241,10 +244,11 @@ struct ShelfRowView: View {
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 22)
+                    .padding(.vertical, 28)
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
+                .focusSection()
             }
         }
     }
@@ -262,20 +266,16 @@ private struct SeeAllShelfCardButton: View {
             VStack(spacing: 14) {
                 Image(systemName: "arrow.right")
                     .font(LunaTheme.Font.sectionTitle)
-                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.moonlight)
+                    .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
 
                 Text("Se alle")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.linen)
+                    .font(LunaTheme.Font.cardTitle)
+                    .foregroundStyle(LunaTheme.linen)
             }
             .frame(width: width, height: height)
             .background(
                 RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
-                    .fill(
-                        isFocused
-                            ? AnyShapeStyle(LunaTheme.focusGoldGradient)
-                            : AnyShapeStyle(LunaTheme.surface)
-                    )
+                    .fill(isFocused ? LunaTheme.surfaceElevated : LunaTheme.surface)
             )
             .lunaFocusSurface(.secondaryPill, isFocused: isFocused, cornerRadius: LunaTheme.cardRadius)
         }

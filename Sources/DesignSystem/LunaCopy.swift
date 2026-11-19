@@ -2,6 +2,21 @@ import Foundation
 
 /// Canonical Norwegian copy, pluralization, decimal formatting & glossary helpers (`LunaCopy`).
 public enum LunaCopy: Sendable {
+    private static let norwegianLocale = Locale(identifier: "nb")
+
+    private nonisolated static func localizedCount(
+        _ value: String.LocalizationValue,
+        fallbackCount: Int,
+        singular: String,
+        pluralForm: String
+    ) -> String {
+        let resolved = String(localized: value, bundle: .main, locale: norwegianLocale)
+        if resolved.contains("%lld") || resolved.contains("_count") || resolved.contains("_total") {
+            return plural(fallbackCount, singular, pluralForm)
+        }
+        return resolved
+    }
+
     public nonisolated static func plural(_ count: Int, _ singular: String, _ pluralForm: String) -> String {
         abs(count) == 1 ? "\(count) \(singular)" : "\(count) \(pluralForm)"
     }
@@ -13,7 +28,12 @@ public enum LunaCopy: Sendable {
         } else {
             rounded = max(0, Int(rawDays.rounded()))
         }
-        let base = plural(rounded, "dag", "dager")
+        let base = localizedCount(
+            "days_count \(Int64(rounded))",
+            fallbackCount: rounded,
+            singular: "dag",
+            pluralForm: "dager"
+        )
         let cleanSuffix = suffix.trimmingCharacters(in: .whitespacesAndNewlines)
         return cleanSuffix.isEmpty ? base : "\(base) \(cleanSuffix)"
     }
@@ -37,15 +57,72 @@ public enum LunaCopy: Sendable {
     }
 
     public nonisolated static func pinnedCount(_ count: Int) -> String {
-        plural(count, "festet", "festede")
+        localizedCount(
+            "pinned_items_count \(Int64(count))",
+            fallbackCount: count,
+            singular: "tittel festet",
+            pluralForm: "titler festet"
+        )
     }
 
     public nonisolated static func searchHits(_ count: Int) -> String {
-        plural(count, "treff", "treff")
+        localizedCount(
+            "search_hits_total \(Int64(count))",
+            fallbackCount: count,
+            singular: "treff",
+            pluralForm: "treff"
+        )
     }
 
     public nonisolated static func chaptersHeader(_ count: Int) -> String {
-        plural(count, "kapittel", "kapitler")
+        localizedCount(
+            "chapters_count \(Int64(count))",
+            fallbackCount: count,
+            singular: "kapittel",
+            pluralForm: "kapitler"
+        )
+    }
+
+    public nonisolated static func episodesCount(_ count: Int) -> String {
+        localizedCount(
+            "episodes_count \(Int64(count))",
+            fallbackCount: count,
+            singular: "episode",
+            pluralForm: "episoder"
+        )
+    }
+
+    public nonisolated static func seasonsCount(_ count: Int) -> String {
+        localizedCount(
+            "seasons_count \(Int64(count))",
+            fallbackCount: count,
+            singular: "sesong",
+            pluralForm: "sesonger"
+        )
+    }
+
+    public nonisolated static func mediaFilesCount(_ count: Int) -> String {
+        localizedCount(
+            "media_files_count \(Int64(count))",
+            fallbackCount: count,
+            singular: "mediefil",
+            pluralForm: "mediefiler"
+        )
+    }
+
+    public nonisolated static func formatListEpisodeCode(season: Int?, episode: Int?) -> String? {
+        guard let season, let episode, season > 0, episode > 0 else { return nil }
+        return "S\(season) · E\(episode)"
+    }
+
+    public nonisolated static func formatListEpisodeCode(_ rawCode: String?) -> String? {
+        guard let rawCode else { return nil }
+        let trimmed = rawCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let parsed = EpisodeTitleFormatter.parseEpisodeCode(trimmed) {
+            return "S\(parsed.season) · E\(parsed.episode)"
+        }
+        return trimmed
     }
 
     public nonisolated static func tierBenefitLabel(tier: String?, state: String? = nil) -> String {
@@ -53,10 +130,56 @@ public enum LunaCopy: Sendable {
         let norm = (tier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if norm == "ssd" || norm == "nvme" { return "Starter umiddelbart" }
         if norm == "archive" { return "Fra arkivet" }
-        if norm == "usenet" || norm == "nzbfast" || norm == "newznab" { return "Strømmes fra Usenet" }
-        if norm == "remote" || norm == "http" { return "Strømmes ved start" }
-        if norm == "local" { return "Lokalt hos oss" }
+        if norm == "local" { return "Lokalt" }
         return "Strømmes ved start"
+    }
+
+    public nonisolated static func tierShortLabel(tier: String?, source: String? = nil, state: String? = nil) -> String {
+        if state == "upcoming" { return "Kommer" }
+        let normTier = (tier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normSource = (source ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normTier == "ssd" || normTier == "nvme" || normSource == "ssd" || normSource == "nvme" {
+            return "På NVMe"
+        }
+        if normTier == "archive" || normSource == "archive" {
+            return "I Arkiv"
+        }
+        if normTier == "local" || normSource == "local" {
+            return "Lokalt"
+        }
+        return "Strøm"
+    }
+
+    public nonisolated static func friendlyErrorMessage(
+        _ error: Error,
+        fallback: String = "Kunne ikke nå LunaCore akkurat nå. Prøv igjen om litt."
+    ) -> String {
+        if let lcError = error as? LunaCoreError {
+            switch lcError {
+            case .unauthorized:
+                return "TV-paringen er utløpt. Par på nytt i LunaCore."
+            case .serverMessage(_, let msg):
+                let trimmed = msg.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? fallback : trimmed
+            case .decodingFailed:
+                return "Kunne ikke lese svaret fra LunaCore akkurat nå."
+            case .invalidURL:
+                return "Ugyldig serveradresse. Sjekk tilkoblingen under Innstillinger."
+            }
+        }
+        if let urlErr = error as? URLError {
+            switch urlErr.code {
+            case .timedOut:
+                return "LunaCore svarte ikke i tide. Prøv igjen om et øyeblikk."
+            case .notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+                return "Får ikke kontakt med LunaCore på lokalnettet."
+            case .serverCertificateUntrusted, .secureConnectionFailed, .clientCertificateRejected:
+                return "Sikker tilkobling feilet. Sjekk sertifikatvalget under Innstillinger."
+            default:
+                return fallback
+            }
+        }
+        return fallback
     }
 
     public nonisolated static func roomEquipmentLabel(hardwareProfile: String) -> String {
@@ -85,10 +208,10 @@ public enum LunaCopy: Sendable {
         if roomClean.contains("stua") && !roomClean.contains("kjeller") {
             return "Samsung Frame · HDR10+ · 5.1.2"
         }
-        if roomClean.contains("kjeller") {
+        if roomClean.contains("kjeller") || roomClean.contains("kino") {
             return "LG OLED · Dolby Vision · 7.1.4"
         }
-        return "LG OLED · Dolby Vision · 7.1.4"
+        return "Apple TV 4K · Direkte avspilling"
     }
 
     public nonisolated static func timeGreeting(for date: Date = Date(), calendar: Calendar = .current) -> String {

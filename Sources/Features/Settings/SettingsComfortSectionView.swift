@@ -8,7 +8,7 @@ struct SettingsRoomDisplaySectionView: View {
     let caps: DisplayCapabilities
 
     var body: some View {
-        SettingsSectionPanel(title: "Rom & Skjerm") {
+        SettingsSectionPanel(title: "Rom og skjerm") {
             SettingsInfoRow(
                 title: "Aktivt rom",
                 value: "\(sessionStore.roomName) · \(sessionStore.effectiveEquipmentLabel)"
@@ -44,7 +44,7 @@ struct SettingsRoomDisplaySectionView: View {
 
             SettingsSectionDivider()
 
-            SettingsInfoRow(title: "HDMI & Skjermstøtte", value: hdmiSummary)
+            SettingsInfoRow(title: "HDMI og skjermstøtte", value: hdmiSummary)
         }
     }
 
@@ -59,42 +59,14 @@ struct SettingsRoomDisplaySectionView: View {
     }
 }
 
-struct SettingsAudioSyncSectionView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
-    @EnvironmentObject private var comfort: ComfortPreferences
-
-    var body: some View {
-        SettingsSectionPanel(title: "Lyd & Synk") {
-            SettingsInfoRow(
-                title: "Lydprofil",
-                value: "\(sessionStore.roomName) · \(sessionStore.effectiveEquipmentLabel)"
-            )
-
-            SettingsSectionDivider()
-
-            SettingsInfoRow(
-                title: "Fast HDMI-lydsynk",
-                value: comfort.formattedAudioDelayLabel
-            )
-
-            SettingsSectionDivider()
-
-            SettingsInfoRow(
-                title: "Klang & Nattmodus",
-                value: "Dialogløft og nattmodus velges ved å sveipe ned i spilleren"
-            )
-        }
-    }
-}
-
 struct SettingsSubtitlesSectionView: View {
     @EnvironmentObject private var comfort: ComfortPreferences
 
     var body: some View {
         SettingsSectionPanel(title: "Undertekster") {
             SettingsControlRow(
-                title: "Kveldslys i HDR / Dolby Vision",
-                subtitle: "\(comfort.hdrSubtitlePreset.settingsDescription) · Gjelder tekst & PGS"
+                title: "Kveldslys",
+                subtitle: "\(comfort.hdrSubtitlePreset.settingsDescription) · Gjelder HDR og Dolby Vision"
             ) {
                 HStack(spacing: 8) {
                     ForEach(HDRSubtitlePreset.allCases) { preset in

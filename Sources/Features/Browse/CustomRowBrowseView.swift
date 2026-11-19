@@ -59,22 +59,18 @@ struct CustomRowBrowseView: View {
     @State private var mutationBannerTask: Task<Void, Never>?
 
     private let pageSize = 36
-    private let columns = [
-        GridItem(.adaptive(minimum: 260, maximum: 296), spacing: LunaTokens.Layout.cardGap)
-    ]
+    private let columns = Array(
+        repeating: GridItem(.fixed(LunaTokens.Layout.posterW), spacing: LunaTokens.Layout.cardGap, alignment: .topLeading),
+        count: 5
+    )
 
     var body: some View {
         let client = sessionStore.makeClient()
 
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 26) {
-                if let mutationErrorBanner {
-                    TransientErrorBanner(message: mutationErrorBanner)
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                }
-
                 Text(title)
-                    .font(.largeTitle.weight(.bold))
+                    .font(LunaTheme.Font.pageTitle)
                     .foregroundStyle(LunaTheme.linen)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
 
@@ -85,6 +81,7 @@ struct CustomRowBrowseView: View {
                 } else if let errorMessage, items.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
                         Text(errorMessage)
+                            .font(LunaTheme.Font.body)
                             .foregroundStyle(LunaTheme.danger)
                         LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                             Task { await loadInitial() }
@@ -93,10 +90,11 @@ struct CustomRowBrowseView: View {
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else if items.isEmpty {
                     Text("Denne listen har ingen titler ennå.")
+                        .font(LunaTheme.Font.body)
                         .foregroundStyle(LunaTheme.muted)
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else {
-                    LazyVGrid(columns: columns, spacing: 34) {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 34) {
                         ForEach(items) { card in
                             PosterCardView(
                                 card: card,
@@ -161,7 +159,16 @@ struct CustomRowBrowseView: View {
             .padding(.bottom, 72)
         }
         .contentMargins(.zero, for: .scrollContent)
+        .scrollClipDisabled()
         .ignoresSafeArea(edges: .horizontal)
+        .overlay(alignment: .topLeading) {
+            if let mutationErrorBanner {
+                TransientErrorBanner(message: mutationErrorBanner)
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.top, 32)
+                    .allowsHitTesting(false)
+            }
+        }
         .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: sessionStore.activePlaybackTarget != nil))
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in
@@ -206,7 +213,7 @@ struct CustomRowBrowseView: View {
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = LunaCopy.friendlyErrorMessage(error)
         }
         isLoading = false
     }
@@ -231,7 +238,7 @@ struct CustomRowBrowseView: View {
 
     private func showMutationError(_ error: Error) {
         mutationBannerTask?.cancel()
-        mutationErrorBanner = "Kunne ikke lagre endring: \(error.localizedDescription)"
+        mutationErrorBanner = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
         mutationBannerTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 4_000_000_000)
             guard !Task.isCancelled else { return }

@@ -3,6 +3,11 @@ import SwiftUI
 struct DetailDeleteSheetView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
 
+    private enum DeleteSheetFocus: Hashable {
+        case cancel
+        case confirm
+    }
+
     let target: TvDeleteRequestTarget
     var onPrepareBeforePreflight: (@MainActor () -> Void)? = nil
     let onDeleted: (TvDeleteExecuteResponse) -> Void
@@ -12,6 +17,8 @@ struct DetailDeleteSheetView: View {
     @State private var isLoadingPreflight: Bool = true
     @State private var isDeleting: Bool = false
     @State private var errorMessage: String?
+    @FocusState private var focusedControl: DeleteSheetFocus?
+    @Namespace private var deleteFocusNamespace
 
     var body: some View {
         ZStack {
@@ -25,20 +32,15 @@ struct DetailDeleteSheetView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(target.dialogHeading)
-                            .font(.title2.weight(.bold))
+                            .font(LunaTheme.Font.pageTitle)
                             .foregroundStyle(LunaTheme.linen)
                         Text(headerSubtitle)
-                            .font(.callout.weight(.medium))
+                            .font(LunaTheme.Font.subtitle)
                             .foregroundStyle(LunaTheme.moonlight)
                             .lineLimit(2)
                     }
 
                     Spacer()
-
-                    LunaPillButton("Lukk", systemImage: "xmark", prominence: .subtleChip) {
-                        onCancel()
-                    }
-                    .disabled(isDeleting)
                 }
 
                 Divider().overlay(LunaTheme.warmBorderSubtle)
@@ -47,7 +49,7 @@ struct DetailDeleteSheetView: View {
                     HStack(spacing: 16) {
                         ProgressView()
                         Text("Kontrollerer filer og aktiv avspilling…")
-                            .font(.headline)
+                            .font(LunaTheme.Font.cardTitle)
                             .foregroundStyle(LunaTheme.moonlight)
                     }
                     .padding(.vertical, 28)
@@ -56,17 +58,17 @@ struct DetailDeleteSheetView: View {
                         ForEach(preflight.blockers) { blocker in
                             HStack(spacing: 14) {
                                 Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.title3)
+                                    .font(LunaTheme.Font.cardTitle)
                                     .foregroundStyle(LunaTheme.warn)
                                 Text(blocker.message)
-                                    .font(.callout.weight(.semibold))
+                                    .font(LunaTheme.Font.body)
                                     .foregroundStyle(LunaTheme.linen)
                             }
                             .padding(18)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(LunaTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .background(LunaTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: LunaTokens.Radius.poster, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                RoundedRectangle(cornerRadius: LunaTokens.Radius.poster, style: .continuous)
                                     .strokeBorder(LunaTheme.warn.opacity(0.45), lineWidth: 1.5)
                             )
                         }
@@ -74,6 +76,8 @@ struct DetailDeleteSheetView: View {
                         LunaPillButton("Forstått", prominence: .glassPill) {
                             onCancel()
                         }
+                        .focused($focusedControl, equals: .cancel)
+                        .prefersDefaultFocus(true, in: deleteFocusNamespace)
                         .padding(.top, 6)
                     }
                 } else if let preflight {
@@ -83,7 +87,7 @@ struct DetailDeleteSheetView: View {
                             summaryStatBox(
                                 title: "Frigjøres på lagring",
                                 value: preflight.files.count > 0 ? freedText : "0 GB",
-                                accent: preflight.files.freedDisplayBytes > 0 ? LunaTheme.amber : LunaTheme.muted
+                                accent: LunaTheme.linen
                             )
                             summaryStatBox(
                                 title: "Filer som fjernes",
@@ -93,44 +97,50 @@ struct DetailDeleteSheetView: View {
                         }
 
                         Text(confirmationDescription(preflight: preflight, freedText: freedText))
-                            .font(.callout)
+                            .font(LunaTheme.Font.body)
                             .foregroundStyle(LunaTheme.moonlight)
                             .fixedSize(horizontal: false, vertical: true)
 
                         if let errorMessage {
                             Text(errorMessage)
-                                .font(.callout.weight(.semibold))
+                                .font(LunaTheme.Font.subtitle)
                                 .foregroundStyle(LunaTheme.coral)
                         }
 
                         HStack(spacing: 16) {
+                            LunaPillButton("Avbryt", prominence: .glassPill) {
+                                onCancel()
+                            }
+                            .disabled(isDeleting)
+                            .focused($focusedControl, equals: .cancel)
+                            .prefersDefaultFocus(true, in: deleteFocusNamespace)
+
                             LunaPillButton(
                                 isDeleting ? "Sletter…" : "Bekreft sletting",
                                 systemImage: "trash.fill",
-                                prominence: .glassPill,
+                                prominence: .subtleChip,
                                 accent: .coral
                             ) {
                                 Task { await confirmDelete() }
                             }
                             .disabled(isDeleting || preflight.preflightId == nil)
-
-                            LunaPillButton("Avbryt", prominence: .subtleChip) {
-                                onCancel()
-                            }
-                            .disabled(isDeleting)
+                            .focused($focusedControl, equals: .confirm)
                         }
                         .padding(.top, 6)
                     }
                 } else if let errorMessage {
                     VStack(alignment: .leading, spacing: 14) {
                         Text(errorMessage)
-                            .font(.callout.weight(.semibold))
+                            .font(LunaTheme.Font.body)
                             .foregroundStyle(LunaTheme.coral)
 
                         HStack(spacing: 14) {
                             LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise", prominence: .glassPill) {
                                 Task { await loadPreflight() }
                             }
+                            .focused($focusedControl, equals: .cancel)
+                            .prefersDefaultFocus(true, in: deleteFocusNamespace)
+
                             LunaPillButton("Avbryt", prominence: .subtleChip) {
                                 onCancel()
                             }
@@ -143,13 +153,21 @@ struct DetailDeleteSheetView: View {
             .padding(44)
             .frame(maxWidth: 920)
             .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
                     .fill(LunaTheme.surface)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1.5)
+            .lunaTopLightEdge(
+                cornerRadius: LunaTokens.Radius.panel,
+                topColor: LunaTokens.Edge.top3,
+                sideColor: LunaTokens.Edge.top1
             )
+            .defaultFocus($focusedControl, .cancel, priority: .userInitiated)
+            .focusScope(deleteFocusNamespace)
+        }
+        .onChange(of: isLoadingPreflight) { _, loading in
+            if !loading {
+                focusedControl = .cancel
+            }
         }
         .onExitCommand {
             if !isDeleting {
@@ -170,11 +188,11 @@ struct DetailDeleteSheetView: View {
 
     private func confirmationDescription(preflight: TvDeletePreflightResponse, freedText: String) -> String {
         if preflight.files.count > 0 {
-            let fileLabel = LunaCopy.plural(preflight.files.count, "mediefil", "mediefiler")
+            let fileLabel = LunaCopy.mediaFilesCount(preflight.files.count)
             if target.isWholeTitle {
-                return "Dette sletter \(fileLabel) (\(freedText)) permanent fra NAS og fjerner tittelen fra overvåking, huskeliste og lister."
+                return "Dette sletter \(fileLabel) (\(freedText)) permanent fra lagring og fjerner tittelen fra overvåking, huskeliste og lister."
             }
-            return "Dette sletter \(fileLabel) (\(freedText)) permanent fra NAS og nullstiller lokal progresjon for utvalget."
+            return "Dette sletter \(fileLabel) (\(freedText)) permanent fra lagring og nullstiller lokal progresjon for utvalget."
         }
         return "Ingen lokale mediefiler er tilknyttet på disk. Bekreft for å rydde opp oppføringen og fjerne den fra lister og overvåking."
     }
@@ -182,20 +200,17 @@ struct DetailDeleteSheetView: View {
     private func summaryStatBox(title: String, value: String, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.caption.weight(.medium))
+                .font(LunaTheme.Font.caption)
                 .foregroundStyle(LunaTheme.muted)
             Text(value)
-                .font(.title3.weight(.bold).monospacedDigit())
+                .font(LunaTheme.Font.cardTitle.monospacedDigit())
                 .foregroundStyle(accent)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LunaTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1)
-        )
+        .background(LunaTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: LunaTokens.Radius.poster, style: .continuous))
+        .lunaTopLightEdge(cornerRadius: LunaTokens.Radius.poster)
     }
 
     private func loadPreflight() async {
@@ -212,7 +227,7 @@ struct DetailDeleteSheetView: View {
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = LunaCopy.friendlyErrorMessage(error)
         }
         isLoadingPreflight = false
     }
@@ -235,7 +250,7 @@ struct DetailDeleteSheetView: View {
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = LunaCopy.friendlyErrorMessage(error)
         }
         isDeleting = false
     }

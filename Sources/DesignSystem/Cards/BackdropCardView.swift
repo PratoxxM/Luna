@@ -59,10 +59,10 @@ public struct BackdropCardView: View {
                     contentMode: .fill
                 )
                 .frame(width: width, height: height)
-                .scaleEffect((isFocused && !reduceMotion) ? 1.03 : 1.0)
+                .scaleEffect((isFocused && !reduceMotion) ? 1.025 : 1.0)
                 .opacity(isFocused ? 1.0 : LunaTokens.Layout.restPosterBrightness)
                 .clipped()
-                .animation(.easeOut(duration: 0.55), value: isFocused)
+                .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
 
                 LinearGradient(
                     stops: [
@@ -110,18 +110,27 @@ public struct BackdropCardView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                            if variant == .continueWatching || isFocused {
+                            if variant != .upcomingEpisode {
                                 Image(systemName: "play.fill")
                                     .font(LunaTheme.Font.pillIcon)
-                                    .foregroundStyle(LunaTheme.canvas)
+                                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.linen)
                                     .frame(
                                         width: LunaTokens.Layout.playBadgeSize,
                                         height: LunaTokens.Layout.playBadgeSize
                                     )
-                                    .background(LunaTheme.amber, in: Circle())
-                                    .opacity(isFocused ? 1.0 : 0.0)
-                                    .scaleEffect(isFocused ? 1.0 : 0.84)
-                                    .animation(LunaFocusStyle.focusSpring, value: isFocused)
+                                    .background(
+                                        isFocused ? LunaTheme.amber : LunaTheme.cinemaGlass,
+                                        in: Circle()
+                                    )
+                                    .overlay(
+                                        Circle()
+                                            .strokeBorder(
+                                                isFocused ? Color.clear : LunaTheme.warmBorderStrong,
+                                                lineWidth: 1
+                                            )
+                                    )
+                                    .opacity(isFocused ? 1.0 : (variant == .continueWatching ? 0.88 : 0.0))
+                                    .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
                             }
                         }
 
@@ -141,10 +150,16 @@ public struct BackdropCardView: View {
                 }
             }
             .frame(width: width, height: height)
-            .lunaCardFocusFrame(cornerRadius: LunaTheme.cardRadius, isFocused: isFocused)
+            .lunaCardFocusFrame(
+                cornerRadius: LunaTheme.cardRadius,
+                isFocused: isFocused,
+                showRestingTopEdge: true
+            )
         }
         .buttonStyle(.card)
+        .lunaCardLampGlow(isFocused: isFocused)
         .focused($isFocused)
+        .accessibilityLabel(card.title)
         .onPlayPauseCommand {
             if variant == .continueWatching {
                 onPrimaryAction()
@@ -169,9 +184,8 @@ public struct BackdropCardView: View {
     private func originPill(label: String, isPhone: Bool) -> some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(LunaTheme.amber)
+                .fill(isPhone ? LunaTheme.amber : LunaTheme.moonlight)
                 .frame(width: 9, height: 9)
-                .shadow(color: isPhone ? LunaTheme.amber.opacity(0.75) : .clear, radius: isPhone ? 6 : 0)
 
             Text(label)
                 .font(LunaTheme.Font.cardMicroLabel)
@@ -182,33 +196,26 @@ public struct BackdropCardView: View {
         .padding(.vertical, 6)
         .background(LunaTheme.cinemaGlass, in: Capsule())
         .overlay(
-            Capsule().strokeBorder(LunaTheme.focusGoldBorder.opacity(0.45), lineWidth: 1)
+            Capsule().strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1)
         )
     }
 
     private var upcomingDatePill: some View {
-        let urgent = card.isUrgentUpcoming
-        return HStack(spacing: 7) {
+        HStack(spacing: 7) {
             Image(systemName: "calendar")
                 .font(LunaTheme.Font.cardMicroIcon)
-                .foregroundStyle(urgent ? LunaTheme.canvas : LunaTheme.amber)
+                .foregroundStyle(LunaTheme.moonlight)
             Text(card.upcomingPillText)
                 .font(LunaTheme.Font.cardMicroLabel)
-                .foregroundStyle(urgent ? LunaTheme.canvas : LunaTheme.linen)
+                .foregroundStyle(LunaTheme.linen)
                 .lineLimit(1)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(
-            urgent ? LunaTheme.amber : LunaTheme.cinemaGlass,
-            in: Capsule()
-        )
+        .background(LunaTheme.cinemaGlass, in: Capsule())
         .overlay(
             Capsule()
-                .strokeBorder(
-                    urgent ? Color.clear : LunaTheme.warmBorder,
-                    lineWidth: 1
-                )
+                .strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1)
         )
     }
 

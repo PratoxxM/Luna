@@ -30,6 +30,12 @@ final class DesignTokensAndCopyTests: XCTestCase {
         let _ = LunaTheme.Font.subtitleCue(size: 42)
         let _ = LunaTheme.Font.tabTitle
         let _ = LunaTheme.Font.primaryPlayLabel
+
+        XCTAssertGreaterThanOrEqual(LunaTheme.Font.minimumPointSizeFloor, 22.0)
+        XCTAssertFalse(LunaTheme.Font.allFixedPointSizes.isEmpty)
+        for (role, size) in LunaTheme.Font.allFixedPointSizes {
+            XCTAssertGreaterThanOrEqual(size, LunaTheme.Font.minimumPointSizeFloor, "Role \(role) below 22 pt floor")
+        }
     }
 
     func testRoomAtmosphereCalibrationAndEquipmentLabels() {
@@ -77,11 +83,18 @@ final class DesignTokensAndCopyTests: XCTestCase {
         XCTAssertEqual(LunaCopy.plural(1, "mediefil", "mediefiler"), "1 mediefil")
         XCTAssertEqual(LunaCopy.plural(3, "mediefil", "mediefiler"), "3 mediefiler")
 
-        XCTAssertEqual(LunaCopy.pinnedCount(1), "1 festet")
-        XCTAssertEqual(LunaCopy.pinnedCount(4), "4 festede")
+        XCTAssertEqual(LunaCopy.pinnedCount(1), "1 tittel festet")
+        XCTAssertEqual(LunaCopy.pinnedCount(4), "4 titler festet")
         XCTAssertEqual(LunaCopy.chaptersHeader(1), "1 kapittel")
         XCTAssertEqual(LunaCopy.chaptersHeader(8), "8 kapitler")
         XCTAssertEqual(LunaCopy.searchHits(1), "1 treff")
+        XCTAssertEqual(LunaCopy.episodesCount(1), "1 episode")
+        XCTAssertEqual(LunaCopy.episodesCount(6), "6 episoder")
+        XCTAssertEqual(LunaCopy.seasonsCount(1), "1 sesong")
+        XCTAssertEqual(LunaCopy.seasonsCount(3), "3 sesonger")
+        XCTAssertEqual(LunaCopy.mediaFilesCount(1), "1 mediefil")
+        XCTAssertEqual(LunaCopy.mediaFilesCount(2), "2 mediefiler")
+        XCTAssertEqual(LunaCopy.formatListEpisodeCode("S28E06"), "S28 · E6")
 
         XCTAssertEqual(LunaCopy.formatDays(1.0, suffix: "igjen"), "1 dag igjen")
         XCTAssertEqual(LunaCopy.formatDays(4.8, suffix: "igjen"), "5 dager igjen")
@@ -99,6 +112,18 @@ final class DesignTokensAndCopyTests: XCTestCase {
         XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "livingroom"), "Samsung Frame · HDR10+ · 5.1.2")
         XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "living"), "Samsung Frame · HDR10+ · 5.1.2")
         XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "Stua"), "Samsung Frame · HDR10+ · 5.1.2")
+        XCTAssertEqual(
+            LunaCopy.roomEquipmentLabel(hardwareProfile: "custom", roomName: "Gjestestue"),
+            "Apple TV 4K · Direkte avspilling"
+        )
+        XCTAssertEqual(
+            LunaCopy.friendlyErrorMessage(LunaCoreError.serverMessage(503, "Database opptatt")),
+            "Database opptatt"
+        )
+        XCTAssertEqual(
+            LunaCopy.friendlyErrorMessage(URLError(.timedOut)),
+            "LunaCore svarte ikke i tide. Prøv igjen om et øyeblikk."
+        )
 
         var osloCal = Calendar(identifier: .gregorian)
         osloCal.timeZone = TimeZone(identifier: "Europe/Oslo") ?? .current

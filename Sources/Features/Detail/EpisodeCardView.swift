@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct EpisodeCardView: View {
+    private static let cardWidth: CGFloat = 420
+    private static let cardHeight: CGFloat = 236
+
     let episode: TvEpisodeCard
     var seriesTitle: String? = nil
     var isNextForYou: Bool = false
@@ -16,8 +19,9 @@ struct EpisodeCardView: View {
         let stillURL = client?.resolveArtworkURL(episode.stillUrl)
         let pct = min(100.0, max(0.0, episode.progress?.percent ?? 0))
         let upcoming = episode.isUpcoming == true
+        let displayTitle = EpisodeTitleFormatter.episodeCardTitle(episode: episode, seriesTitle: seriesTitle)
 
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 22) {
             Button(action: onPlay) {
                 ZStack {
                     LunaTheme.surface
@@ -29,12 +33,12 @@ struct EpisodeCardView: View {
                         placeholderSymbol: upcoming ? "calendar" : "play.tv",
                         contentMode: .fill
                     )
-                    .frame(width: 420, height: 236)
+                    .frame(width: Self.cardWidth, height: Self.cardHeight)
                     .clipped()
                     .opacity(upcoming ? 0.65 : (isFocused ? 1.0 : LunaTokens.Layout.restPosterBrightness))
 
                     LinearGradient(
-                        colors: [.clear, Color.black.opacity(0.75)],
+                        colors: [.clear, LunaTheme.canvas.opacity(0.78)],
                         startPoint: .center,
                         endPoint: .bottom
                     )
@@ -43,18 +47,19 @@ struct EpisodeCardView: View {
                         HStack {
                             if upcoming {
                                 Text(episode.airDateBadge ?? "Kommer")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(LunaTheme.canvas)
+                                    .font(LunaTheme.Font.badge)
+                                    .foregroundStyle(LunaTheme.linen)
                                     .padding(.horizontal, 11)
                                     .padding(.vertical, 5)
-                                    .background(LunaTheme.amber, in: Capsule())
+                                    .background(LunaTheme.cinemaGlass, in: Capsule())
+                                    .overlay(Capsule().strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1))
                             }
 
                             Spacer()
 
                             if episode.watched {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.callout.weight(.bold))
+                                    .font(LunaTheme.Font.cardMicroIcon)
                                     .foregroundStyle(LunaTheme.emerald)
                                     .padding(6)
                                     .background(LunaTheme.cinemaGlass, in: Circle())
@@ -65,7 +70,7 @@ struct EpisodeCardView: View {
                         Spacer()
 
                         if pct > 1 && !upcoming {
-                            let trackWidth: CGFloat = 392
+                            let trackWidth: CGFloat = Self.cardWidth - 28
                             ZStack(alignment: .leading) {
                                 Capsule().fill(LunaTokens.Edge.progressTrack)
                                 Capsule()
@@ -78,11 +83,17 @@ struct EpisodeCardView: View {
                         }
                     }
                 }
-                .frame(width: 420, height: 236)
-                .lunaCardFocusFrame(cornerRadius: LunaTheme.cardRadius, isFocused: isFocused)
+                .frame(width: Self.cardWidth, height: Self.cardHeight)
+                .lunaCardFocusFrame(
+                    cornerRadius: LunaTheme.cardRadius,
+                    isFocused: isFocused,
+                    showRestingTopEdge: true
+                )
             }
             .buttonStyle(.card)
+            .lunaCardLampGlow(isFocused: isFocused)
             .focused($isFocused)
+            .accessibilityLabel(displayTitle)
             .onPlayPauseCommand {
                 if !upcoming {
                     onPlay()
@@ -97,10 +108,10 @@ struct EpisodeCardView: View {
                 }
                 if !upcoming {
                     Button(action: onPlay) {
-                        Label("Spill episode", systemImage: "play.fill")
+                        Label("Spill av", systemImage: "play.fill")
                     }
                     Button(action: onPickSource) {
-                        Label("Bytt kilde…", systemImage: "arrow.triangle.2.circlepath")
+                        Label("Velg kilde…", systemImage: "arrow.triangle.2.circlepath")
                     }
                     if let onRequestDelete,
                        episode.availability?.isPhysicalLocal == true || episode.availability?.isLocalVfs == true {
@@ -111,41 +122,37 @@ struct EpisodeCardView: View {
                 }
             }
 
-            HStack(spacing: 8) {
-                Text(EpisodeTitleFormatter.episodeCardTitle(episode: episode, seriesTitle: seriesTitle))
-                    .font(.callout.weight(.semibold))
+            HStack(spacing: 10) {
+                Text(displayTitle)
+                    .font(LunaTheme.Font.cardTitle)
                     .foregroundStyle(LunaTheme.cardTitleColor(isFocused: isFocused))
                     .lineLimit(1)
 
-                Spacer(minLength: 4)
+                Spacer(minLength: 6)
 
                 if episode.watched {
                     Text("Sett")
-                        .font(.caption2.weight(.bold))
+                        .font(LunaTheme.Font.badge)
                         .foregroundStyle(LunaTheme.emerald)
                 } else if isNextForYou && !upcoming {
                     let rt = episode.formattedRuntime.map { "\($0) · " } ?? ""
                     Text("\(rt)Neste for deg")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.amber)
-                } else if isFocused && !upcoming {
-                    Text("Hold inne: Marker som sett")
-                        .font(.caption2.weight(.medium))
+                        .font(LunaTheme.Font.caption.monospacedDigit())
                         .foregroundStyle(LunaTheme.moonlight)
                 } else if let runtime = episode.formattedRuntime {
                     Text(runtime)
-                        .font(.caption2.monospacedDigit())
+                        .font(LunaTheme.Font.caption.monospacedDigit())
                         .foregroundStyle(LunaTheme.muted)
                 }
             }
-            .frame(width: 420)
+            .frame(width: Self.cardWidth)
 
             if let overview = episode.overview, !overview.isEmpty {
                 Text(overview)
-                    .font(.caption2)
+                    .font(LunaTheme.Font.caption)
                     .foregroundStyle(LunaTheme.muted)
                     .lineLimit(2)
-                    .frame(width: 420, alignment: .leading)
+                    .frame(width: Self.cardWidth, alignment: .leading)
             }
         }
     }

@@ -48,7 +48,9 @@ struct PlayerContainerView: View {
     @State private var isTopDrawerOpen: Bool = false
     @State private var selectedDrawerTab: PlayerTopDrawerTab = .audioAndSubtitles
     @State private var hasSeriesPrompt: Bool = false
+    @State private var isSeriesPromptFocused: Bool = false
     @State private var seriesPromptDismissNonce: Int = 0
+    @State private var seriesPromptFocusNonce: Int = 0
     @State private var dismissedNextForSessionID: String?
     @State private var hideBottomBarTask: Task<Void, Never>?
     @State private var pauseRestTask: Task<Void, Never>?
@@ -159,12 +161,15 @@ struct PlayerContainerView: View {
                         if viewModel.isScrubbing {
                             viewModel.stepTouchScrub(by: 10)
                         } else {
-                            viewModel.coalesceRelativeSeek(delta: 30)
+                            viewModel.coalesceRelativeSeek(delta: 10)
                             revealBottomBarTemporarily()
                         }
                     },
                     onUpClick: {
                         if !viewModel.isScrubbing {
+                            if hasSeriesPrompt && !isHUDResting {
+                                seriesPromptFocusNonce &+= 1
+                            }
                             revealBottomBarTemporarily()
                         }
                     },
@@ -216,8 +221,10 @@ struct PlayerContainerView: View {
                     isBottomBarVisible: isBottomBarShown,
                     isResting: isHUDResting,
                     hasActivePrompt: $hasSeriesPrompt,
+                    isPromptFocused: $isSeriesPromptFocused,
                     dismissedNextForSessionID: $dismissedNextForSessionID,
                     dismissNonce: seriesPromptDismissNonce,
+                    focusPromptNonce: seriesPromptFocusNonce,
                     onReturnFocusToCanvas: {
                         revealBottomBarTemporarily()
                         restoreCanvasFocusSoon()
@@ -258,9 +265,10 @@ struct PlayerContainerView: View {
                     VStack {
                         HStack(spacing: 10) {
                             Image(systemName: "exclamationmark.triangle.fill")
+                                .font(LunaTheme.Font.pillIcon)
                                 .foregroundStyle(LunaTheme.warn)
                             Text(banner)
-                                .font(.callout.weight(.semibold))
+                                .font(LunaTheme.Font.subtitle)
                                 .foregroundStyle(LunaTheme.linen)
                                 .lineLimit(2)
                         }
@@ -280,9 +288,8 @@ struct PlayerContainerView: View {
                     VStack {
                         HStack(spacing: 10) {
                             Circle()
-                                .fill(LunaTheme.amber)
+                                .fill(LunaTheme.emerald)
                                 .frame(width: 8, height: 8)
-                                .shadow(color: LunaTheme.amber.opacity(0.75), radius: 6, x: 0, y: 0)
                             Text(toast)
                                 .font(LunaTheme.Font.pillLabel)
                                 .foregroundStyle(LunaTheme.linen)
@@ -307,6 +314,9 @@ struct PlayerContainerView: View {
                     viewModel: viewModel,
                     comfort: comfort,
                     selectedTab: $selectedDrawerTab,
+                    roomEquipmentOverride: sessionStore.availableRooms.first(where: {
+                        $0.roomName.caseInsensitiveCompare(viewModel.activeSession?.roomName ?? sessionStore.roomName) == .orderedSame
+                    })?.equipmentLabel,
                     onClose: closeTopDrawer
                 )
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -427,7 +437,7 @@ struct PlayerContainerView: View {
         if let tab {
             selectedDrawerTab = tab
         }
-        withAnimation(.spring(response: 0.26, dampingFraction: 0.85)) {
+        withAnimation(LunaFocusStyle.focusSpring) {
             showBottomBar = false
             isTopDrawerOpen = true
         }
@@ -490,7 +500,7 @@ struct PlayerContainerView: View {
     private func restoreCanvasFocusSoon() {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 60_000_000)
-            if shouldEnableCanvasAnchor && !hasSeriesPrompt {
+            if shouldEnableCanvasAnchor && !isSeriesPromptFocused {
                 isCanvasFocused = true
             }
         }
@@ -508,20 +518,20 @@ struct PlayerContainerView: View {
     private var coalescedSeekFeedbackPill: some View {
         let secs = Int(viewModel.coalescedSeekDelta.rounded())
         let isForward = secs >= 0
-        let sign = isForward ? "+" : ""
+        let displayText = isForward ? "+\(secs) s" : "−\(abs(secs)) s"
 
         return HStack(spacing: 12) {
             Image(systemName: isForward ? "goforward" : "gobackward")
-                .font(.title2.weight(.bold))
-                .foregroundStyle(LunaTheme.amber)
-            Text("\(sign)\(secs) s")
-                .font(.title2.monospacedDigit().weight(.bold))
+                .font(LunaTheme.Font.sectionTitle)
+                .foregroundStyle(LunaTheme.moonlight)
+            Text(displayText)
+                .font(LunaTheme.Font.sectionTitle.monospacedDigit())
                 .foregroundStyle(LunaTheme.linen)
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 16)
         .background(LunaTheme.cinemaGlass, in: Capsule())
-        .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.48), lineWidth: 1))
+        .overlay(Capsule().strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1))
         .allowsHitTesting(false)
     }
 
@@ -535,11 +545,11 @@ struct PlayerContainerView: View {
                     .foregroundStyle(LunaTheme.danger)
 
                 Text("Avspilling kunne ikke starte")
-                    .font(.title2.weight(.bold))
+                    .font(LunaTheme.Font.pageTitle)
                     .foregroundStyle(LunaTheme.linen)
 
                 Text(message)
-                    .font(.callout)
+                    .font(LunaTheme.Font.body)
                     .foregroundStyle(LunaTheme.muted)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 820)
@@ -564,14 +574,14 @@ struct PlayerContainerView: View {
                     }
 
                     if viewModel.activeSession != nil {
-                        LunaPillButton("Velg annen kilde", systemImage: "arrow.triangle.2.circlepath", prominence: .glassPill) {
+                        LunaPillButton("Velg kilde", systemImage: "arrow.triangle.2.circlepath", prominence: .glassPill) {
                             suspendedFatalErrorForDrawer = message
                             viewModel.fatalError = nil
                             openTopDrawer(tab: .source)
                         }
                     }
 
-                    LunaPillButton("Lukk", systemImage: "xmark", prominence: .subtleChip) {
+                    LunaPillButton("Avslutt", systemImage: "xmark", prominence: .subtleChip) {
                         suspendedFatalErrorForDrawer = nil
                         closePlayer()
                     }

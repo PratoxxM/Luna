@@ -26,8 +26,8 @@ struct PairingOnboardingView: View {
                         .font(LunaTheme.Font.heroDisplay)
                         .foregroundStyle(LunaTheme.linen)
 
-                    Text("Dedikert hjemmekino for LunaCore · Dolby Vision FEL & Spatial Audio")
-                        .font(.headline)
+                    Text("Hjemmekino for LunaCore · Dolby Vision og romtilpasset lyd")
+                        .font(LunaTheme.Font.subtitle)
                         .foregroundStyle(LunaTheme.muted)
                 }
 
@@ -39,7 +39,7 @@ struct PairingOnboardingView: View {
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(.callout)
+                        .font(LunaTheme.Font.body)
                         .foregroundStyle(LunaTheme.danger)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 920)
@@ -71,13 +71,13 @@ struct PairingOnboardingView: View {
                 HStack(spacing: 16) {
                     ProgressView()
                     Text(statusMessage)
-                        .font(.title3)
+                        .font(LunaTheme.Font.cardTitle)
                         .foregroundStyle(LunaTheme.moonlight)
                 }
             } else {
                 VStack(spacing: 16) {
                     Text("Funnet på lokalnettet")
-                        .font(.headline)
+                        .font(LunaTheme.Font.subtitle)
                         .foregroundStyle(LunaTheme.muted)
 
                     ForEach(bonjour.servers) { srv in
@@ -123,8 +123,8 @@ struct PairingOnboardingView: View {
 
     private func pairingCodePanel(pairingInfo: TvPairingRequestResponse, baseURL: URL) -> some View {
         VStack(spacing: 28) {
-            Text(isCodeExpired ? "Paringskoden er utløpt" : "Godkjenn TV-en i LunaCore Web")
-                .font(.title2.weight(.semibold))
+            Text(isCodeExpired ? "Paringskoden er utløpt" : "Godkjenn TV-en i LunaCore")
+                .font(LunaTheme.Font.sectionTitle)
                 .foregroundStyle(isCodeExpired ? LunaTheme.warn : LunaTheme.linen)
 
             Text(isCodeExpired ? "------" : pairingInfo.displayCode)
@@ -134,23 +134,20 @@ struct PairingOnboardingView: View {
                 .padding(.horizontal, 48)
                 .padding(.vertical, 24)
                 .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
                         .fill(LunaTheme.surfaceRaised)
                 )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(LunaTheme.warmBorder, lineWidth: 1)
-                )
+                .lunaTopLightEdge(cornerRadius: LunaTokens.Radius.panel, topColor: LunaTokens.Edge.top3)
 
             VStack(spacing: 8) {
-                Text("Åpne LunaCore på mobil eller PC → Apple TV (eller banneret øverst).")
-                    .font(.callout)
+                Text("Åpne LunaCore på iPhone eller Mac → Apple TV.")
+                    .font(LunaTheme.Font.body)
                     .foregroundStyle(LunaTheme.moonlight)
                 Text("Velg rom («Kjellerstua» eller «Stua») og trykk Godkjenn — Luna logger inn automatisk.")
-                    .font(.callout)
+                    .font(LunaTheme.Font.body)
                     .foregroundStyle(LunaTheme.moonlight)
-                Text("Server: \(baseURL.absoluteString)")
-                    .font(.caption)
+                Text("Tilkobling: \(baseURL.absoluteString)")
+                    .font(LunaTheme.Font.caption)
                     .foregroundStyle(LunaTheme.muted)
             }
             .multilineTextAlignment(.center)
@@ -230,7 +227,7 @@ struct PairingOnboardingView: View {
                     } catch {
                         consecutivePollFailures += 1
                         if consecutivePollFailures >= 8, !Task.isCancelled {
-                            self.errorMessage = "Midlertidig nettverksbrudd mot LunaCore (\(error.localizedDescription)). Prøver fortsatt…"
+                            self.errorMessage = "Midlertidig nettverksbrudd mot LunaCore. Prøver fortsatt…"
                         }
                     }
                 }
@@ -238,7 +235,10 @@ struct PairingOnboardingView: View {
                 if !Task.isCancelled {
                     self.isRequestingCode = false
                     self.pairingInfo = nil
-                    self.errorMessage = "Kunne ikke kontakte LunaCore på \(baseURL.absoluteString): \(error.localizedDescription)"
+                    self.errorMessage = LunaCopy.friendlyErrorMessage(
+                        error,
+                        fallback: "Kunne ikke kontakte LunaCore på \(baseURL.absoluteString)."
+                    )
                 }
             }
         }

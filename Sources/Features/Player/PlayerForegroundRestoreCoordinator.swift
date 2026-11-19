@@ -227,7 +227,7 @@ extension PlayerViewModel {
             } else {
                 isRestoringFromBackground = false
                 userDesiredPlayingDuringRestore = nil
-                fatalError = error.localizedDescription
+                fatalError = LunaCopy.friendlyErrorMessage(error)
             }
         }
     }

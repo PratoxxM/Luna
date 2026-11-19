@@ -209,7 +209,7 @@ internal final class SourcePickerViewModel: ObservableObject {
                 existingTokenFailed = true
                 resolvedPrepareToken = nil
             }
-            errorMessage = error.localizedDescription
+            errorMessage = LunaCopy.friendlyErrorMessage(error)
         }
         isLoading = false
     }
@@ -283,36 +283,43 @@ struct SourcePickerSheetView: View {
 
     @StateObject private var viewModel = SourcePickerViewModel()
     @State private var reloadAttempt: Int = 0
+    @FocusState private var focusedCandidateID: String?
+    @Namespace private var sourcePickerFocusNamespace
+
+    private var preferredDefaultCandidateID: String? {
+        if let active = viewModel.activeCandidateId,
+           viewModel.candidates.contains(where: { $0.candidateId == active }) {
+            return active
+        }
+        if let marked = viewModel.candidates.first(where: { $0.isActive == true }) {
+            return marked.id
+        }
+        return viewModel.candidates.first?.id
+    }
 
     var body: some View {
+        let defaultID = preferredDefaultCandidateID
+
         ZStack {
             LunaTheme.canvas.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 26) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Velg avspillingskilde")
-                            .font(.title2.weight(.bold))
-                            .foregroundStyle(LunaTheme.linen)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Velg kilde")
+                        .font(LunaTheme.Font.pageTitle)
+                        .foregroundStyle(LunaTheme.linen)
 
-                        Text("\(context.displaySubject) · Tilpasset \(sessionStore.roomName) (\(sessionStore.effectiveEquipmentLabel))")
-                            .font(.callout)
-                            .foregroundStyle(LunaTheme.muted)
-                    }
-
-                    Spacer()
-
-                    LunaPillButton("Lukk", systemImage: "xmark", prominence: .subtleChip) {
-                        onCancel()
-                    }
+                    Text("\(context.displaySubject) · Tilpasset \(sessionStore.roomName)")
+                        .font(LunaTheme.Font.subtitle)
+                        .foregroundStyle(LunaTheme.muted)
                 }
 
                 if viewModel.isLoading {
                     Spacer()
                     VStack(spacing: 16) {
                         ProgressView()
-                        Text("Søker etter beste lokale og Usenet-kilder…")
-                            .font(.headline)
+                        Text("Søker etter tilgjengelige kilder…")
+                            .font(LunaTheme.Font.cardTitle)
                             .foregroundStyle(LunaTheme.moonlight)
                     }
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -321,10 +328,10 @@ struct SourcePickerSheetView: View {
                     Spacer()
                     VStack(spacing: 18) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.largeTitle)
+                            .font(LunaTheme.Font.largeStatusIcon)
                             .foregroundStyle(LunaTheme.danger)
                         Text(errorMessage)
-                            .font(.callout)
+                            .font(LunaTheme.Font.body)
                             .foregroundStyle(LunaTheme.moonlight)
                             .multilineTextAlignment(.center)
                         LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
@@ -336,7 +343,7 @@ struct SourcePickerSheetView: View {
                 } else if viewModel.candidates.isEmpty {
                     Spacer()
                     Text("Fant ingen tilgjengelige kilder for denne tittelen.")
-                        .font(.headline)
+                        .font(LunaTheme.Font.cardTitle)
                         .foregroundStyle(LunaTheme.muted)
                         .frame(maxWidth: .infinity, alignment: .center)
                     Spacer()
@@ -360,11 +367,16 @@ struct SourcePickerSheetView: View {
                                         onSelectCandidate: onSelectCandidate
                                     )
                                 }
+                                .focused($focusedCandidateID, equals: candidate.id)
+                                .prefersDefaultFocus(candidate.id == defaultID, in: sourcePickerFocusNamespace)
                             }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 16)
                     }
+                    .scrollClipDisabled()
+                    .defaultFocus($focusedCandidateID, defaultID, priority: .userInitiated)
+                    .focusScope(sourcePickerFocusNamespace)
                 }
             }
             .padding(56)
@@ -374,6 +386,14 @@ struct SourcePickerSheetView: View {
         }
         .onAppear {
             viewModel.handleAppear()
+            if let defaultID {
+                focusedCandidateID = defaultID
+            }
+        }
+        .onChange(of: viewModel.candidates.map(\.id)) { _, _ in
+            if let defaultID {
+                focusedCandidateID = defaultID
+            }
         }
         .task(id: reloadAttempt) {
             await loadCandidates()
@@ -410,34 +430,30 @@ private struct CandidateRowButton: View {
         Button(action: onPick) {
             HStack(spacing: 20) {
                 Image(systemName: isCurrentWinner ? "checkmark.circle.fill" : "play.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(isFocused || isCurrentWinner ? LunaTheme.amber : LunaTheme.moonlight)
+                    .font(LunaTheme.Font.sectionTitle)
+                    .foregroundStyle(isCurrentWinner ? LunaTheme.emerald : (isFocused ? LunaTheme.linen : LunaTheme.moonlight))
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 10) {
                         Text(candidate.displayHeadline)
-                            .font(.headline.weight(.semibold))
+                            .font(LunaTheme.Font.cardTitle)
                             .foregroundStyle(LunaTheme.linen)
                             .lineLimit(1)
 
                         if isRecommended {
                             Text("Anbefalt")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(LunaTheme.canvas)
-                                .padding(.horizontal, 9)
+                                .font(LunaTheme.Font.badge)
+                                .foregroundStyle(LunaTheme.linen)
+                                .padding(.horizontal, 10)
                                 .padding(.vertical, 3)
-                                .background(LunaTheme.amber, in: Capsule())
+                                .background(LunaTheme.surfaceSelected, in: Capsule())
+                                .overlay(Capsule().strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1))
                         }
                     }
 
                     Text(humanExplanationLine)
-                        .font(.callout.weight(.medium))
+                        .font(LunaTheme.Font.subtitle)
                         .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
-                        .lineLimit(1)
-
-                    Text(candidate.releaseTitle)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(LunaTheme.muted)
                         .lineLimit(1)
                 }
 
@@ -446,24 +462,18 @@ private struct CandidateRowButton: View {
                 HStack(spacing: 12) {
                     if let size = candidate.formattedSize {
                         Text(size)
-                            .font(.caption.weight(.semibold).monospacedDigit())
+                            .font(LunaTheme.Font.caption.monospacedDigit())
                             .foregroundStyle(LunaTheme.moonlight)
                     }
 
                     Text(candidate.sourceBadgeLabel)
-                        .font(.caption2.weight(.bold))
+                        .font(LunaTheme.Font.badge)
                         .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
-                        .padding(.horizontal, 11)
+                        .padding(.horizontal, 12)
                         .padding(.vertical, 5)
                         .background(
-                            isFocused ? LunaTheme.amber.opacity(0.22) : LunaTheme.warmBorderBase.opacity(0.09),
+                            LunaTheme.warmBorderBase.opacity(isFocused ? 0.14 : 0.08),
                             in: Capsule()
-                        )
-                        .overlay(
-                            Capsule().strokeBorder(
-                                isFocused ? LunaTheme.amber.opacity(0.55) : Color.clear,
-                                lineWidth: 1
-                            )
                         )
                 }
             }
@@ -487,12 +497,11 @@ private struct CandidateRowButton: View {
 
     private var humanExplanationLine: String {
         if let chips = candidate.explanationChips, !chips.isEmpty {
-            let prefix = isRecommended ? "Anbefalt for rommet · " : ""
-            return prefix + chips.prefix(3).joined(separator: " · ")
+            return chips.prefix(3).joined(separator: " · ")
         }
         let benefit = LunaCopy.tierBenefitLabel(tier: candidate.tier ?? candidate.source)
         if isRecommended {
-            return "Anbefalt for rommet: beste bilde og lyd · \(benefit)"
+            return "Beste bilde og lyd for rommet · \(benefit)"
         }
         return benefit
     }

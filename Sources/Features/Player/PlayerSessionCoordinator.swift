@@ -57,7 +57,7 @@ extension PlayerViewModel {
             }
 
             resolveStageKey = "awaiting_first_frame"
-            resolveStageLabel = "Tilpasser HDMI & starter avspilling…"
+            resolveStageLabel = "Tilpasser skjerm og starter avspilling…"
             resolvePercent = 95
             if !isReplacement {
                 engine.ownsSoftwareNowPlaying = true
@@ -82,7 +82,7 @@ extension PlayerViewModel {
             guard !Task.isCancelled else { return }
             isResolving = false
             UIApplication.shared.isIdleTimerDisabled = false
-            fatalError = error.localizedDescription
+            fatalError = LunaCopy.friendlyErrorMessage(error)
         }
     }
 
@@ -121,7 +121,7 @@ extension PlayerViewModel {
         } catch {
             isSwitchingSource = false
             guard !Task.isCancelled else { return }
-            showTransientBanner("Kildebytte feilet: \(error.localizedDescription)")
+            showTransientBanner("Kildebytte feilet: \(LunaCopy.friendlyErrorMessage(error))")
         }
     }
 
@@ -134,7 +134,7 @@ extension PlayerViewModel {
         resetScrubStateOnSessionChange()
         isSwitchingSource = true
         resolveStageKey = "switching"
-        resolveStageLabel = "Bytter kilde valgt fra LunaCore Web…"
+        resolveStageLabel = "Bytter kilde valgt fra iPhone…"
         resolvePercent = 75
         do {
             engine.prepareForItemReplacement()
@@ -149,7 +149,7 @@ extension PlayerViewModel {
             isSwitchingSource = false
         } catch {
             isSwitchingSource = false
-            showTransientBanner("Kildebytte fra Web feilet: \(error.localizedDescription)")
+            showTransientBanner("Kildebytte feilet: \(LunaCopy.friendlyErrorMessage(error))")
         }
     }
 
