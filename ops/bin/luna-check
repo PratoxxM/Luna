@@ -83,6 +83,7 @@ scan_targets = [
     root / "Packages",
     root / "Config",
     root / "Resources",
+    root / "design",
     root / "docs",
     root / "ops",
     root / ".github",
@@ -140,14 +141,43 @@ else:
     for rel in sorted(expected_swift - doc_refs):
         errors.append(f"DOC_PARITY {rel}: exists on disk but undocumented in CODEBASE_MODULE_MAP.md")
 
+import json
+
+xcstrings_path = root / "Resources/Localizable.xcstrings"
+if not xcstrings_path.is_file():
+    errors.append("COPY_GATE missing Resources/Localizable.xcstrings")
+else:
+    try:
+        xc_data = json.loads(xcstrings_path.read_text(encoding="utf-8"))
+        if xc_data.get("sourceLanguage") != "nb" or not isinstance(xc_data.get("strings"), dict) or len(xc_data["strings"]) < 5:
+            errors.append("COPY_GATE Resources/Localizable.xcstrings must declare sourceLanguage='nb' with plural entries")
+    except Exception as exc:
+        errors.append(f"COPY_GATE invalid Localizable.xcstrings JSON: {exc}")
+
+PLURAL_BUG_RE = re.compile(r"\\\([^)]+\)\s*(?:lokale\s+|aktive\s+)?(?:filmer|serier|episoder|sesonger|tjenester|titler|kilder|dager|mediefiler|festet|kapitler|treff)\b")
+sys_font_calls = 0
+for sf in sorted((root / "Sources").rglob("*.swift")):
+    rel = sf.relative_to(root).as_posix()
+    text = sf.read_text(encoding="utf-8", errors="replace")
+    sys_font_calls += len(re.findall(r"\.font\(\.system\(size:", text))
+    for i, ln in enumerate(text.splitlines(), 1):
+        if PLURAL_BUG_RE.search(ln):
+            errors.append(f"COPY_GATE {rel}:{i}: hardcoded Norwegian plural interpolation")
+        if "mediefil" in ln and "? \"l\"" in ln:
+            errors.append(f"COPY_GATE {rel}:{i}: inline ternary plural hack")
+if sys_font_calls > 43:
+    errors.append(f"RATCHET .font(.system(size: count {sys_font_calls} exceeds M1 baseline 43")
+
 if errors:
     print("LUNA-CHECK FAILED:", file=sys.stderr)
     for err in errors:
         print(f"  - {err}", file=sys.stderr)
     sys.exit(1)
 
-print(f"  [OK] Permissions (0755/0644), <= 800 LOC ({len(swift_files)} .swift files), doc parity ({len(doc_refs)} modules), sideload, retired patterns & public hygiene checks passed")
+print(f"  [OK] Permissions (0755/0644), <= 800 LOC ({len(swift_files)} .swift files), doc parity ({len(doc_refs)} modules), sideload, retired patterns, copy/ratchet ({sys_font_calls}<=43) & public hygiene checks passed")
 PY
+
+python3 -B "$SCRIPT_DIR/luna-design-tokens" --check
 
 if [[ "$SKIP_REMOTE" -eq 0 ]] && command -v git >/dev/null 2>&1 && git -C "$PROJECT_ROOT" remote get-url origin >/dev/null 2>&1; then
   REMOTE_TAGS=""

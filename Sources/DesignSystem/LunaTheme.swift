@@ -1,57 +1,119 @@
 import SwiftUI
-import CoreGraphics
 
 public enum LunaTheme {
     /// Near-black warm charcoal menu base (`#0A0908`) — protects LG OLED black floor with zero cold blue cast.
-    public static let canvas = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0)
+    public static let canvas = LunaTokens.Surface.canvas
     /// Pure black (`#000000`) reserved for OLED video surface & startup curtain.
     public static let pureBlack = Color.black
     /// Calm matte espresso surface (`#14110F`) for cards, panels, and shelves.
-    public static let surface = Color(red: 20.0 / 255.0, green: 17.0 / 255.0, blue: 15.0 / 255.0)
+    public static let surface = LunaTokens.Surface.lv1
     /// Slightly softer matte espresso (`#181412`) for subtle filter & genre chips.
-    public static let surfaceSubtle = Color(red: 24.0 / 255.0, green: 20.0 / 255.0, blue: 18.0 / 255.0)
+    public static let surfaceSubtle = LunaTokens.Surface.subtle
     /// Elevated matte espresso (`#1E1916`) for resting secondary buttons & grouped Settings rows.
-    public static let surfaceRaised = Color(red: 30.0 / 255.0, green: 25.0 / 255.0, blue: 22.0 / 255.0)
+    public static let surfaceRaised = LunaTokens.Surface.lv2
     /// Warm roasted espresso (`#2A231E`) for active/selected secondary controls without competing with «Spill av».
-    public static let surfaceSelected = Color(red: 42.0 / 255.0, green: 35.0 / 255.0, blue: 30.0 / 255.0)
+    public static let surfaceSelected = LunaTokens.Surface.selected
     /// Elevated roasted espresso (`#241E1A`) for focused wide settings, drawer, and source-picker rows.
-    public static let surfaceElevated = Color(red: 36.0 / 255.0, green: 30.0 / 255.0, blue: 26.0 / 255.0)
+    public static let surfaceElevated = LunaTokens.Surface.lv3
     /// Dark HDR/Dolby Vision-safe warm cinema glass (`#120F0D` @ 92%) — avoids tvOS `.ultraThinMaterial` 203-nit washout.
-    public static let cinemaGlass = Color(red: 18.0 / 255.0, green: 15.0 / 255.0, blue: 13.0 / 255.0).opacity(0.92)
+    public static let cinemaGlass = LunaTokens.Surface.glass
 
     /// Warm linen (`#F5F0E8`) for crisp, non-glaring primary titles & headings.
-    public static let linen = Color(red: 245.0 / 255.0, green: 240.0 / 255.0, blue: 232.0 / 255.0)
+    public static let linen = LunaTokens.Text.primary
     /// Warm parchment (`#C8BFB6`) for secondary labels and resting button copy.
-    public static let moonlight = Color(red: 200.0 / 255.0, green: 191.0 / 255.0, blue: 182.0 / 255.0)
+    public static let moonlight = LunaTokens.Text.secondary
     /// Daylight-calibrated warm taupe (`#A0968C`) — readable in bright rooms (Frame Pro) while gentle in dark OLED rooms.
-    public static let muted = Color(red: 160.0 / 255.0, green: 150.0 / 255.0, blue: 140.0 / 255.0)
+    public static let muted = LunaTokens.Text.muted
     /// Non-glaring warm-white cinema pause timeline fill (`#DDD6CC`).
-    public static let pauseWarmLine = Color(red: 221.0 / 255.0, green: 214.0 / 255.0, blue: 204.0 / 255.0)
+    public static let pauseWarmLine = LunaTokens.Text.pauseLine
 
     /// Muted antique bronze-brass (`#C48C3A`) — primary accent reserved for Siri Remote focus & «Spill av» (`6.78:1` vs `#0A0908`).
-    public static let amber = Color(red: 196.0 / 255.0, green: 140.0 / 255.0, blue: 58.0 / 255.0)
+    public static let amber = LunaTokens.Accent.primary
     /// Deeper warm bronze (`#9E6E27`) for subtle primary gradient depth.
-    public static let amberDeep = Color(red: 158.0 / 255.0, green: 110.0 / 255.0, blue: 39.0 / 255.0)
-    /// Calm sage-emerald (`#5EBF8E`) reserved strictly for NVMe storage badges & Sett checkmarks.
-    public static let emerald = Color(red: 94.0 / 255.0, green: 191.0 / 255.0, blue: 142.0 / 255.0)
-    /// Warm terracotta (`#D96B52`) reserved strictly for destructive/reset actions.
-    public static let coral = Color(red: 217.0 / 255.0, green: 107.0 / 255.0, blue: 82.0 / 255.0)
+    public static let amberDeep = LunaTokens.Accent.deep
+    /// Calm sage-emerald (`#5EBF8E`) reserved for healthy status, NVMe badges & Sett checkmarks.
+    public static let emerald = LunaTokens.Status.ok
+    public static let statusOk = LunaTokens.Status.ok
+    /// Dedicated warm ochre warning (`#E0A84B`) — distinct from focus bronze so warnings never reuse focus gold.
+    public static let warn = LunaTokens.Status.warn
+    /// Warm terracotta (`#D96B52`) reserved for destructive/error actions & alerts.
+    public static let coral = LunaTokens.Status.danger
+    public static let danger = LunaTokens.Status.danger
+    public static let statusInfo = LunaTokens.Status.info
+
+    /// Storage tier colors shared across iPhone & tvOS.
+    public static let tierNvme = LunaTokens.Tier.nvme
+    public static let tierArchive = LunaTokens.Tier.archive
+    public static let tierStream = LunaTokens.Tier.stream
 
     /// Base warm cream border tint (`#FFF4E6`) used at 10–18% opacity for 1 pt matte hairlines.
     public static let warmBorderBase = Color(red: 255.0 / 255.0, green: 244.0 / 255.0, blue: 230.0 / 255.0)
-    public static let warmBorderSubtle = warmBorderBase.opacity(0.10)
-    public static let warmBorder = warmBorderBase.opacity(0.14)
-    public static let warmBorderStrong = warmBorderBase.opacity(0.18)
+    public static let warmBorderSubtle = LunaTokens.Edge.top1
+    public static let warmBorder = LunaTokens.Edge.top2
+    public static let warmBorderStrong = LunaTokens.Edge.top3
 
     /// Calm antique bronze Siri Remote focus fill (`#C48C3A -> #9E6E27`) without bright lemon-yellow glare.
     public static let focusGoldTop = amber
     public static let focusGoldBottom = amberDeep
-    public static let focusGoldBorder = Color(red: 214.0 / 255.0, green: 170.0 / 255.0, blue: 99.0 / 255.0)
+    public static let focusGoldBorder = LunaTokens.Accent.line
     /// Subtle warm bronze highlight reserved for focused `PrimaryPlayButton` («Spill av»).
-    public static let playFocusTop = Color(red: 204.0 / 255.0, green: 150.0 / 255.0, blue: 68.0 / 255.0)
+    public static let playFocusTop = LunaTokens.Accent.playFocusTop
 
     public static let horizontalGutter: CGFloat = 64
-    public static let cardRadius: CGFloat = 18
+    public static let cardRadius: CGFloat = LunaTokens.Radius.card
+
+    /// Standardized 10-foot tvOS typography scale (`>= 22 pt` floor).
+    public enum Font {
+        public static var heroSerif: SwiftUI.Font {
+            .system(
+                size: LunaTokens.Typography.heroSerif,
+                weight: .semibold,
+                design: .serif
+            )
+        }
+        public static var pageTitle: SwiftUI.Font {
+            .system(
+                size: LunaTokens.Typography.pageTitle,
+                weight: .bold
+            )
+        }
+        public static var sectionTitle: SwiftUI.Font {
+            .system(
+                size: LunaTokens.Typography.sectionTitle,
+                weight: .semibold
+            )
+        }
+        public static var cardTitle: SwiftUI.Font {
+            .system(
+                size: LunaTokens.Typography.cardTitle,
+                weight: .semibold
+            )
+        }
+        public static var body: SwiftUI.Font {
+            .system(
+                size: LunaTokens.Typography.body,
+                weight: .regular
+            )
+        }
+        public static var subtitle: SwiftUI.Font {
+            .system(
+                size: LunaTokens.Typography.subtitle,
+                weight: .medium
+            )
+        }
+        public static var caption: SwiftUI.Font {
+            .system(
+                size: LunaTokens.Typography.caption,
+                weight: .medium
+            )
+        }
+        public static var badge: SwiftUI.Font {
+            .system(
+                size: LunaTokens.Typography.badge,
+                weight: .semibold
+            )
+        }
+    }
 
     public static var focusGoldGradient: LinearGradient {
         LinearGradient(
@@ -160,7 +222,7 @@ public struct LunaChromelessButtonStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: LunaTokens.Motion.pressDuration), value: configuration.isPressed)
     }
 }
 
@@ -173,12 +235,14 @@ public enum LunaButtonProminence: Sendable {
 public enum LunaButtonAccent: Sendable {
     case amber
     case emerald
+    case warn
     case coral
 
     public var color: Color {
         switch self {
         case .amber: return LunaTheme.amber
         case .emerald: return LunaTheme.emerald
+        case .warn: return LunaTheme.warn
         case .coral: return LunaTheme.coral
         }
     }
@@ -231,6 +295,9 @@ public struct LunaPillButton: View {
         if accent == .coral {
             return LunaTheme.coral
         }
+        if accent == .warn {
+            return LunaTheme.warn
+        }
         if isSelected {
             return accent == .emerald ? LunaTheme.emerald : LunaTheme.linen
         }
@@ -248,6 +315,9 @@ public struct LunaPillButton: View {
         }
         if accent == .coral {
             return LunaTheme.coral
+        }
+        if accent == .warn {
+            return LunaTheme.warn
         }
         if isSelected {
             return LunaTheme.linen
@@ -270,6 +340,9 @@ public struct LunaPillButton: View {
         case .glassPill, .subtleChip:
             if accent == .coral {
                 return LunaTheme.coral.opacity(0.42)
+            }
+            if accent == .warn {
+                return LunaTheme.warn.opacity(0.42)
             }
             if isSelected {
                 return accent == .emerald ? LunaTheme.emerald.opacity(0.38) : LunaTheme.warmBorderStrong
@@ -347,7 +420,7 @@ private struct LunaPillLabel: View {
             y: isFocused ? 4 : 0
         )
         .scaleEffect(isFocused ? 1.02 : 1.0)
-        .animation(.spring(response: 0.22, dampingFraction: 0.80), value: isFocused)
+        .animation(LunaFocusStyle.focusSpring, value: isFocused)
     }
 
     private var iconForegroundColor: Color {
@@ -426,244 +499,5 @@ private struct LunaPillLabel: View {
             return LunaTheme.warmBorderBase.opacity(0.14)
         }
         return LunaTheme.warmBorderBase.opacity(0.08)
-    }
-}
-
-// MARK: - Off-Main-Thread Cached Artwork View (Zero 1-Frame Stale Reuse Flash)
-
-public struct CachedArtworkView: View {
-    private struct TaggedCGImage {
-        let key: String
-        let image: CGImage
-    }
-
-    let url: URL?
-    let client: LunaCoreClient?
-    let maxPixelSize: Int
-    let blurHash: String?
-    let dominantColor: String?
-    let placeholderSymbol: String
-    let contentMode: ContentMode
-    let reuseAnyCachedSize: Bool
-
-    @State private var loadedArtwork: TaggedCGImage?
-    @State private var decodedBlur: TaggedCGImage?
-
-    public init(
-        url: URL?,
-        client: LunaCoreClient? = nil,
-        maxPixelSize: Int = 720,
-        blurHash: String? = nil,
-        dominantColor: String? = nil,
-        placeholderSymbol: String = "film",
-        contentMode: ContentMode = .fill,
-        reuseAnyCachedSize: Bool = false
-    ) {
-        self.url = url
-        self.client = client
-        self.maxPixelSize = maxPixelSize
-        self.blurHash = blurHash
-        self.dominantColor = dominantColor
-        self.placeholderSymbol = placeholderSymbol
-        self.contentMode = contentMode
-        self.reuseAnyCachedSize = reuseAnyCachedSize
-
-        let expectedImgKey = Self.imageSlotKey(url: url, maxPixelSize: maxPixelSize, reuseAnyCachedSize: reuseAnyCachedSize)
-        if let url, let expectedImgKey, let hit = Self.lookupMemoryImage(
-            url: url,
-            maxPixelSize: maxPixelSize,
-            reuseAnyCachedSize: reuseAnyCachedSize
-        ) {
-            _loadedArtwork = State(initialValue: TaggedCGImage(key: expectedImgKey, image: hit))
-        } else {
-            _loadedArtwork = State(initialValue: nil)
-        }
-
-        let cleanBlur = Self.normalizedBlurKey(blurHash)
-        if let cleanBlur, let blurHit = BlurHashDecoder.cachedImage(cleanBlur, width: 32, height: 24) {
-            _decodedBlur = State(initialValue: TaggedCGImage(key: cleanBlur, image: blurHit))
-        } else {
-            _decodedBlur = State(initialValue: nil)
-        }
-    }
-
-    /// Pure key-verified resolver ensuring recycled `LazyVGrid` / `LazyHStack` cells never flash
-    /// the previous card's bitmap for 1 frame before `.task(id:)` runs.
-    public nonisolated static func selectKeyMatchedImage(
-        expectedKey: String?,
-        stateKey: String?,
-        stateImage: CGImage?,
-        memoryFallback: () -> CGImage?
-    ) -> CGImage? {
-        guard let expectedKey else {
-            return nil
-        }
-        if stateKey == expectedKey, let stateImage {
-            return stateImage
-        }
-        return memoryFallback()
-    }
-
-    private nonisolated static func imageSlotKey(url: URL?, maxPixelSize: Int, reuseAnyCachedSize: Bool) -> String? {
-        guard let url else { return nil }
-        return reuseAnyCachedSize
-            ? ArtworkPipeline.rawIdentity(for: url)
-            : ArtworkPipeline.cacheKey(for: url, maxPixelSize: maxPixelSize)
-    }
-
-    private nonisolated static func normalizedBlurKey(_ raw: String?) -> String? {
-        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
-              trimmed.count >= 6 else {
-            return nil
-        }
-        return trimmed
-    }
-
-    private nonisolated static func lookupMemoryImage(
-        url: URL,
-        maxPixelSize: Int,
-        reuseAnyCachedSize: Bool
-    ) -> CGImage? {
-        if reuseAnyCachedSize {
-            return ArtworkPipeline.shared.anyMemoryCachedImage(
-                for: url,
-                preferredMaxPixelSize: maxPixelSize
-            )?.image
-        }
-        return ArtworkPipeline.shared.memoryCachedImage(for: url, maxPixelSize: maxPixelSize)
-    }
-
-    private var currentImageKey: String? {
-        Self.imageSlotKey(url: url, maxPixelSize: maxPixelSize, reuseAnyCachedSize: reuseAnyCachedSize)
-    }
-
-    private var currentBlurKey: String? {
-        Self.normalizedBlurKey(blurHash)
-    }
-
-    public var body: some View {
-        ZStack {
-            if let cgImage = resolvedImage {
-                Image(decorative: cgImage, scale: 1.0, orientation: .up)
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
-                    .transition(.opacity)
-            } else {
-                placeholderLayer
-            }
-        }
-        .task(id: "\(currentImageKey ?? "nil")#\(currentBlurKey ?? "")") {
-            let targetBlurKey = currentBlurKey
-            if let targetBlurKey {
-                if let cachedBlur = BlurHashDecoder.cachedImage(targetBlurKey, width: 32, height: 24) {
-                    if decodedBlur?.key != targetBlurKey || decodedBlur?.image !== cachedBlur {
-                        decodedBlur = TaggedCGImage(key: targetBlurKey, image: cachedBlur)
-                    }
-                } else if decodedBlur?.key != targetBlurKey {
-                    decodedBlur = nil
-                }
-            } else if decodedBlur != nil {
-                decodedBlur = nil
-            }
-
-            guard let url, let targetImageKey = currentImageKey else {
-                loadedArtwork = nil
-                if let targetBlurKey, decodedBlur?.key != targetBlurKey, contentMode != .fit {
-                    if let blurImg = await BlurHashDecoder.decodeAsync(targetBlurKey, width: 32, height: 24),
-                       !Task.isCancelled {
-                        decodedBlur = TaggedCGImage(key: targetBlurKey, image: blurImg)
-                    }
-                }
-                return
-            }
-
-            if let hit = Self.lookupMemoryImage(
-                url: url,
-                maxPixelSize: maxPixelSize,
-                reuseAnyCachedSize: reuseAnyCachedSize
-            ) {
-                if loadedArtwork?.key != targetImageKey || loadedArtwork?.image !== hit {
-                    loadedArtwork = TaggedCGImage(key: targetImageKey, image: hit)
-                }
-                return
-            }
-
-            loadedArtwork = nil
-            if let targetBlurKey, decodedBlur?.key != targetBlurKey, contentMode != .fit {
-                if let blurImg = await BlurHashDecoder.decodeAsync(targetBlurKey, width: 32, height: 24),
-                   !Task.isCancelled {
-                    decodedBlur = TaggedCGImage(key: targetBlurKey, image: blurImg)
-                }
-            }
-
-            let fetched = await ArtworkPipeline.shared.loadImage(
-                url: url,
-                maxPixelSize: maxPixelSize,
-                client: client
-            )
-            guard !Task.isCancelled else { return }
-            if let fetched {
-                withAnimation(.easeOut(duration: 0.18)) {
-                    loadedArtwork = TaggedCGImage(key: targetImageKey, image: fetched)
-                }
-            } else {
-                loadedArtwork = nil
-            }
-        }
-    }
-
-    private var resolvedImage: CGImage? {
-        Self.selectKeyMatchedImage(
-            expectedKey: currentImageKey,
-            stateKey: loadedArtwork?.key,
-            stateImage: loadedArtwork?.image,
-            memoryFallback: {
-                guard let url else { return nil }
-                return Self.lookupMemoryImage(
-                    url: url,
-                    maxPixelSize: maxPixelSize,
-                    reuseAnyCachedSize: reuseAnyCachedSize
-                )
-            }
-        )
-    }
-
-    private var resolvedBlurImage: CGImage? {
-        Self.selectKeyMatchedImage(
-            expectedKey: currentBlurKey,
-            stateKey: decodedBlur?.key,
-            stateImage: decodedBlur?.image,
-            memoryFallback: {
-                guard let currentBlurKey else { return nil }
-                return BlurHashDecoder.cachedImage(currentBlurKey, width: 32, height: 24)
-            }
-        )
-    }
-
-    @ViewBuilder
-    private var placeholderLayer: some View {
-        if contentMode == .fit {
-            Color.clear
-        } else if let blurCG = resolvedBlurImage {
-            Image(decorative: blurCG, scale: 1.0, orientation: .up)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-        } else {
-            let tint = LunaTheme.color(fromHex: dominantColor) ?? LunaTheme.surfaceRaised
-            ZStack {
-                LinearGradient(
-                    colors: [
-                        tint.opacity(0.32),
-                        LunaTheme.surface,
-                        LunaTheme.canvas,
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                Image(systemName: placeholderSymbol)
-                    .font(.title2)
-                    .foregroundStyle(LunaTheme.muted.opacity(0.45))
-            }
-        }
     }
 }

@@ -1,0 +1,167 @@
+{
+  "sourceLanguage" : "nb",
+  "strings" : {
+    "chapters_count %lld" : {
+      "comment" : "Chapter count heading in player drawer",
+      "localizations" : {
+        "nb" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld kapittel"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld kapitler"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "days_count %lld" : {
+      "comment" : "Day count duration label",
+      "localizations" : {
+        "nb" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld dag"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld dager"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "episodes_count %lld" : {
+      "comment" : "Episode count label",
+      "localizations" : {
+        "nb" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld episode"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld episoder"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "media_files_count %lld" : {
+      "comment" : "Physical media file count in deletion sheet",
+      "localizations" : {
+        "nb" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld mediefil"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld mediefiler"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "pinned_items_count %lld" : {
+      "comment" : "Pinned items count on custom list card",
+      "localizations" : {
+        "nb" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld festet"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld festede"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "search_hits_total %lld" : {
+      "comment" : "Total search hits count badge",
+      "localizations" : {
+        "nb" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld treff"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld treff"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "seasons_count %lld" : {
+      "comment" : "Season count label",
+      "localizations" : {
+        "nb" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sesong"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sesonger"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

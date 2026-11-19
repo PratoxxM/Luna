@@ -255,7 +255,7 @@ struct PlayerContainerView: View {
                     VStack {
                         HStack(spacing: 10) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(LunaTheme.amber)
+                                .foregroundStyle(LunaTheme.warn)
                             Text(banner)
                                 .font(.callout.weight(.semibold))
                                 .foregroundStyle(LunaTheme.linen)
@@ -264,7 +264,7 @@ struct PlayerContainerView: View {
                         .padding(.horizontal, 22)
                         .padding(.vertical, 12)
                         .background(LunaTheme.cinemaGlass, in: Capsule())
-                        .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.50), lineWidth: 1))
+                        .overlay(Capsule().strokeBorder(LunaTheme.warn.opacity(0.50), lineWidth: 1))
                         .padding(.top, 42)
                         Spacer()
                     }
@@ -505,7 +505,7 @@ struct PlayerContainerView: View {
             VStack(spacing: 24) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 52))
-                    .foregroundStyle(LunaTheme.amber)
+                    .foregroundStyle(LunaTheme.danger)
 
                 Text("Avspilling kunne ikke starte")
                     .font(.title2.weight(.bold))

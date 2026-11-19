@@ -96,6 +96,6 @@ struct SettingsServerDiagnosticsSectionView: View {
             return "0 MB"
         }
         let mb = Double(cacheBytes) / 1_048_576.0
-        return String(format: "%.1f MB", mb)
+        return LunaCopy.formatMegabytes(mb, decimals: 1)
     }
 }

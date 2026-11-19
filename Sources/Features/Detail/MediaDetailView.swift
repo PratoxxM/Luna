@@ -111,7 +111,7 @@ struct MediaDetailView: View {
                     } else if let errorMessage = viewModel.errorMessage {
                         VStack(alignment: .leading, spacing: 16) {
                             Text(errorMessage)
-                                .foregroundStyle(LunaTheme.amber)
+                                .foregroundStyle(LunaTheme.danger)
                             LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                                 Task { await viewModel.reloadFromError() }
                             }

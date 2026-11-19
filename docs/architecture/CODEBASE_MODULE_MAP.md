@@ -41,7 +41,11 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 
 | Module Path | Responsibility | `/api/tv/v1` Endpoints | Unit Test Coverage |
 | :--- | :--- | :--- | :--- |
-| `Sources/DesignSystem/LunaTheme.swift` | Warm espresso & honey-brass OLED/HDR palette, cinema glass, crescent mark & `CachedArtworkView` | — | `ThemeAndArtworkViewTests.swift` |
+| `Sources/DesignSystem/Tokens/LunaTokens.swift` | Generated platform-scaled colors, typography, radii & focus springs from `design/tokens.json` | — | `DesignTokensAndCopyTests.swift` |
+| `Sources/DesignSystem/LunaTheme.swift` | Warm espresso & honey-brass OLED/HDR palette, `warn`/`danger`, `Font` scale & pill buttons | — | `ThemeAndArtworkViewTests.swift`, `DesignTokensAndCopyTests.swift` |
+| `Sources/DesignSystem/CachedArtworkView.swift` | Off-main-actor key-matched artwork view preventing 1-frame recycled cell flash | — | `ThemeAndArtworkViewTests.swift` |
+| `Sources/DesignSystem/LunaFocusStyle.swift` | Shared `0.32/0.86` tvOS focus spring, inner gold border & warm under-glow modifier | — | `DesignTokensAndCopyTests.swift` |
+| `Sources/DesignSystem/LunaCopy.swift` | Norwegian pluralization, comma decimal formatter, room/tier labels & greetings | — | `DesignTokensAndCopyTests.swift` |
 | `Sources/DesignSystem/AmbientBackdropView.swift` | Static warm charcoal/espresso ambient glow backdrop (paused during playback) | — | `ThemeAndArtworkViewTests.swift` |
 | `Sources/DesignSystem/Cards/PosterCardView.swift` | Isolated `@FocusState` poster card with 1 pt warm frame & context menu | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
 | `Sources/DesignSystem/Cards/BackdropCardView.swift` | Isolated `@FocusState` 16:9 episode/backdrop card with progress bar | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
@@ -87,11 +91,12 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 
 ## 4. Build, Guardrails, Actions & `LunaTests` (`Tests/LunaTests/`)
 
-- **Build & CI**: `project.yml` (`MARKETING_VERSION: "2.6.0"`, `CURRENT_PROJECT_VERSION: "57"`, `bundleIdPrefix: local.lunacore`), `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, sideload, zero private infra leaks & bidirectional doc parity).
-- **22 XCTest Suites + Test Doubles (`Tests/LunaTests/`)**:
+- **Build, Tokens & CI**: `project.yml` (`MARKETING_VERSION: "2.6.0"`, `CURRENT_PROJECT_VERSION: "57"`, `bundleIdPrefix: local.lunacore`), `design/tokens.json`, `Resources/Localizable.xcstrings`, `ops/bin/luna-design-tokens`, `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, sideload, zero private infra leaks, token parity & bidirectional doc parity).
+- **23 XCTest Suites + Test Doubles (`Tests/LunaTests/`)**:
   - `Tests/LunaTests/BonjourServerBrowserTests.swift`
   - `Tests/LunaTests/ChapterClassificationTests.swift`
   - `Tests/LunaTests/ClientOriginAndBlurHashTests.swift`
+  - `Tests/LunaTests/DesignTokensAndCopyTests.swift`
   - `Tests/LunaTests/DiskSWRStoreTests.swift`
   - `Tests/LunaTests/DynamicHomeRowTests.swift`
   - `Tests/LunaTests/EpisodeTitleFormattingTests.swift`

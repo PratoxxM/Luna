@@ -51,7 +51,9 @@ struct NerdHUDView: View {
         let h = viewModel.sourceVideoHeight
         let res = (w > 0 && h > 0) ? "\(w)×\(h)" : "Auto"
         let fpsVal = telemetry?.observedFps ?? viewModel.sourceVideoFrameRate
-        let fps = fpsVal.map { String(format: "%.3g fps", $0) } ?? "-"
+        let fps = fpsVal.map {
+            String(format: "%.3g fps", locale: Locale(identifier: "en_US_POSIX"), $0).replacingOccurrences(of: ".", with: ",")
+        } ?? "-"
         return "\(codec) · \(res) @ \(fps)"
     }
 
@@ -68,8 +70,8 @@ struct NerdHUDView: View {
     }
 
     private var bitrateSummary: String {
-        let inst = telemetry?.instantBitrateMbps.map { String(format: "%.1f Mbps", $0) } ?? "-"
-        let avg = telemetry?.averageBitrateMbps.map { String(format: "snitt %.1f Mbps", $0) } ?? ""
+        let inst = telemetry?.instantBitrateMbps.map { "\(LunaCopy.formatDecimal($0)) Mbps" } ?? "-"
+        let avg = telemetry?.averageBitrateMbps.map { "snitt \(LunaCopy.formatDecimal($0)) Mbps" } ?? ""
         return avg.isEmpty ? inst : "\(inst) (\(avg))"
     }
 
@@ -83,14 +85,14 @@ struct NerdHUDView: View {
         }()
         let winMiB: String = {
             if let ahead = telemetry?.readerWindowAheadBytes, ahead > 0 {
-                return String(format: " · +%.1f MiB lesevindu", Double(ahead) / 1_048_576.0)
+                return " · +\(LunaCopy.formatDecimal(Double(ahead) / 1_048_576.0)) MiB lesevindu"
             }
             if cacheStatus.currentForwardBytes > 0 {
-                return String(format: " · +%.1f MiB cache", Double(cacheStatus.currentForwardBytes) / 1_048_576.0)
+                return " · +\(LunaCopy.formatDecimal(Double(cacheStatus.currentForwardBytes) / 1_048_576.0)) MiB cache"
             }
             return ""
         }()
-        return String(format: "%@ · %.1fs buffer%@", link, fwdSeconds, winMiB)
+        return "\(link) · \(LunaCopy.formatDecimal(fwdSeconds))s buffer\(winMiB)"
     }
 
     private var sourceAndMemorySummary: String {

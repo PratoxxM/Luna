@@ -90,7 +90,7 @@ struct HomeView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(errorMessage)
                             .font(.callout)
-                            .foregroundStyle(LunaTheme.amber)
+                            .foregroundStyle(LunaTheme.danger)
                         LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                             scheduleRevalidateHome(forceUnconditional: true)
                         }

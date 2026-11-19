@@ -57,7 +57,7 @@ struct DetailDeleteSheetView: View {
                             HStack(spacing: 14) {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .font(.title3)
-                                    .foregroundStyle(LunaTheme.amber)
+                                    .foregroundStyle(LunaTheme.warn)
                                 Text(blocker.message)
                                     .font(.callout.weight(.semibold))
                                     .foregroundStyle(LunaTheme.linen)
@@ -67,7 +67,7 @@ struct DetailDeleteSheetView: View {
                             .background(LunaTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .strokeBorder(LunaTheme.amber.opacity(0.45), lineWidth: 1.5)
+                                    .strokeBorder(LunaTheme.warn.opacity(0.45), lineWidth: 1.5)
                             )
                         }
 
@@ -170,10 +170,11 @@ struct DetailDeleteSheetView: View {
 
     private func confirmationDescription(preflight: TvDeletePreflightResponse, freedText: String) -> String {
         if preflight.files.count > 0 {
+            let fileLabel = LunaCopy.plural(preflight.files.count, "mediefil", "mediefiler")
             if target.isWholeTitle {
-                return "Dette sletter \(preflight.files.count) mediefi\(preflight.files.count == 1 ? "l" : "ler") (\(freedText)) permanent fra NAS og fjerner tittelen fra overvåking, huskeliste og lister."
+                return "Dette sletter \(fileLabel) (\(freedText)) permanent fra NAS og fjerner tittelen fra overvåking, huskeliste og lister."
             }
-            return "Dette sletter \(preflight.files.count) mediefi\(preflight.files.count == 1 ? "l" : "ler") (\(freedText)) permanent fra NAS og nullstiller lokal progresjon for utvalget."
+            return "Dette sletter \(fileLabel) (\(freedText)) permanent fra NAS og nullstiller lokal progresjon for utvalget."
         }
         return "Ingen lokale mediefiler er tilknyttet på disk. Bekreft for å rydde opp oppføringen og fjerne den fra lister og overvåking."
     }

@@ -275,7 +275,7 @@ struct DetailHeroHeaderView: View {
             parts.append(runtime)
         }
         if let disp = item.displayRating {
-            parts.append(String(format: disp.isImdb ? "IMDb ★ %.1f" : "★ %.1f", disp.value))
+            parts.append(LunaCopy.formatRating(disp.value, prefix: disp.isImdb ? "IMDb ★" : "★"))
         }
         if let rt = item.rottenTomatoesScore, rt > 0 {
             parts.append("RT \(rt)%")

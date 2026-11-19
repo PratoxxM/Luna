@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""Deterministic tvOS Design Token Generator & Parity Gate for Luna."""
+
+import argparse
+import hashlib
+import json
+import os
+import pathlib
+import re
+import sys
+
+
+def parse_color_expr(raw: str) -> str:
+    s = str(raw).strip()
+    if s.startswith("#"):
+        hex_str = s.lstrip("#")
+        if len(hex_str) == 6:
+            r = int(hex_str[0:2], 16)
+            g = int(hex_str[2:4], 16)
+            b = int(hex_str[4:6], 16)
+            return f"Color(red: {r}.0 / 255.0, green: {g}.0 / 255.0, blue: {b}.0 / 255.0)"
+    m = re.match(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\s*\)", s)
+    if m:
+        r, g, b, a = m.groups()
+        return f"Color(red: {r}.0 / 255.0, green: {g}.0 / 255.0, blue: {b}.0 / 255.0).opacity({a})"
+    raise ValueError(f"Unsupported tvOS color token: {raw!r}")
+
+
+def camel(name: str) -> str:
+    return name[0].lower() + name[1:] if name else name
+
+
+def render_swift(tokens: dict, sha256: str) -> str:
+    sem = tokens.get("semantic", {})
+    prim = tokens.get("primitives", {})
+    tv = tokens.get("platform", {}).get("tvos", {})
+    motion = prim.get("motion", {})
+
+    lines = [
+        f"// Generated from design/tokens.json (sha256: {sha256}) — DO NOT EDIT MANUALLY.",
+        "// Regenerate via: ./ops/bin/luna-design-tokens --sync",
+        "",
+        "import CoreGraphics",
+        "import SwiftUI",
+        "",
+        "public enum LunaTokens {",
+        f'    public static let tokensSha256 = "{sha256}"',
+        "",
+    ]
+
+    enum_map = [
+        ("Surface", sem.get("surface", {})),
+        ("Edge", sem.get("edge", {})),
+        ("Text", sem.get("text", {})),
+        ("Accent", sem.get("accent", {})),
+        ("Status", sem.get("status", {})),
+        ("Tier", sem.get("tier", {})),
+    ]
+
+    for enum_name, group in enum_map:
+        lines.append(f"    public enum {enum_name} {{")
+        for key, val in group.items():
+            if isinstance(val, dict) and "tvos" in val:
+                lines.append(f"        public static let {camel(key)} = {parse_color_expr(val['tvos'])}")
+        lines.append("    }")
+        lines.append("")
+
+    # Glow
+    glow = sem.get("glow", {})
+    lines.extend([
+        "    public enum Glow {",
+        f"        public static let lampStrength: Double = {glow.get('lampStrength', {}).get('tvos', 0.25)}",
+        f"        public static let focusUnder: Color = {parse_color_expr(glow.get('focusUnder', {}).get('tvos', 'rgba(196, 140, 58, 0.25)'))}",
+        "    }",
+        "",
+    ])
+
+    # Room profiles
+    cinema = sem.get("room", {}).get("cinema", {})
+    living = sem.get("room", {}).get("living", {})
+    lines.extend([
+        "    public enum Room {",
+        f"        public static let cinemaLamp = {parse_color_expr(cinema.get('lampHexTv', '#D2963E'))}",
+        f"        public static let cinemaLampStrength: Double = {cinema.get('lampStrengthTv', 0.26)}",
+        f"        public static let cinemaTint = {parse_color_expr(cinema.get('tint', '#2a1c10'))}",
+        f"        public static let cinemaAmbientOpacity: Double = {cinema.get('ambientOpacityTv', 0.055)}",
+        f"        public static let livingLamp = {parse_color_expr(living.get('lampHexTv', '#F0D9B5'))}",
+        f"        public static let livingLampStrength: Double = {living.get('lampStrengthTv', 0.22)}",
+        f"        public static let livingTint = {parse_color_expr(living.get('tint', '#2b241c'))}",
+        f"        public static let livingAmbientOpacity: Double = {living.get('ambientOpacityTv', 0.08)}",
+        "    }",
+        "",
+    ])
+
+    # Typography
+    lines.append("    public enum Typography {")
+    for k, v in tv.get("typography", {}).items():
+        lines.append(f"        public static let {camel(k)}: CGFloat = {float(v):.1f}")
+    lines.extend(["    }", ""])
+
+    # Radius
+    lines.append("    public enum Radius {")
+    for k, v in tv.get("radius", {}).items():
+        lines.append(f"        public static let {camel(k)}: CGFloat = {float(v):.1f}")
+    lines.extend(["    }", ""])
+
+    # Layout dimensions
+    lines.append("    public enum Layout {")
+    for k, v in tv.get("dimensions", {}).items():
+        lines.append(f"        public static let {camel(k)}: CGFloat = {float(v):.2f}".rstrip("0").rstrip(".") + (".0" if isinstance(v, int) or float(v).is_integer() else ""))
+    lines.extend(["    }", ""])
+
+    # Motion
+    lines.extend([
+        "    public enum Motion {",
+        f"        public static let focusSpringResponse: Double = {motion.get('tvFocusSpringResponse', 0.32)}",
+        f"        public static let focusSpringDamping: Double = {motion.get('tvFocusSpringDamping', 0.86)}",
+        f"        public static let focusFadeSeconds: Double = {float(motion.get('tvFocusFadeMs', 180)) / 1000.0}",
+        f"        public static let pressDuration: Double = {motion.get('tvPressDuration', 0.12)}",
+        "    }",
+        "}",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate or check LunaTokens.swift from design/tokens.json")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--sync", action="store_true")
+    group.add_argument("--check", action="store_true")
+    parser.add_argument("--root", default=None)
+    args = parser.parse_args()
+
+    root = pathlib.Path(args.root).resolve() if args.root else pathlib.Path(__file__).resolve().parents[2]
+    tokens_path = root / "design" / "tokens.json"
+    out_path = root / "Sources" / "DesignSystem" / "Tokens" / "LunaTokens.swift"
+
+    if not tokens_path.is_file():
+        print(f"[luna-design-tokens] Missing {tokens_path}", file=sys.stderr)
+        return 1
+
+    raw = tokens_path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    sha256 = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    expected = render_swift(json.loads(raw), sha256)
+
+    if args.check:
+        current = out_path.read_text(encoding="utf-8") if out_path.is_file() else ""
+        if current != expected:
+            print(
+                f"[luna-design-tokens] Sources/DesignSystem/Tokens/LunaTokens.swift is out of sync with design/tokens.json ({sha256[:12]})",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"  [OK] Design tokens verified (sha256={sha256[:12]}, LunaTokens.swift in sync)")
+        return 0
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(out_path.parent, 0o755)
+    out_path.write_text(expected, encoding="utf-8")
+    os.chmod(out_path, 0o644)
+    print(f"[luna-design-tokens] Synced Sources/DesignSystem/Tokens/LunaTokens.swift (sha256={sha256[:12]})")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

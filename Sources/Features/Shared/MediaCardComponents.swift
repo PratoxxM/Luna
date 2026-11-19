@@ -6,11 +6,11 @@ struct TransientErrorBanner: View {
     var body: some View {
         Text(message)
             .font(.callout.weight(.semibold))
-            .foregroundStyle(LunaTheme.amber)
+            .foregroundStyle(LunaTheme.danger)
             .padding(.horizontal, 22)
             .padding(.vertical, 12)
             .background(LunaTheme.cinemaGlass, in: Capsule())
-            .overlay(Capsule().strokeBorder(LunaTheme.amber.opacity(0.45), lineWidth: 1))
+            .overlay(Capsule().strokeBorder(LunaTheme.danger.opacity(0.45), lineWidth: 1))
     }
 }
 

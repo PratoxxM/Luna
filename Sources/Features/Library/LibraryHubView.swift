@@ -175,7 +175,7 @@ struct LibraryHubView: View {
                 } else if let errorMessage, libraryPayload == nil {
                     VStack(alignment: .leading, spacing: 14) {
                         Text(errorMessage)
-                            .foregroundStyle(LunaTheme.amber)
+                            .foregroundStyle(LunaTheme.danger)
                         LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                             scheduleReloadLibrary(forceNetwork: true)
                         }
@@ -643,7 +643,7 @@ private struct LibraryCustomListTileButton: View {
                         .foregroundStyle(LunaTheme.linen)
                         .lineLimit(1)
 
-                    Text(list.itemCount > 0 ? "\(kindLabel) · \(list.itemCount) festet" : kindLabel)
+                    Text(list.itemCount > 0 ? "\(kindLabel) · \(LunaCopy.pinnedCount(list.itemCount))" : kindLabel)
                         .font(.caption)
                         .foregroundStyle(isFocused ? LunaTheme.moonlight : LunaTheme.muted)
                         .lineLimit(1)

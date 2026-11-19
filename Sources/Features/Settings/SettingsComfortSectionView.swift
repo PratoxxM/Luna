@@ -254,7 +254,7 @@ struct SettingsPlaybackSectionView: View {
             SettingsSectionDivider()
 
             SettingsToggleRowButton(
-                title: "Vis teknisk status («Nerde-HUD») i spilleren",
+                title: "Vis teknisk status i spilleren",
                 subtitle: "Sanntids bilde-, lyd- og buffertelemetri under avspilling",
                 isOn: $comfort.showNerdHUD
             )

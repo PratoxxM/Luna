@@ -199,7 +199,7 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         }
         parts.append(mediaType == "series" ? "Serie" : "Film")
         if let rating = imdbRating, rating > 0 {
-            parts.append(String(format: "★ %.1f", rating))
+            parts.append(LunaCopy.formatRating(rating))
         }
         if let code = episodeCode, !code.isEmpty {
             parts.append(code)
@@ -215,7 +215,7 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
             parts.append(String(year))
         }
         if let rating = imdbRating, rating > 0 {
-            parts.append(String(format: "★ %.1f", rating))
+            parts.append(LunaCopy.formatRating(rating))
         }
         if parts.isEmpty {
             parts.append(mediaType == "series" ? "Serie" : "Film")

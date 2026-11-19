@@ -145,10 +145,10 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
         guard let sizeBytes, sizeBytes > 0 else { return nil }
         let gb = Double(sizeBytes) / 1_073_741_824.0
         if gb >= 1.0 {
-            return String(format: "%.1f GB", gb)
+            return LunaCopy.formatGigabytes(gb, decimals: 1)
         }
         let mb = Double(sizeBytes) / 1_048_576.0
-        return String(format: "%.0f MB", mb)
+        return "\(Int(mb.rounded())) MB"
     }
 
     public var sourceBadgeLabel: String {

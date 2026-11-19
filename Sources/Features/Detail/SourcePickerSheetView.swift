@@ -322,7 +322,7 @@ struct SourcePickerSheetView: View {
                     VStack(spacing: 18) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.largeTitle)
-                            .foregroundStyle(LunaTheme.amber)
+                            .foregroundStyle(LunaTheme.danger)
                         Text(errorMessage)
                             .font(.callout)
                             .foregroundStyle(LunaTheme.moonlight)

@@ -40,7 +40,7 @@ struct PairingOnboardingView: View {
                 if let errorMessage {
                     Text(errorMessage)
                         .font(.callout)
-                        .foregroundStyle(LunaTheme.amber)
+                        .foregroundStyle(LunaTheme.danger)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 920)
                 }
@@ -125,7 +125,7 @@ struct PairingOnboardingView: View {
         VStack(spacing: 28) {
             Text(isCodeExpired ? "Paringskoden er utløpt" : "Godkjenn TV-en i LunaCore Web")
                 .font(.title2.weight(.semibold))
-                .foregroundStyle(isCodeExpired ? LunaTheme.amber : LunaTheme.linen)
+                .foregroundStyle(isCodeExpired ? LunaTheme.warn : LunaTheme.linen)
 
             Text(isCodeExpired ? "------" : pairingInfo.displayCode)
                 .font(.system(size: 88, weight: .heavy, design: .monospaced))

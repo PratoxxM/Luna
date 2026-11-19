@@ -127,9 +127,9 @@ struct EpisodeCardView: View {
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(LunaTheme.emerald)
                 } else if isFocused && !upcoming {
-                    Text("Hold inne: Sett")
+                    Text("Hold inne: Marker som sett")
                         .font(.caption2.weight(.medium))
-                        .foregroundStyle(LunaTheme.amber.opacity(0.9))
+                        .foregroundStyle(LunaTheme.moonlight)
                 } else if let runtime = episode.formattedRuntime {
                     Text(runtime)
                         .font(.caption2.monospacedDigit())

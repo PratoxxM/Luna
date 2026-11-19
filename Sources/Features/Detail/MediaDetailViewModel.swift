@@ -406,7 +406,7 @@ final class MediaDetailViewModel: ObservableObject {
         if item.mediaType == "series", !item.watched, let next = item.nextUp {
             return String(format: "Sett S%02dE%02d", next.season, next.episode)
         }
-        return "Sett"
+        return item.watched ? "Sett" : "Marker som sett"
     }
 
     func primaryTargetInfo(_ item: TvItemDetail) -> (

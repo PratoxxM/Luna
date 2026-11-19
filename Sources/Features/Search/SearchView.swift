@@ -99,7 +99,7 @@ struct SearchView: View {
                                     .background(LunaTheme.surfaceRaised, in: Capsule())
                                     .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
                             }
-                            Text("\(results.count) treff totalt")
+                            Text("\(LunaCopy.searchHits(results.count)) totalt")
                                 .font(.caption)
                                 .foregroundStyle(LunaTheme.muted)
                         }
@@ -116,7 +116,7 @@ struct SearchView: View {
                     } else if let errorMessage, results.isEmpty {
                         VStack(alignment: .leading, spacing: 14) {
                             Text(errorMessage)
-                                .foregroundStyle(LunaTheme.amber)
+                                .foregroundStyle(LunaTheme.danger)
                             LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                                 triggerSearch(trimmedQuery, debounceNanoseconds: 0)
                             }

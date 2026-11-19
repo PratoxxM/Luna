@@ -83,7 +83,7 @@ struct CustomRowBrowseView: View {
                 } else if let errorMessage, items.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
                         Text(errorMessage)
-                            .foregroundStyle(LunaTheme.amber)
+                            .foregroundStyle(LunaTheme.danger)
                         LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                             Task { await loadInitial() }
                         }

@@ -89,7 +89,7 @@ public struct TvDeleteFilesSummary: Decodable, Equatable, Sendable {
         guard bytes > 0 else { return "0 GB" }
         let gb = Double(bytes) / 1_073_741_824.0
         if gb >= 0.1 {
-            return String(format: "%.2f GB", gb).replacingOccurrences(of: ".", with: ",")
+            return LunaCopy.formatGigabytes(gb, decimals: 2)
         }
         let mb = max(1, Int((Double(bytes) / 1_048_576.0).rounded()))
         return "\(mb) MB"

@@ -146,20 +146,22 @@ struct PlayerTopDrawerView: View {
 
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 10) {
-                    sectionHeader(String(format: "Tekstsynk (%+.1f s)", viewModel.subtitleDelaySeconds))
+                    let delay = abs(viewModel.subtitleDelaySeconds) < 0.05 ? 0.0 : viewModel.subtitleDelaySeconds
+                    let delaySign = delay > 0 ? "+" : (delay == 0 ? "+" : "")
+                    sectionHeader("Tekstsynk (\(delaySign)\(LunaCopy.formatDecimal(delay, decimals: 1)) s)")
                     HStack(spacing: 12) {
-                        LunaPillButton("-0.1 s", systemImage: "minus", prominence: .subtleChip, size: .compact) {
+                        LunaPillButton("-0,1 s", systemImage: "minus", prominence: .subtleChip, size: .compact) {
                             viewModel.adjustSubtitleDelay(by: -0.1)
                         }
                         LunaPillButton(
-                            "0.0 s",
+                            "0,0 s",
                             isSelected: abs(viewModel.subtitleDelaySeconds) < 0.01,
                             prominence: abs(viewModel.subtitleDelaySeconds) < 0.01 ? .glassPill : .subtleChip,
                             size: .compact
                         ) {
                             viewModel.resetSubtitleDelay()
                         }
-                        LunaPillButton("+0.1 s", systemImage: "plus", prominence: .subtleChip, size: .compact) {
+                        LunaPillButton("+0,1 s", systemImage: "plus", prominence: .subtleChip, size: .compact) {
                             viewModel.adjustSubtitleDelay(by: 0.1)
                         }
                     }
@@ -283,7 +285,7 @@ struct PlayerTopDrawerView: View {
         return VStack(alignment: .leading, spacing: 20) {
             if !viewModel.chapters.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    sectionHeader("Kapitler (\(viewModel.chapters.count))")
+                    sectionHeader(LunaCopy.chaptersHeader(viewModel.chapters.count))
                     ScrollViewReader { proxy in
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 14) {

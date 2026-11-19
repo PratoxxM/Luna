@@ -16,6 +16,9 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         try assertRGB(LunaTheme.muted, r: 160, g: 150, b: 140)        // #A0968C daylight-calibrated Frame Pro taupe
         try assertRGB(LunaTheme.amber, r: 196, g: 140, b: 58)         // #C48C3A muted antique bronze-brass
         try assertRGB(LunaTheme.amberDeep, r: 158, g: 110, b: 39)     // #9E6E27 deeper warm bronze
+        try assertRGB(LunaTheme.warn, r: 224, g: 168, b: 75)           // #E0A84B dedicated ochre warning
+        try assertRGB(LunaTheme.danger, r: 217, g: 107, b: 82)         // #D96B52 dedicated danger terracotta
+        try assertRGB(LunaTheme.statusOk, r: 94, g: 191, b: 142)       // #5EBF8E status OK / NVMe emerald
         try assertRGB(LunaTheme.warmBorderBase, r: 255, g: 244, b: 230) // #FFF4E6 warm border base
 
         // Verify cinemaGlass is #120F0D @ 92% alpha
@@ -41,6 +44,8 @@ final class ThemeAndArtworkViewTests: XCTestCase {
             LunaTheme.muted,
             LunaTheme.pauseWarmLine,
             LunaTheme.amber,
+            LunaTheme.warn,
+            LunaTheme.danger,
         ] {
             let c = try rgbaComponents(warmToken)
             XCTAssertGreaterThanOrEqual(c.r + 0.002, c.g)
@@ -53,6 +58,8 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.muted, background: LunaTheme.canvas), 6.2)
         XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.muted, background: LunaTheme.surface), 5.8)
         XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.amber), 6.0)
+        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.warn, background: LunaTheme.canvas), 8.0)
+        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.danger, background: LunaTheme.canvas), 5.0)
         XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.focusGoldTop), 6.0)
         let focusMid = Color(red: 177.0 / 255.0, green: 125.0 / 255.0, blue: 49.0 / 255.0)
         XCTAssertGreaterThanOrEqual(try contrastRatio(foreground: LunaTheme.canvas, background: focusMid), 5.0)

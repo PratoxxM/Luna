@@ -110,7 +110,7 @@ final class ModelDecodingTests: XCTestCase {
             "2160P",
             "DV P7 FEL",
             "TrueHD Atmos",
-            "50.0 GB",
+            "50,0 GB",
         ])
     }
 
