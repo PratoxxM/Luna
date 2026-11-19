@@ -49,7 +49,6 @@ public enum LunaTheme {
     public static let focusGoldBorder = Color(red: 214.0 / 255.0, green: 170.0 / 255.0, blue: 99.0 / 255.0)
     /// Subtle warm bronze highlight reserved for focused `PrimaryPlayButton` («Spill av»).
     public static let playFocusTop = Color(red: 204.0 / 255.0, green: 150.0 / 255.0, blue: 68.0 / 255.0)
-    public static let playFocusBottom = amberDeep
 
     public static let horizontalGutter: CGFloat = 64
     public static let cardRadius: CGFloat = 18

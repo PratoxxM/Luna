@@ -343,16 +343,6 @@ public struct TvGenreChip: Codable, Identifiable, Equatable, Hashable, Sendable 
     public let catalogPath: String?
 
     public var id: String { "\(slug)#\(browsePath)" }
-
-    public var inferredMediaType: String {
-        if let catalogPath, catalogPath.contains("/series") {
-            return "series"
-        }
-        if browsePath.contains(":series:") {
-            return "series"
-        }
-        return "movie"
-    }
 }
 
 public struct TvShelfRow: Codable, Identifiable, Equatable, Hashable, Sendable {
