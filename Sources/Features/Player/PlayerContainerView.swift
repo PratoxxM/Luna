@@ -46,7 +46,7 @@ struct PlayerContainerView: View {
     @State private var showBottomBar: Bool = false
     @State private var isPausedOSDResting: Bool = false
     @State private var isTopDrawerOpen: Bool = false
-    @State private var selectedDrawerTab: PlayerTopDrawerTab = .subtitles
+    @State private var selectedDrawerTab: PlayerTopDrawerTab = .audioAndSubtitles
     @State private var hasSeriesPrompt: Bool = false
     @State private var seriesPromptDismissNonce: Int = 0
     @State private var dismissedNextForSessionID: String?
@@ -275,9 +275,33 @@ struct PlayerContainerView: View {
                     .transition(.opacity)
                     .zIndex(5.6)
                 }
+
+                if let toast = viewModel.remoteCommandToastMessage {
+                    VStack {
+                        HStack(spacing: 10) {
+                            Circle()
+                                .fill(LunaTheme.amber)
+                                .frame(width: 8, height: 8)
+                                .shadow(color: LunaTheme.amber.opacity(0.75), radius: 6, x: 0, y: 0)
+                            Text(toast)
+                                .font(LunaTheme.Font.pillLabel)
+                                .foregroundStyle(LunaTheme.linen)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 12)
+                        .background(LunaTheme.cinemaGlass, in: Capsule())
+                        .overlay(Capsule().strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1))
+                        .padding(.top, viewModel.transientBannerMessage == nil ? 42 : 102)
+                        Spacer()
+                    }
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                    .zIndex(5.7)
+                }
             }
 
-            // 6. Swipe-Down 3-Tab Dark Cinema Glass Top Drawer
+            // 6. Swipe-Down 4-Tab Dark Cinema Glass Top Drawer
             if isTopDrawerOpen && viewModel.fatalError == nil {
                 PlayerTopDrawerView(
                     viewModel: viewModel,
@@ -543,7 +567,7 @@ struct PlayerContainerView: View {
                         LunaPillButton("Velg annen kilde", systemImage: "arrow.triangle.2.circlepath", prominence: .glassPill) {
                             suspendedFatalErrorForDrawer = message
                             viewModel.fatalError = nil
-                            openTopDrawer(tab: .sourcesAndChapters)
+                            openTopDrawer(tab: .source)
                         }
                     }
 

@@ -7,6 +7,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable, Sendable {
     case subtitles = "subtitles"
     case playback = "playback"
     case system = "system"
+    case advanced = "advanced"
 
     var id: String { rawValue }
 
@@ -17,6 +18,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable, Sendable {
         case .subtitles: return "Undertekster"
         case .playback: return "Avspilling"
         case .system: return "System"
+        case .advanced: return "Avansert"
         }
     }
 
@@ -27,6 +29,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable, Sendable {
         case .subtitles: return "captions.bubble"
         case .playback: return "play.circle"
         case .system: return "gearshape"
+        case .advanced: return "slider.horizontal.3"
         }
     }
 }
@@ -43,8 +46,7 @@ struct SettingsView: View {
     @State private var selectedCategory: SettingsCategory
     @State private var cacheBytes: Int64 = 0
     @State private var cacheClearedNotice: Bool = false
-    @State private var showUnpairConfirm: Bool = false
-    @State private var showResetConfirm: Bool = false
+    @State private var showReconnectDialog: Bool = false
     @State private var modalToken = UUID()
 
     init(initialCategory: SettingsCategory = .roomAndDisplay) {
@@ -96,33 +98,24 @@ struct SettingsView: View {
         .ignoresSafeArea(edges: .horizontal)
         .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
         .confirmationDialog(
-            "Par denne Apple TV-en på nytt?",
-            isPresented: $showUnpairConfirm,
+            "Koble til LunaCore på nytt?",
+            isPresented: $showReconnectDialog,
             titleVisibility: .visible
         ) {
-            Button("Par TV på nytt", role: .destructive) {
+            Button("Par TV på nytt (behold serveradresse)", role: .destructive) {
                 sessionStore.unpairDevice()
             }
-            Button("Avbryt", role: .cancel) {}
-        } message: {
-            Text("Dette fjerner aktiv paringstoken og tømmer lokal katalogbuffer. Du beholder serveradressen.")
-        }
-        .confirmationDialog(
-            "Nullstille alle tilkoblingsinnstillinger?",
-            isPresented: $showResetConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Nullstill tilkobling", role: .destructive) {
+            Button("Nullstill alt og bytt server", role: .destructive) {
                 sessionStore.resetAllConnectionSettings()
             }
             Button("Avbryt", role: .cancel) {}
         } message: {
-            Text("Fjerner både serveradresse og paringstoken fra Apple TV.")
+            Text("Velg om du vil pare denne Apple TV-en på nytt med samme server, eller nullstille både serveradresse og paringstoken.")
         }
         .task {
             await refreshCacheMetricsAsync()
         }
-        .onChange(of: showUnpairConfirm || showResetConfirm) { _, isShowingDialog in
+        .onChange(of: showReconnectDialog) { _, isShowingDialog in
             if isShowingDialog {
                 subpageVisibility.enterModal(modalToken)
             } else {
@@ -130,7 +123,7 @@ struct SettingsView: View {
             }
         }
         .onDisappear {
-            if !showUnpairConfirm && !showResetConfirm {
+            if !showReconnectDialog {
                 subpageVisibility.leaveModal(modalToken)
             }
         }
@@ -151,10 +144,11 @@ struct SettingsView: View {
             SettingsServerDiagnosticsSectionView(
                 cacheBytes: cacheBytes,
                 cacheClearedNotice: $cacheClearedNotice,
-                showUnpairConfirm: $showUnpairConfirm,
-                showResetConfirm: $showResetConfirm,
+                showReconnectDialog: $showReconnectDialog,
                 onRefreshCacheMetrics: refreshCacheMetricsAsync
             )
+        case .advanced:
+            SettingsAdvancedSectionView()
         }
     }
 

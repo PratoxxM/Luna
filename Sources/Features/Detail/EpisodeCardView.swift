@@ -3,6 +3,7 @@ import SwiftUI
 struct EpisodeCardView: View {
     let episode: TvEpisodeCard
     var seriesTitle: String? = nil
+    var isNextForYou: Bool = false
     let client: LunaCoreClient?
     let onPlay: () -> Void
     let onPickSource: () -> Void
@@ -122,6 +123,11 @@ struct EpisodeCardView: View {
                     Text("Sett")
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(LunaTheme.emerald)
+                } else if isNextForYou && !upcoming {
+                    let rt = episode.formattedRuntime.map { "\($0) · " } ?? ""
+                    Text("\(rt)Neste for deg")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.amber)
                 } else if isFocused && !upcoming {
                     Text("Hold inne: Marker som sett")
                         .font(.caption2.weight(.medium))

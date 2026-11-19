@@ -415,4 +415,37 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertFalse(cands.map(\.sourceBadgeLabel).contains("USENET"))
         XCTAssertFalse(cands.map(\.sourceBadgeLabel).contains("REMOTE"))
     }
+
+    func testDecodeLibraryWithoutFavoritesAndPendingRemoteCommands() throws {
+        let minimalLibraryJson = #"""
+        {
+          "ok": true,
+          "section": "watchlist",
+          "counts": {
+            "watchlist": 2,
+            "localTotal": 5,
+            "nvme": 4,
+            "archive": 1,
+            "vfs": 0,
+            "customLists": 1
+          },
+          "watchlist": [],
+          "localItems": []
+        }
+        """#
+        let lib = try JSONDecoder().decode(TvLibraryResponse.self, from: Data(minimalLibraryJson.utf8))
+        XCTAssertNil(lib.favorites)
+        XCTAssertNil(lib.counts.favorites)
+        XCTAssertEqual(lib.counts.watchlist, 2)
+
+        let nextCmdJson = #"{"type":"next_episode","issuedAt":"2026-11-19T19:00:00Z"}"#
+        let nextCmd = try JSONDecoder().decode(TvPendingCommand.self, from: Data(nextCmdJson.utf8))
+        XCTAssertEqual(nextCmd.type, "next_episode")
+        XCTAssertEqual(nextCmd.issuedAt, "2026-11-19T19:00:00Z")
+
+        let subsCmdJson = #"{"type":"subtitles_on","language":"no"}"#
+        let subsCmd = try JSONDecoder().decode(TvPendingCommand.self, from: Data(subsCmdJson.utf8))
+        XCTAssertEqual(subsCmd.type, "subtitles_on")
+        XCTAssertEqual(subsCmd.language, "no")
+    }
 }

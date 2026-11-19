@@ -211,6 +211,7 @@ struct TimelineScrubberLeafView: View {
     @State private var lastTimeBucket: Int = -1
     @State private var bufferedTime: Double = 0
     @State private var lastBufferBucket: Int = -1
+    @State private var showFirstTimeScrubHint: Bool = false
 
     var body: some View {
         let effectiveDuration = max(duration, currentTime, 1)
@@ -305,8 +306,12 @@ struct TimelineScrubberLeafView: View {
                 Spacer()
 
                 if isScrubbing {
-                    Text("Klikk for å spille herfra · Menu avbryter")
-                        .font(.caption)
+                    Text("Klikk for å spille herfra · Menyknappen avbryter")
+                        .font(LunaTheme.Font.caption)
+                        .foregroundStyle(LunaTheme.muted)
+                } else if showFirstTimeScrubHint {
+                    Text("Sveip på styreflaten for å spole · Sveip ned for valg")
+                        .font(LunaTheme.Font.caption)
                         .foregroundStyle(LunaTheme.muted)
                 }
 
@@ -324,6 +329,11 @@ struct TimelineScrubberLeafView: View {
             let initialBuf = max(0, engine.bufferedPosition)
             bufferedTime = initialBuf
             lastBufferBucket = TimelineClockBucketer.bufferBucket(initialBuf)
+            let seenCount = UserDefaults.standard.integer(forKey: SideloadSafeStorage.playerScrubHintCountKey)
+            if seenCount < 3 {
+                showFirstTimeScrubHint = true
+                UserDefaults.standard.set(seenCount + 1, forKey: SideloadSafeStorage.playerScrubHintCountKey)
+            }
         }
         .onReceive(engine.clock.$currentTime) { t in
             let bucket = TimelineClockBucketer.timeBucket(t)

@@ -548,7 +548,7 @@ public struct TvLibraryActiveFilters: Codable, Equatable, Sendable {
 }
 
 public struct TvLibraryCounts: Codable, Equatable, Sendable {
-    public let favorites: Int
+    public let favorites: Int?
     public let watchlist: Int
     public let localTotal: Int
     public let nvme: Int
@@ -573,7 +573,7 @@ public struct TvLibraryResponse: Codable, Equatable, Sendable {
     public let section: String
     public let activeFilters: TvLibraryActiveFilters?
     public let counts: TvLibraryCounts
-    public let favorites: [TvMediaCard]
+    public let favorites: [TvMediaCard]?
     public let watchlist: [TvMediaCard]
     public let localItems: [TvMediaCard]
     public let localHasMore: Bool?

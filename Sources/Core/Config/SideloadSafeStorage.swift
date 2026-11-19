@@ -31,6 +31,7 @@ public enum SideloadSafeStorage {
     public static let keepDisplayModeInMenuAfterPlaybackKey = "luna.v1.comfort.keep_display_mode_in_menu"
     public static let didMigrateMenu60HzDefaultV240Key = "luna.v1.comfort.migrated_menu_60hz_v240"
     public static let recentSearchesKey = "luna.v1.recent_searches"
+    public static let playerScrubHintCountKey = "luna.v1.player.scrub_hint_count"
 
     internal static let keychainService = "luna.v1.credentials"
     internal static let tokenAccount = "device_bearer_token"

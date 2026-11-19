@@ -120,6 +120,44 @@ public enum SmartTrackRuleEngine {
         return .keepCurrent
     }
 
+    public static func selectBestSubtitleTrack(
+        forLanguage rawLanguage: String?,
+        in subtitleTracks: [TrackInfo]
+    ) -> TrackInfo? {
+        guard !subtitleTracks.isEmpty else { return nil }
+        let descriptors = subtitleTracks.map(SmartTrackDescriptor.init(track:))
+        guard let selectedId = selectBestSubtitleID(forLanguage: rawLanguage, in: descriptors) else {
+            return nil
+        }
+        return subtitleTracks.first(where: { $0.id == selectedId })
+    }
+
+    public static func selectBestSubtitleID(
+        forLanguage rawLanguage: String?,
+        in subtitleTracks: [SmartTrackDescriptor]
+    ) -> Int? {
+        guard !subtitleTracks.isEmpty else { return nil }
+        let targetLang = normalizeLanguage(rawLanguage) ?? "nob"
+        if let preferred = pickBestSubtitle(forLanguage: targetLang, in: subtitleTracks, onlyForced: false)
+            ?? pickBestSubtitle(forLanguage: targetLang, in: subtitleTracks) {
+            return preferred.id
+        }
+        if targetLang != "nob",
+           let norwegian = pickBestSubtitle(forLanguage: "nob", in: subtitleTracks, onlyForced: false)
+            ?? pickBestSubtitle(forLanguage: "nob", in: subtitleTracks) {
+            return norwegian.id
+        }
+        if targetLang != "eng",
+           let english = pickBestSubtitle(forLanguage: "eng", in: subtitleTracks, onlyForced: false)
+            ?? pickBestSubtitle(forLanguage: "eng", in: subtitleTracks) {
+            return english.id
+        }
+        if let nonCommentary = subtitleTracks.first(where: { !$0.isCommentary }) {
+            return nonCommentary.id
+        }
+        return subtitleTracks.first?.id
+    }
+
     public static func isTrackForced(_ track: TrackInfo) -> Bool {
         isTrackForced(SmartTrackDescriptor(track: track))
     }

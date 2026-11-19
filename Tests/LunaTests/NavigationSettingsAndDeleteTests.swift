@@ -8,7 +8,7 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
     func testSettingsCategoriesOrderAndPreservedDisplayToggleStrings() {
         XCTAssertEqual(
             SettingsCategory.allCases.map(\.title),
-            ["Rom & Skjerm", "Lyd & Synk", "Undertekster", "Avspilling", "System"]
+            ["Rom & Skjerm", "Lyd & Synk", "Undertekster", "Avspilling", "System", "Avansert"]
         )
         XCTAssertEqual(
             SettingsView.keepDisplayModeToggleTitle,

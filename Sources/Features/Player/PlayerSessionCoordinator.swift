@@ -406,15 +406,62 @@ extension PlayerViewModel {
                 lastVfsTelemetry = vfs
             }
             if overrideState == nil,
-               let cmd = hb.pendingCommand,
-               cmd.type == "reload_switched_stream",
-               let switchedSession = cmd.playbackSession {
-                await applyServerSwitchedSession(switchedSession, client: client, fallbackPosition: pos)
+               !isResolving,
+               !isSwitchingSource,
+               let cmd = hb.pendingCommand {
+                await handleHeartbeatPendingCommand(cmd, client: client, currentPosition: pos)
             }
         } catch LunaCoreError.unauthorized {
             onUnauthorized?()
         } catch {
             // Heartbeats are periodic best-effort telemetry
+        }
+    }
+
+    func handleHeartbeatPendingCommand(
+        _ cmd: TvPendingCommand,
+        client: LunaCoreClient?,
+        currentPosition: Double
+    ) async {
+        guard !isDismissing, !isTeardownCompleted else { return }
+        switch cmd.type {
+        case "reload_switched_stream":
+            guard let switchedSession = cmd.playbackSession, let client else { return }
+            showRemoteCommandToast("Byttet kilde fra iPhone")
+            await applyServerSwitchedSession(switchedSession, client: client, fallbackPosition: currentPosition)
+
+        case "next_episode":
+            guard let next = activeSession?.nextEpisode else { return }
+            showRemoteCommandToast("Neste episode fra iPhone")
+            playNextEpisode(next)
+
+        case "subtitles_on":
+            let liveTracks = engine.subtitleTracks
+            if !liveTracks.isEmpty {
+                subtitleTracks = liveTracks
+            }
+            if let match = SmartTrackRuleEngine.selectBestSubtitleTrack(
+                forLanguage: cmd.language,
+                in: subtitleTracks
+            ) {
+                selectSubtitleManually(match.id)
+                showRemoteCommandToast("Undertekst slått på fra iPhone")
+            } else {
+                showRemoteCommandToast("Ingen undertekster tilgjengelig")
+            }
+
+        default:
+            break
+        }
+    }
+
+    func showRemoteCommandToast(_ message: String) {
+        remoteCommandToastTask?.cancel()
+        remoteCommandToastMessage = message
+        remoteCommandToastTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 3_200_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.remoteCommandToastMessage = nil
         }
     }
 
@@ -474,6 +521,9 @@ extension PlayerViewModel {
         audioDelayCommitTask = nil
         transientBannerTask?.cancel()
         transientBannerTask = nil
+        remoteCommandToastTask?.cancel()
+        remoteCommandToastTask = nil
+        remoteCommandToastMessage = nil
         nowPlayingArtworkTask?.cancel()
         nowPlayingArtworkTask = nil
     }

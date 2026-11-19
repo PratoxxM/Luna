@@ -289,7 +289,8 @@ struct SeriesFlowOverlays: View {
 
     private func skipIntroButton(_ chapter: PlaybackChapter) -> some View {
         let label = chapter.kind == .recap ? "Hopp over sammendrag" : "Hopp over intro"
-        return LunaPillButton(label, systemImage: "forward.fill", prominence: .primaryAmber) {
+        let isFocused = (focusedPromptControl == .skipIntro)
+        return Button {
             let target = max(chapter.startSeconds + 1.0, chapter.endSeconds - 0.15)
             dismissedIntroChapterIDs.insert(chapter.id)
             focusedPromptControl = nil
@@ -298,7 +299,31 @@ struct SeriesFlowOverlays: View {
             Task {
                 await viewModel.engine.seek(to: target, exact: true)
             }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "forward.end.fill")
+                    .font(LunaTheme.Font.primaryPlayIcon)
+                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.amber)
+                Text(label)
+                    .font(LunaTheme.Font.pillLabel.weight(.semibold))
+                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.linen)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+            .background {
+                if isFocused {
+                    Capsule()
+                        .fill(LunaTheme.focusGoldGradient)
+                } else {
+                    Capsule()
+                        .fill(LunaTheme.cinemaGlass)
+                }
+            }
+            .lunaFocusSurface(.secondaryPill, isFocused: isFocused, cornerRadius: 999)
         }
+        .buttonStyle(LunaChromelessButtonStyle())
+        .contentShape(Capsule())
+        .focusEffectDisabled(true)
         .focused($focusedPromptControl, equals: .skipIntro)
     }
 

@@ -341,8 +341,24 @@ public struct TvVfsTelemetry: Codable, Equatable, Sendable {
 
 public struct TvPendingCommand: Codable, Equatable, Sendable {
     public let type: String
+    public let language: String?
+    public let issuedAt: String?
     public let switchedAt: String?
     public let playbackSession: TvPlaybackSession?
+
+    public init(
+        type: String,
+        language: String? = nil,
+        issuedAt: String? = nil,
+        switchedAt: String? = nil,
+        playbackSession: TvPlaybackSession? = nil
+    ) {
+        self.type = type
+        self.language = language
+        self.issuedAt = issuedAt
+        self.switchedAt = switchedAt
+        self.playbackSession = playbackSession
+    }
 }
 
 public struct TvHeartbeatResponse: Codable, Equatable, Sendable {

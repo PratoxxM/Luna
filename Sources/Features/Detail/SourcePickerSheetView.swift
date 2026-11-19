@@ -295,7 +295,7 @@ struct SourcePickerSheetView: View {
                             .font(.title2.weight(.bold))
                             .foregroundStyle(LunaTheme.linen)
 
-                        Text("\(context.displaySubject) · Rangert for \(sessionStore.roomName) (\(sessionStore.activePreset.shortBadgeLabel))")
+                        Text("\(context.displaySubject) · Tilpasset \(sessionStore.roomName) (\(sessionStore.effectiveEquipmentLabel))")
                             .font(.callout)
                             .foregroundStyle(LunaTheme.muted)
                     }
@@ -430,9 +430,14 @@ private struct CandidateRowButton: View {
                         }
                     }
 
+                    Text(humanExplanationLine)
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
+                        .lineLimit(1)
+
                     Text(candidate.releaseTitle)
                         .font(.caption.monospaced())
-                        .foregroundStyle(isFocused ? LunaTheme.moonlight : LunaTheme.muted)
+                        .foregroundStyle(LunaTheme.muted)
                         .lineLimit(1)
                 }
 
@@ -478,5 +483,17 @@ private struct CandidateRowButton: View {
         .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
         .focusEffectDisabled(true)
         .focused($isFocused)
+    }
+
+    private var humanExplanationLine: String {
+        if let chips = candidate.explanationChips, !chips.isEmpty {
+            let prefix = isRecommended ? "Anbefalt for rommet · " : ""
+            return prefix + chips.prefix(3).joined(separator: " · ")
+        }
+        let benefit = LunaCopy.tierBenefitLabel(tier: candidate.tier ?? candidate.source)
+        if isRecommended {
+            return "Anbefalt for rommet: beste bilde og lyd · \(benefit)"
+        }
+        return benefit
     }
 }

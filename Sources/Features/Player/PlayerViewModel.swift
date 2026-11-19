@@ -10,6 +10,7 @@ final class PlayerViewModel: ObservableObject {
     let startupState = PlayerStartupState()
     @Published var fatalError: String?
     @Published var transientBannerMessage: String?
+    @Published var remoteCommandToastMessage: String?
 
     @Published var hasFirstFrameReadyForDisplay: Bool = false
     @Published var isAwaitingDisplaySwitch: Bool = false
@@ -90,6 +91,7 @@ final class PlayerViewModel: ObservableObject {
     var heartbeatTask: Task<Void, Never>?
     var firstFrameFallbackTask: Task<Void, Never>?
     var transientBannerTask: Task<Void, Never>?
+    var remoteCommandToastTask: Task<Void, Never>?
     var nowPlayingArtworkTask: Task<Void, Never>?
     var engineChapters: [ChapterInfo] = []
     var registeredStreamToken: String?

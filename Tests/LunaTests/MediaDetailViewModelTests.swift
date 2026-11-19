@@ -130,6 +130,7 @@ final class MediaDetailViewModelTests: XCTestCase {
 
         let detail = try XCTUnwrap(vm.detail)
         XCTAssertEqual(vm.primaryPlayLabel(detail), "Spill S01E02")
+        XCTAssertEqual(vm.heroPrimaryPlayTitle(detail), "Spill S01E02")
         XCTAssertEqual(vm.watchedButtonTitle(detail), "Sett S01E02")
 
         let target = vm.primaryTargetInfo(detail)
@@ -308,5 +309,30 @@ final class MediaDetailViewModelTests: XCTestCase {
         XCTAssertEqual(vm.episodes.first?.title, "Good News About Hell")
         XCTAssertFalse(vm.isLoadingEpisodes)
         XCTAssertEqual(seasonLog.withLock { $0 }, ["s2_start", "s2_end"])
+    }
+
+    @MainActor
+    func testHeroPrimaryPlayTitleFormatsRemainingMinutesWhenResuming() throws {
+        let resumedSeriesJson = #"""
+        {
+          "itemId": "series:tmdb:95396",
+          "mediaType": "series",
+          "ids": { "tmdb": 95396 },
+          "title": "Severance",
+          "inWatchlist": true,
+          "watched": false,
+          "nextUp": { "season": 2, "episode": 4 },
+          "progress": {
+            "positionSeconds": 1380,
+            "durationSeconds": 2760,
+            "percent": 50.0,
+            "season": 2,
+            "episode": 4
+          }
+        }
+        """#
+        let detail = try JSONDecoder().decode(TvItemDetail.self, from: Data(resumedSeriesJson.utf8))
+        let vm = MediaDetailViewModel(mediaType: "series", itemId: "series:tmdb:95396", initialTitle: "Severance")
+        XCTAssertEqual(vm.heroPrimaryPlayTitle(detail), "Fortsett S02E04 · 23 min igjen")
     }
 }

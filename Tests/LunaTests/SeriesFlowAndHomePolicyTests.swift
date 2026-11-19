@@ -368,4 +368,51 @@ final class SeriesFlowAndHomePolicyTests: XCTestCase {
     func testAetherBridgePinnedVersionMatchesUpgrade() {
         XCTAssertEqual(AetherBridgeInfo.pinnedAetherEngineVersion, "7.69.0")
     }
+
+    @MainActor
+    func testPlayerTopDrawerFourTabsSmartSubtitleLookupAndRemoteCommandToast() async throws {
+        XCTAssertEqual(
+            PlayerTopDrawerTab.allCases.map(\.title),
+            ["Info", "Lyd og tekst", "Kilde", "Kapitler"]
+        )
+
+        let tracks: [SmartTrackDescriptor] = [
+            SmartTrackDescriptor(id: 0, name: "Norwegian SDH", codec: "srt", language: "nb", isHearingImpaired: true),
+            SmartTrackDescriptor(id: 1, name: "Norwegian Forced", codec: "pgs", language: "nor", isForced: true),
+            SmartTrackDescriptor(id: 2, name: "Norsk", codec: "srt", language: "nob"),
+            SmartTrackDescriptor(id: 3, name: "English", codec: "srt", language: "eng"),
+        ]
+        XCTAssertEqual(SmartTrackRuleEngine.selectBestSubtitleID(forLanguage: "no", in: tracks), 2)
+        XCTAssertEqual(SmartTrackRuleEngine.selectBestSubtitleID(forLanguage: "fr", in: tracks), 2)
+        XCTAssertEqual(
+            SmartTrackRuleEngine.selectBestSubtitleID(forLanguage: "en", in: [tracks[0], tracks[3]]),
+            3
+        )
+
+        let suite = "luna.test.remotecmd.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let engine = try AetherEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+        let vm = PlayerViewModel(
+            engine: engine,
+            comfort: ComfortPreferences(defaults: defaults),
+            transport: MockPlayerTransport(state: .playing, playbackPhase: .playing, currentTime: 120)
+        )
+        await vm.handleHeartbeatPendingCommand(
+            TvPendingCommand(type: "subtitles_on", language: "no"),
+            client: nil,
+            currentPosition: 120
+        )
+        XCTAssertEqual(vm.remoteCommandToastMessage, "Ingen undertekster tilgjengelig")
+        vm.cancelAllSessionTasks()
+        XCTAssertNil(vm.remoteCommandToastMessage)
+    }
 }

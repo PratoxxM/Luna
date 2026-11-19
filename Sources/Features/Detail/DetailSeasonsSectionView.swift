@@ -16,10 +16,22 @@ struct DetailSeasonsSectionView: View {
     let onDeleteSeason: (Int) -> Void
     let onDeleteEpisode: (TvEpisodeCard) -> Void
 
+    @Namespace private var episodesFocusNamespace
+
     private var hasRemovableEpisodesInSeason: Bool {
         episodes.contains { (ep: TvEpisodeCard) in
             ep.availability?.isPhysicalLocal == true || ep.availability?.isLocalVfs == true
         }
+    }
+
+    private var nextEpisodeTargetID: String? {
+        if let next = detail.nextUp,
+           let nextMatch = episodes.first(where: {
+               $0.seasonNumber == next.season && $0.episodeNumber == next.episode
+           }) {
+            return nextMatch.id
+        }
+        return episodes.first(where: { !$0.watched && $0.isUpcoming != true })?.id
     }
 
     var body: some View {
@@ -68,11 +80,12 @@ struct DetailSeasonsSectionView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: 28) {
+                        LazyHStack(spacing: LunaTokens.Layout.cardGap) {
                             ForEach(episodes) { ep in
                                 EpisodeCardView(
                                     episode: ep,
                                     seriesTitle: detail.title,
+                                    isNextForYou: ep.id == nextEpisodeTargetID,
                                     client: client,
                                     onPlay: { onPlayEpisode(ep) },
                                     onPickSource: { onPickEpisodeSource(ep) },
@@ -80,6 +93,7 @@ struct DetailSeasonsSectionView: View {
                                     onRequestDelete: { onDeleteEpisode(ep) }
                                 )
                                 .id(ep.id)
+                                .prefersDefaultFocus(ep.id == nextEpisodeTargetID, in: episodesFocusNamespace)
                             }
                         }
                         .padding(.horizontal, detailGutter)
@@ -87,6 +101,8 @@ struct DetailSeasonsSectionView: View {
                     }
                     .contentMargins(.zero, for: .scrollContent)
                     .scrollClipDisabled()
+                    .focusScope(episodesFocusNamespace)
+                    .focusSection()
                     .onAppear {
                         scrollToTargetEpisode(proxy: proxy)
                     }
@@ -99,16 +115,7 @@ struct DetailSeasonsSectionView: View {
     }
 
     private func scrollToTargetEpisode(proxy: ScrollViewProxy) {
-        let target: TvEpisodeCard? = {
-            if let next = detail.nextUp,
-               let nextMatch = episodes.first(where: {
-                   $0.seasonNumber == next.season && $0.episodeNumber == next.episode
-               }) {
-                return nextMatch
-            }
-            return episodes.first(where: { !$0.watched && $0.isUpcoming != true })
-        }()
-        guard let target, target.id != episodes.first?.id else { return }
-        proxy.scrollTo(target.id, anchor: .leading)
+        guard let targetID = nextEpisodeTargetID, targetID != episodes.first?.id else { return }
+        proxy.scrollTo(targetID, anchor: .leading)
     }
 }

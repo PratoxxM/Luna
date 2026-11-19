@@ -6,8 +6,7 @@ struct SettingsServerDiagnosticsSectionView: View {
 
     let cacheBytes: Int64
     @Binding var cacheClearedNotice: Bool
-    @Binding var showUnpairConfirm: Bool
-    @Binding var showResetConfirm: Bool
+    @Binding var showReconnectDialog: Bool
     let onRefreshCacheMetrics: () async -> Void
 
     var body: some View {
@@ -24,17 +23,10 @@ struct SettingsServerDiagnosticsSectionView: View {
             SettingsSectionDivider()
             SettingsInfoRow(
                 title: "Aktivt rom",
-                value: "\(sessionStore.roomName) (\(sessionStore.effectiveHardwareProfile))"
+                value: "\(sessionStore.roomName) · \(sessionStore.effectiveEquipmentLabel)"
             )
             SettingsSectionDivider()
             SettingsInfoRow(title: "Bilde- og kataloghurtigbuffer", value: formattedCacheSize)
-            SettingsSectionDivider()
-
-            SettingsToggleRowButton(
-                title: "Tillat selvsignert TLS-sertifikat på lokalnett",
-                isOn: $sessionStore.allowSelfSignedLanTLS
-            )
-
             SettingsSectionDivider()
 
             HStack(spacing: 12) {
@@ -58,23 +50,13 @@ struct SettingsServerDiagnosticsSectionView: View {
                 }
 
                 LunaPillButton(
-                    "Par TV på nytt",
-                    systemImage: "qrcode",
+                    "Koble til på nytt…",
+                    systemImage: "arrow.triangle.2.circlepath",
                     prominence: .subtleChip,
                     accent: .coral,
                     size: .compact
                 ) {
-                    showUnpairConfirm = true
-                }
-
-                LunaPillButton(
-                    "Nullstill tilkobling",
-                    systemImage: "xmark.circle",
-                    prominence: .subtleChip,
-                    accent: .coral,
-                    size: .compact
-                ) {
-                    showResetConfirm = true
+                    showReconnectDialog = true
                 }
 
                 Spacer(minLength: 0)

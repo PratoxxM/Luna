@@ -12,6 +12,12 @@ struct MediaDetailView: View {
     @StateObject private var viewModel: MediaDetailViewModel
     @State private var subpageToken = UUID()
     @State private var modalToken = UUID()
+    @State private var pendingMoreAction: PendingMoreSheetAction?
+
+    private enum PendingMoreSheetAction {
+        case pickSource
+        case deleteTitle
+    }
 
     @Namespace private var detailFocusNamespace
 
@@ -44,7 +50,7 @@ struct MediaDetailView: View {
                         DetailHeroHeaderView(
                             item: detail,
                             client: viewModel.client,
-                            primaryPlayTitle: viewModel.primaryPlayLabel(detail),
+                            primaryPlayTitle: viewModel.heroPrimaryPlayTitle(detail),
                             watchedButtonTitle: viewModel.watchedButtonTitle(detail),
                             isPreResolvedReady: viewModel.isPreResolvedReady,
                             horizontalGutter: detailGutter,
@@ -67,6 +73,12 @@ struct MediaDetailView: View {
                             },
                             onDeleteTitle: {
                                 viewModel.requestDeleteTitle()
+                            },
+                            onOpenMore: {
+                                viewModel.showMoreSheet = true
+                            },
+                            onReadMore: { _ in
+                                viewModel.showFullOverviewSheet = true
                             }
                         )
 
@@ -168,6 +180,54 @@ struct MediaDetailView: View {
             .environmentObject(sessionStore)
             .environmentObject(sessionStore.comfort)
             .preferredColorScheme(.dark)
+        }
+        .sheet(isPresented: $viewModel.showMoreSheet, onDismiss: {
+            let action = pendingMoreAction
+            pendingMoreAction = nil
+            switch action {
+            case .pickSource:
+                viewModel.openPrimarySourcePicker()
+            case .deleteTitle:
+                viewModel.requestDeleteTitle()
+            case nil:
+                break
+            }
+        }) {
+            if let detail = viewModel.detail {
+                DetailMoreSheetView(
+                    item: detail,
+                    hasLocalEpisodes: viewModel.hasLocalEpisodes,
+                    onPickSource: {
+                        pendingMoreAction = .pickSource
+                        viewModel.showMoreSheet = false
+                    },
+                    onToggleMonitor: {
+                        viewModel.showMoreSheet = false
+                        Task { await viewModel.toggleMonitor() }
+                    },
+                    onDeleteTitle: {
+                        pendingMoreAction = .deleteTitle
+                        viewModel.showMoreSheet = false
+                    },
+                    onClose: {
+                        viewModel.showMoreSheet = false
+                    }
+                )
+                .environmentObject(sessionStore)
+                .preferredColorScheme(.dark)
+            }
+        }
+        .sheet(isPresented: $viewModel.showFullOverviewSheet) {
+            if let detail = viewModel.detail, let overview = detail.preferredOverview {
+                DetailOverviewSheetView(
+                    item: detail,
+                    overview: overview,
+                    onClose: {
+                        viewModel.showFullOverviewSheet = false
+                    }
+                )
+                .preferredColorScheme(.dark)
+            }
         }
         .confirmationDialog(
             viewModel.pendingSeriesWatchedItem?.watched == true

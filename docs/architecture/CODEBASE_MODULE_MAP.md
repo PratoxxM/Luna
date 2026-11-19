@@ -65,19 +65,21 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Features/Detail/MediaDetailView.swift` | Title detail container coordinating hero, seasons, source picker & delete sheet | `GET /api/tv/v1/items/*` | `LunaNavigationAndDetailRaceTests.swift` |
 | `Sources/Features/Detail/MediaDetailViewModel.swift` | Observable detail state, episode loading & pre-resolve orchestration | `GET /items/*`, `GET /playback/:id/alternatives` | `MediaDetailViewModelTests.swift`, `LunaNavigationAndDetailRaceTests.swift` |
 | `Sources/Features/Detail/MediaDetailViewModel+Mutations.swift` | Watchlist, watched, follow/monitor & preflight delete mutations | `POST /monitor`, `/watchlist`, `/watched`, `/delete/*` | `MediaDetailViewModelTests.swift`, `NavigationSettingsAndDeleteTests.swift` |
-| `Sources/Features/Detail/DetailHeroHeaderView.swift` | Backdrop hero, ClearLogo, badges & primary play/monitor/watchlist buttons | — | — |
-| `Sources/Features/Detail/DetailSeasonsSectionView.swift` | Season tabs & horizontal episode strip | — | — |
-| `Sources/Features/Detail/EpisodeCardView.swift` | Focusable episode tile with progress, air badge & watched toggle | — | `EpisodeTitleFormattingTests.swift` |
+| `Sources/Features/Detail/DetailHeroHeaderView.swift` | Editorial `heroSerif` header, gold primary play CTA, Huskeliste/Sett/Mer icon actions | — | — |
+| `Sources/Features/Detail/DetailMoreAndOverviewSheets.swift` | «Mer» action sheet (Kilde, Følg, Slett) & «Les mer» synopsis modal | — | — |
+| `Sources/Features/Detail/DetailSeasonsSectionView.swift` | Season tabs & horizontal episode strip with default focus on next episode | — | — |
+| `Sources/Features/Detail/EpisodeCardView.swift` | Focusable episode tile with progress, air badge, «Neste for deg» & watched toggle | — | `EpisodeTitleFormattingTests.swift` |
 | `Sources/Features/Detail/DetailPreResolveController.swift` | Background pre-resolve + WebSocket progress bridge | `POST /playback/prepare`, `WS /ws/playback/:id` | `PlaybackResolveSocketTests.swift` |
-| `Sources/Features/Detail/SourcePickerSheetView.swift` | Focusable release/source selector sheet | `GET /playback/:id/alternatives` | `ClientOriginAndBlurHashTests.swift` |
+| `Sources/Features/Detail/SourcePickerSheetView.swift` | Focusable release/source selector sheet with room equipment & human explanation | `GET /playback/:id/alternatives` | `ClientOriginAndBlurHashTests.swift` |
 | `Sources/Features/Detail/DetailDeleteSheetView.swift` | Confined media deletion sheet with preflight byte summary | `POST /delete/{preflight,}` | `NavigationSettingsAndDeleteTests.swift` |
-| `Sources/Features/Settings/SettingsView.swift` | 2-column settings root (*Rom & Skjerm · Lyd & Synk · Undertekster · Avspilling · System*) | `PATCH /api/tv/v1/device/profile`, `GET /bootstrap` | `NavigationSettingsAndDeleteTests.swift` |
-| `Sources/Features/Settings/SettingsComfortSectionView.swift` | Subtitle opacity/box, Dolby Vision P7 FEL, speaker & MetalFX comfort controls | `PATCH /api/tv/v1/device/profile` | `PlayerOverlayAndCacheTests.swift` |
-| `Sources/Features/Settings/SettingsServerDiagnosticsSectionView.swift` | Server connection, pairing status, cache clear & unpair diagnostics | `GET /api/tv/v1/bootstrap` | `NavigationSettingsAndDeleteTests.swift` |
+| `Sources/Features/Settings/SettingsView.swift` | 2-column settings root (*Rom & Skjerm · Lyd & Synk · Undertekster · Avspilling · System · Avansert*) | `PATCH /api/tv/v1/device/profile`, `GET /bootstrap` | `NavigationSettingsAndDeleteTests.swift` |
+| `Sources/Features/Settings/SettingsComfortSectionView.swift` | Everyday room/upscaling, calm audio overview, Kveldslys subtitles & autoplay controls | `PATCH /api/tv/v1/device/profile` | `PlayerOverlayAndCacheTests.swift` |
+| `Sources/Features/Settings/SettingsAdvancedSectionView.swift` | Room override, DV P7 FEL, speaker/eARC sync, Nerd HUD & LAN self-signed TLS controls | `PATCH /api/tv/v1/device/profile` | `NavigationSettingsAndDeleteTests.swift` |
+| `Sources/Features/Settings/SettingsServerDiagnosticsSectionView.swift` | Server connection, room equipment summary, cache clear & unified reconnect trigger | `GET /api/tv/v1/bootstrap` | `NavigationSettingsAndDeleteTests.swift` |
 | `Sources/Features/Settings/SettingsComponents.swift` | Shared settings row & pill primitives | — | — |
 | `Sources/Features/Player/PlayerViewModel.swift` | Playback coordinator owning resolve, transport bindings, chapters & source switch | `POST /playback/{resolve,heartbeat,stop,*/switch}` | `PlaybackTitleAndNowPlayingTests.swift`, `PausedScrubCommitTests.swift` |
-| `Sources/Features/Player/PlayerContainerView.swift` | Full-screen `AetherPlayerSurface` host, curtain, HUD, drawer & Remote touch overlay | — | `PlayerExitBlinkRegressionTests.swift` |
-| `Sources/Features/Player/PlayerSessionCoordinator.swift` | Playback resolve, heartbeat loop, scrobble & next-episode handoff | `POST /playback/{resolve,heartbeat,stop}` | `PlaybackTitleAndNowPlayingTests.swift`, `SeriesFlowAndHomePolicyTests.swift` |
+| `Sources/Features/Player/PlayerContainerView.swift` | Full-screen `AetherPlayerSurface` host, curtain, HUD, remote toasts, drawer & Remote touch | — | `PlayerExitBlinkRegressionTests.swift` |
+| `Sources/Features/Player/PlayerSessionCoordinator.swift` | Playback resolve, heartbeat loop, remote commands (`next_episode`/`subtitles_on`) & scrobble | `POST /playback/{resolve,heartbeat,stop}` | `PlaybackTitleAndNowPlayingTests.swift`, `SeriesFlowAndHomePolicyTests.swift` |
 | `Sources/Features/Player/PlayerAudioSessionCoordinator.swift` | `AVAudioSession` activation & route change handling | — | `PlaybackRestoreAndAudioSessionTests.swift` |
 | `Sources/Features/Player/PlayerEngineConfigurator.swift` | Configures single `@MainActor AetherEngine` options, subtitle limits & `LoadOptions` | — | `PlayerOverlayAndCacheTests.swift` |
 | `Sources/Features/Player/PlayerEnginePublishers.swift` | Combine/observation bridge from `AetherEngine` state & clock into player coordinators | — | `PlaybackRestoreAndAudioSessionTests.swift` |
@@ -85,8 +87,9 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Features/Player/PlayerNowPlayingCoordinator.swift` | `MPNowPlayingInfoCenter` metadata & remote command center bindings | — | `PlaybackTitleAndNowPlayingTests.swift` |
 | `Sources/Features/Player/PlayerTransportProtocol.swift` | Testable transport abstraction decoupling `PlayerViewModel` from `AetherEngine` | — | `PlayerTestDoubles.swift` |
 | `Sources/Features/Player/PlayerTrackControls.swift` | Audio, subtitle & video track selection state and `SmartTrackRuleEngine` wiring | — | `SmartTrackRuleEngineTests.swift` |
-| `Sources/Features/Player/PlayerBottomBarView.swift` | Leaf scrubber bar observing `engine.clock` & live timecode commits | — | `PausedScrubCommitTests.swift` |
-| `Sources/Features/Player/PlayerTopDrawerView.swift` | Focus-isolated 3-tab top drawer (tracks, sources, info) | `GET /playback/:id/alternatives` | `PlayerOverlayAndCacheTests.swift` |
+| `Sources/Features/Player/PlayerBottomBarView.swift` | Leaf scrubber bar observing `engine.clock`, live timecode commits & first-time scrub hint | — | `PausedScrubCommitTests.swift` |
+| `Sources/Features/Player/PlayerTopDrawerView.swift` | Focus-isolated 4-tab top drawer (*Info · Lyd og tekst · Kilde · Kapitler*) & row cards | `GET /playback/:id/alternatives` | `PlayerOverlayAndCacheTests.swift` |
+| `Sources/Features/Player/PlayerTopDrawerPanelsView.swift` | Content panels for Info, Lyd og tekst (`Kveldslys`), Kilde & Kapitler drawer tabs | `GET /playback/:id/alternatives` | `SeriesFlowAndHomePolicyTests.swift` |
 | `Sources/Features/Player/SiriRemoteTouchSurface.swift` | `UIView` Siri Remote pan/tap/menu handler with `.focusEffectDisabled()` | — | `PausedScrubCommitTests.swift` |
 | `Sources/Features/Player/ResolvingCurtainView.swift` | Hold curtain preventing HDMI black flash on display-mode switches | — | `PlayerExitBlinkRegressionTests.swift` |
 | `Sources/Features/Player/ScrubPreviewBubbleView.swift` | Frame-accurate scrub thumbnail preview bubble | — | — |

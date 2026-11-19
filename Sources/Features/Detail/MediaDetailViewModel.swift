@@ -40,6 +40,8 @@ final class MediaDetailViewModel: ObservableObject {
     @Published var pendingSeriesWatchedItem: TvItemDetail?
     @Published var pendingDeleteTarget: TvDeleteRequestTarget?
     @Published var sourcePickerContext: SourcePickerContext?
+    @Published var showMoreSheet: Bool = false
+    @Published var showFullOverviewSheet: Bool = false
     @Published private(set) var isPreResolvedReady: Bool = false
 
     let preResolve: DetailPreResolveController
@@ -72,7 +74,11 @@ final class MediaDetailViewModel: ObservableObject {
     }
 
     var isShowingModal: Bool {
-        sourcePickerContext != nil || pendingSeriesWatchedItem != nil || pendingDeleteTarget != nil
+        sourcePickerContext != nil
+            || pendingSeriesWatchedItem != nil
+            || pendingDeleteTarget != nil
+            || showMoreSheet
+            || showFullOverviewSheet
     }
 
     var hasLocalEpisodes: Bool {
@@ -382,6 +388,31 @@ final class MediaDetailViewModel: ObservableObject {
     }
 
     // MARK: - Formatting Helpers
+
+    func heroPrimaryPlayTitle(_ item: TvItemDetail) -> String {
+        let base = primaryPlayLabel(item)
+        guard base.hasPrefix("Fortsett") else {
+            return base
+        }
+        let targetProg: TvWatchProgress? = {
+            if item.mediaType == "series", let next = item.nextUp,
+               let ep = episodes.first(where: { $0.seasonNumber == next.season && $0.episodeNumber == next.episode }),
+               let epProg = ep.progress, epProg.durationSeconds > epProg.positionSeconds {
+                return epProg
+            }
+            return item.progress
+        }()
+        guard let prog = targetProg,
+              prog.positionSeconds > 30,
+              prog.durationSeconds > prog.positionSeconds else {
+            return base
+        }
+        let totalMins = max(1, Int(((prog.durationSeconds - prog.positionSeconds) / 60.0).rounded()))
+        let remText = totalMins >= 60 && totalMins % 60 > 0
+            ? "\(totalMins / 60) t \(totalMins % 60) min igjen"
+            : (totalMins >= 60 ? "\(totalMins / 60) t igjen" : "\(totalMins) min igjen")
+        return "\(base) · \(remText)"
+    }
 
     func primaryPlayLabel(_ item: TvItemDetail) -> String {
         let inProgress = (item.progress?.positionSeconds ?? 0) > 30 && (item.progress?.percent ?? 0) < 90

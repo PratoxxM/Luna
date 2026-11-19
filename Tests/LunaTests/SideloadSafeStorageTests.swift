@@ -26,6 +26,7 @@ final class SideloadSafeStorageTests: XCTestCase {
             SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey,
             SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key,
             SideloadSafeStorage.recentSearchesKey,
+            SideloadSafeStorage.playerScrubHintCountKey,
         ]
 
         XCTAssertEqual(Set(allKeys).count, allKeys.count, "All persistence keys must be unique")
@@ -56,6 +57,7 @@ final class SideloadSafeStorageTests: XCTestCase {
         XCTAssertEqual(SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey, "luna.v1.comfort.keep_display_mode_in_menu")
         XCTAssertEqual(SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key, "luna.v1.comfort.migrated_menu_60hz_v240")
         XCTAssertEqual(SideloadSafeStorage.recentSearchesKey, "luna.v1.recent_searches")
+        XCTAssertEqual(SideloadSafeStorage.playerScrubHintCountKey, "luna.v1.player.scrub_hint_count")
         XCTAssertEqual(SideloadSafeStorage.keychainService, "luna.v1.credentials")
         XCTAssertEqual(SideloadSafeStorage.tokenAccount, "device_bearer_token")
         XCTAssertEqual(SideloadSafeStorage.fallbackPrefix, "luna.v1.keychain_fallback.")
