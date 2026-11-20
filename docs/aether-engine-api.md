@@ -268,7 +268,7 @@ public enum VideoRoute: String, Equatable, Sendable {
 }
 
 public enum AudioDelivery: String, Equatable, Sendable {
-    case none, native, bridged, passthrough
+    case none, bridged // additional engine-internal cases exposed via rawValue: String
 }
 ```
 
@@ -284,6 +284,7 @@ public struct TrackInfo: Identifiable, Equatable, Sendable {
     public let profile: String?
     public let language: String?
     public let channelLayout: String?
+    public let channels: Int32
     public let isAtmos: Bool
     public let isDTSX: Bool
     public let isForced: Bool

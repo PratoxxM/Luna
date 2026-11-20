@@ -67,7 +67,7 @@ jobs:
       - name: Generate Luna.xcodeproj from project.yml
         run: xcodegen generate
 
-      - name: Resolve Apple TV 4K (3rd generation) Simulator & Build Luna
+      - name: Resolve Apple TV 4K Simulator, Run LunaTests & Build Luna
         id: sim
         run: |
           set -euo pipefail
@@ -83,17 +83,12 @@ jobs:
                   if not dev.get("isAvailable"):
                       continue
                   name = dev.get("name", "")
-                  score = 0
-                  if "Apple TV 4K (3rd generation) (at 1080p)" in name:
-                      score = 3
-                  elif "Apple TV 4K (3rd generation)" in name:
-                      score = 2
-                  elif "Apple TV 4K" in name:
-                      score = 1
-                  candidates.append((score, nums, name, dev["udid"]))
+                  is_1080p = 1 if "(at 1080p)" in name else 0
+                  is_4k = 1 if "Apple TV 4K" in name else 0
+                  candidates.append((nums, is_1080p, is_4k, name, dev["udid"]))
           candidates.sort(reverse=True)
           if candidates:
-              print(f"{candidates[0][3]}|{candidates[0][2]}")
+              print(f"{candidates[0][4]}|{candidates[0][3]}")
           ')
 
           if [ -z "$SIM_INFO" ]; then
