@@ -223,8 +223,8 @@ final class PlayerViewModel: ObservableObject {
         previewPlayheadOverrideSeconds = request.startPositionSeconds ?? session.stream.startPositionSeconds ?? 1840
         videoFormat = .sdr
         sourceDVProfile = nil
-        videoRoute = .direct
-        audioDelivery = .direct
+        videoRoute = .loopback
+        audioDelivery = .native
         sourceVideoCodecName = "hevc"
         sourceVideoWidth = 1920
         sourceVideoHeight = 1080
