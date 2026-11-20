@@ -224,7 +224,7 @@ final class PlayerViewModel: ObservableObject {
         videoFormat = .sdr
         sourceDVProfile = nil
         videoRoute = .loopback
-        audioDelivery = .native
+        audioDelivery = .bridged
         sourceVideoCodecName = "hevc"
         sourceVideoWidth = 1920
         sourceVideoHeight = 1080
