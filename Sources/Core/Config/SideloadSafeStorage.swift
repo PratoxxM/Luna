@@ -82,7 +82,7 @@ public enum SideloadSafeStorage {
                 return trimmed
             }
         }
-        return "2.8.0"
+        return "2.8.1"
     }
 
     public nonisolated static func currentBuildNumberString(

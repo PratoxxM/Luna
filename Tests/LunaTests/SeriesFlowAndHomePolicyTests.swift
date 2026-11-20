@@ -366,7 +366,7 @@ final class SeriesFlowAndHomePolicyTests: XCTestCase {
     }
 
     func testAetherBridgePinnedVersionMatchesUpgrade() {
-        XCTAssertEqual(AetherBridgeInfo.pinnedAetherEngineVersion, "7.69.0")
+        XCTAssertEqual(AetherBridgeInfo.pinnedAetherEngineVersion, "7.71.0")
     }
 
     @MainActor

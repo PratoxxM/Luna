@@ -22,7 +22,7 @@ private actor NativeAudioSessionActivator {
 }
 
 /// Aligns `AVAudioSession` native-layer activation and deferred HDMI display-criteria resets
-/// with `AetherEngine` 7.69.0's tvOS lifecycle contracts.
+/// with `AetherEngine` 7.71.0's tvOS lifecycle contracts.
 @MainActor
 final class PlayerAudioSessionCoordinator {
     static let shared = PlayerAudioSessionCoordinator()

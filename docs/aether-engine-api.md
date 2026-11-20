@@ -1,4 +1,4 @@
-# AetherEngine (`7.69.0`) — Extracted Host API Reference
+# AetherEngine (`7.71.0`) — Extracted Host API Reference
 
 Canonical signature reference extracted directly from `Luna`'s `Packages/AetherBridge` and `Sources/` integration. Use these exact signatures when modifying playback, subtitle, audio, or prewarm logic on Linux without local Xcode autocompletion.
 
@@ -10,7 +10,7 @@ Canonical signature reference extracted directly from `Luna`'s `Packages/AetherB
 // Packages/AetherBridge/Package.swift (swift-tools-version: 6.1)
 .package(
     url: "https://github.com/superuser404notfound/AetherEngine.git",
-    exact: "7.69.0",
+    exact: "7.71.0",
     traits: [
         "TrueHDObjectAudio",
         "DTSXObjectAudio",
@@ -24,7 +24,7 @@ Canonical signature reference extracted directly from `Luna`'s `Packages/AetherB
 @_exported import AetherEngine
 
 public enum AetherBridgeInfo {
-    public static let pinnedAetherEngineVersion = "7.69.0"
+    public static let pinnedAetherEngineVersion = "7.71.0"
 }
 ```
 
@@ -51,10 +51,13 @@ public final class AetherEngine: ObservableObject {
         byteBudget: Int
     ) async -> Bool
     public static func discardPrewarmedSources()
+    public nonisolated static func discardRetainedSessionCache()
+    public nonisolated static var retainedSessionCacheBytes: Int { get }
 
     // Subtitle Window & Session Ownership Configuration
     public var maximumSubtitleAdvanceSeconds: Double // Set to 0 to prevent 2nd parallel 4K HTTP stream
     public var maximumSubtitleDelaySeconds: Double   // Set to 10 for positive subtitle delay history
+    public var heldPictureFrameWaitSeconds: Double
     public var ownsSoftwareNowPlaying: Bool
     public var ownsVideoNowPlayingSession: Bool
     public var ownsVideoNowPlayingCommands: Bool
@@ -217,6 +220,9 @@ public struct LoadOptions: Sendable {
     public var upscalesLowResolutionVideo: Bool
     public var upscaleScaler: UpscaleScaler                   // .automatic | .lineArt
     public var externalSubtitles: [ExternalSubtitleTrack]
+    public var retainsSessionCacheAfterStop: Bool
+    public var liveJoinsAtPlaylistStart: Bool
+    public var preferHDR10PlusOverForcedDolbyVision: Bool
 }
 
 public struct ExternalSubtitleTrack: Sendable {
