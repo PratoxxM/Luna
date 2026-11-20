@@ -174,5 +174,6 @@ jobs:
         with:
           name: tvos-screenshots
           path: .ci-screenshots/*.png
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
