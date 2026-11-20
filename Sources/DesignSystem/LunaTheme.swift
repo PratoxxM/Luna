@@ -90,7 +90,7 @@ public enum LunaTheme {
     public static let surfaceSelected = LunaTokens.Surface.selected
     /// Elevated roasted espresso (`#241E1A`) for focused secondary controls, wide settings, drawer, and source-picker rows.
     public static let surfaceElevated = LunaTokens.Surface.lv3
-    /// Dark HDR/Dolby Vision-safe warm cinema glass (`#120F0D` @ 92%) — avoids tvOS `.ultraThinMaterial` 203-nit washout.
+    /// Dark HDR/Dolby Vision-safe warm cinema glass (`#120F0D` @ 92%) — avoids cold tvOS system blur 203-nit washout.
     public static let cinemaGlass = LunaTokens.Surface.glass
 
     /// Warm linen (`#F5F0E8`) for crisp, non-glaring primary titles & headings.

@@ -5,9 +5,13 @@ xcuserdata/
 
 # Build & SwiftPM artifacts
 build/
+build-tests/
+build-vision/
 DerivedData/
 .build/
+.build-linux/
 .swiftpm/
+.ci-screenshots/
 *.ipa
 *.dSYM.zip
 *.dSYM

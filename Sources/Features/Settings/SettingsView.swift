@@ -55,30 +55,24 @@ struct SettingsView: View {
     var body: some View {
         let caps = AetherEngine.displayCapabilities
 
-        HStack(alignment: .top, spacing: 36) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Innstillinger")
-                    .font(LunaTheme.Font.settingsHeading)
-                    .foregroundStyle(LunaTheme.linen)
-                    .padding(.leading, 4)
-
-                VStack(spacing: 8) {
-                    ForEach(SettingsCategory.allCases) { category in
-                        SettingsCategoryRowButton(
-                            category: category,
-                            isSelected: selectedCategory == category,
-                            focusedCategory: $focusedCategory
-                        ) {
-                            selectedCategory = category
-                        }
-                        .prefersDefaultFocus(selectedCategory == category, in: settingsSidebarNamespace)
+        HStack(alignment: .top, spacing: 56) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(SettingsCategory.allCases) { category in
+                    SettingsCategoryRowButton(
+                        category: category,
+                        isSelected: selectedCategory == category,
+                        focusedCategory: $focusedCategory
+                    ) {
+                        selectedCategory = category
                     }
+                    .prefersDefaultFocus(selectedCategory == category, in: settingsSidebarNamespace)
                 }
                 .defaultFocus($focusedCategory, selectedCategory as SettingsCategory?, priority: .userInitiated)
 
                 Spacer(minLength: 0)
             }
-            .frame(width: 340, alignment: .topLeading)
+            .frame(width: 300, alignment: .topLeading)
+            .padding(.top, 12)
             .focusScope(settingsSidebarNamespace)
             .focusSection()
 
@@ -86,10 +80,9 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     selectedCategoryPanel(caps: caps)
                 }
-                .frame(maxWidth: 1240, alignment: .topLeading)
-                .padding(.top, 2)
-                .padding(.horizontal, 4)
-                .padding(.bottom, 56)
+                .frame(maxWidth: 1280, alignment: .topLeading)
+                .padding(.top, 12)
+                .padding(.bottom, 84)
             }
             .scrollClipDisabled()
             .contentMargins(.zero, for: .scrollContent)
@@ -98,9 +91,10 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .focusSection()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.top, LunaTopBarView.contentTopPadding)
         .padding(.horizontal, LunaTheme.horizontalGutter)
-        .ignoresSafeArea(edges: .horizontal)
-        .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
+        .ignoresSafeArea()
         .confirmationDialog(
             "Koble til LunaCore på nytt?",
             isPresented: $showReconnectDialog,
@@ -176,40 +170,25 @@ private struct SettingsCategoryRowButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Image(systemName: category.systemImage)
-                    .font(LunaTheme.Font.settingsRowIcon)
-                    .foregroundStyle(isSelected || isFocused ? LunaTheme.linen : LunaTheme.muted)
-                    .frame(width: 26)
-
                 Text(category.title)
-                    .font(LunaTheme.Font.settingsRowTitle)
-                    .foregroundStyle(LunaTheme.linen)
+                    .font(LunaTheme.Font.cardTitle)
+                    .foregroundStyle(isFocused || isSelected ? LunaTheme.linen : LunaTheme.muted)
                     .lineLimit(1)
 
                 Spacer(minLength: 8)
-
-                if isSelected {
-                    Image(systemName: "chevron.right")
-                        .font(LunaTheme.Font.microChevron)
-                        .foregroundStyle(LunaTheme.moonlight)
-                }
             }
             .transaction { $0.animation = nil }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 16)
             .background(
-                RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous)
-                    .fill(
-                        isFocused
-                            ? LunaTheme.surfaceElevated
-                            : (isSelected ? LunaTheme.surfaceSelected : LunaTheme.surface)
-                    )
+                RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
+                    .fill(isFocused ? LunaTheme.surfaceSelected : Color.clear)
                     .transaction { $0.animation = nil }
             )
-            .lunaFocusSurface(.listRow, isFocused: isFocused, cornerRadius: LunaTokens.Radius.chip)
+            .lunaFocusSurface(.listRow, isFocused: isFocused, cornerRadius: LunaTokens.Radius.card)
         }
         .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous))
         .focusEffectDisabled(true)
         .focused(focusedCategory, equals: category)
         .onChange(of: isFocused) { _, focused in

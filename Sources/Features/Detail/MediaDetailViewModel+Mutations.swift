@@ -78,16 +78,21 @@ extension MediaDetailViewModel {
                 let targetSeason: Int
                 if preserveSeason && selectedSeasonNumber > 0 {
                     targetSeason = selectedSeasonNumber
+                } else if let nextSeason = loaded.nextUp?.season,
+                          nextSeason >= 0,
+                          loaded.seasons?.contains(where: { $0.seasonNumber == nextSeason }) ?? true {
+                    targetSeason = nextSeason
                 } else {
                     targetSeason = loaded.selectedSeason
-                        ?? loaded.nextUp?.season
                         ?? loaded.seasons?.first(where: { $0.seasonNumber > 0 })?.seasonNumber
                         ?? 1
+                }
+                if !preserveSeason {
                     selectedSeasonNumber = targetSeason
                 }
                 if let inlineEpisodes = loaded.episodes,
                    !inlineEpisodes.isEmpty,
-                   loaded.selectedSeason == targetSeason {
+                   (loaded.selectedSeason == targetSeason || inlineEpisodes.first?.seasonNumber == targetSeason) {
                     seasonLoadGeneration &+= 1
                     isLoadingEpisodes = false
                     episodes = inlineEpisodes

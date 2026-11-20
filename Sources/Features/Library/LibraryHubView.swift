@@ -55,8 +55,8 @@ struct LibraryHubView: View {
         let client = sessionStore.makeClient()
         let counts = libraryPayload?.counts
 
-        HStack(alignment: .top, spacing: 48) {
-            VStack(alignment: .leading, spacing: 10) {
+        HStack(alignment: .top, spacing: 56) {
+            VStack(alignment: .leading, spacing: 8) {
                 ForEach(LibrarySidebarSection.allCases) { section in
                     LibrarySidebarRowButton(
                         section: section,
@@ -70,24 +70,14 @@ struct LibraryHubView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .frame(width: 340, alignment: .topLeading)
-            .padding(.top, 18)
+            .frame(width: 280, alignment: .topLeading)
+            .padding(.top, 12)
             .defaultFocus($focusedSidebarSection, activeSection as LibrarySidebarSection?, priority: .userInitiated)
             .focusScope(sidebarFocusNamespace)
             .focusSection()
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 24) {
-                    if activeSection == .localAll || activeSection == .localMovies || activeSection == .localSeries {
-                        LibraryLocalFilterBar(
-                            counts: counts,
-                            localTierFilter: $localTierFilter,
-                            localSort: $localSort
-                        )
-                    } else if activeSection == .watchlist {
-                        LibraryWatchlistTypeBar(watchlistTypeFilter: $watchlistTypeFilter)
-                    }
-
                     if isLoading && libraryPayload == nil {
                         HStack(spacing: 16) {
                             ProgressView()
@@ -113,16 +103,17 @@ struct LibraryHubView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 12)
-                .padding(.bottom, 72)
+                .padding(.bottom, 84)
             }
             .contentMargins(.zero, for: .scrollContent)
             .scrollClipDisabled()
             .lunaRootScrollTopBarTracking(tab: .library)
             .focusSection()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.top, LunaTopBarView.contentTopPadding)
         .padding(.horizontal, LunaTheme.horizontalGutter)
-        .ignoresSafeArea(edges: .horizontal)
-        .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
+        .ignoresSafeArea()
         .overlay(alignment: .topTrailing) {
             if let mutationErrorBanner {
                 TransientErrorBanner(message: mutationErrorBanner)

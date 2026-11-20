@@ -8,6 +8,10 @@ public struct TvSeasonSummary: Codable, Identifiable, Equatable, Hashable, Senda
     public let airDate: String?
 
     public var id: Int { seasonNumber }
+
+    public var localizedName: String {
+        LunaCopy.localizedSeasonTitle(name, seasonNumber: seasonNumber)
+    }
 }
 
 public struct TvEpisodeCard: Codable, Identifiable, Equatable, Hashable, Sendable {
@@ -94,6 +98,104 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
     public let nextUp: TvNextUpPointer?
     public let seasons: [TvSeasonSummary]?
     public let episodes: [TvEpisodeCard]?
+    public let network: String?
+    public let studio: String?
+
+    public init(
+        itemId: String,
+        mediaType: String,
+        ids: TvMediaIds,
+        title: String,
+        originalTitle: String? = nil,
+        tagline: String? = nil,
+        overview: String? = nil,
+        overviewNo: String? = nil,
+        overviewEn: String? = nil,
+        year: Int? = nil,
+        status: String? = nil,
+        runtimeSeconds: Double? = nil,
+        genres: [String]? = nil,
+        voteAverage: Double? = nil,
+        rating: Double? = nil,
+        imdbRating: Double? = nil,
+        imdbVotes: Int? = nil,
+        rottenTomatoesScore: Int? = nil,
+        metacriticScore: Int? = nil,
+        posterUrl: String? = nil,
+        backdropUrl: String? = nil,
+        cardBackdropUrl: String? = nil,
+        logoUrl: String? = nil,
+        dominantColor: String? = nil,
+        blurHash: String? = nil,
+        badges: [String]? = nil,
+        nextAirDateBadge: String? = nil,
+        inWatchlist: Bool,
+        watched: Bool,
+        monitored: Bool? = nil,
+        monitorMode: String? = nil,
+        availability: TvAvailabilityInfo? = nil,
+        progress: TvWatchProgress? = nil,
+        selectedSeason: Int? = nil,
+        nextUp: TvNextUpPointer? = nil,
+        seasons: [TvSeasonSummary]? = nil,
+        episodes: [TvEpisodeCard]? = nil,
+        network: String? = nil,
+        studio: String? = nil
+    ) {
+        self.itemId = itemId
+        self.mediaType = mediaType
+        self.ids = ids
+        self.title = title
+        self.originalTitle = originalTitle
+        self.tagline = tagline
+        self.overview = overview
+        self.overviewNo = overviewNo
+        self.overviewEn = overviewEn
+        self.year = year
+        self.status = status
+        self.runtimeSeconds = runtimeSeconds
+        self.genres = genres
+        self.voteAverage = voteAverage
+        self.rating = rating
+        self.imdbRating = imdbRating
+        self.imdbVotes = imdbVotes
+        self.rottenTomatoesScore = rottenTomatoesScore
+        self.metacriticScore = metacriticScore
+        self.posterUrl = posterUrl
+        self.backdropUrl = backdropUrl
+        self.cardBackdropUrl = cardBackdropUrl
+        self.logoUrl = logoUrl
+        self.dominantColor = dominantColor
+        self.blurHash = blurHash
+        self.badges = badges
+        self.nextAirDateBadge = nextAirDateBadge
+        self.inWatchlist = inWatchlist
+        self.watched = watched
+        self.monitored = monitored
+        self.monitorMode = monitorMode
+        self.availability = availability
+        self.progress = progress
+        self.selectedSeason = selectedSeason
+        self.nextUp = nextUp
+        self.seasons = seasons
+        self.episodes = episodes
+        self.network = network
+        self.studio = studio
+    }
+
+    public var studioOrNetworkKicker: String? {
+        for raw in [network, studio] {
+            if let cleaned = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !cleaned.isEmpty {
+                return cleaned
+            }
+        }
+        if let orig = originalTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !orig.isEmpty,
+           orig.caseInsensitiveCompare(title) != .orderedSame {
+            return orig
+        }
+        return nil
+    }
 
     public var isMonitoredFlag: Bool {
         monitored ?? false

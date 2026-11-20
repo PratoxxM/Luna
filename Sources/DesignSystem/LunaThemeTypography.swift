@@ -15,8 +15,10 @@ public extension LunaTheme {
             ("subtitle", LunaTokens.Typography.subtitle),
             ("caption", LunaTokens.Typography.caption),
             ("badge", LunaTokens.Typography.badge),
-            ("brandSerif", 28.0),
+            ("brandSerif", 30.0),
             ("heroDisplay", 56.0),
+            ("detailHeroSerif", 72.0),
+            ("detailKicker", 22.0),
             ("curtainTitle", 46.0),
             ("pairingCode", 88.0),
             ("largeStatusIcon", 52.0),
@@ -103,7 +105,7 @@ public extension LunaTheme {
         }
         public static var brandSerif: SwiftUI.Font {
             .system(
-                size: 28,
+                size: 30,
                 weight: .semibold,
                 design: .serif
             )
@@ -113,6 +115,19 @@ public extension LunaTheme {
                 size: 56,
                 weight: .semibold,
                 design: .serif
+            )
+        }
+        public static var detailHeroSerif: SwiftUI.Font {
+            .system(
+                size: 72,
+                weight: .bold,
+                design: .serif
+            )
+        }
+        public static var detailKicker: SwiftUI.Font {
+            .system(
+                size: 22,
+                weight: .semibold
             )
         }
         public static var curtainTitle: SwiftUI.Font {

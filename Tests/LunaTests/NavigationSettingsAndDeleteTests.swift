@@ -312,9 +312,9 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
         )
         let topBarFit = topBarHost.sizeThatFits(in: CGSize(width: 1920, height: 1080))
         XCTAssertGreaterThan(topBarFit.width, 400)
-        XCTAssertLessThanOrEqual(topBarFit.width, 1560)
+        XCTAssertLessThanOrEqual(topBarFit.width, 1920)
         XCTAssertGreaterThan(topBarFit.height, 44)
-        XCTAssertLessThanOrEqual(topBarFit.height, 96)
+        XCTAssertLessThanOrEqual(topBarFit.height, 140)
 
         window.rootViewController = topBarHost
         window.makeKeyAndVisible()

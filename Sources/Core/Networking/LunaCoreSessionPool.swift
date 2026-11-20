@@ -1,4 +1,10 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(Security)
+import Security
+#endif
 import Synchronization
 
 public final class LanURLSessionDelegate: NSObject, URLSessionDelegate, Sendable {
@@ -10,7 +16,7 @@ public final class LanURLSessionDelegate: NSObject, URLSessionDelegate, Sendable
         self.allowSelfSignedTLS = allowSelfSignedTLS
     }
 
-    internal static func shouldTrustServer(
+    public static func shouldTrustServer(
         host: String,
         trustedHost: String?,
         allowSelfSignedTLS: Bool
@@ -29,6 +35,7 @@ public final class LanURLSessionDelegate: NSObject, URLSessionDelegate, Sendable
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
+        #if canImport(Security)
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let serverTrust = challenge.protectionSpace.serverTrust,
               Self.shouldTrustServer(
@@ -40,6 +47,11 @@ public final class LanURLSessionDelegate: NSObject, URLSessionDelegate, Sendable
             return
         }
         completionHandler(.useCredential, URLCredential(trust: serverTrust))
+        #else
+        _ = session
+        _ = challenge
+        completionHandler(.performDefaultHandling, nil)
+        #endif
     }
 }
 

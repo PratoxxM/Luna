@@ -30,31 +30,44 @@ struct DetailSeasonsSectionView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
-                    ForEach(seasons) { season in
-                        let selected = selectedSeasonNumber == season.seasonNumber
-                        LunaPillButton(
-                            season.name,
-                            badgeText: season.episodeCount > 0 ? String(season.episodeCount) : nil,
-                            isSelected: selected,
-                            prominence: .subtleChip
-                        ) {
-                            guard selectedSeasonNumber != season.seasonNumber else { return }
-                            selectedSeasonNumber = season.seasonNumber
-                            onSelectSeason(season.seasonNumber)
+        VStack(alignment: .leading, spacing: 22) {
+            ScrollViewReader { seasonProxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(seasons) { season in
+                            let selected = selectedSeasonNumber == season.seasonNumber
+                            LunaPillButton(
+                                season.localizedName,
+                                isSelected: selected,
+                                prominence: .subtleChip
+                            ) {
+                                guard selectedSeasonNumber != season.seasonNumber else { return }
+                                selectedSeasonNumber = season.seasonNumber
+                                onSelectSeason(season.seasonNumber)
+                            }
+                            .id(season.seasonNumber)
+                            .prefersDefaultFocus(selected, in: seasonsFocusNamespace)
                         }
-                        .prefersDefaultFocus(selected, in: seasonsFocusNamespace)
+                    }
+                    .padding(.horizontal, detailGutter)
+                    .padding(.vertical, 14)
+                }
+                .contentMargins(.zero, for: .scrollContent)
+                .scrollClipDisabled()
+                .focusScope(seasonsFocusNamespace)
+                .focusSection()
+                .onAppear {
+                    seasonProxy.scrollTo(selectedSeasonNumber, anchor: .center)
+                }
+                .onChange(of: selectedSeasonNumber) { _, newSeason in
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        seasonProxy.scrollTo(newSeason, anchor: .center)
                     }
                 }
-                .padding(.horizontal, detailGutter)
-                .padding(.vertical, 14)
+                .onChange(of: seasons.map(\.seasonNumber)) { _, _ in
+                    seasonProxy.scrollTo(selectedSeasonNumber, anchor: .center)
+                }
             }
-            .contentMargins(.zero, for: .scrollContent)
-            .scrollClipDisabled()
-            .focusScope(seasonsFocusNamespace)
-            .focusSection()
 
             if isLoadingEpisodes && episodes.isEmpty {
                 HStack(spacing: 14) {

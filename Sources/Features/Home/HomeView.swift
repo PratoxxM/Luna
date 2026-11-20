@@ -21,6 +21,7 @@ struct HomeView: View {
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
 
     let isActiveTab: Bool
+    var previewFocusPosterRow: Bool = false
 
     @State private var homePayload: TvHomeResponse?
     @State private var cachedEtag: String?
@@ -39,119 +40,33 @@ struct HomeView: View {
     @State private var reloadTask: Task<Void, Never>?
     @State private var reloadGeneration: UInt64 = 0
 
+    @FocusState private var focusedCardKey: String?
     @Namespace private var homeFocusNamespace
 
-    private nonisolated static let duplicateWatchlistRowIds: Set<String> = [
-        "medialogg-watchlist",
-        "custom:medialogg-watchlist",
-        "system-watchlist",
-        "custom:system-watchlist",
-        "watchlist",
-    ]
-
-    private nonisolated static let duplicateGenericLocalRowIds: Set<String> = [
-        "medialogg-local",
-        "custom:medialogg-local",
-        "system-local",
-        "custom:system-local",
-        "local-library",
-    ]
-
-    private nonisolated static let duplicateGenericLocalTitles: Set<String> = [
-        "lokalt",
-        "lokalt på nas",
-        "lokalt hos oss",
-        "lokal samling",
-        "mitt bibliotek",
-        "bibliotek",
-        "hele samlingen",
-    ]
-
     nonisolated static func filterVisibleRows(_ rows: [TvShelfRow]) -> [TvShelfRow] {
-        rows.filter { row in
-            guard !row.items.isEmpty else { return false }
-            let lowerId = row.rowId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let lowerSource = (row.sourceKind ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let lowerTitle = row.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
-            // Én ting på ett sted: Huskeliste og full lokal samling bor i Bibliotek
-            if lowerSource == "watchlist" || duplicateWatchlistRowIds.contains(lowerId) {
-                return false
-            }
-            if duplicateGenericLocalRowIds.contains(lowerId) {
-                return false
-            }
-            if lowerSource == "local_library" && duplicateGenericLocalTitles.contains(lowerTitle) {
-                return false
-            }
-            return true
-        }
+        CatalogShelfIndexer.filterVisibleRows(rows)
     }
 
     nonisolated static func prepareVisibleRows(from payload: TvHomeResponse?) -> [TvShelfRow] {
-        var rows = filterVisibleRows(payload?.rows ?? [])
-        let continueIdx = rows.firstIndex { row in
-            row.rowId == "medialogg-continue" || row.sourceKind == "system_continue"
-        }
-
-        if let idx = continueIdx {
-            var contRow = rows.remove(at: idx)
-            let prioritizedItems = prioritizeContinueCards(
-                contRow.items,
-                preparedFromPhone: payload?.tonight?.preparedFromPhone
-            )
-            contRow = TvShelfRow(
-                rowId: contRow.rowId,
-                title: contRow.title,
-                rowStyle: contRow.rowStyle,
-                sourceKind: contRow.sourceKind,
-                listMode: contRow.listMode,
-                hasMore: contRow.hasMore,
-                nextPath: contRow.nextPath,
-                items: prioritizedItems,
-                genres: contRow.genres
-            )
-            rows.insert(contRow, at: 0)
-        } else if let prepared = payload?.tonight?.preparedFromPhone {
-            let synthetic = TvShelfRow(
-                rowId: "medialogg-continue",
-                title: "Fortsett å se",
-                rowStyle: "continue_backdrop",
-                sourceKind: "system_continue",
-                listMode: "smart",
-                hasMore: false,
-                nextPath: nil,
-                items: [prepared],
-                genres: nil
-            )
-            rows.insert(synthetic, at: 0)
-        }
-
-        return rows
+        CatalogShelfIndexer.prepareVisibleRows(from: payload)
     }
 
     nonisolated static func prioritizeContinueCards(
         _ items: [TvMediaCard],
         preparedFromPhone: TvMediaCard?
     ) -> [TvMediaCard] {
-        var merged = items
-        if let prepared = preparedFromPhone {
-            merged.removeAll { $0.itemId == prepared.itemId }
-            merged.insert(prepared, at: 0)
-        }
-        let phone = merged.filter { $0.origin == "phone" }
-        let tonight = merged.filter { $0.origin == "tonight" }
-        let rest = merged.filter { $0.origin != "phone" && $0.origin != "tonight" }
-        return phone + tonight + rest
+        CatalogShelfIndexer.prioritizeContinueCards(items, preparedFromPhone: preparedFromPhone)
     }
 
     init(
         initialServerHost: String? = nil,
         initialRoomName: String = "Stua",
         initialHardwareProfile: String = "hdr10-512",
-        isActiveTab: Bool = true
+        isActiveTab: Bool = true,
+        previewFocusPosterRow: Bool = false
     ) {
         self.isActiveTab = isActiveTab
+        self.previewFocusPosterRow = previewFocusPosterRow
         let snap = DiskSWRStore.memorySnapshot(
             serverHost: initialServerHost,
             roomName: initialRoomName,
@@ -165,74 +80,114 @@ struct HomeView: View {
         Self.prepareVisibleRows(from: homePayload)
     }
 
+    private var targetDefaultRow: TvShelfRow? {
+        if previewFocusPosterRow,
+           let posterRow = visibleRows.first(where: { $0.rowStyle == "poster" && !$0.items.isEmpty }) {
+            return posterRow
+        }
+        return visibleRows.first(where: { !$0.items.isEmpty })
+    }
+
+    private var defaultFocusCardKey: String? {
+        guard let row = targetDefaultRow, let card = row.items.first else { return nil }
+        return "\(row.rowId)#\(card.itemId)"
+    }
+
     var body: some View {
         let client = sessionStore.makeClient()
+        let focusTargetKey = defaultFocusCardKey
+        let focusRowId = targetDefaultRow?.rowId
 
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 38) {
-                if visibleRows.isEmpty && isInitialColdFetch {
-                    HStack(spacing: 16) {
-                        ProgressView()
-                        Text("Henter innhold…")
-                            .font(LunaTheme.Font.cardTitle)
-                            .foregroundStyle(LunaTheme.moonlight)
+        ScrollViewReader { scrollProxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: 44) {
+                    if visibleRows.isEmpty && isInitialColdFetch {
+                        HStack(spacing: 16) {
+                            ProgressView()
+                            Text("Henter innhold…")
+                                .font(LunaTheme.Font.cardTitle)
+                                .foregroundStyle(LunaTheme.moonlight)
+                        }
+                        .padding(.horizontal, LunaTheme.horizontalGutter)
+                        .padding(.vertical, 64)
                     }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 64)
-                }
 
-                if let errorMessage, visibleRows.isEmpty {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(errorMessage)
-                            .font(LunaTheme.Font.body)
-                            .foregroundStyle(LunaTheme.danger)
-                        LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                            scheduleRevalidateHome(forceUnconditional: true)
+                    if let errorMessage, visibleRows.isEmpty {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text(errorMessage)
+                                .font(LunaTheme.Font.body)
+                                .foregroundStyle(LunaTheme.danger)
+                            LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
+                                scheduleRevalidateHome(forceUnconditional: true)
+                            }
+                        }
+                        .padding(.horizontal, LunaTheme.horizontalGutter)
+                    }
+
+                    ForEach(Array(visibleRows.enumerated()), id: \.element.id) { _, row in
+                        ShelfRowView(
+                            row: row,
+                            isDefaultFocusRow: row.rowId == focusRowId,
+                            focusedCardKey: $focusedCardKey,
+                            focusNamespace: homeFocusNamespace,
+                            client: client,
+                            onSelectCard: { card in
+                                selectedCard = card
+                            },
+                            onPlayContinueCard: { card in
+                                MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
+                            },
+                            onPickSourceForCard: { card in
+                                openSourcePicker(for: card)
+                            },
+                            onToggleWatchlist: { card in
+                                Task { await toggleWatchlist(for: card) }
+                            },
+                            onMarkWatched: { card in
+                                Task { await markWatched(for: card) }
+                            },
+                            onRemoveFromOngoing: { card in
+                                Task { await removeFromOngoing(for: card) }
+                            },
+                            onRemoveFromList: { card, row in
+                                Task { await removeFromList(card, row: row) }
+                            },
+                            onSeeAllRow: { row in
+                                selectedSeeAllRow = row
+                            }
+                        )
+                        .id(row.rowId)
+                    }
+                }
+                .padding(.top, LunaTopBarView.contentTopPadding)
+                .padding(.bottom, 96)
+            }
+            .contentMargins(.zero, for: .scrollContent)
+            .scrollClipDisabled()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .ignoresSafeArea()
+            .lunaRootScrollTopBarTracking(tab: .home)
+            .onAppear {
+                if let focusTargetKey {
+                    focusedCardKey = focusTargetKey
+                }
+                if previewFocusPosterRow, let focusRowId {
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 120_000_000)
+                        scrollProxy.scrollTo(focusRowId, anchor: .center)
+                        if let target = defaultFocusCardKey {
+                            focusedCardKey = target
                         }
                     }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                }
-
-                ForEach(Array(visibleRows.enumerated()), id: \.element.id) { rowIndex, row in
-                    ShelfRowView(
-                        row: row,
-                        isFirstRow: rowIndex == 0,
-                        focusNamespace: homeFocusNamespace,
-                        client: client,
-                        onSelectCard: { card in
-                            selectedCard = card
-                        },
-                        onPlayContinueCard: { card in
-                            MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
-                        },
-                        onPickSourceForCard: { card in
-                            openSourcePicker(for: card)
-                        },
-                        onToggleWatchlist: { card in
-                            Task { await toggleWatchlist(for: card) }
-                        },
-                        onMarkWatched: { card in
-                            Task { await markWatched(for: card) }
-                        },
-                        onRemoveFromOngoing: { card in
-                            Task { await removeFromOngoing(for: card) }
-                        },
-                        onRemoveFromList: { card, row in
-                            Task { await removeFromList(card, row: row) }
-                        },
-                        onSeeAllRow: { row in
-                            selectedSeeAllRow = row
-                        }
-                    )
                 }
             }
-            .padding(.bottom, 84)
+            .onChange(of: focusTargetKey) { _, nextKey in
+                if previewFocusPosterRow, let nextKey, let focusRowId {
+                    scrollProxy.scrollTo(focusRowId, anchor: .center)
+                    focusedCardKey = nextKey
+                }
+            }
         }
-        .contentMargins(.zero, for: .scrollContent)
-        .scrollClipDisabled()
-        .ignoresSafeArea(edges: .horizontal)
-        .lunaRootScrollTopBarTracking(tab: .home)
-        .safeAreaPadding(.top, LunaTopBarView.contentTopPadding)
         .overlay(alignment: .topLeading) {
             if let mutationErrorMessage {
                 TransientErrorBanner(message: mutationErrorMessage)
@@ -241,6 +196,7 @@ struct HomeView: View {
                     .allowsHitTesting(false)
             }
         }
+        .defaultFocus($focusedCardKey, focusTargetKey, priority: .userInitiated)
         .focusSection()
         .focusScope(homeFocusNamespace)
         .navigationDestination(item: $selectedCard) { card in

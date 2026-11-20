@@ -1,0 +1,179 @@
+name: tvOS Simulator Vision Pipeline
+
+on:
+  push:
+    branches:
+      - "agent/**"
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "GitHub-hosted macOS runner label (default: xcode-27)"
+        required: false
+        default: "xcode-27"
+        type: string
+      preview_focus:
+        description: "Optional --preview-focus direction (up, down, left, right, select)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tvos-vision-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-guardrails:
+    name: Static Guardrails (luna-check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run Luna static guardrails (luna-check)
+        run: |
+          set -euo pipefail
+          bash ops/bin/luna-check
+
+  tvos-screenshots:
+    name: Build & Capture 1920x1080 Simulator Screens
+    needs: static-guardrails
+    runs-on: ${{ inputs.runner || 'xcode-27' }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup tvOS Xcode & XcodeGen
+        uses: ./.github/actions/setup-tvos-xcode
+
+      - name: Cache SwiftPM & Compilation Cache (Simulator)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            build/SourcePackages
+            ~/Library/Developer/Xcode/DerivedData/CompilationCache.noindex
+          key: tvos-sim-cache-${{ runner.os }}-${{ hashFiles('Packages/AetherBridge/Package.swift', 'project.yml') }}
+          restore-keys: |
+            tvos-sim-cache-${{ runner.os }}-
+
+      - name: Generate Luna.xcodeproj from project.yml
+        run: xcodegen generate
+
+      - name: Resolve Apple TV 4K (3rd generation) Simulator & Build Luna
+        id: sim
+        run: |
+          set -euo pipefail
+          SIM_INFO=$(xcrun simctl list devices available -j | python3 -c '
+          import json, re, sys
+          data = json.load(sys.stdin)
+          candidates = []
+          for runtime, devices in data.get("devices", {}).items():
+              if "tvOS" not in runtime:
+                  continue
+              nums = tuple(int(x) for x in re.findall(r"\d+", runtime))
+              for dev in devices:
+                  if not dev.get("isAvailable"):
+                      continue
+                  name = dev.get("name", "")
+                  score = 0
+                  if "Apple TV 4K (3rd generation) (at 1080p)" in name:
+                      score = 3
+                  elif "Apple TV 4K (3rd generation)" in name:
+                      score = 2
+                  elif "Apple TV 4K" in name:
+                      score = 1
+                  candidates.append((score, nums, name, dev["udid"]))
+          candidates.sort(reverse=True)
+          if candidates:
+              print(f"{candidates[0][3]}|{candidates[0][2]}")
+          ')
+
+          if [ -z "$SIM_INFO" ]; then
+            echo "::error::No available Apple TV Simulator found on runner!"
+            exit 1
+          fi
+
+          TVOS_SIM_UDID="${SIM_INFO%%|*}"
+          TVOS_SIM_NAME="${SIM_INFO#*|}"
+          echo "Selected Simulator: ${TVOS_SIM_NAME} (${TVOS_SIM_UDID})"
+          echo "udid=${TVOS_SIM_UDID}" >> "$GITHUB_OUTPUT"
+
+          set +e
+          xcodebuild build \
+            -project Luna.xcodeproj \
+            -scheme Luna \
+            -configuration Debug \
+            -destination "platform=tvOS Simulator,id=${TVOS_SIM_UDID}" \
+            -derivedDataPath build-vision \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            DEBUG_INFORMATION_FORMAT=dwarf \
+            COMPILATION_CACHE_ENABLE_CACHING=YES \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-vision.log
+          RC=${PIPESTATUS[0]}
+          set -e
+          if [ "$RC" -ne 0 ]; then
+            awk '/error:|fatal error:/ { print "::error::" $0; count++; if (count >= 25) exit }' xcodebuild-vision.log
+            exit "$RC"
+          fi
+
+      - name: Boot Simulator, Install Luna.app & Capture Screenshots
+        env:
+          TVOS_SIM_UDID: ${{ steps.sim.outputs.udid }}
+          PREVIEW_FOCUS: ${{ inputs.preview_focus || '' }}
+        run: |
+          set -euo pipefail
+          APP_PATH="build-vision/Build/Products/Debug-appletvsimulator/Luna.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::Expected Simulator app bundle not found at $APP_PATH"
+            exit 1
+          fi
+
+          xcrun simctl boot "$TVOS_SIM_UDID" >/dev/null 2>&1 || true
+          xcrun simctl bootstatus "$TVOS_SIM_UDID" -b
+          xcrun simctl install "$TVOS_SIM_UDID" "$APP_PATH"
+
+          mkdir -p .ci-screenshots
+          BUNDLE_ID="local.lunacore.luna"
+
+          for SCREEN in home home-poster catalog library details settings player-audio player-source; do
+            echo "==> Launching ${BUNDLE_ID} --preview-screen ${SCREEN}..."
+            if [ -n "$PREVIEW_FOCUS" ]; then
+              xcrun simctl launch --terminate-running-process "$TVOS_SIM_UDID" "$BUNDLE_ID" \
+                --preview-screen "$SCREEN" --preview-focus "$PREVIEW_FOCUS"
+            else
+              xcrun simctl launch --terminate-running-process "$TVOS_SIM_UDID" "$BUNDLE_ID" \
+                --preview-screen "$SCREEN"
+            fi
+
+            sleep 5
+            OUT_FILE=".ci-screenshots/${SCREEN}.png"
+            xcrun simctl io "$TVOS_SIM_UDID" screenshot "$OUT_FILE"
+
+            # Normalize 3840x2160 4K Simulator buffers down to exact 1920x1080 HD inspection size
+            WIDTH=$(sips -g pixelWidth "$OUT_FILE" | awk '/pixelWidth:/ {print $2}')
+            HEIGHT=$(sips -g pixelHeight "$OUT_FILE" | awk '/pixelHeight:/ {print $2}')
+            if [ "$WIDTH" != "1920" ] || [ "$HEIGHT" != "1080" ]; then
+              sips -z 1080 1920 "$OUT_FILE" >/dev/null
+            fi
+            ls -lh "$OUT_FILE"
+          done
+
+          xcrun simctl terminate "$TVOS_SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+
+      - name: Upload tvos-screenshots artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tvos-screenshots
+          path: .ci-screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14

@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(Security)
 import Security
+#endif
 
 /// Sideload-safe persistence namespace.
 ///
@@ -60,16 +62,56 @@ public enum SideloadSafeStorage {
     }
 
     public static func deleteDeviceToken(defaults: UserDefaults = .standard) {
+        #if canImport(Security)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: tokenAccount,
         ]
         SecItemDelete(query as CFDictionary)
+        #endif
         defaults.removeObject(forKey: "\(fallbackPrefix)\(tokenAccount)")
     }
 
+    public nonisolated static func currentAppVersionString(
+        infoDictionary: [String: Any]? = Bundle.main.infoDictionary
+    ) -> String {
+        if let ver = infoDictionary?["CFBundleShortVersionString"] as? String {
+            let trimmed = ver.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return "2.7.1"
+    }
+
+    public nonisolated static func currentBuildNumberString(
+        infoDictionary: [String: Any]? = Bundle.main.infoDictionary
+    ) -> String? {
+        if let build = infoDictionary?["CFBundleVersion"] as? String {
+            let trimmed = build.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        if let num = infoDictionary?["CFBundleVersion"] as? Int, num > 0 {
+            return String(num)
+        }
+        return nil
+    }
+
+    public nonisolated static func currentAppVersionDisplayString(
+        infoDictionary: [String: Any]? = Bundle.main.infoDictionary
+    ) -> String {
+        let version = currentAppVersionString(infoDictionary: infoDictionary)
+        if let build = currentBuildNumberString(infoDictionary: infoDictionary) {
+            return "\(version) (bygg \(build))"
+        }
+        return version
+    }
+
     private static func readKeychainString(account: String, defaults: UserDefaults) -> String? {
+        #if canImport(Security)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -85,6 +127,7 @@ public enum SideloadSafeStorage {
            !text.isEmpty {
             return text
         }
+        #endif
         if let fallback = defaults.string(forKey: "\(fallbackPrefix)\(account)"), !fallback.isEmpty {
             return fallback
         }
@@ -92,6 +135,7 @@ public enum SideloadSafeStorage {
     }
 
     private static func writeKeychainString(_ value: String, account: String, defaults: UserDefaults) {
+        #if canImport(Security)
         let encoded = Data(value.utf8)
         let baseQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -110,5 +154,8 @@ public enum SideloadSafeStorage {
             // Preserve pairing across sideload profiles if securityd rejects Keychain write (e.g. -34018)
             defaults.set(value, forKey: "\(fallbackPrefix)\(account)")
         }
+        #else
+        defaults.set(value, forKey: "\(fallbackPrefix)\(account)")
+        #endif
     }
 }

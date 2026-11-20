@@ -164,6 +164,30 @@ public final class AppSessionStore: ObservableObject {
         }
     }
 
+    init(previewConfiguration: PreviewLaunchConfiguration) {
+        let suiteName = "luna.v1.preview.\(previewConfiguration.screen.rawValue)"
+        let ephemeralDefaults = UserDefaults(suiteName: suiteName) ?? .standard
+        ephemeralDefaults.removePersistentDomain(forName: suiteName)
+        self.defaults = ephemeralDefaults
+        self.comfort = ComfortPreferences(defaults: ephemeralDefaults)
+        self.deviceID = "luna-preview-appletv"
+        self.cachedAppVersion = Self.currentAppVersionString()
+        self.cachedOSVersion = Self.currentSystemVersionString()
+        self.serverBaseURL = PreviewMockFixtures.previewBaseURL
+        self.deviceToken = "preview-device-token"
+        self.deviceName = "Apple TV 4K"
+        self.roomName = "Stua"
+        self.hardwareProfile = HardwareProfilePreset.hdr10512.rawValue
+        self.localProfileOverride = nil
+        self.serverEquipmentLabel = LunaCopy.roomEquipmentLabel(hardwareProfile: HardwareProfilePreset.hdr10512.rawValue)
+        self.serverAtmosphere = "living"
+        self.deviceOverrides = nil
+        self.activePlaybackTarget = nil
+        self.allowSelfSignedLanTLS = true
+        self.cachedClient = PreviewMockFixtures.makeClient()
+        PreviewMockFixtures.prewarmHomeCache()
+    }
+
     private func rebuildCachedClient() {
         guard let base = serverBaseURL else {
             cachedClient = nil
@@ -327,46 +351,27 @@ public final class AppSessionStore: ObservableObject {
     }
 
     public nonisolated static func currentAppVersionString() -> String {
-        currentAppVersionString(infoDictionary: Bundle.main.infoDictionary)
+        SideloadSafeStorage.currentAppVersionString()
     }
 
     public nonisolated static func currentAppVersionString(infoDictionary: [String: Any]?) -> String {
-        if let ver = infoDictionary?["CFBundleShortVersionString"] as? String {
-            let trimmed = ver.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                return trimmed
-            }
-        }
-        return "2.7.1"
+        SideloadSafeStorage.currentAppVersionString(infoDictionary: infoDictionary)
     }
 
     public nonisolated static func currentBuildNumberString() -> String? {
-        currentBuildNumberString(infoDictionary: Bundle.main.infoDictionary)
+        SideloadSafeStorage.currentBuildNumberString()
     }
 
     public nonisolated static func currentBuildNumberString(infoDictionary: [String: Any]?) -> String? {
-        if let build = infoDictionary?["CFBundleVersion"] as? String {
-            let trimmed = build.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                return trimmed
-            }
-        }
-        if let num = infoDictionary?["CFBundleVersion"] as? Int, num > 0 {
-            return String(num)
-        }
-        return nil
+        SideloadSafeStorage.currentBuildNumberString(infoDictionary: infoDictionary)
     }
 
     public nonisolated static func currentAppVersionDisplayString() -> String {
-        currentAppVersionDisplayString(infoDictionary: Bundle.main.infoDictionary)
+        SideloadSafeStorage.currentAppVersionDisplayString()
     }
 
     public nonisolated static func currentAppVersionDisplayString(infoDictionary: [String: Any]?) -> String {
-        let version = currentAppVersionString(infoDictionary: infoDictionary)
-        if let build = currentBuildNumberString(infoDictionary: infoDictionary) {
-            return "\(version) (bygg \(build))"
-        }
-        return version
+        SideloadSafeStorage.currentAppVersionDisplayString(infoDictionary: infoDictionary)
     }
 
     public func unpairDevice() {

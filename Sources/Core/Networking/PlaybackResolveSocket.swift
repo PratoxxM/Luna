@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 public struct PlaybackResolveSocket: Sendable {
     public let baseURL: URL
@@ -18,6 +21,7 @@ public struct PlaybackResolveSocket: Sendable {
         self.allowSelfSignedLanTLS = allowSelfSignedLanTLS
     }
 
+    #if !os(Linux)
     public func events() -> AsyncThrowingStream<TvResolveSocketEvent, Error> {
         AsyncThrowingStream { continuation in
             guard let wsURL = Self.makeWebSocketURL(baseURL: baseURL, wsPath: wsPath) else {
@@ -79,6 +83,11 @@ public struct PlaybackResolveSocket: Sendable {
         @unknown default:
             return nil
         }
+        return try decodeEventData(data)
+    }
+    #endif
+
+    public static func decodeEventData(_ data: Data) throws -> TvResolveSocketEvent {
         do {
             return try LunaCoreClient.decodeJSON(TvResolveSocketEvent.self, from: data)
         } catch {
@@ -86,11 +95,11 @@ public struct PlaybackResolveSocket: Sendable {
         }
     }
 
-    internal static func isTerminalEvent(_ event: TvResolveSocketEvent) -> Bool {
+    public static func isTerminalEvent(_ event: TvResolveSocketEvent) -> Bool {
         event.type == "resolve.ready" || event.type == "resolve.failed"
     }
 
-    internal static func makeWebSocketURL(baseURL: URL, wsPath: String) -> URL? {
+    public static func makeWebSocketURL(baseURL: URL, wsPath: String) -> URL? {
         let trimmed = wsPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else {
             return nil

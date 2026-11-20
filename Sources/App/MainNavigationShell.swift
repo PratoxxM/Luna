@@ -8,15 +8,72 @@ struct MainNavigationShell: View {
     @StateObject private var navBarVisibility = LunaNavigationBarVisibility()
 
     let engine: AetherEngine
-    @State private var selectedTab: MainNavigationTab = .home
+    let previewConfiguration: PreviewLaunchConfiguration?
+    @State private var selectedTab: MainNavigationTab
     @State private var lastBootstrapRefreshAt: Date = .distantPast
 
+    init(
+        engine: AetherEngine,
+        previewConfiguration: PreviewLaunchConfiguration? = nil
+    ) {
+        self.engine = engine
+        self.previewConfiguration = previewConfiguration
+        let initialTab: MainNavigationTab
+        switch previewConfiguration?.screen {
+        case .catalog:
+            initialTab = .movies
+        case .library:
+            initialTab = .library
+        case .settings:
+            initialTab = .settings
+        case .details:
+            initialTab = .series
+        default:
+            initialTab = .home
+        }
+        _selectedTab = State(initialValue: initialTab)
+    }
+
     var body: some View {
+        if let screen = previewConfiguration?.screen, screen.isPlayerScreen {
+            let drawerTab: PlayerTopDrawerTab = screen == .playerSource ? .source : .audioAndSubtitles
+            PlayerContainerView(
+                engine: engine,
+                comfort: sessionStore.comfort,
+                initialRequest: PreviewMockFixtures.playerLaunchRequest,
+                isPreviewMode: true,
+                previewFocusDirection: .down,
+                previewDrawerTab: drawerTab,
+                onDismiss: {}
+            )
+            .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
+            .environmentObject(sessionStore)
+            .environmentObject(sessionStore.comfort)
+            .preferredColorScheme(.dark)
+        } else if previewConfiguration?.screen == .details {
+            NavigationStack {
+                MediaDetailView(
+                    mediaType: "series",
+                    itemId: "series:246810",
+                    initialTitle: "Luksusfellen"
+                )
+            }
+            .ignoresSafeArea()
+            .environment(\.lunaSubpageVisibility, navBarVisibility.sink)
+            .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
+            .environmentObject(sessionStore.comfort)
+        } else {
+            mainTabbedShell
+        }
+    }
+
+    private var mainTabbedShell: some View {
         let isPlaybackActive = sessionStore.activePlaybackTarget != nil
         let hideTopBar = navBarVisibility.isTopBarHidden
         let interceptMenu = navBarVisibility.shouldInterceptMenuPress(hasActivePlayback: isPlaybackActive)
+        let focusPosterPreview = previewConfiguration?.screen == .homePoster
 
-        ZStack(alignment: .topLeading) {
+        return ZStack(alignment: .topLeading) {
             AmbientBackdropView(isPaused: isPlaybackActive)
 
             TabView(selection: $selectedTab) {
@@ -25,7 +82,8 @@ struct MainNavigationShell: View {
                         initialServerHost: sessionStore.serverBaseURL?.host,
                         initialRoomName: sessionStore.roomName,
                         initialHardwareProfile: sessionStore.effectiveHardwareProfile,
-                        isActiveTab: selectedTab == .home
+                        isActiveTab: selectedTab == .home,
+                        previewFocusPosterRow: focusPosterPreview
                     )
                     .toolbar(.hidden, for: .tabBar)
                     .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
@@ -108,14 +166,14 @@ struct MainNavigationShell: View {
 
             LinearGradient(
                 stops: [
-                    .init(color: LunaTheme.canvas.opacity(0.94), location: 0.0),
-                    .init(color: LunaTheme.canvas.opacity(0.54), location: 0.58),
+                    .init(color: LunaTheme.canvas.opacity(0.92), location: 0.0),
+                    .init(color: LunaTheme.canvas.opacity(0.50), location: 0.62),
                     .init(color: .clear, location: 1.0),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 124)
+            .frame(height: 152)
             .ignoresSafeArea(edges: [.top, .horizontal])
             .opacity(hideTopBar ? 0 : 1)
             .allowsHitTesting(false)
@@ -161,6 +219,9 @@ struct MainNavigationShell: View {
             .preferredColorScheme(.dark)
         }
         .task {
+            if previewConfiguration?.focusDirection == .up {
+                navBarVisibility.handleMenuPressToRevealTopBar()
+            }
             await refreshBootstrapProfile()
         }
         .onChange(of: scenePhase) { _, phase in

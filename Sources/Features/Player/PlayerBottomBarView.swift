@@ -73,7 +73,8 @@ struct PlayerBottomBarView: View {
                                 ActiveChapterLabelLeafView(
                                     engine: viewModel.engine,
                                     chapters: viewModel.chapters,
-                                    hasLeadingSeriesLine: titleDisplay.seriesLine != nil
+                                    hasLeadingSeriesLine: titleDisplay.seriesLine != nil,
+                                    previewTimeOverride: viewModel.previewPlayheadOverrideSeconds
                                 )
                             }
                         }
@@ -96,7 +97,8 @@ struct PlayerBottomBarView: View {
 
                     EndsAtLeafView(
                         engine: viewModel.engine,
-                        duration: duration
+                        duration: duration,
+                        previewTimeOverride: viewModel.previewPlayheadOverrideSeconds
                     )
                 }
 
@@ -133,6 +135,7 @@ struct PlayerBottomBarView: View {
 private struct EndsAtLeafView: View {
     let engine: AetherEngine
     let duration: Double
+    var previewTimeOverride: Double? = nil
 
     @State private var currentTime: Double = 0
     @State private var lastTimeBucket: Int = -1
@@ -145,9 +148,10 @@ private struct EndsAtLeafView: View {
     }()
 
     var body: some View {
+        let effectiveCurrent = previewTimeOverride ?? currentTime
         Group {
             if duration > 30 {
-                let remaining = max(0, duration - currentTime)
+                let remaining = max(0, duration - effectiveCurrent)
                 let finishClock = Self.formatter.string(from: Date().addingTimeInterval(remaining))
                 Text("Ferdig kl. \(finishClock)")
                     .font(LunaTheme.Font.subtitle.monospacedDigit())
@@ -169,12 +173,14 @@ private struct ActiveChapterLabelLeafView: View {
     let engine: AetherEngine
     let chapters: [PlaybackChapter]
     let hasLeadingSeriesLine: Bool
+    var previewTimeOverride: Double? = nil
 
     @State private var currentTime: Double = 0
 
     var body: some View {
+        let effectiveCurrent = previewTimeOverride ?? currentTime
         Group {
-            if let active = chapters.first(where: { currentTime >= $0.startSeconds && currentTime < $0.endSeconds }) {
+            if let active = chapters.first(where: { effectiveCurrent >= $0.startSeconds && effectiveCurrent < $0.endSeconds }) {
                 Text(hasLeadingSeriesLine ? "· \(active.title)" : active.title)
                     .font(LunaTheme.Font.subtitle)
                     .foregroundStyle(LunaTheme.muted)
@@ -216,12 +222,16 @@ struct TimelineScrubberLeafView: View {
             if let seekOverride = viewModel.coalescedSeekPreviewTarget {
                 return seekOverride
             }
+            if let previewOverride = viewModel.previewPlayheadOverrideSeconds {
+                return previewOverride
+            }
             return currentTime
         }()
         let isExpanded = isScrubbing || isPaused || viewModel.coalescedSeekPreviewTarget != nil
         let barHeight: CGFloat = isExpanded ? 7 : 5
+        let effectiveBuffered = viewModel.previewPlayheadOverrideSeconds.map { $0 + 480 } ?? bufferedTime
         let progressRatio = min(1.0, max(0.0, displayTime / effectiveDuration))
-        let bufferRatio = min(1.0, max(0.0, bufferedTime / effectiveDuration))
+        let bufferRatio = min(1.0, max(0.0, effectiveBuffered / effectiveDuration))
 
         VStack(alignment: .leading, spacing: 11) {
             GeometryReader { geo in

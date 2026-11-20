@@ -1,7 +1,11 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Canonical Norwegian copy, pluralization, decimal formatting & glossary helpers (`LunaCopy`).
 public enum LunaCopy: Sendable {
+    #if canImport(Darwin)
     private static let norwegianLocale = Locale(identifier: "nb")
 
     private nonisolated static func localizedCount(
@@ -16,6 +20,16 @@ public enum LunaCopy: Sendable {
         }
         return resolved
     }
+    #else
+    private nonisolated static func localizedCount(
+        _ _: String,
+        fallbackCount: Int,
+        singular: String,
+        pluralForm: String
+    ) -> String {
+        plural(fallbackCount, singular, pluralForm)
+    }
+    #endif
 
     public nonisolated static func plural(_ count: Int, _ singular: String, _ pluralForm: String) -> String {
         abs(count) == 1 ? "\(count) \(singular)" : "\(count) \(pluralForm)"
@@ -108,6 +122,131 @@ public enum LunaCopy: Sendable {
             singular: "mediefil",
             pluralForm: "mediefiler"
         )
+    }
+
+    public enum Home {
+        public static let continueTitle = "Fortsett"
+    }
+
+    public nonisolated static func formatCompactEpisodeCode(season: Int?, episode: Int?) -> String? {
+        guard let season, let episode, season > 0, episode > 0 else { return nil }
+        return "S\(season) E\(episode)"
+    }
+
+    public nonisolated static func localizedSeasonTitle(_ rawName: String?, seasonNumber: Int) -> String {
+        let trimmed = (rawName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        if seasonNumber == 0 || lower == "specials" || lower == "season 0" || lower == "spesialer" {
+            return "Spesialer"
+        }
+        if lower.hasPrefix("season ") {
+            let tail = String(trimmed.dropFirst("season ".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if let num = Int(tail), num > 0 {
+                return "Sesong \(num)"
+            }
+        }
+        if !trimmed.isEmpty {
+            return trimmed
+        }
+        return seasonNumber > 0 ? "Sesong \(seasonNumber)" : "Spesialer"
+    }
+
+    private static let norwegianLanguageNamesByCode: [String: String] = [
+        "nob": "Norsk",
+        "nor": "Norsk",
+        "no": "Norsk",
+        "nb": "Norsk",
+        "nno": "Norsk nynorsk",
+        "nn": "Norsk nynorsk",
+        "swe": "Svensk",
+        "sv": "Svensk",
+        "dan": "Dansk",
+        "da": "Dansk",
+        "eng": "Engelsk",
+        "en": "Engelsk",
+        "ara": "Arabisk",
+        "ar": "Arabisk",
+        "bul": "Bulgarsk",
+        "bg": "Bulgarsk",
+        "fin": "Finsk",
+        "fi": "Finsk",
+        "isl": "Islandsk",
+        "ice": "Islandsk",
+        "is": "Islandsk",
+        "deu": "Tysk",
+        "ger": "Tysk",
+        "de": "Tysk",
+        "fra": "Fransk",
+        "fre": "Fransk",
+        "fr": "Fransk",
+        "spa": "Spansk",
+        "es": "Spansk",
+        "ita": "Italiensk",
+        "it": "Italiensk",
+        "por": "Portugisisk",
+        "pt": "Portugisisk",
+        "nld": "Nederlandsk",
+        "dut": "Nederlandsk",
+        "nl": "Nederlandsk",
+        "pol": "Polsk",
+        "pl": "Polsk",
+        "rus": "Russisk",
+        "ru": "Russisk",
+        "ukr": "Ukrainsk",
+        "uk": "Ukrainsk",
+        "tur": "Tyrkisk",
+        "tr": "Tyrkisk",
+        "jpn": "Japansk",
+        "ja": "Japansk",
+        "kor": "Koreansk",
+        "ko": "Koreansk",
+        "zho": "Kinesisk",
+        "chi": "Kinesisk",
+        "zh": "Kinesisk",
+        "hin": "Hindi",
+        "hi": "Hindi",
+        "tha": "Thai",
+        "th": "Thai",
+        "vie": "Vietnamesisk",
+        "vi": "Vietnamesisk",
+        "ell": "Gresk",
+        "gre": "Gresk",
+        "el": "Gresk",
+        "ces": "Tsjekkisk",
+        "cze": "Tsjekkisk",
+        "cs": "Tsjekkisk",
+        "hun": "Ungarsk",
+        "hu": "Ungarsk",
+        "ron": "Rumensk",
+        "rum": "Rumensk",
+        "ro": "Rumensk",
+        "hrv": "Kroatisk",
+        "hr": "Kroatisk",
+        "srp": "Serbisk",
+        "sr": "Serbisk",
+        "heb": "Hebraisk",
+        "he": "Hebraisk",
+        "und": "Original",
+    ]
+
+    public nonisolated static func localizedLanguageName(_ rawCode: String?) -> String? {
+        guard let rawCode else { return nil }
+        let cleaned = rawCode
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "-")
+        guard !cleaned.isEmpty else { return nil }
+        let primary = cleaned.split(separator: "-").first.map(String.init) ?? cleaned
+        if let mapped = norwegianLanguageNamesByCode[primary] {
+            return mapped
+        }
+        if let localized = Locale(identifier: "nb").localizedString(forLanguageCode: primary) {
+            let trimmed = localized.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed.prefix(1).uppercased() + trimmed.dropFirst()
+            }
+        }
+        return rawCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     }
 
     public nonisolated static func formatListEpisodeCode(season: Int?, episode: Int?) -> String? {

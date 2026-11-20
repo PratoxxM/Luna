@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct DetailHeroHeaderView: View {
+    @EnvironmentObject private var sessionStore: AppSessionStore
+
     let item: TvItemDetail
     let client: LunaCoreClient?
     let primaryPlayTitle: String
@@ -20,7 +22,7 @@ struct DetailHeroHeaderView: View {
     var onReadMore: ((String) -> Void)? = nil
 
     private var heroMinHeight: CGFloat {
-        item.mediaType == "movie" ? 860 : 730
+        item.mediaType == "movie" ? 860 : 760
     }
 
     var body: some View {
@@ -28,74 +30,57 @@ struct DetailHeroHeaderView: View {
         let fallbackPosterURL = landscapeURL == nil ? client?.resolveArtworkURL(item.posterUrl) : nil
 
         VStack(alignment: .leading, spacing: 18) {
-            if let orig = item.originalTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !orig.isEmpty,
-               orig.caseInsensitiveCompare(item.title) != .orderedSame {
-                Text(orig.uppercased())
-                    .font(LunaTheme.Font.badge)
-                    .tracking(2)
+            if let kicker = item.studioOrNetworkKicker, !kicker.isEmpty {
+                Text(kicker.uppercased())
+                    .font(LunaTheme.Font.detailKicker)
+                    .tracking(2.4)
                     .foregroundStyle(LunaTheme.muted)
                     .lineLimit(1)
             }
 
-            // Editorial serif hero title (max 1 serif element per screen)
+            // Editorial New York serif hero title
             Text(item.title)
-                .font(LunaTheme.Font.heroSerif)
+                .font(LunaTheme.Font.detailHeroSerif)
                 .foregroundStyle(LunaTheme.linen)
                 .lineLimit(2)
-                .frame(maxWidth: 980, alignment: .leading)
+                .frame(maxWidth: 920, alignment: .leading)
 
-            // Single calm metadata line
+            // Single calm metadata line (no "IMDb" prefix)
             Text(detailMetadataLine)
                 .font(LunaTheme.Font.subtitle)
                 .foregroundStyle(LunaTheme.moonlight)
                 .lineLimit(1)
 
-            // Subtle technical release badges & availability benefit
-            HStack(spacing: 12) {
-                ForEach(displayedBadges, id: \.self) { badge in
-                    Text(badge)
-                        .font(LunaTheme.Font.badge)
-                        .foregroundStyle(LunaTheme.moonlight)
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 5)
-                        .background(LunaTheme.surfaceRaised, in: Capsule())
-                        .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
-                }
-
-                if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "calendar")
+            // Small rectangular monochrome capability badges directly under metadata
+            if !displayedBadges.isEmpty {
+                HStack(spacing: 12) {
+                    ForEach(displayedBadges, id: \.self) { badge in
+                        Text(badge.uppercased())
+                            .font(LunaTheme.Font.badge)
+                            .tracking(0.8)
                             .foregroundStyle(LunaTheme.moonlight)
-                        Text("Kommer: \(upcomingBadge)")
-                            .foregroundStyle(LunaTheme.linen)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(Color.clear)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(LunaTokens.Edge.badgeOutline, lineWidth: 1)
+                            )
                     }
-                    .font(LunaTheme.Font.badge)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
-                    .background(LunaTheme.surfaceRaised, in: Capsule())
-                    .overlay(Capsule().strokeBorder(LunaTheme.warmBorder, lineWidth: 1))
-                } else if let avail = item.availability {
-                    HStack(spacing: 8) {
-                        LunaTierMarkView(availability: avail)
-                        Text(avail.resolvedBenefitLabel)
-                            .font(LunaTheme.Font.caption)
-                            .foregroundStyle(LunaTheme.moonlight)
-                    }
-                    .padding(.leading, displayedBadges.isEmpty ? 0 : 8)
                 }
             }
 
-            // Overview preview + «Les mer»
+            // Overview preview + optional «Les mer»
             if let overview = item.preferredOverview {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(overview)
                         .font(LunaTheme.Font.body)
                         .foregroundStyle(LunaTheme.moonlight)
+                        .lineSpacing(5)
                         .lineLimit(3)
-                        .frame(maxWidth: 980, alignment: .leading)
+                        .frame(maxWidth: 920, alignment: .leading)
 
-                    if overview.count > 160, let onReadMore {
+                    if overview.count > 165, let onReadMore {
                         LunaPillButton("Les mer", prominence: .subtleChip, size: .compact) {
                             onReadMore(overview)
                         }
@@ -103,7 +88,31 @@ struct DetailHeroHeaderView: View {
                 }
             }
 
-            // Action row: 1 gold primary CTA + Huskeliste icon + Sett icon + Mer icon
+            // Availability line placed BELOW overview, directly above action buttons
+            if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(LunaTheme.moonlight)
+                        .frame(width: 8, height: 8)
+                    Text("Kommer: \(upcomingBadge)")
+                        .font(LunaTheme.Font.subtitle)
+                        .foregroundStyle(LunaTheme.moonlight)
+                }
+                .padding(.top, 2)
+            } else if let avail = item.availability {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(tierDotColor(for: avail))
+                        .frame(width: 8, height: 8)
+                        .shadow(color: tierDotColor(for: avail).opacity(0.45), radius: 5, x: 0, y: 0)
+                    Text("\(avail.resolvedBenefitLabel) · klar for \(sessionStore.roomName)")
+                        .font(LunaTheme.Font.subtitle)
+                        .foregroundStyle(LunaTheme.moonlight)
+                }
+                .padding(.top, 2)
+            }
+
+            // Action row: rounded-rect gold PrimaryPlayButton + 3 borderless matte circles
             HStack(spacing: 18) {
                 PrimaryPlayButton(
                     title: primaryPlayTitle,
@@ -115,15 +124,13 @@ struct DetailHeroHeaderView: View {
                 DetailCircleIconButton(
                     systemImage: item.inWatchlist ? "bookmark.fill" : "bookmark",
                     isSelected: item.inWatchlist,
-                    accentColor: LunaTheme.linen,
                     accessibilityLabel: item.inWatchlist ? "Fjern fra huskeliste" : "Legg til i huskeliste",
                     action: onToggleWatchlist
                 )
 
                 DetailCircleIconButton(
-                    systemImage: item.watched ? "checkmark.circle.fill" : "checkmark",
+                    systemImage: "checkmark",
                     isSelected: item.watched,
-                    accentColor: LunaTheme.emerald,
                     accessibilityLabel: watchedButtonTitle,
                     action: onToggleWatched
                 )
@@ -131,7 +138,6 @@ struct DetailHeroHeaderView: View {
                 DetailCircleIconButton(
                     systemImage: "ellipsis",
                     isSelected: false,
-                    accentColor: LunaTheme.linen,
                     accessibilityLabel: "Mer",
                     action: {
                         if let onOpenMore {
@@ -142,19 +148,19 @@ struct DetailHeroHeaderView: View {
                     }
                 )
             }
-            .padding(.top, 10)
+            .padding(.top, 12)
             .focusSection()
             .onPlayPauseCommand {
                 onPlay()
             }
         }
-        .padding(.top, item.mediaType == "movie" ? 180 : 190)
-        .padding(.bottom, 38)
+        .padding(.top, item.mediaType == "movie" ? 170 : 180)
+        .padding(.bottom, 34)
         .padding(.horizontal, horizontalGutter)
         .frame(maxWidth: .infinity, minHeight: heroMinHeight, alignment: .bottomLeading)
         .background {
             GeometryReader { geo in
-                ZStack {
+                ZStack(alignment: .topTrailing) {
                     LunaTheme.canvas
 
                     if let landscapeURL {
@@ -167,7 +173,7 @@ struct DetailHeroHeaderView: View {
                             placeholderSymbol: "film.stack",
                             contentMode: .fill
                         )
-                        .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                        .frame(width: geo.size.width * 0.76, height: geo.size.height, alignment: .center)
                         .clipped()
                     } else if let fallbackPosterURL {
                         CachedArtworkView(
@@ -179,26 +185,17 @@ struct DetailHeroHeaderView: View {
                             placeholderSymbol: "film.stack",
                             contentMode: .fill
                         )
-                        .frame(width: geo.size.width, height: geo.size.height)
+                        .frame(width: geo.size.width * 0.76, height: geo.size.height)
                         .opacity(0.22)
                         .clipped()
                     }
 
                     LinearGradient(
                         stops: [
-                            .init(color: LunaTheme.canvas.opacity(0.62), location: 0.0),
-                            .init(color: LunaTheme.canvas.opacity(0.18), location: 0.14),
-                            .init(color: .clear, location: 0.28),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-
-                    LinearGradient(
-                        stops: [
-                            .init(color: LunaTheme.canvas.opacity(0.92), location: 0.0),
-                            .init(color: LunaTheme.canvas.opacity(0.60), location: 0.42),
-                            .init(color: LunaTheme.canvas.opacity(0.14), location: 0.72),
+                            .init(color: LunaTheme.canvas, location: 0.0),
+                            .init(color: LunaTheme.canvas.opacity(0.95), location: 0.30),
+                            .init(color: LunaTheme.canvas.opacity(0.56), location: 0.54),
+                            .init(color: LunaTheme.canvas.opacity(0.10), location: 0.78),
                             .init(color: .clear, location: 1.0),
                         ],
                         startPoint: .leading,
@@ -207,12 +204,11 @@ struct DetailHeroHeaderView: View {
 
                     LinearGradient(
                         stops: [
-                            .init(color: .clear, location: 0.0),
-                            .init(color: .clear, location: 0.34),
-                            .init(color: LunaTheme.canvas.opacity(0.48), location: 0.58),
-                            .init(color: LunaTheme.canvas.opacity(0.90), location: 0.82),
-                            .init(color: LunaTheme.canvas, location: 0.97),
-                            .init(color: LunaTheme.canvas, location: 1.0),
+                            .init(color: LunaTheme.canvas.opacity(0.36), location: 0.0),
+                            .init(color: .clear, location: 0.22),
+                            .init(color: .clear, location: 0.52),
+                            .init(color: LunaTheme.canvas.opacity(0.88), location: 0.88),
+                            .init(color: LunaTheme.canvas, location: 0.98),
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -224,6 +220,12 @@ struct DetailHeroHeaderView: View {
         }
     }
 
+    private func tierDotColor(for avail: TvAvailabilityInfo) -> Color {
+        if avail.isLocalNvme { return LunaTheme.tierNvme }
+        if avail.isLocalArchive { return LunaTheme.tierArchive }
+        return LunaTheme.tierStream
+    }
+
     private var detailMetadataLine: String {
         var parts: [String] = []
         if let year = item.year {
@@ -232,26 +234,28 @@ struct DetailHeroHeaderView: View {
         if let genres = item.genres, !genres.isEmpty {
             parts.append(genres.prefix(2).joined(separator: ", "))
         }
-        if let runtime = item.formattedRuntime, !runtime.isEmpty {
-            parts.append(runtime)
-        } else if let seasons = item.seasons, !seasons.isEmpty {
+        if let seasons = item.seasons, !seasons.isEmpty {
             parts.append(LunaCopy.seasonsCount(seasons.count))
+        } else if let runtime = item.formattedRuntime, !runtime.isEmpty {
+            parts.append(runtime)
         }
         if let disp = item.displayRating {
-            parts.append(LunaCopy.formatRating(disp.value, prefix: disp.isImdb ? "IMDb ★" : "★"))
+            parts.append(LunaCopy.formatRating(disp.value, prefix: "★"))
         }
         return parts.joined(separator: " · ")
     }
 
     private var displayedBadges: [String] {
-        var seen: Set<String> = ["klar i vfs", "infinidysk vfs"]
+        var seen: Set<String> = [
+            "klar i vfs",
+            "på nvme",
+            "i arkiv",
+            "strømmes ved start",
+            "starter umiddelbart",
+        ]
         if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
             seen.insert("kommer")
             seen.insert("kommer: \(upcomingBadge.lowercased())")
-        } else if let avail = item.availability, avail.isPhysicalLocal {
-            seen.insert(avail.householdBadgeLabel.lowercased())
-            seen.insert("på nvme")
-            seen.insert("i arkiv")
         }
         var result: [String] = []
         for raw in item.badges ?? [] {
@@ -274,7 +278,7 @@ private struct PrimaryPlayButton: View {
             PrimaryPlayLabel(title: title, isWarmReady: isWarmReady)
         }
         .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(Capsule())
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .focusEffectDisabled(true)
     }
 }
@@ -286,7 +290,7 @@ private struct PrimaryPlayLabel: View {
     let isWarmReady: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             Image(systemName: "play.fill")
                 .font(LunaTheme.Font.primaryPlayIcon)
             Text(title)
@@ -295,33 +299,32 @@ private struct PrimaryPlayLabel: View {
                 .minimumScaleFactor(0.86)
             if isWarmReady {
                 Circle()
-                    .fill(LunaTheme.canvas.opacity(0.68))
+                    .fill(LunaTheme.canvas.opacity(0.60))
                     .frame(width: 7, height: 7)
             }
         }
         .foregroundStyle(LunaTheme.canvas)
         .transaction { $0.animation = nil }
-        .padding(.horizontal, 34)
+        .padding(.horizontal, 36)
         .padding(.vertical, 22)
         .background(
             ZStack {
-                Capsule()
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(LunaTheme.primaryAmberGradient)
                     .opacity(focused ? 0 : 1)
-                Capsule()
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(LunaTheme.playFocusGradient)
                     .opacity(focused ? 1 : 0)
             }
             .transaction { $0.animation = nil }
         )
-        .lunaFocusSurface(.primaryPlay, isFocused: focused, cornerRadius: LunaTokens.Radius.pill)
+        .lunaFocusSurface(.primaryPlay, isFocused: focused, cornerRadius: 16)
     }
 }
 
 private struct DetailCircleIconButton: View {
     let systemImage: String
     let isSelected: Bool
-    let accentColor: Color
     let accessibilityLabel: String
     let action: () -> Void
 
@@ -334,14 +337,12 @@ private struct DetailCircleIconButton: View {
             Image(systemName: systemImage)
                 .font(LunaTheme.Font.cardTitle)
                 .foregroundStyle(
-                    isFocused
-                        ? (isSelected && accentColor == LunaTheme.emerald ? LunaTheme.emerald : LunaTheme.linen)
-                        : (isSelected ? accentColor : LunaTheme.moonlight)
+                    isSelected ? LunaTheme.amber : (isFocused ? LunaTheme.linen : LunaTheme.moonlight)
                 )
-                .frame(width: 74, height: 74)
+                .frame(width: 72, height: 72)
                 .background(
                     Circle()
-                        .fill(isFocused ? LunaTheme.surfaceElevated : (isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised))
+                        .fill(isFocused ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
                 )
                 .overlay(
                     Group {
@@ -350,18 +351,6 @@ private struct DetailCircleIconButton: View {
                                 .strokeBorder(
                                     LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity),
                                     lineWidth: LunaFocusStyle.borderWidth
-                                )
-                        } else if isSelected {
-                            Circle()
-                                .strokeBorder(
-                                    accentColor == LunaTheme.emerald ? LunaTheme.emerald.opacity(0.42) : LunaTheme.warmBorderStrong,
-                                    lineWidth: 1.0
-                                )
-                        } else {
-                            Circle()
-                                .strokeBorder(
-                                    LunaTheme.topLightEdgeGradient(topColor: LunaTokens.Edge.top3, sideColor: LunaTokens.Edge.top1),
-                                    lineWidth: 1.0
                                 )
                         }
                     }
@@ -372,7 +361,7 @@ private struct DetailCircleIconButton: View {
                     x: 0,
                     y: isFocused ? LunaFocusStyle.glowOffsetY : 0
                 )
-                .scaleEffect(isFocused ? 1.03 : 1.0)
+                .scaleEffect(isFocused ? 1.05 : 1.0)
                 .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())

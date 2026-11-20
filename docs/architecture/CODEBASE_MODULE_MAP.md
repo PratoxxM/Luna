@@ -6,7 +6,10 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 
 | Module Path | Responsibility | `/api/tv/v1` Endpoints & Protocols | Unit Test Coverage |
 | :--- | :--- | :--- | :--- |
-| `Sources/App/LunaApp.swift` | Owns single `@MainActor AetherEngine`, root `AppSessionStore`, `ComfortPreferences` | — | — |
+| `Sources/App/LunaApp.swift` | Owns single `@MainActor AetherEngine`, root `AppSessionStore`, `ComfortPreferences` & `--preview-screen` boot | — | `LunaCoreLinuxTests.swift` |
+| `Sources/App/PreviewLaunchConfiguration.swift` | Parses `--preview-screen` (`home`, `home-poster`, `catalog`, `library`, `details`, `settings`, `player-audio`, `player-source`) & `--preview-focus` CLI arguments | — | `LunaCoreLinuxTests.swift` |
+| `Sources/App/PreviewMockFixtures.swift` | Deterministic offline Lampelys catalog, 28-season detail & playback fixtures | Mock `/api/tv/v1/*` | — |
+| `Sources/App/PreviewMockURLProtocol.swift` | Offline `URLProtocol` router & procedural cinema artwork PNG generator for preview mode | Mock `/api/tv/v1/*`, `/preview-art/*` | — |
 | `Sources/App/MainNavigationShell.swift` | Custom top bar + hidden stock tab bar, room atmosphere env, bootstrap sync & player sheet | `GET /api/tv/v1/bootstrap` | `LunaNavigationAndDetailRaceTests.swift`, `PlayerOverlayAndCacheTests.swift` |
 | `Sources/App/LunaNavigationBarVisibility.swift` | `MainNavigationTab` (*Hjem · Filmer · Serier · Bibliotek* + *Søk/Innstillinger*), scroll collapse & Menu-wakeup policy | — | `LunaNavigationAndDetailRaceTests.swift` |
 | `Sources/App/LunaTopBarView.swift` | Warm-espresso & honey-brass top navigation dock with room crescent mark & icon utility triggers | — | `LunaNavigationAndDetailRaceTests.swift`, `ThemeAndArtworkViewTests.swift` |
@@ -17,7 +20,9 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Core/Config/SmartTrackRuleEngine.swift` | Automatic Nordic/English audio & subtitle track matching | — | `SmartTrackRuleEngineTests.swift` |
 | `Sources/Core/Cache/ArtworkPipeline.swift` | Off-main-actor image download/downsample cache & BlurHash placeholder pipeline | Same-origin artwork auth & CDN fetch | `ClientOriginAndBlurHashTests.swift`, `PlayerOverlayAndCacheTests.swift` |
 | `Sources/Core/Cache/BlurHashDecoder.swift` | Pure Swift BlurHash decoder for instant card & hero placeholders | — | `ClientOriginAndBlurHashTests.swift` |
-| `Sources/Core/Cache/DiskSWRStore.swift` | `.cachesDirectory` ETag/JSON SWR snapshot persistence for cold start | `GET /api/tv/v1/home` (`If-None-Match` / `304`) | `DiskSWRStoreTests.swift` |
+| `Sources/Core/Cache/DiskSWRStore.swift` | `.cachesDirectory` ETag/JSON SWR snapshot persistence for cold start | `GET /api/tv/v1/home` (`If-None-Match` / `304`) | `DiskSWRStoreTests.swift`, `LunaCoreLinuxTests.swift` |
+| `Sources/Core/Catalog/CatalogShelfIndexer.swift` | Pure-Swift shelf deduplication, `Fra iPhone`/`I kveld` continue ordering & tier indexing | — | `DynamicHomeRowTests.swift`, `LunaCoreLinuxTests.swift` |
+| `Sources/Core/Playback/PlaybackCoreAbstractions.swift` | Pure-Swift `PlaybackEngine`, `IOReader`, `PlaybackCurtainWatchdog` & coordinator state machine | — | `LunaCoreLinuxTests.swift` |
 | `Sources/Core/Models/ChapterModels.swift` | Chapter & intro/recap/credits classification models | `chapters[]` metadata | `ChapterClassificationTests.swift` |
 | `Sources/Core/Models/DetailModels.swift` | `Codable` item detail, seasons, episodes & source candidate models | `GET /api/tv/v1/items/*` | `ModelDecodingTests.swift`, `MediaDetailViewModelTests.swift` |
 | `Sources/Core/Models/EpisodeTitleFormatter.swift` | Norwegian/Nordic episode label & air-date formatting helpers | — | `EpisodeTitleFormattingTests.swift` |
@@ -125,3 +130,5 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
   - `Tests/LunaTests/SmartTrackRuleEngineTests.swift`
   - `Tests/LunaTests/ThemeAndArtworkViewTests.swift`
   - `Tests/LunaTests/PlayerTestDoubles.swift` (shared player/transport test doubles)
+- **Linux `LunaCoreTests` (`Package.swift` / `./scripts/test-core.sh`)**:
+  - `Tests/LunaCoreTests/LunaCoreLinuxTests.swift` (native Linux x86_64 tests for `PlaybackEngine`/`IOReader`, `PlaybackCurtainWatchdog`, `CatalogShelfIndexer`, `LunaCoreClient`, `SmartTrackRuleEngine`, `PlaybackChapter`, `SideloadSafeStorage` & `PreviewLaunchConfiguration`)

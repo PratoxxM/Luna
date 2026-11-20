@@ -139,10 +139,13 @@ public struct LunaPillButton: View {
             if accent == .warn {
                 return LunaTheme.warn.opacity(0.42)
             }
+            if prominence == .subtleChip {
+                return Color.clear
+            }
             if isSelected {
                 return accent == .emerald ? LunaTheme.emerald.opacity(0.38) : LunaTheme.warmBorderStrong
             }
-            return prominence == .glassPill ? LunaTheme.warmBorder : LunaTheme.warmBorderSubtle
+            return LunaTheme.warmBorder
         }
     }
 
@@ -211,14 +214,14 @@ private struct LunaPillLabel: View {
         .background(backgroundView)
         .overlay(
             Group {
-                if isFocused || prominence == .primaryAmber || isSelected || accent == .coral || accent == .warn {
+                if isFocused || prominence == .primaryAmber || accent == .coral || accent == .warn || (prominence == .glassPill && isSelected) {
                     Capsule()
                         .strokeBorder(borderColor, lineWidth: borderWidth)
-                } else {
+                } else if prominence == .glassPill {
                     Capsule()
                         .strokeBorder(
                             LunaTheme.topLightEdgeGradient(
-                                topColor: prominence == .glassPill ? LunaTokens.Edge.top3 : LunaTokens.Edge.top2,
+                                topColor: LunaTokens.Edge.top3,
                                 sideColor: LunaTokens.Edge.top1.opacity(0.45)
                             ),
                             lineWidth: 1.0
@@ -284,7 +287,7 @@ private struct LunaPillLabel: View {
         case .glassPill:
             return isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised
         case .subtleChip:
-            return isSelected ? LunaTheme.surfaceSelected : LunaTheme.surfaceSubtle
+            return isSelected ? LunaTheme.surfaceElevated : Color.clear
         }
     }
 

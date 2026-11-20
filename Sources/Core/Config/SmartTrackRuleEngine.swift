@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(AetherBridge)
 import AetherBridge
+#endif
 
 public struct SmartTrackDescriptor: Identifiable, Equatable, Sendable {
     public let id: Int
@@ -34,6 +36,7 @@ public struct SmartTrackDescriptor: Identifiable, Equatable, Sendable {
         self.isDefault = isDefault
     }
 
+    #if canImport(AetherBridge)
     public init(track: TrackInfo) {
         self.id = track.id
         self.name = track.name
@@ -45,6 +48,7 @@ public struct SmartTrackDescriptor: Identifiable, Equatable, Sendable {
         self.isExternal = track.isExternal
         self.isDefault = track.isDefault
     }
+    #endif
 }
 
 /// Automatic language comfort rules:
@@ -77,6 +81,7 @@ public enum SmartTrackRuleEngine {
         )
     }()
 
+    #if canImport(AetherBridge)
     public static func evaluate(
         activeAudio: TrackInfo?,
         subtitleTracks: [TrackInfo]
@@ -86,6 +91,7 @@ public enum SmartTrackRuleEngine {
             subtitleTracks: subtitleTracks.map(SmartTrackDescriptor.init(track:))
         )
     }
+    #endif
 
     public static func evaluate(
         activeAudio: SmartTrackDescriptor?,
@@ -120,6 +126,7 @@ public enum SmartTrackRuleEngine {
         return .keepCurrent
     }
 
+    #if canImport(AetherBridge)
     public static func selectBestSubtitleTrack(
         forLanguage rawLanguage: String?,
         in subtitleTracks: [TrackInfo]
@@ -131,6 +138,7 @@ public enum SmartTrackRuleEngine {
         }
         return subtitleTracks.first(where: { $0.id == selectedId })
     }
+    #endif
 
     public static func selectBestSubtitleID(
         forLanguage rawLanguage: String?,
@@ -158,9 +166,11 @@ public enum SmartTrackRuleEngine {
         return subtitleTracks.first?.id
     }
 
+    #if canImport(AetherBridge)
     public static func isTrackForced(_ track: TrackInfo) -> Bool {
         isTrackForced(SmartTrackDescriptor(track: track))
     }
+    #endif
 
     public static func isTrackForced(_ track: SmartTrackDescriptor) -> Bool {
         if track.isForced { return true }

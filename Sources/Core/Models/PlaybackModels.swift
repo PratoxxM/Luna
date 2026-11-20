@@ -206,6 +206,238 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
         }
         return tags
     }
+
+    public var humanVideoSummary: String {
+        var parts: [String] = []
+        let normRes = (resolution ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normRes == "2160p" || normRes == "4k" || normRes == "uhd" {
+            parts.append("4K")
+        } else if !normRes.isEmpty && normRes != "unknown" {
+            parts.append(normRes)
+        }
+        if let dv = dvProfile {
+            if dv == 7, let layer = dvEnhancementLayer, !layer.isEmpty {
+                parts.append("Dolby Vision P7 \(layer.uppercased())")
+            } else {
+                parts.append("Dolby Vision")
+            }
+        } else if let range = videoRangeType?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !range.isEmpty,
+                  range.caseInsensitiveCompare("SDR") != .orderedSame {
+            let cleanRange = range
+                .replacingOccurrences(of: "DolbyVision", with: "Dolby Vision")
+                .replacingOccurrences(of: "HDR10Plus", with: "HDR10+")
+            parts.append(cleanRange)
+        }
+        if parts.isEmpty {
+            let headlineLower = displayHeadline.lowercased()
+            if headlineLower.contains("4k") || headlineLower.contains("2160") {
+                parts.append("4K")
+            } else if headlineLower.contains("1080") {
+                parts.append("1080p")
+            } else if headlineLower.contains("720") {
+                parts.append("720p")
+            }
+        }
+        return parts.joined(separator: " ")
+    }
+
+    public var humanAudioSummary: String? {
+        let lower = (audioCodec ?? displayHeadline).lowercased()
+        if lower.contains("atmos") && lower.contains("truehd") {
+            return "TrueHD Atmos"
+        }
+        if lower.contains("atmos") {
+            return "Dolby Atmos"
+        }
+        if lower.contains("dts:x") || lower.contains("dtsx") {
+            return "DTS:X"
+        }
+        if lower.contains("truehd") {
+            return "TrueHD 7.1"
+        }
+        if lower.contains("dts-hd") || lower.contains("dts hd") {
+            return "DTS-HD"
+        }
+        if lower.contains("eac3") || lower.contains("ddp") || lower.contains("dd+") || lower.contains("dolby digital+") {
+            return lower.contains("5.1") ? "Dolby Digital+ 5.1" : "Dolby Digital+"
+        }
+        if lower.contains("ac3") || lower.contains("dd 5.1") {
+            return "Surround 5.1"
+        }
+        return nil
+    }
+
+    public var humanQualitySummary: String {
+        let components = [humanVideoSummary, humanAudioSummary].compactMap { val -> String? in
+            guard let v = val?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty else { return nil }
+            return v
+        }
+        if !components.isEmpty {
+            return components.joined(separator: " ")
+        }
+        return isNorwegian == true ? "Norsk utgave" : "Standard utgave"
+    }
+
+    public func humanDrawerTitle(roomName: String, isRecommended: Bool, isActive: Bool) -> String {
+        let check = isActive ? " ✓" : ""
+        let quality = humanQualitySummary
+        if isRecommended {
+            let trimmedRoom = roomName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedRoom.isEmpty {
+                return quality.isEmpty ? "Anbefalt\(check)" : "Anbefalt · \(quality)\(check)"
+            }
+            return quality.isEmpty ? "Anbefalt for \(trimmedRoom)\(check)" : "Anbefalt for \(trimmedRoom) · \(quality)\(check)"
+        }
+        return "\(quality)\(check)"
+    }
+
+    public func humanDrawerSubtitle(isActive: Bool = false) -> String {
+        var parts: [String] = [sourceBadgeLabel]
+        if let size = formattedSize, !size.isEmpty {
+            parts.append(size)
+        }
+        if isActive {
+            parts.append("Spilles nå")
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+public struct PlayerDrawerAudioOption: Identifiable, Equatable, Sendable {
+    public let id: Int
+    public let languageCode: String?
+    public let rawTitle: String
+    public let codec: String
+    public let profile: String?
+    public let channelLayout: String?
+    public let channels: Int
+    public let isAtmos: Bool
+    public let isDTSX: Bool
+    public let isCommentary: Bool
+
+    public init(
+        id: Int,
+        languageCode: String? = nil,
+        rawTitle: String = "",
+        codec: String = "",
+        profile: String? = nil,
+        channelLayout: String? = nil,
+        channels: Int = 0,
+        isAtmos: Bool = false,
+        isDTSX: Bool = false,
+        isCommentary: Bool = false
+    ) {
+        self.id = id
+        self.languageCode = languageCode
+        self.rawTitle = rawTitle
+        self.codec = codec
+        self.profile = profile
+        self.channelLayout = channelLayout
+        self.channels = channels
+        self.isAtmos = isAtmos
+        self.isDTSX = isDTSX
+        self.isCommentary = isCommentary
+    }
+
+    public var humanLanguageTitle: String {
+        if let lang = LunaCopy.localizedLanguageName(languageCode), lang != "Original" {
+            return lang
+        }
+        let trimmed = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            return trimmed
+        }
+        return "Spor \(id + 1)"
+    }
+
+    public var humanFormatSubtitle: String {
+        let lowerCodec = codec.lowercased()
+        let lowerProfile = (profile ?? "").lowercased()
+        let layout = (channelLayout ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let formatName: String
+        if isAtmos && (lowerCodec.contains("truehd") || lowerProfile.contains("truehd")) {
+            formatName = "TrueHD Atmos"
+        } else if isAtmos {
+            formatName = "Dolby Atmos"
+        } else if isDTSX {
+            formatName = "DTS:X"
+        } else if lowerCodec.contains("truehd") {
+            formatName = "TrueHD"
+        } else if lowerCodec == "eac3" || lowerCodec.contains("dd+") {
+            formatName = "Dolby Digital+"
+        } else if lowerCodec == "ac3" {
+            formatName = "Dolby Digital"
+        } else if lowerCodec.contains("aac") {
+            formatName = "AAC"
+        } else if !lowerCodec.isEmpty && lowerCodec != "unknown" {
+            formatName = codec.uppercased()
+        } else {
+            formatName = "Surround"
+        }
+
+        var segments = [formatName]
+        if !layout.isEmpty {
+            segments.append(layout)
+        } else if channels >= 6 {
+            segments.append("5.1")
+        } else if channels == 2 {
+            segments.append("Stereo")
+        }
+        if isCommentary {
+            segments.append("Kommentarspor")
+        }
+        return segments.joined(separator: " ")
+    }
+}
+
+public struct PlayerDrawerSubtitleOption: Identifiable, Equatable, Sendable {
+    public let id: Int
+    public let languageCode: String?
+    public let rawTitle: String
+    public let isForced: Bool
+    public let isHearingImpaired: Bool
+    public let isExternal: Bool
+
+    public init(
+        id: Int,
+        languageCode: String? = nil,
+        rawTitle: String = "",
+        isForced: Bool = false,
+        isHearingImpaired: Bool = false,
+        isExternal: Bool = false
+    ) {
+        self.id = id
+        self.languageCode = languageCode
+        self.rawTitle = rawTitle
+        self.isForced = isForced
+        self.isHearingImpaired = isHearingImpaired
+        self.isExternal = isExternal
+    }
+
+    public var humanLanguageTitle: String {
+        let lang = LunaCopy.localizedLanguageName(languageCode) ?? {
+            let trimmed = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "Undertekst \(id + 1)" : trimmed
+        }()
+        if isForced {
+            return "\(lang) (tvunget)"
+        }
+        return lang
+    }
+
+    public var humanSubtitleDescription: String {
+        if isForced {
+            return "Vises kun ved fremmedspråk"
+        }
+        if isHearingImpaired {
+            return "Tilrettelagt med lydtekst"
+        }
+        if isExternal {
+            return "Fra egen tekstfil"
+        }
+        return "Innebygd i utgaven"
+    }
 }
 
 public struct TvStreamEndpoint: Codable, Equatable, Sendable {

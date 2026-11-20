@@ -3,7 +3,8 @@ import AetherBridge
 
 @main
 struct LunaApp: App {
-    @StateObject private var sessionStore = AppSessionStore()
+    private let previewConfiguration: PreviewLaunchConfiguration?
+    @StateObject private var sessionStore: AppSessionStore
 
     /// Long-lived AetherEngine instance shared across all playback sessions
     /// so HDMI display criteria and audio session controllers are never torn
@@ -34,11 +35,18 @@ struct LunaApp: App {
     }()
 
     init() {
-        Task.detached(priority: .utility) {
-            _ = await AetherEngine.prewarmDualLayerDolbyVision()
-            try? await Task.sleep(nanoseconds: 10_000_000_000)
-            guard !Task.isCancelled else { return }
-            await ArtworkPipeline.shared.trimDiskCacheIfNeeded()
+        let parsedPreview = PreviewLaunchConfiguration.current
+        self.previewConfiguration = parsedPreview
+        if let parsedPreview {
+            _sessionStore = StateObject(wrappedValue: AppSessionStore(previewConfiguration: parsedPreview))
+        } else {
+            _sessionStore = StateObject(wrappedValue: AppSessionStore())
+            Task.detached(priority: .utility) {
+                _ = await AetherEngine.prewarmDualLayerDolbyVision()
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                guard !Task.isCancelled else { return }
+                await ArtworkPipeline.shared.trimDiskCacheIfNeeded()
+            }
         }
     }
 
@@ -46,7 +54,10 @@ struct LunaApp: App {
         WindowGroup {
             Group {
                 if sessionStore.isPaired {
-                    MainNavigationShell(engine: engine)
+                    MainNavigationShell(
+                        engine: engine,
+                        previewConfiguration: previewConfiguration
+                    )
                 } else {
                     PairingOnboardingView()
                 }

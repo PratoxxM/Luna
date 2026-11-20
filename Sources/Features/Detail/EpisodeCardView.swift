@@ -56,26 +56,19 @@ struct EpisodeCardView: View {
                             }
 
                             Spacer()
-
-                            if episode.watched {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(LunaTheme.Font.cardMicroIcon)
-                                    .foregroundStyle(LunaTheme.emerald)
-                                    .padding(6)
-                                    .background(LunaTheme.cinemaGlass, in: Circle())
-                            }
                         }
                         .padding(12)
 
                         Spacer()
 
-                        if pct > 1 && !upcoming {
+                        if (pct > 1 || episode.watched) && !upcoming {
                             let trackWidth: CGFloat = Self.cardWidth - 28
+                            let effectivePct = episode.watched ? 100.0 : pct
                             ZStack(alignment: .leading) {
                                 Capsule().fill(LunaTokens.Edge.progressTrack)
                                 Capsule()
                                     .fill(LunaTheme.amber)
-                                    .frame(width: trackWidth * CGFloat(pct / 100.0))
+                                    .frame(width: trackWidth * CGFloat(effectivePct / 100.0))
                             }
                             .frame(width: trackWidth, height: 6)
                             .padding(.horizontal, 14)
@@ -87,7 +80,7 @@ struct EpisodeCardView: View {
                 .lunaCardFocusFrame(
                     cornerRadius: LunaTheme.cardRadius,
                     isFocused: isFocused,
-                    showRestingTopEdge: true
+                    showRestingTopEdge: false
                 )
             }
             .buttonStyle(.card)
@@ -132,8 +125,8 @@ struct EpisodeCardView: View {
 
                 if episode.watched {
                     Text("Sett")
-                        .font(LunaTheme.Font.badge)
-                        .foregroundStyle(LunaTheme.emerald)
+                        .font(LunaTheme.Font.caption)
+                        .foregroundStyle(LunaTheme.muted)
                 } else if isNextForYou && !upcoming {
                     let rt = episode.formattedRuntime.map { "\($0) · " } ?? ""
                     Text("\(rt)Neste for deg")

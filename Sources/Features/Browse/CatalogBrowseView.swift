@@ -124,36 +124,40 @@ struct CatalogBrowseView: View {
     var body: some View {
         let client = sessionStore.makeClient()
 
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 20) {
+        let columns = Array(
+            repeating: GridItem(.fixed(LunaTokens.Layout.posterW), spacing: LunaTokens.Layout.cardGap, alignment: .topLeading),
+            count: 5
+        )
+        _ = columns
+        return ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 26) {
                 Text(headerTitle)
                     .font(LunaTheme.Font.pageTitle)
                     .foregroundStyle(LunaTheme.linen)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
 
-                // Sort & quick filter bar (uniform warm espresso pills)
+                // Single calm compact filter strip within 90 pt margins
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 10) {
                         ForEach(sortOptions, id: \.id) { opt in
                             LunaPillButton(
                                 opt.label,
-                                isSelected: selectedSort == opt.id
+                                isSelected: selectedSort == opt.id,
+                                prominence: .subtleChip,
+                                size: .compact
                             ) {
                                 guard selectedSort != opt.id else { return }
                                 selectedSort = opt.id
                             }
                         }
 
-                        Rectangle()
-                            .fill(LunaTheme.warmBorder)
-                            .frame(width: 1, height: 26)
-                            .padding(.horizontal, 6)
-
                         if !isRootTab {
                             LunaPillButton(
                                 "Kun lokalt",
                                 systemImage: localOnly ? "checkmark" : nil,
-                                isSelected: localOnly
+                                isSelected: localOnly,
+                                prominence: .subtleChip,
+                                size: .compact
                             ) {
                                 localOnly.toggle()
                             }
@@ -162,26 +166,24 @@ struct CatalogBrowseView: View {
                         LunaPillButton(
                             "Skjul sette",
                             systemImage: unwatchedOnly ? "checkmark" : nil,
-                            isSelected: unwatchedOnly
+                            isSelected: unwatchedOnly,
+                            prominence: .subtleChip,
+                            size: .compact
                         ) {
                             unwatchedOnly.toggle()
                         }
-                    }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 10)
-                }
-                .contentMargins(.zero, for: .scrollContent)
-                .scrollClipDisabled()
-                .focusSection()
 
-                // Pure text genre strip (zero icon clutter)
-                if !availableGenres.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
+                        if !availableGenres.isEmpty {
+                            Text("·")
+                                .font(LunaTheme.Font.caption)
+                                .foregroundStyle(LunaTheme.muted)
+                                .padding(.horizontal, 6)
+
                             LunaPillButton(
                                 "Alle sjangre",
                                 isSelected: selectedGenreSlug == nil,
-                                prominence: .subtleChip
+                                prominence: .subtleChip,
+                                size: .compact
                             ) {
                                 selectedGenreSlug = nil
                                 selectedGenreLabel = nil
@@ -192,7 +194,8 @@ struct CatalogBrowseView: View {
                                 LunaPillButton(
                                     chip.label,
                                     isSelected: active,
-                                    prominence: .subtleChip
+                                    prominence: .subtleChip,
+                                    size: .compact
                                 ) {
                                     if active {
                                         selectedGenreSlug = nil
@@ -204,13 +207,13 @@ struct CatalogBrowseView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                        .padding(.vertical, 10)
                     }
-                    .contentMargins(.zero, for: .scrollContent)
-                    .scrollClipDisabled()
-                    .focusSection()
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.vertical, 10)
                 }
+                .contentMargins(.zero, for: .scrollContent)
+                .scrollClipDisabled()
+                .focusSection()
 
                 // Content Grid
                 if isLoading && items.isEmpty {
@@ -300,13 +303,14 @@ struct CatalogBrowseView: View {
                     }
                 }
             }
-            .padding(.bottom, 64)
+            .padding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 32)
+            .padding(.bottom, 84)
         }
         .contentMargins(.zero, for: .scrollContent)
         .scrollClipDisabled()
-        .ignoresSafeArea(edges: .horizontal)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .ignoresSafeArea()
         .lunaRootScrollTopBarTracking(tab: rootNavigationTab, isEnabled: isRootTab)
-        .safeAreaPadding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 0)
         .overlay(alignment: .topLeading) {
             if let mutationErrorBanner {
                 TransientErrorBanner(message: mutationErrorBanner)

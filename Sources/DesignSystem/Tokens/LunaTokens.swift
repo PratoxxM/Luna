@@ -1,11 +1,11 @@
-// Generated from design/tokens.json (sha256: 9ba0f8dbf5d792848aad4cbb8b51eed5f2a2366e249e106e1d274718019c4794) — DO NOT EDIT MANUALLY.
+// Generated from design/tokens.json (sha256: 7eb7329a736f677b4a2687ebdca2d967ab5aa49fde0221ba6059bd15c64003c8) — DO NOT EDIT MANUALLY.
 // Regenerate via: ./ops/bin/luna-design-tokens --sync
 
 import CoreGraphics
 import SwiftUI
 
 public enum LunaTokens {
-    public static let tokensSha256 = "9ba0f8dbf5d792848aad4cbb8b51eed5f2a2366e249e106e1d274718019c4794"
+    public static let tokensSha256 = "7eb7329a736f677b4a2687ebdca2d967ab5aa49fde0221ba6059bd15c64003c8"
 
     public enum Surface {
         public static let canvas = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0)
@@ -102,11 +102,11 @@ public enum LunaTokens {
         public static let cinemaLamp = Color(red: 210.0 / 255.0, green: 150.0 / 255.0, blue: 62.0 / 255.0)
         public static let cinemaLampStrength: Double = 0.26
         public static let cinemaTint = Color(red: 42.0 / 255.0, green: 28.0 / 255.0, blue: 16.0 / 255.0)
-        public static let cinemaAmbientOpacity: Double = 0.055
+        public static let cinemaAmbientOpacity: Double = 0.06
         public static let livingLamp = Color(red: 240.0 / 255.0, green: 217.0 / 255.0, blue: 181.0 / 255.0)
         public static let livingLampStrength: Double = 0.22
-        public static let livingTint = Color(red: 43.0 / 255.0, green: 36.0 / 255.0, blue: 28.0 / 255.0)
-        public static let livingAmbientOpacity: Double = 0.08
+        public static let livingTint = Color(red: 32.0 / 255.0, green: 27.0 / 255.0, blue: 22.0 / 255.0)
+        public static let livingAmbientOpacity: Double = 0.055
     }
 
     public enum Typography {

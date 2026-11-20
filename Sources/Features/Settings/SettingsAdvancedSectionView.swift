@@ -125,6 +125,26 @@ struct SettingsAdvancedSectionView: View {
 
             SettingsSectionDivider()
 
+            SettingsControlRow(
+                title: "Lavoppløst oppskalering (Auto MetalFX)",
+                subtitle: comfort.lowResUpscaleMode.shortDescription
+            ) {
+                HStack(spacing: 8) {
+                    ForEach(LowResUpscaleMode.allCases) { mode in
+                        LunaPillButton(
+                            mode.displayTitle,
+                            isSelected: comfort.lowResUpscaleMode == mode,
+                            prominence: comfort.lowResUpscaleMode == mode ? .glassPill : .subtleChip,
+                            size: .compact
+                        ) {
+                            comfort.lowResUpscaleMode = mode
+                        }
+                    }
+                }
+            }
+
+            SettingsSectionDivider()
+
             SettingsToggleRowButton(
                 title: "Vis teknisk oversikt i spilleren",
                 subtitle: "Sanntids bilde-, lyd- og bufferoversikt under avspilling",

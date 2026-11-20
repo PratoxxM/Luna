@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 extension LunaCoreClient {
     // MARK: - Device Flow Pairing
@@ -6,7 +9,7 @@ extension LunaCoreClient {
     public func requestPairingCode(
         model: String,
         osVersion: String,
-        appVersion: String = AppSessionStore.currentAppVersionString()
+        appVersion: String = SideloadSafeStorage.currentAppVersionString()
     ) async throws -> TvPairingRequestResponse {
         struct Payload: Encodable, Sendable {
             let deviceId: String

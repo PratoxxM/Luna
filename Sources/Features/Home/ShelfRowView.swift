@@ -2,7 +2,8 @@ import SwiftUI
 
 struct ShelfRowView: View {
     let row: TvShelfRow
-    let isFirstRow: Bool
+    let isDefaultFocusRow: Bool
+    var focusedCardKey: FocusState<String?>.Binding
     let focusNamespace: Namespace.ID
     let client: LunaCoreClient?
 
@@ -57,7 +58,8 @@ struct ShelfRowView: View {
                                     onPlayContinueCard(card)
                                 }
                             )
-                            .prefersDefaultFocus(isFirstRow && idx == 0, in: focusNamespace)
+                            .focused(focusedCardKey, equals: "\(row.rowId)#\(card.itemId)")
+                            .prefersDefaultFocus(isDefaultFocusRow && idx == 0, in: focusNamespace)
                             .contextMenu {
                                 Button {
                                     onPlayContinueCard(card)
@@ -116,7 +118,8 @@ struct ShelfRowView: View {
                                     onSelectCard(card)
                                 }
                             )
-                            .prefersDefaultFocus(isFirstRow && idx == 0, in: focusNamespace)
+                            .focused(focusedCardKey, equals: "\(row.rowId)#\(card.itemId)")
+                            .prefersDefaultFocus(isDefaultFocusRow && idx == 0, in: focusNamespace)
                             .contextMenu {
                                 Button {
                                     onSelectCard(card)
@@ -161,7 +164,8 @@ struct ShelfRowView: View {
                                     onPlayContinueCard(card)
                                 }
                             )
-                            .prefersDefaultFocus(isFirstRow && idx == 0, in: focusNamespace)
+                            .focused(focusedCardKey, equals: "\(row.rowId)#\(card.itemId)")
+                            .prefersDefaultFocus(isDefaultFocusRow && idx == 0, in: focusNamespace)
                             .contextMenu {
                                 StandardPosterContextMenuItems(
                                     card: card,
@@ -213,7 +217,8 @@ struct ShelfRowView: View {
                                     onPlayContinueCard(card)
                                 }
                             )
-                            .prefersDefaultFocus(isFirstRow && idx == 0, in: focusNamespace)
+                            .focused(focusedCardKey, equals: "\(row.rowId)#\(card.itemId)")
+                            .prefersDefaultFocus(isDefaultFocusRow && idx == 0, in: focusNamespace)
                             .contextMenu {
                                 StandardPosterContextMenuItems(
                                     card: card,

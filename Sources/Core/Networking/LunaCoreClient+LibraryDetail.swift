@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 extension LunaCoreClient {
     // MARK: - Library, Item Detail, Search & Mutations

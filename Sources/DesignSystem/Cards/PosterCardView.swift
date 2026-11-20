@@ -11,24 +11,27 @@ public struct LunaTierMarkView: View {
         let color = tierColor
         ZStack {
             Circle()
-                .fill(LunaTheme.cinemaGlass)
-                .frame(width: 34, height: 34)
-            Circle()
-                .strokeBorder(color.opacity(0.45), lineWidth: 1)
-                .frame(width: 34, height: 34)
+                .fill(LunaTheme.canvas.opacity(0.76))
+                .frame(width: 24, height: 24)
+                .overlay(
+                    Circle()
+                        .strokeBorder(LunaTheme.warmBorderBase.opacity(0.14), lineWidth: 0.5)
+                )
 
             if availability.isLocalNvme {
                 Circle()
                     .fill(color)
-                    .frame(width: 12, height: 12)
+                    .frame(width: 9, height: 9)
+                    .shadow(color: color.opacity(0.55), radius: 4, x: 0, y: 0)
             } else if availability.isLocalArchive {
                 Circle()
-                    .strokeBorder(color, lineWidth: 2)
-                    .frame(width: 12, height: 12)
+                    .strokeBorder(color, lineWidth: 1.6)
+                    .frame(width: 9, height: 9)
             } else {
                 Image(systemName: "waveform")
                     .font(LunaTheme.Font.tierBadge)
                     .foregroundStyle(color)
+                    .scaleEffect(0.52)
             }
         }
         .accessibilityLabel(availability.resolvedBenefitLabel)

@@ -33,27 +33,27 @@ public struct AmbientBackdropView: View {
             LunaTheme.canvas
 
             if !isPaused {
-                // Subtle warm room-calibrated depth across the upper third
+                // Subtle warm espresso depth at the top matching M0 canvas-glow
                 LinearGradient(
                     stops: [
-                        .init(color: room.ambientTintColor.opacity(0.72), location: 0.0),
-                        .init(color: LunaTheme.surface.opacity(0.28), location: 0.36),
-                        .init(color: .clear, location: 0.72),
+                        .init(color: LunaTheme.surface.opacity(0.76), location: 0.0),
+                        .init(color: LunaTheme.surface.opacity(0.24), location: 0.34),
+                        .init(color: .clear, location: 0.68),
                     ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
 
-                // Soft fixed candlelight glow — subtly calibrated per room without poster color shifts
+                // Soft fixed candlelight glow (~5.5–6 % amber) without washed-out gray/slate cast
                 RadialGradient(
                     colors: [
-                        room.lampColor.opacity(room.ambientOpacity),
-                        LunaTheme.amberDeep.opacity(room.ambientOpacity * 0.36),
+                        LunaTheme.amber.opacity(room.ambientOpacity),
+                        LunaTheme.amberDeep.opacity(room.ambientOpacity * 0.38),
                         .clear,
                     ],
                     center: UnitPoint(x: 0.50, y: -0.06),
-                    startRadius: 40,
-                    endRadius: 980
+                    startRadius: 20,
+                    endRadius: 860
                 )
             }
         }

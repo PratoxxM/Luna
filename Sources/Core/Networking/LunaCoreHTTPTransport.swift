@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import Synchronization
 
 public enum LunaCoreError: LocalizedError, Sendable {
@@ -59,7 +62,7 @@ public struct LunaCoreClient: Sendable {
         roomName: String,
         hardwareProfile: String,
         allowSelfSignedLanTLS: Bool,
-        appVersion: String = AppSessionStore.currentAppVersionString(),
+        appVersion: String = SideloadSafeStorage.currentAppVersionString(),
         osVersion: String = ""
     ) {
         self.baseURL = baseURL
@@ -81,14 +84,14 @@ public struct LunaCoreClient: Sendable {
         self.externalImageSession = LunaCoreSessionPool.shared.externalArtworkSession()
     }
 
-    internal init(
+    public init(
         baseURL: URL,
         deviceID: String,
         deviceToken: String?,
         roomName: String,
         hardwareProfile: String,
         allowSelfSignedLanTLS: Bool,
-        appVersion: String = AppSessionStore.currentAppVersionString(),
+        appVersion: String = SideloadSafeStorage.currentAppVersionString(),
         osVersion: String = "",
         session: URLSession,
         imageSession: URLSession? = nil,

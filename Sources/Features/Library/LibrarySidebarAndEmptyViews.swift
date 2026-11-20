@@ -119,87 +119,6 @@ public enum LibrarySidebarSection: String, CaseIterable, Identifiable, Sendable 
     }
 }
 
-struct LibraryWatchlistTypeBar: View {
-    @Binding var watchlistTypeFilter: String
-
-    var body: some View {
-        HStack(spacing: 12) {
-            LunaPillButton("Alle", isSelected: watchlistTypeFilter == "all", prominence: .subtleChip, size: .compact) {
-                watchlistTypeFilter = "all"
-            }
-            LunaPillButton("Filmer", isSelected: watchlistTypeFilter == "movie", prominence: .subtleChip, size: .compact) {
-                watchlistTypeFilter = "movie"
-            }
-            LunaPillButton("Serier", isSelected: watchlistTypeFilter == "series", prominence: .subtleChip, size: .compact) {
-                watchlistTypeFilter = "series"
-            }
-        }
-        .padding(.vertical, 4)
-        .focusSection()
-    }
-}
-
-struct LibraryLocalFilterBar: View {
-    let counts: TvLibraryCounts?
-    @Binding var localTierFilter: String
-    @Binding var localSort: String
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                LunaPillButton(
-                    "Alle lokale",
-                    badgeText: counts.map { String($0.localTotal) },
-                    isSelected: localTierFilter == "all",
-                    prominence: .subtleChip,
-                    size: .compact
-                ) {
-                    localTierFilter = "all"
-                }
-
-                LunaPillButton(
-                    LunaCopy.tierBenefitLabel(tier: "nvme"),
-                    badgeText: counts.map { String($0.nvme) },
-                    isSelected: localTierFilter == "nvme",
-                    prominence: .subtleChip,
-                    size: .compact
-                ) {
-                    localTierFilter = "nvme"
-                }
-
-                LunaPillButton(
-                    LunaCopy.tierBenefitLabel(tier: "archive"),
-                    badgeText: counts.map { String($0.archive) },
-                    isSelected: localTierFilter == "archive",
-                    prominence: .subtleChip,
-                    size: .compact
-                ) {
-                    localTierFilter = "archive"
-                }
-
-                Rectangle()
-                    .fill(LunaTheme.warmBorder)
-                    .frame(width: 1, height: 24)
-                    .padding(.horizontal, 4)
-
-                LunaPillButton("Nylig lagt til", isSelected: localSort == "recent", prominence: .subtleChip, size: .compact) {
-                    localSort = "recent"
-                }
-                LunaPillButton("Høyest rangert", isSelected: localSort == "rating", prominence: .subtleChip, size: .compact) {
-                    localSort = "rating"
-                }
-                LunaPillButton("A–Å", isSelected: localSort == "title", prominence: .subtleChip, size: .compact) {
-                    localSort = "title"
-                }
-            }
-            .padding(.vertical, 6)
-        }
-        .contentMargins(.zero, for: .scrollContent)
-        .scrollClipDisabled()
-        .focusSection()
-    }
-}
-
 struct LibrarySidebarRowButton: View {
     let section: LibrarySidebarSection
     let countText: String?
@@ -226,15 +145,11 @@ struct LibrarySidebarRowButton: View {
                 }
             }
             .transaction { $0.animation = nil }
-            .padding(.horizontal, 26)
-            .padding(.vertical, 18)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 16)
             .background(
                 RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
-                    .fill(
-                        isFocused
-                            ? LunaTheme.surfaceElevated
-                            : (isSelected ? LunaTheme.surfaceSelected : LunaTheme.surface)
-                    )
+                    .fill(isFocused ? LunaTheme.surfaceSelected : Color.clear)
                     .transaction { $0.animation = nil }
             )
             .lunaFocusSurface(.listRow, isFocused: isFocused, cornerRadius: LunaTokens.Radius.card)

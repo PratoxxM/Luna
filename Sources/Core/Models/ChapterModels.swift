@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(AetherBridge)
 import AetherBridge
+#endif
 
 public enum TvChapterKind: String, Codable, Equatable, Sendable {
     case intro
@@ -200,6 +202,7 @@ public struct PlaybackChapter: Identifiable, Equatable, Sendable {
         self.kind = kind
     }
 
+    #if canImport(AetherBridge)
     public static func merge(
         probeChapters: [TvProbeChapter],
         engineChapters: [ChapterInfo],
@@ -219,6 +222,7 @@ public struct PlaybackChapter: Identifiable, Equatable, Sendable {
             mediaDuration: mediaDuration
         )
     }
+    #endif
 
     public static func mergeRaw(
         probeChapters: [TvProbeChapter],

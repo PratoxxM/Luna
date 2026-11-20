@@ -31,7 +31,7 @@ public enum MainNavigationTab: String, CaseIterable, Identifiable, Hashable, Sen
         case .series: return "tv"
         case .library: return "books.vertical.fill"
         case .search: return "magnifyingglass"
-        case .settings: return "gearshape.fill"
+        case .settings: return "slider.horizontal.3"
         }
     }
 

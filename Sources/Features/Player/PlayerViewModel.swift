@@ -69,7 +69,47 @@ final class PlayerViewModel: ObservableObject {
     @Published var activeSubtitleTrackIndex: Int?
     @Published var subtitleDelaySeconds: Double = 0
 
+    @Published var previewAudioOptions: [PlayerDrawerAudioOption] = []
+    @Published var previewSubtitleOptions: [PlayerDrawerSubtitleOption] = []
+
+    var drawerAudioOptions: [PlayerDrawerAudioOption] {
+        if !previewAudioOptions.isEmpty {
+            return previewAudioOptions
+        }
+        return audioTracks.map {
+            PlayerDrawerAudioOption(
+                id: $0.id,
+                languageCode: $0.language,
+                rawTitle: $0.name,
+                codec: $0.codec,
+                profile: $0.profile,
+                channelLayout: $0.channelLayout,
+                channels: Int($0.channels),
+                isAtmos: $0.isAtmos,
+                isDTSX: $0.isDTSX,
+                isCommentary: $0.isCommentary
+            )
+        }
+    }
+
+    var drawerSubtitleOptions: [PlayerDrawerSubtitleOption] {
+        if !previewSubtitleOptions.isEmpty {
+            return previewSubtitleOptions
+        }
+        return subtitleTracks.map {
+            PlayerDrawerSubtitleOption(
+                id: $0.id,
+                languageCode: $0.language,
+                rawTitle: $0.name,
+                isForced: $0.isForced,
+                isHearingImpaired: $0.isHearingImpaired,
+                isExternal: $0.isExternal
+            )
+        }
+    }
+
     @Published var chapters: [PlaybackChapter] = []
+    @Published var previewPlayheadOverrideSeconds: Double?
 
     // Tactile Coalesced Seeking & Continuous Siri Remote Touch Scrubbing
     @Published var coalescedSeekDelta: Double = 0
@@ -139,19 +179,16 @@ final class PlayerViewModel: ObservableObject {
     /// True only once the first decoded video frame is ready and HDMI range/frame-rate
     /// switching has settled (or when an in-place source replacement is holding a still frame).
     var isPictureReadyForReveal: Bool {
-        if fatalError != nil {
-            return false
-        }
-        if isSwitchingSource {
-            return true
-        }
-        if isResolving || isRestoringFromBackground || transport.needsForegroundVideoRestore {
-            return false
-        }
-        if firstFrameFallbackUnlocked {
-            return true
-        }
-        return hasFirstFrameReadyForDisplay && !isAwaitingDisplaySwitch
+        PlaybackCurtainWatchdog.isPictureReadyForReveal(
+            hasFatalError: fatalError != nil,
+            isSwitchingSource: isSwitchingSource,
+            isResolving: isResolving,
+            isRestoringFromBackground: isRestoringFromBackground,
+            needsForegroundVideoRestore: transport.needsForegroundVideoRestore,
+            firstFrameFallbackUnlocked: firstFrameFallbackUnlocked,
+            hasFirstFrameReadyForDisplay: hasFirstFrameReadyForDisplay,
+            isAwaitingDisplaySwitch: isAwaitingDisplaySwitch
+        )
     }
 
     var effectiveDurationSeconds: Double {
@@ -162,6 +199,50 @@ final class PlayerViewModel: ObservableObject {
     }
 
     // MARK: - Lifecycle & Commands
+
+    func configurePreviewPlayback(
+        request: PlaybackLaunchRequest,
+        session: TvPlaybackSession,
+        client: LunaCoreClient?,
+        audioOptions: [PlayerDrawerAudioOption] = PreviewMockFixtures.previewAudioOptions,
+        subtitleOptions: [PlayerDrawerSubtitleOption] = PreviewMockFixtures.previewSubtitleOptions,
+        candidates: [TvCandidateInfo] = PreviewMockFixtures.previewCandidates
+    ) {
+        currentRequest = request
+        activeSession = session
+        activeClient = client
+        fatalError = nil
+        isResolving = false
+        hasFirstFrameReadyForDisplay = true
+        isAwaitingDisplaySwitch = false
+        firstFrameFallbackUnlocked = true
+        isRestoringFromBackground = false
+        playbackPhase = .paused
+        let declared = session.stream.declaredDurationSeconds ?? session.item.runtimeSeconds ?? 6180
+        durationSeconds = declared
+        previewPlayheadOverrideSeconds = request.startPositionSeconds ?? session.stream.startPositionSeconds ?? 1840
+        videoFormat = .sdr
+        sourceDVProfile = nil
+        videoRoute = .direct
+        audioDelivery = .direct
+        sourceVideoCodecName = "hevc"
+        sourceVideoWidth = 1920
+        sourceVideoHeight = 1080
+        sourceVideoFrameRate = 24.0
+        activeVideoDecoder = "VideoToolbox HW"
+        activeAudioDecoder = "Dolby Atmos 7.1.4"
+        previewAudioOptions = audioOptions
+        previewSubtitleOptions = subtitleOptions
+        activeAudioTrackIndex = audioOptions.first?.id
+        activeSubtitleTrackIndex = subtitleOptions.first?.id
+        alternatives = candidates
+        alternativesSessionId = session.sessionId
+        chapters = PlaybackChapter.mergeRaw(
+            probeChapters: session.chapters ?? [],
+            engineChapters: [],
+            mediaDuration: declared
+        )
+    }
 
     func start(request: PlaybackLaunchRequest, client: LunaCoreClient?) {
         engineOwnerToken = PlayerAudioSessionCoordinator.shared.claimEngineOwnership()

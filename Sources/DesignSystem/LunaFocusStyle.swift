@@ -111,18 +111,21 @@ public struct LunaFocusSurfaceModifier: ViewModifier {
                             }
                             .overlay(
                                 shape.strokeBorder(
-                                    LunaTheme.topLightEdgeGradient(topColor: LunaTokens.Edge.top3),
+                                    LunaTheme.focusGoldBorder.opacity(0.45),
                                     lineWidth: 1.0
                                 )
+                            )
+                        } else if kind == .primaryPlay {
+                            shape.strokeBorder(
+                                LunaTheme.topLightEdgeGradient(topColor: LunaTheme.warmBorderBase.opacity(0.26)),
+                                lineWidth: 1.0
                             )
                         } else {
                             shape.strokeBorder(activeBorderColor, lineWidth: LunaFocusStyle.borderWidth)
                         }
-                    } else {
+                    } else if kind == .primaryPlay {
                         shape.strokeBorder(
-                            LunaTheme.topLightEdgeGradient(
-                                topColor: kind == .listRow ? LunaTokens.Edge.top1 : LunaTokens.Edge.top2
-                            ),
+                            LunaTheme.topLightEdgeGradient(topColor: LunaTheme.warmBorderBase.opacity(0.16)),
                             lineWidth: 1.0
                         )
                     }

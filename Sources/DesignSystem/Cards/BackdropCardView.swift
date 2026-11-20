@@ -113,23 +113,14 @@ public struct BackdropCardView: View {
                             if variant != .upcomingEpisode {
                                 Image(systemName: "play.fill")
                                     .font(LunaTheme.Font.pillIcon)
-                                    .foregroundStyle(isFocused ? LunaTheme.canvas : LunaTheme.linen)
+                                    .foregroundStyle(LunaTheme.canvas)
                                     .frame(
                                         width: LunaTokens.Layout.playBadgeSize,
                                         height: LunaTokens.Layout.playBadgeSize
                                     )
-                                    .background(
-                                        isFocused ? LunaTheme.amber : LunaTheme.cinemaGlass,
-                                        in: Circle()
-                                    )
-                                    .overlay(
-                                        Circle()
-                                            .strokeBorder(
-                                                isFocused ? Color.clear : LunaTheme.warmBorderStrong,
-                                                lineWidth: 1
-                                            )
-                                    )
-                                    .opacity(isFocused ? 1.0 : (variant == .continueWatching ? 0.88 : 0.0))
+                                    .background(LunaTheme.amber, in: Circle())
+                                    .opacity(isFocused ? 1.0 : 0.0)
+                                    .scaleEffect(isFocused ? 1.0 : 0.84)
                                     .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
                             }
                         }
@@ -153,7 +144,7 @@ public struct BackdropCardView: View {
             .lunaCardFocusFrame(
                 cornerRadius: LunaTheme.cardRadius,
                 isFocused: isFocused,
-                showRestingTopEdge: true
+                showRestingTopEdge: false
             )
         }
         .buttonStyle(.card)

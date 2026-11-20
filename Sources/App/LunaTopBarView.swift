@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LunaTopBarView: View {
-    static let contentTopPadding: CGFloat = 86
+    static let contentTopPadding: CGFloat = 148
     static let focusDebounceNanoseconds: UInt64 = 180_000_000
 
     @Environment(\.lunaRoomAtmosphere) private var environmentAtmosphere
@@ -18,41 +18,29 @@ struct LunaTopBarView: View {
     @Namespace private var topBarFocusNamespace
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 24) {
             emblemView
+                .frame(minWidth: 280, maxWidth: .infinity, alignment: .leading)
 
-            dividerView
-
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 ForEach(MainNavigationTab.primaryTabs) { tab in
                     tabButton(for: tab, isIconOnly: false)
                 }
             }
+            .fixedSize(horizontal: true, vertical: false)
 
-            dividerView
-
-            HStack(spacing: 8) {
+            HStack(spacing: 12) {
                 ForEach(MainNavigationTab.utilityTabs) { tab in
                     tabButton(for: tab, isIconOnly: true)
                 }
             }
+            .frame(minWidth: 280, maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 7)
-        .background(Capsule().fill(LunaTheme.cinemaGlass))
-        .lunaTopLightEdge(
-            cornerRadius: LunaTokens.Radius.pill,
-            topColor: LunaTokens.Edge.top3,
-            sideColor: LunaTokens.Edge.top1
-        )
-        .shadow(
-            color: environmentAtmosphere.lampColor.opacity(0.10),
-            radius: 18,
-            x: 0,
-            y: 8
-        )
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, LunaTheme.horizontalGutter)
-        .padding(.top, 6)
+        .padding(.top, 46)
+        .padding(.bottom, 16)
+        .ignoresSafeArea(edges: [.top, .horizontal])
         .defaultFocus($focusedTab, selectedTab as MainNavigationTab?, priority: .userInitiated)
         .focusScope(topBarFocusNamespace)
         .focusSection()
@@ -130,29 +118,20 @@ struct LunaTopBarView: View {
         .prefersDefaultFocus(selectedTab == tab, in: topBarFocusNamespace)
     }
 
-    private var dividerView: some View {
-        Rectangle()
-            .fill(LunaTheme.warmBorder)
-            .frame(width: 1, height: 22)
-            .allowsHitTesting(false)
-    }
-
     private var emblemView: some View {
         let displayLabel: String = {
             let trimmed = (roomName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? "Luna" : trimmed
         }()
 
-        return HStack(spacing: 10) {
-            LunaCrescentMarkView(size: 28, color: environmentAtmosphere.lampColor)
+        return HStack(spacing: 14) {
+            LunaCrescentMarkView(size: 36, color: LunaTheme.amber)
 
             Text(displayLabel)
                 .font(LunaTheme.Font.brandSerif)
                 .foregroundStyle(LunaTheme.moonlight)
                 .lineLimit(1)
         }
-        .padding(.leading, 4)
-        .padding(.trailing, 2)
         .allowsHitTesting(false)
     }
 }
@@ -185,7 +164,7 @@ struct TopBarTabPillButton: View {
     ) -> Color {
         if isFocused { return LunaTheme.linen }
         if isActive && !isBarFocused { return LunaTheme.linen }
-        return LunaTheme.moonlight
+        return LunaTheme.muted
     }
 
     nonisolated static func resolveBorderColor(
@@ -193,17 +172,16 @@ struct TopBarTabPillButton: View {
         isFocused: Bool,
         isBarFocused: Bool = false
     ) -> Color {
-        if isFocused { return LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity) }
-        if isActive && !isBarFocused { return LunaTheme.warmBorderStrong }
+        if isFocused {
+            return LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity)
+        }
         return Color.clear
     }
 
     var body: some View {
-        let showActiveRest = isActive && !isBarFocused
-
         Button(action: action) {
-            HStack(spacing: isIconOnly ? 0 : 8) {
-                if isIconOnly || tab == .home {
+            Group {
+                if isIconOnly {
                     Image(systemName: tab.systemImage)
                         .font(LunaTheme.Font.tabIcon)
                         .foregroundStyle(
@@ -213,9 +191,8 @@ struct TopBarTabPillButton: View {
                                 isBarFocused: isBarFocused
                             )
                         )
-                }
-
-                if !isIconOnly {
+                        .frame(width: 60, height: 60)
+                } else {
                     Text(tab.title)
                         .font(LunaTheme.Font.tabTitle)
                         .foregroundStyle(
@@ -226,12 +203,17 @@ struct TopBarTabPillButton: View {
                             )
                         )
                         .lineLimit(1)
+                        .padding(.horizontal, 26)
+                        .frame(height: 60)
                 }
             }
             .transaction { $0.animation = nil }
-            .padding(.horizontal, isIconOnly ? 14 : 18)
-            .padding(.vertical, 8)
-            .background(pillBackground(showActiveRest: showActiveRest))
+            .background(
+                Capsule()
+                    .fill(LunaTheme.surfaceElevated)
+                    .opacity(isFocused ? 1 : 0)
+                    .transaction { $0.animation = nil }
+            )
             .overlay(
                 Capsule()
                     .strokeBorder(
@@ -240,34 +222,22 @@ struct TopBarTabPillButton: View {
                             isFocused: isFocused,
                             isBarFocused: isBarFocused
                         ),
-                        lineWidth: isFocused ? LunaFocusStyle.borderWidth : 1.0
+                        lineWidth: LunaFocusStyle.borderWidth
                     )
                     .transaction { $0.animation = nil }
             )
             .shadow(
                 color: isFocused ? roomAtmosphere.lampColor.opacity(roomAtmosphere.lampStrength) : .clear,
-                radius: isFocused ? 20 : 0,
+                radius: isFocused ? 24 : 0,
                 x: 0,
-                y: isFocused ? 8 : 0
+                y: isFocused ? 10 : 0
             )
-            .scaleEffect(isFocused ? 1.03 : 1.0)
+            .scaleEffect(isFocused ? 1.04 : 1.0)
             .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(Capsule())
         .focusEffectDisabled(true)
         .accessibilityLabel(tab.title)
-    }
-
-    private func pillBackground(showActiveRest: Bool) -> some View {
-        ZStack {
-            Capsule()
-                .fill(LunaTheme.surfaceSelected)
-                .opacity(!isFocused && showActiveRest ? 1 : 0)
-            Capsule()
-                .fill(LunaTheme.surfaceElevated)
-                .opacity(isFocused ? 1 : 0)
-        }
-        .transaction { $0.animation = nil }
     }
 }

@@ -5,8 +5,9 @@ extension PlayerViewModel {
     // MARK: - Audio & Subtitle Controls
 
     func selectAudioTrack(_ index: Int) {
-        engine.selectAudioTrack(index: index)
         activeAudioTrackIndex = index
+        guard previewAudioOptions.isEmpty else { return }
+        engine.selectAudioTrack(index: index)
         if comfort.smartNordicSubtitleRule && !userManuallySelectedSubtitle {
             smartRuleTask?.cancel()
             smartRuleTask = Task { @MainActor [weak self] in
@@ -57,14 +58,16 @@ extension PlayerViewModel {
 
     func selectSubtitleManually(_ index: Int) {
         userManuallySelectedSubtitle = true
-        engine.selectSubtitleTrack(index: index)
         activeSubtitleTrackIndex = index
+        guard previewSubtitleOptions.isEmpty else { return }
+        engine.selectSubtitleTrack(index: index)
     }
 
     func clearSubtitleManually() {
         userManuallySelectedSubtitle = true
-        engine.clearSubtitle()
         activeSubtitleTrackIndex = nil
+        guard previewSubtitleOptions.isEmpty else { return }
+        engine.clearSubtitle()
     }
 
     func adjustSubtitleDelay(by delta: Double) {

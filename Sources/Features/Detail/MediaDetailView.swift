@@ -138,7 +138,8 @@ struct MediaDetailView: View {
             }
             .scrollBounceBehavior(.basedOnSize)
             .contentMargins(.zero, for: .scrollContent)
-            .ignoresSafeArea(edges: [.top, .horizontal])
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .ignoresSafeArea()
 
             if let mutationErrorBanner = viewModel.mutationErrorBanner {
                 TransientErrorBanner(message: mutationErrorBanner)

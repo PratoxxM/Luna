@@ -18,7 +18,7 @@ import sys
 root = pathlib.Path(sys.argv[1])
 errors = []
 
-SKIP_DIRS = {".git", ".build", "DerivedData", "SourcePackages", "build", "build-tests"}
+SKIP_DIRS = {".git", ".build", ".build-linux", "DerivedData", "SourcePackages", "build", "build-tests", "build-vision", ".ci-screenshots"}
 
 for p in sorted(root.rglob("*")):
     if p.is_symlink() or any(part in SKIP_DIRS for part in p.parts):
@@ -29,7 +29,8 @@ for p in sorted(root.rglob("*")):
         if mode != 0o755:
             errors.append(f"DIR  {rel}: expected 0755, got 0{mode:o}")
     elif p.is_file():
-        expected = 0o755 if rel.startswith("ops/bin/") else 0o644
+        is_exec_script = rel.startswith("ops/bin/") or (rel.startswith("scripts/") and rel.endswith(".sh"))
+        expected = 0o755 if is_exec_script else 0o644
         if mode != expected:
             errors.append(f"FILE {rel}: expected 0{expected:o}, got 0{mode:o}")
 
@@ -55,6 +56,10 @@ for sf in swift_files:
         errors.append(f"RETIRED {rel}: forbidden legacy/test-closure identifier")
     if "PlayerSheets" in text or "Watchlist/" in text:
         errors.append(f"RETIRED {rel}: forbidden retired Watchlist/ or PlayerSheets reference")
+    if re.search(r"\.navigationBarTitleDisplayMode\b|\bUIScreen\.main\b|\bSlider\s*\(", text):
+        errors.append(f"TVOS_GUARDRAIL {rel}: forbidden iOS-only SwiftUI/UIKit API (.navigationBarTitleDisplayMode / UIScreen.main / Slider)")
+    if re.search(r"\.(?:ultraThinMaterial|thinMaterial|regularMaterial|thickMaterial|ultraThickMaterial)\b", text):
+        errors.append(f"TVOS_GUARDRAIL {rel}: forbidden cold system Material blur (.ultraThinMaterial/.regularMaterial/...); use explicit warm Lampelys surfaces")
 
 RETIRED_NAME_RE = re.compile(r"Cat(?!alog|egory)|V250|FixesTests|^BFF|^PlayerSheets")
 
@@ -76,7 +81,7 @@ NAS_PATH_RE = re.compile(r"/volume[12](?=[^0-9A-Za-z_-]|$)")
 SECRET_LITERAL_RE = re.compile(r"luna_tv_|skogsrudveien|\.ts\.net", re.IGNORECASE)
 RETIRED_BRAND_RE = re.compile(r"mediaos|media[-_]core", re.IGNORECASE)
 
-TEXT_EXTS = {".swift", ".yml", ".yaml", ".md", ".plist", ".json", ".txt", ".sh", ".py"}
+TEXT_EXTS = {".swift", ".yml", ".yaml", ".md", ".plist", ".json", ".txt", ".sh", ".py", ".html", ".css"}
 scan_targets = [
     root / "Sources",
     root / "Tests",
@@ -84,9 +89,12 @@ scan_targets = [
     root / "Config",
     root / "Resources",
     root / "design",
+    root / "preview",
     root / "docs",
     root / "ops",
+    root / "scripts",
     root / ".github",
+    root / "Package.swift",
     root / "project.yml",
     *sorted(root.glob("*.md")),
 ]
@@ -133,6 +141,7 @@ else:
             [
                 *(root / "Sources").rglob("*.swift"),
                 *(root / "Tests/LunaTests").glob("*.swift"),
+                *(root / "Tests/LunaCoreTests").glob("*.swift"),
                 *(root / "Packages/AetherBridge/Sources").rglob("*.swift"),
             ]
         )

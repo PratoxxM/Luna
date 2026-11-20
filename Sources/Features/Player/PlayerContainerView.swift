@@ -40,6 +40,9 @@ struct PlayerContainerView: View {
     let engine: AetherEngine
     @ObservedObject var comfort: ComfortPreferences
     let initialRequest: PlaybackLaunchRequest
+    let isPreviewMode: Bool
+    let previewFocusDirection: PreviewFocusDirection?
+    let previewDrawerTab: PlayerTopDrawerTab
     let onDismiss: () -> Void
 
     @StateObject private var viewModel: PlayerViewModel
@@ -63,13 +66,20 @@ struct PlayerContainerView: View {
         engine: AetherEngine,
         comfort: ComfortPreferences,
         initialRequest: PlaybackLaunchRequest,
+        isPreviewMode: Bool = false,
+        previewFocusDirection: PreviewFocusDirection? = nil,
+        previewDrawerTab: PlayerTopDrawerTab = .audioAndSubtitles,
         onDismiss: @escaping () -> Void
     ) {
         self.engine = engine
         self.comfort = comfort
         self.initialRequest = initialRequest
+        self.isPreviewMode = isPreviewMode
+        self.previewFocusDirection = previewFocusDirection
+        self.previewDrawerTab = previewDrawerTab
         self.onDismiss = onDismiss
         _viewModel = StateObject(wrappedValue: PlayerViewModel(engine: engine, comfort: comfort))
+        _selectedDrawerTab = State(initialValue: previewDrawerTab)
     }
 
     private var shouldEnableCanvasAnchor: Bool {
@@ -104,6 +114,12 @@ struct PlayerContainerView: View {
             AetherPlayerSurface(engine: engine)
                 .ignoresSafeArea()
                 .zIndex(0)
+
+            if isPreviewMode {
+                previewCinemaStage(client: client, isBottomBarShown: isBottomBarShown)
+                    .ignoresSafeArea()
+                    .zIndex(0.5)
+            }
 
             // 1. Leaf-isolated HDR/OLED Subtitle Overlay
             SubtitleOverlayView(
@@ -408,7 +424,17 @@ struct PlayerContainerView: View {
                 onDismiss()
             }
             viewModel.updateInitialScenePhase(scenePhase)
-            viewModel.start(request: initialRequest, client: client)
+            if isPreviewMode {
+                viewModel.configurePreviewPlayback(
+                    request: initialRequest,
+                    session: PreviewMockFixtures.playerSession,
+                    client: client
+                )
+                selectedDrawerTab = previewDrawerTab
+                openTopDrawer(tab: previewDrawerTab)
+            } else {
+                viewModel.start(request: initialRequest, client: client)
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             viewModel.handleScenePhaseChange(phase)
@@ -421,11 +447,48 @@ struct PlayerContainerView: View {
         .onDisappear {
             hideBottomBarTask?.cancel()
             pauseRestTask?.cancel()
+            guard !isPreviewMode else { return }
             let store = sessionStore
             viewModel.teardownAndStop {
                 store.notifyContentMutated()
             }
         }
+    }
+
+    @ViewBuilder
+    private func previewCinemaStage(client: LunaCoreClient?, isBottomBarShown: Bool) -> some View {
+        ZStack {
+            if let backdropURL = client?.resolveArtworkURL(initialRequest.backdropUrl) {
+                CachedArtworkView(
+                    url: backdropURL,
+                    client: client,
+                    maxPixelSize: 960,
+                    placeholderSymbol: "film",
+                    contentMode: .fill,
+                    reuseAnyCachedSize: true
+                )
+            }
+            LinearGradient(
+                colors: [
+                    LunaTheme.pureBlack.opacity(0.45),
+                    Color.clear,
+                    LunaTheme.pureBlack.opacity(0.68),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            VStack {
+                Spacer()
+                Text("Velkommen tilbake til Lumon. Avdelingen venter på dere.")
+                    .font(LunaTheme.Font.subtitleCue(size: comfort.subtitleFontSize.pointSize))
+                    .foregroundStyle(comfort.hdrSubtitlePreset.foregroundColor(isHDR: true))
+                    .multilineTextAlignment(.center)
+                    .shadow(color: .black.opacity(0.96), radius: 3, x: 0, y: 2)
+                    .padding(.horizontal, 120)
+                    .padding(.bottom, isBottomBarShown ? 212 : 80)
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     // MARK: - Focus, 4s Playing Auto-Hide & ~12s OLED/Gallery Pause Rest

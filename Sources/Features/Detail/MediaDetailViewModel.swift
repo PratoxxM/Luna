@@ -391,27 +391,39 @@ final class MediaDetailViewModel: ObservableObject {
 
     func heroPrimaryPlayTitle(_ item: TvItemDetail) -> String {
         let base = primaryPlayLabel(item)
-        guard base.hasPrefix("Fortsett") else {
-            return base
-        }
-        let targetProg: TvWatchProgress? = {
-            if item.mediaType == "series", let next = item.nextUp,
-               let ep = episodes.first(where: { $0.seasonNumber == next.season && $0.episodeNumber == next.episode }),
-               let epProg = ep.progress, epProg.durationSeconds > epProg.positionSeconds {
-                return epProg
+        if base.hasPrefix("Fortsett") {
+            let targetProg: TvWatchProgress? = {
+                if item.mediaType == "series", let next = item.nextUp,
+                   let ep = episodes.first(where: { $0.seasonNumber == next.season && $0.episodeNumber == next.episode }),
+                   let epProg = ep.progress, epProg.durationSeconds > epProg.positionSeconds {
+                    return epProg
+                }
+                return item.progress
+            }()
+            guard let prog = targetProg,
+                  prog.positionSeconds > 30,
+                  prog.durationSeconds > prog.positionSeconds else {
+                return base
             }
-            return item.progress
-        }()
-        guard let prog = targetProg,
-              prog.positionSeconds > 30,
-              prog.durationSeconds > prog.positionSeconds else {
-            return base
+            let totalMins = max(1, Int(((prog.durationSeconds - prog.positionSeconds) / 60.0).rounded()))
+            let remText = totalMins >= 60 && totalMins % 60 > 0
+                ? "\(totalMins / 60) t \(totalMins % 60) min igjen"
+                : (totalMins >= 60 ? "\(totalMins / 60) t igjen" : "\(totalMins) min igjen")
+            return "\(base) · \(remText)"
         }
-        let totalMins = max(1, Int(((prog.durationSeconds - prog.positionSeconds) / 60.0).rounded()))
-        let remText = totalMins >= 60 && totalMins % 60 > 0
-            ? "\(totalMins / 60) t \(totalMins % 60) min igjen"
-            : (totalMins >= 60 ? "\(totalMins / 60) t igjen" : "\(totalMins) min igjen")
-        return "\(base) · \(remText)"
+
+        if item.mediaType == "series" {
+            let targetSeason = item.nextUp?.season ?? selectedSeasonNumber
+            let targetEpisode = item.nextUp?.episode ?? 1
+            if let ep = episodes.first(where: { $0.seasonNumber == targetSeason && $0.episodeNumber == targetEpisode }),
+               let epRuntime = ep.formattedRuntime, !epRuntime.isEmpty {
+                return "\(base) · \(epRuntime)"
+            }
+        }
+        if let runtime = item.formattedRuntime, !runtime.isEmpty {
+            return "\(base) · \(runtime)"
+        }
+        return base
     }
 
     func primaryPlayLabel(_ item: TvItemDetail) -> String {
@@ -421,11 +433,11 @@ final class MediaDetailViewModel: ObservableObject {
                 if inProgress,
                    item.progress?.season == next.season,
                    item.progress?.episode == next.episode {
-                    return String(format: "Fortsett S%02dE%02d", next.season, next.episode)
+                    return "Fortsett S\(next.season) E\(next.episode)"
                 }
-                return String(format: "Spill S%02dE%02d", next.season, next.episode)
+                return "Spill S\(next.season) E\(next.episode)"
             }
-            return item.watched ? "Spill på nytt S01E01" : "Spill S01E01"
+            return item.watched ? "Spill på nytt S1 E1" : "Spill S1 E1"
         }
         if inProgress {
             return "Fortsett"
@@ -435,7 +447,7 @@ final class MediaDetailViewModel: ObservableObject {
 
     func watchedButtonTitle(_ item: TvItemDetail) -> String {
         if item.mediaType == "series", !item.watched, let next = item.nextUp {
-            return String(format: "Sett S%02dE%02d", next.season, next.episode)
+            return "Sett S\(next.season) E\(next.episode)"
         }
         return item.watched ? "Sett" : "Marker som sett"
     }

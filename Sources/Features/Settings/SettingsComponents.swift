@@ -5,11 +5,10 @@ struct SettingsSectionPanel<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 18) {
             Text(title)
-                .font(LunaTheme.Font.settingsSectionTitle)
+                .font(LunaTheme.Font.sectionTitle)
                 .foregroundStyle(LunaTheme.linen)
-                .padding(.leading, 4)
 
             VStack(alignment: .leading, spacing: 16) {
                 content()
@@ -19,11 +18,6 @@ struct SettingsSectionPanel<Content: View>: View {
             .background(
                 RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
                     .fill(LunaTheme.surface)
-            )
-            .lunaTopLightEdge(
-                cornerRadius: LunaTokens.Radius.panel,
-                topColor: LunaTokens.Edge.top2,
-                sideColor: LunaTokens.Edge.top1
             )
         }
     }

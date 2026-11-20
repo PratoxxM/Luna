@@ -16,26 +16,6 @@ struct SettingsRoomDisplaySectionView: View {
 
             SettingsSectionDivider()
 
-            SettingsControlRow(
-                title: "Lavoppløst oppskalering (SD / 720p / Anime)",
-                subtitle: comfort.lowResUpscaleMode.shortDescription
-            ) {
-                HStack(spacing: 8) {
-                    ForEach(LowResUpscaleMode.allCases) { mode in
-                        LunaPillButton(
-                            mode.displayTitle,
-                            isSelected: comfort.lowResUpscaleMode == mode,
-                            prominence: comfort.lowResUpscaleMode == mode ? .glassPill : .subtleChip,
-                            size: .compact
-                        ) {
-                            comfort.lowResUpscaleMode = mode
-                        }
-                    }
-                }
-            }
-
-            SettingsSectionDivider()
-
             SettingsToggleRowButton(
                 title: SettingsView.keepDisplayModeToggleTitle,
                 subtitle: SettingsView.keepDisplayModeExplanationText,

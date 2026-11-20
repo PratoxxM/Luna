@@ -129,9 +129,9 @@ final class MediaDetailViewModelTests: XCTestCase {
         XCTAssertEqual(vm.episodes.count, 2)
 
         let detail = try XCTUnwrap(vm.detail)
-        XCTAssertEqual(vm.primaryPlayLabel(detail), "Spill S01E02")
-        XCTAssertEqual(vm.heroPrimaryPlayTitle(detail), "Spill S01E02")
-        XCTAssertEqual(vm.watchedButtonTitle(detail), "Sett S01E02")
+        XCTAssertEqual(vm.primaryPlayLabel(detail), "Spill S1 E2")
+        XCTAssertEqual(vm.heroPrimaryPlayTitle(detail), "Spill S1 E2")
+        XCTAssertEqual(vm.watchedButtonTitle(detail), "Sett S1 E2")
 
         let target = vm.primaryTargetInfo(detail)
         XCTAssertEqual(target.itemId, "episode:tmdb:95396:s1:e2")
@@ -333,6 +333,84 @@ final class MediaDetailViewModelTests: XCTestCase {
         """#
         let detail = try JSONDecoder().decode(TvItemDetail.self, from: Data(resumedSeriesJson.utf8))
         let vm = MediaDetailViewModel(mediaType: "series", itemId: "series:tmdb:95396", initialTitle: "Severance")
-        XCTAssertEqual(vm.heroPrimaryPlayTitle(detail), "Fortsett S02E04 · 23 min igjen")
+        XCTAssertEqual(vm.heroPrimaryPlayTitle(detail), "Fortsett S2 E4 · 23 min igjen")
+    }
+
+    @MainActor
+    func testNextUpSeasonOverridesStaleSelectedSeasonOnInitialLoad() async throws {
+        let host = "detail-s28-\(UUID().uuidString.lowercased()).local"
+        defer { MockURLProtocol.unregister(host: host) }
+
+        let seriesDetailJSON = #"""
+        {
+          "ok": true,
+          "item": {
+            "itemId": "series:tmdb:246810",
+            "mediaType": "series",
+            "ids": { "tmdb": 246810 },
+            "title": "Luksusfellen",
+            "year": 2008,
+            "inWatchlist": true,
+            "watched": false,
+            "selectedSeason": 1,
+            "nextUp": { "season": 28, "episode": 1 },
+            "seasons": [
+              { "seasonNumber": 0, "name": "Specials", "episodeCount": 2 },
+              { "seasonNumber": 1, "name": "Season 1", "episodeCount": 10 },
+              { "seasonNumber": 28, "name": "Season 28", "episodeCount": 1 }
+            ],
+            "episodes": [
+              {
+                "itemId": "episode:tmdb:246810:s1:e1",
+                "seasonNumber": 1,
+                "episodeNumber": 1,
+                "title": "Pilot",
+                "watched": true
+              }
+            ]
+          }
+        }
+        """#
+
+        let season28JSON = #"""
+        {
+          "ok": true,
+          "tmdbId": 246810,
+          "seasonNumber": 28,
+          "title": "Season 28",
+          "episodes": [
+            {
+              "itemId": "episode:tmdb:246810:s28:e1",
+              "seasonNumber": 28,
+              "episodeNumber": 1,
+              "title": "Ny start i Drammen",
+              "runtimeSeconds": 2700,
+              "watched": false
+            }
+          ]
+        }
+        """#
+
+        MockURLProtocol.register(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            if url.path.contains("/seasons/28") {
+                return (resp, Data(season28JSON.utf8))
+            }
+            if url.path.contains("/items/series/") {
+                return (resp, Data(seriesDetailJSON.utf8))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let context = MockDetailSessionContext()
+        context.client = try MockURLProtocol.makeClient(host: host)
+        let vm = MediaDetailViewModel(mediaType: "series", itemId: "series:tmdb:246810", initialTitle: "Luksusfellen")
+        await vm.handleTaskAppearance(scopeKey: "series#series:tmdb:246810#Stua#hdr10-512", sessionContext: context)
+
+        XCTAssertEqual(vm.selectedSeasonNumber, 28)
+        XCTAssertEqual(vm.episodes.first?.seasonNumber, 28)
+        let loaded = try XCTUnwrap(vm.detail)
+        XCTAssertEqual(vm.heroPrimaryPlayTitle(loaded), "Spill S28 E1 · 45 min")
     }
 }

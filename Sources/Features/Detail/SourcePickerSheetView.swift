@@ -431,51 +431,21 @@ private struct CandidateRowButton: View {
             HStack(spacing: 20) {
                 Image(systemName: isCurrentWinner ? "checkmark.circle.fill" : "play.circle.fill")
                     .font(LunaTheme.Font.sectionTitle)
-                    .foregroundStyle(isCurrentWinner ? LunaTheme.emerald : (isFocused ? LunaTheme.linen : LunaTheme.moonlight))
+                    .foregroundStyle(isCurrentWinner ? LunaTheme.amber : (isFocused ? LunaTheme.linen : LunaTheme.moonlight))
 
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 10) {
-                        Text(candidate.displayHeadline)
-                            .font(LunaTheme.Font.cardTitle)
-                            .foregroundStyle(LunaTheme.linen)
-                            .lineLimit(1)
+                    Text(candidate.humanDrawerTitle(roomName: "", isRecommended: isRecommended, isActive: false))
+                        .font(LunaTheme.Font.cardTitle)
+                        .foregroundStyle(LunaTheme.linen)
+                        .lineLimit(1)
 
-                        if isRecommended {
-                            Text("Anbefalt")
-                                .font(LunaTheme.Font.badge)
-                                .foregroundStyle(LunaTheme.linen)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 3)
-                                .background(LunaTheme.surfaceSelected, in: Capsule())
-                                .overlay(Capsule().strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1))
-                        }
-                    }
-
-                    Text(humanExplanationLine)
+                    Text(candidate.humanDrawerSubtitle(isActive: isCurrentWinner))
                         .font(LunaTheme.Font.subtitle)
                         .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
                         .lineLimit(1)
                 }
 
                 Spacer()
-
-                HStack(spacing: 12) {
-                    if let size = candidate.formattedSize {
-                        Text(size)
-                            .font(LunaTheme.Font.caption.monospacedDigit())
-                            .foregroundStyle(LunaTheme.moonlight)
-                    }
-
-                    Text(candidate.sourceBadgeLabel)
-                        .font(LunaTheme.Font.badge)
-                        .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .background(
-                            LunaTheme.warmBorderBase.opacity(isFocused ? 0.14 : 0.08),
-                            in: Capsule()
-                        )
-                }
             }
             .padding(.horizontal, 26)
             .padding(.vertical, 18)
@@ -483,8 +453,8 @@ private struct CandidateRowButton: View {
                 RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
                     .fill(
                         isFocused
-                            ? LunaTheme.surfaceElevated
-                            : (isCurrentWinner ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
+                            ? LunaTheme.surfaceSelected
+                            : LunaTheme.surfaceRaised
                     )
             }
             .lunaFocusSurface(.listRow, isFocused: isFocused, cornerRadius: LunaTheme.cardRadius)
@@ -493,16 +463,5 @@ private struct CandidateRowButton: View {
         .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
         .focusEffectDisabled(true)
         .focused($isFocused)
-    }
-
-    private var humanExplanationLine: String {
-        if let chips = candidate.explanationChips, !chips.isEmpty {
-            return chips.prefix(3).joined(separator: " · ")
-        }
-        let benefit = LunaCopy.tierBenefitLabel(tier: candidate.tier ?? candidate.source)
-        if isRecommended {
-            return "Beste bilde og lyd for rommet · \(benefit)"
-        }
-        return benefit
     }
 }
