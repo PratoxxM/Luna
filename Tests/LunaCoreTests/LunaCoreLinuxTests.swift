@@ -503,7 +503,7 @@ final class LunaCoreLinuxTests: XCTestCase {
             roomName: "Stua",
             hardwareProfile: "hdr10-512",
             allowSelfSignedLanTLS: true,
-            appVersion: "2.7.1",
+            appVersion: "2.8.0",
             osVersion: "Linux-CI",
             session: session
         )
