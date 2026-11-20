@@ -81,7 +81,7 @@ struct SeriesFlowOverlays: View {
     var focusPromptNonce: Int = 0
     var onReturnFocusToCanvas: () -> Void = {}
     var onSilentReturnFocusToCanvas: () -> Void = {}
-    var onOpenTopDrawer: () -> Void = {}
+    var onFocusQuickActions: () -> Void = {}
     var onSeekRelative: (Double) -> Void = { _ in }
 
     @FocusState private var focusedPromptControl: PromptFocusTarget?
@@ -121,7 +121,7 @@ struct SeriesFlowOverlays: View {
                 }
             }
             .padding(.horizontal, LunaTheme.horizontalGutter)
-            .padding(.bottom, isBottomBarVisible ? 226 : 58)
+            .padding(.bottom, isBottomBarVisible ? 304 : 58)
             .animation(LunaFocusStyle.focusSpring, value: showNextButton)
             .animation(LunaFocusStyle.focusSpring, value: activeIntro?.id)
             .animation(LunaFocusStyle.focusSpring, value: resumeSecs != nil)
@@ -199,7 +199,7 @@ struct SeriesFlowOverlays: View {
                     hideResumeBanner(returningFocus: false)
                 }
                 focusedPromptControl = nil
-                onOpenTopDrawer()
+                onFocusQuickActions()
             case .left:
                 if activeResumeStartSeconds != nil {
                     hideResumeBanner(returningFocus: false)

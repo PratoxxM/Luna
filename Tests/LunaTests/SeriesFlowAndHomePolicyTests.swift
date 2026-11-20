@@ -370,10 +370,14 @@ final class SeriesFlowAndHomePolicyTests: XCTestCase {
     }
 
     @MainActor
-    func testPlayerTopDrawerFourTabsSmartSubtitleLookupAndRemoteCommandToast() async throws {
+    func testPlayerQuickPanelFiveTabsSmartSubtitleLookupAndRemoteCommandToast() async throws {
         XCTAssertEqual(
-            PlayerTopDrawerTab.allCases.map(\.title),
-            ["Info", "Lyd og tekst", "Kilde", "Kapitler"]
+            PlayerQuickPanelTab.allCases.map(\.title),
+            ["Tekst", "Lyd", "Kilde", "Bilde", "Kapitler"]
+        )
+        XCTAssertEqual(
+            PlayerQuickPanelTab.visibleTabs(hasChapters: false).map(\.title),
+            ["Tekst", "Lyd", "Kilde", "Bilde"]
         )
 
         let tracks: [SmartTrackDescriptor] = [

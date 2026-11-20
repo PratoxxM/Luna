@@ -49,6 +49,7 @@ struct SearchView: View {
                 }
                 .padding(.horizontal, LunaTheme.horizontalGutter)
                 .padding(.top, 4)
+                .focusSection()
 
                 if trimmedQuery.count < 2 {
                     if !recentSearches.isEmpty {

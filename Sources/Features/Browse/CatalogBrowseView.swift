@@ -313,7 +313,11 @@ struct CatalogBrowseView: View {
         .scrollClipDisabled()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
-        .defaultFocus($focusedCardId, items.first?.id, priority: .userInitiated)
+        .defaultFocus(
+            $focusedCardId,
+            isRootTab ? nil : items.first?.id,
+            priority: isRootTab ? .automatic : .userInitiated
+        )
         .lunaRootScrollTopBarTracking(tab: rootNavigationTab, isEnabled: isRootTab)
         .onChange(of: scrollToTopNonce) { _, _ in
             guard isRootTab, isActiveTab else { return }

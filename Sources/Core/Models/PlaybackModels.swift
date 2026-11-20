@@ -217,6 +217,39 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
 
     public var id: String { candidateId }
 
+    enum CodingKeys: String, CodingKey {
+        case candidateId, displayHeadline, releaseTitle, source, tier, resolution
+        case videoRangeType, dvProfile, dvEnhancementLayer, audioCodec, sizeBytes
+        case tvScore, isActive, explanationChips, releaseGroup, isNorwegian
+        case videoCodec, sourceQuality, channels
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let rawRelease = c.decodeFlexString(.releaseTitle) ?? ""
+        let rawHeadline = c.decodeFlexString(.displayHeadline)
+        self.candidateId = c.decodeFlexString(.candidateId) ?? "unknown"
+        self.releaseTitle = rawRelease
+        self.displayHeadline = (rawHeadline?.isEmpty == false ? rawHeadline : nil)
+            ?? (rawRelease.isEmpty ? "Ukjent utgave" : rawRelease)
+        self.source = c.decodeFlexString(.source) ?? "unknown"
+        self.tier = c.decodeFlexString(.tier)
+        self.resolution = c.decodeFlexString(.resolution)
+        self.videoRangeType = c.decodeFlexString(.videoRangeType)
+        self.dvProfile = c.decodeFlexInt(.dvProfile)
+        self.dvEnhancementLayer = c.decodeFlexString(.dvEnhancementLayer)
+        self.audioCodec = c.decodeFlexString(.audioCodec)
+        self.sizeBytes = c.decodeFlexInt(.sizeBytes)
+        self.tvScore = c.decodeFlexInt(.tvScore)
+        self.isActive = c.decodeFlexBool(.isActive)
+        self.explanationChips = try? c.decodeIfPresent([String].self, forKey: .explanationChips)
+        self.releaseGroup = c.decodeFlexString(.releaseGroup)
+        self.isNorwegian = c.decodeFlexBool(.isNorwegian)
+        self.videoCodec = c.decodeFlexString(.videoCodec)
+        self.sourceQuality = c.decodeFlexString(.sourceQuality)
+        self.channels = c.decodeFlexChannels(.channels)
+    }
+
     public var formattedSize: String? {
         guard let sizeBytes, sizeBytes > 0 else { return nil }
         let gb = Double(sizeBytes) / 1_073_741_824.0
@@ -355,37 +388,76 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
     }
 
     public func humanDrawerTitle(roomName: String, isRecommended: Bool, isActive: Bool) -> String {
-        let check = isActive ? " ✓" : ""
-        let quality = humanQualitySummary
-        if isRecommended {
-            let trimmedRoom = roomName.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmedRoom.isEmpty {
-                return quality.isEmpty ? "Anbefalt\(check)" : "Anbefalt · \(quality)\(check)"
-            }
-            return quality.isEmpty ? "Anbefalt for \(trimmedRoom)\(check)" : "Anbefalt for \(trimmedRoom) · \(quality)\(check)"
-        }
-        return "\(quality)\(check)"
+        let base = quickRowTitle(roomName: roomName, isRecommended: isRecommended)
+        return isActive ? "\(base) ✓" : base
     }
 
     public func humanDrawerSubtitle(isActive: Bool = false) -> String {
+        quickRowMetadata(isActive: isActive)
+    }
+
+    public func quickRowTitle(roomName: String, isRecommended: Bool) -> String {
+        let quality = humanQualitySummary
+        guard isRecommended else { return quality }
+        let trimmedRoom = roomName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedRoom.isEmpty {
+            return quality.isEmpty ? "Anbefalt" : "Anbefalt · \(quality)"
+        }
+        return quality.isEmpty ? "Anbefalt for \(trimmedRoom)" : "Anbefalt for \(trimmedRoom) · \(quality)"
+    }
+
+    public func quickRowMetadata(isActive: Bool = false) -> String {
         var parts: [String] = [sourceBadgeLabel]
         if let vc = videoCodec?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !vc.isEmpty,
-           vc.caseInsensitiveCompare("unknown") != .orderedSame {
+           !vc.isEmpty, vc.caseInsensitiveCompare("unknown") != .orderedSame {
             parts.append(vc.uppercased())
         }
         if let sq = sourceQuality?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !sq.isEmpty,
-           sq.caseInsensitiveCompare("unknown") != .orderedSame {
+           !sq.isEmpty, sq.caseInsensitiveCompare("unknown") != .orderedSame {
             parts.append(sq)
         }
-        if let size = formattedSize, !size.isEmpty {
-            parts.append(size)
-        }
-        if isActive {
-            parts.append("Spilles nå")
-        }
+        if let size = formattedSize, !size.isEmpty { parts.append(size) }
+        if isActive { parts.append("Spilles nå") }
         return parts.joined(separator: " · ")
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeFlexString(_ key: Key) -> String? {
+        if let s = try? decodeIfPresent(String.self, forKey: key) { return s }
+        if let i = try? decodeIfPresent(Int.self, forKey: key) { return String(i) }
+        if let d = try? decodeIfPresent(Double.self, forKey: key) { return String(d) }
+        return nil
+    }
+
+    func decodeFlexInt<T: FixedWidthInteger & Decodable & LosslessStringConvertible>(_ key: Key) -> T? {
+        if let i = try? decodeIfPresent(T.self, forKey: key) { return i }
+        if let d = try? decodeIfPresent(Double.self, forKey: key), d.isFinite { return T(d.rounded()) }
+        if let s = try? decodeIfPresent(String.self, forKey: key) {
+            return T(s.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    func decodeFlexBool(_ key: Key) -> Bool? {
+        if let b = try? decodeIfPresent(Bool.self, forKey: key) { return b }
+        if let i = try? decodeIfPresent(Int.self, forKey: key) { return i != 0 }
+        return nil
+    }
+
+    func decodeFlexChannels(_ key: Key) -> String? {
+        if let s = try? decodeIfPresent(String.self, forKey: key) {
+            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        guard let count: Int = decodeFlexInt(key), count > 0 else { return nil }
+        switch count {
+        case 1: return "1.0"
+        case 2: return "2.0"
+        case 3...5: return "\(count).0"
+        case 6...7: return "5.1"
+        default: return "7.1"
+        }
     }
 }
 

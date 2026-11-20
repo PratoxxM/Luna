@@ -8,6 +8,7 @@ public struct LunaChromelessButtonStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .focusEffectDisabled(true)
             .animation(.easeOut(duration: LunaTokens.Motion.pressDuration), value: configuration.isPressed)
     }
 }
@@ -48,6 +49,8 @@ public struct LunaPillButton: View {
     let accent: LunaButtonAccent
     let size: LunaButtonSize
     let action: () -> Void
+
+    @FocusState private var isDirectFocused: Bool
 
     public init(
         _ title: String,
@@ -158,12 +161,14 @@ public struct LunaPillButton: View {
                 isSelected: isSelected,
                 prominence: prominence,
                 accent: accent,
-                size: size
+                size: size,
+                externalFocus: isDirectFocused
             )
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(Capsule())
         .focusEffectDisabled(true)
+        .focused($isDirectFocused)
     }
 }
 
@@ -179,10 +184,15 @@ private struct LunaPillLabel: View {
     let prominence: LunaButtonProminence
     let accent: LunaButtonAccent
     let size: LunaButtonSize
+    let externalFocus: Bool
+
+    private var effectiveFocused: Bool {
+        isFocused || externalFocus
+    }
 
     var body: some View {
         let isCompact = size == .compact
-        let scale: CGFloat = isFocused
+        let scale: CGFloat = effectiveFocused
             ? (prominence == .primaryAmber ? 1.04 : 1.03)
             : 1.0
 
@@ -214,7 +224,7 @@ private struct LunaPillLabel: View {
         .background(backgroundView)
         .overlay(
             Group {
-                if isFocused || prominence == .primaryAmber || accent == .coral || accent == .warn || (prominence == .glassPill && isSelected) {
+                if effectiveFocused || prominence == .primaryAmber || accent == .coral || accent == .warn || (prominence == .glassPill && isSelected) {
                     Capsule()
                         .strokeBorder(borderColor, lineWidth: borderWidth)
                 } else if prominence == .glassPill {
@@ -231,13 +241,13 @@ private struct LunaPillLabel: View {
             .transaction { $0.animation = nil }
         )
         .shadow(
-            color: isFocused ? glowAccentColor.opacity(roomAtmosphere.lampStrength) : .clear,
-            radius: isFocused ? LunaFocusStyle.glowBlur : 0,
+            color: effectiveFocused ? glowAccentColor.opacity(roomAtmosphere.lampStrength) : .clear,
+            radius: effectiveFocused ? LunaFocusStyle.glowBlur : 0,
             x: 0,
-            y: isFocused ? LunaFocusStyle.glowOffsetY : 0
+            y: effectiveFocused ? LunaFocusStyle.glowOffsetY : 0
         )
         .scaleEffect(scale)
-        .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
+        .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: effectiveFocused)
     }
 
     private var glowAccentColor: Color {
@@ -251,7 +261,7 @@ private struct LunaPillLabel: View {
 
     private var iconForegroundColor: Color {
         LunaPillButton.resolveIconForeground(
-            isFocused: isFocused,
+            isFocused: effectiveFocused,
             isSelected: isSelected,
             prominence: prominence,
             accent: accent
@@ -260,7 +270,7 @@ private struct LunaPillLabel: View {
 
     private var labelForegroundColor: Color {
         LunaPillButton.resolveLabelForeground(
-            isFocused: isFocused,
+            isFocused: effectiveFocused,
             isSelected: isSelected,
             prominence: prominence,
             accent: accent
@@ -274,7 +284,7 @@ private struct LunaPillLabel: View {
         if accent == .coral {
             return LunaTheme.coral
         }
-        if isFocused || isSelected {
+        if effectiveFocused || isSelected {
             return LunaTheme.linen
         }
         return LunaTheme.muted
@@ -303,13 +313,13 @@ private struct LunaPillLabel: View {
             if prominence == .primaryAmber {
                 Capsule()
                     .fill(LunaTheme.primaryAmberGradient)
-                    .opacity(isFocused ? 0 : 1)
+                    .opacity(effectiveFocused ? 0 : 1)
                 Capsule()
                     .fill(LunaTheme.playFocusGradient)
-                    .opacity(isFocused ? 1 : 0)
+                    .opacity(effectiveFocused ? 1 : 0)
             } else {
                 Capsule()
-                    .fill(isFocused ? focusedSecondaryFill : restingSolidColor)
+                    .fill(effectiveFocused ? focusedSecondaryFill : restingSolidColor)
             }
         }
         .transaction { $0.animation = nil }
@@ -317,7 +327,7 @@ private struct LunaPillLabel: View {
 
     private var borderColor: Color {
         LunaPillButton.resolveBorderColor(
-            isFocused: isFocused,
+            isFocused: effectiveFocused,
             isSelected: isSelected,
             prominence: prominence,
             accent: accent
@@ -325,14 +335,14 @@ private struct LunaPillLabel: View {
     }
 
     private var borderWidth: CGFloat {
-        isFocused ? LunaFocusStyle.borderWidth : 1.0
+        effectiveFocused ? LunaFocusStyle.borderWidth : 1.0
     }
 
     private var badgeBackground: Color {
         if prominence == .primaryAmber {
             return LunaTheme.canvas.opacity(0.16)
         }
-        if isFocused || isSelected {
+        if effectiveFocused || isSelected {
             return LunaTheme.warmBorderBase.opacity(0.14)
         }
         return LunaTheme.warmBorderBase.opacity(0.08)

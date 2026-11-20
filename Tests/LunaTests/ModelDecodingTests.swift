@@ -448,4 +448,47 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(subsCmd.type, "subtitles_on")
         XCTAssertEqual(subsCmd.language, "no")
     }
+
+    func testTvCandidateInfoResilientNumericAndChannelDecoding() throws {
+        let json = #"""
+        [
+          {
+            "candidateId": "num-2ch",
+            "displayHeadline": "1080p WEB-DL",
+            "releaseTitle": "Example.1080p.WEB-DL",
+            "source": "nvme",
+            "tier": "nvme",
+            "resolution": "1080p",
+            "videoCodec": "h264",
+            "audioCodec": "aac",
+            "channels": 2,
+            "sizeBytes": 3221225472.0,
+            "tvScore": 910.4,
+            "isNorwegian": 1
+          },
+          {
+            "candidateId": "num-6ch",
+            "displayHeadline": "4K HDR10+",
+            "releaseTitle": "Example.2160p.HDR10P",
+            "source": "ssd",
+            "tier": "nvme",
+            "resolution": "2160p",
+            "videoRangeType": "HDR10Plus",
+            "audioCodec": "EAC3",
+            "channels": 6,
+            "tvScore": "980"
+          }
+        ]
+        """#
+
+        let decoded = try JSONDecoder().decode([TvCandidateInfo].self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.count, 2)
+        XCTAssertEqual(decoded[0].channels, "2.0")
+        XCTAssertEqual(decoded[0].sizeBytes, 3_221_225_472)
+        XCTAssertEqual(decoded[0].tvScore, 910)
+        XCTAssertEqual(decoded[0].isNorwegian, true)
+        XCTAssertEqual(decoded[1].channels, "5.1")
+        XCTAssertEqual(decoded[1].tvScore, 980)
+        XCTAssertEqual(decoded[1].quickRowTitle(roomName: "Stua", isRecommended: true), "Anbefalt for Stua · 4K HDR10+ Dolby Digital+ 5.1")
+    }
 }

@@ -144,6 +144,9 @@ final class ThemeAndArtworkViewTests: XCTestCase {
 
         let crescent = LunaCrescentMarkView(size: 28, color: LunaTheme.amber)
         XCTAssertEqual(crescent.size, 28)
+        let crescentPoints = LunaCrescentGeometry.crescentPoints(side: 100, center: CGPoint(x: 50, y: 50))
+        XCTAssertGreaterThan(crescentPoints.count, 100)
+        XCTAssertFalse(crescentPoints.contains(where: { $0.x > 64 && $0.y < 33 }))
 
         let compactWatchlist = LunaPillButton(
             "Huskeliste",

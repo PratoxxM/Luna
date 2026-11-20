@@ -23,6 +23,7 @@ struct HomeView: View {
 
     let isActiveTab: Bool
     var previewFocusPosterRow: Bool = false
+    var allowInitialColdFocus: Bool = false
 
     @State private var homePayload: TvHomeResponse?
     @State private var cachedEtag: String?
@@ -64,10 +65,12 @@ struct HomeView: View {
         initialRoomName: String = "Stua",
         initialHardwareProfile: String = "hdr10-512",
         isActiveTab: Bool = true,
-        previewFocusPosterRow: Bool = false
+        previewFocusPosterRow: Bool = false,
+        allowInitialColdFocus: Bool = false
     ) {
         self.isActiveTab = isActiveTab
         self.previewFocusPosterRow = previewFocusPosterRow
+        self.allowInitialColdFocus = allowInitialColdFocus
         let snap = DiskSWRStore.memorySnapshot(
             serverHost: initialServerHost,
             roomName: initialRoomName,
@@ -173,7 +176,7 @@ struct HomeView: View {
             .ignoresSafeArea()
             .lunaRootScrollTopBarTracking(tab: .home)
             .onAppear {
-                if let focusTargetKey {
+                if (allowInitialColdFocus || previewFocusPosterRow), let focusTargetKey {
                     focusedCardKey = focusTargetKey
                 }
                 if previewFocusPosterRow, let focusRowId {
@@ -207,7 +210,11 @@ struct HomeView: View {
                     .allowsHitTesting(false)
             }
         }
-        .defaultFocus($focusedCardKey, focusTargetKey, priority: .userInitiated)
+        .defaultFocus(
+            $focusedCardKey,
+            (allowInitialColdFocus || previewFocusPosterRow) ? focusTargetKey : nil,
+            priority: (allowInitialColdFocus || previewFocusPosterRow) ? .userInitiated : .automatic
+        )
         .focusSection()
         .focusScope(homeFocusNamespace)
         .navigationDestination(item: $selectedCard) { card in

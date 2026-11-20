@@ -3,21 +3,22 @@ import AetherBridge
 
 internal enum PlayerOSDVisibilityPolicy {
     nonisolated static let playingAutoHideSeconds: TimeInterval = 4.0
+    nonisolated static let playingQuickActionsAutoHideSeconds: TimeInterval = 7.0
     nonisolated static let pausedIdleRestSeconds: TimeInterval = 12.0
 
     nonisolated static func shouldShowBottomBar(
         isPictureReadyForReveal: Bool,
-        isTopDrawerOpen: Bool,
+        isQuickPanelOpen: Bool,
         hasFatalError: Bool,
         isScrubbing: Bool,
         showBottomBar: Bool,
         playbackPhase: PlaybackPhase,
         isPausedOSDResting: Bool
     ) -> Bool {
-        guard isPictureReadyForReveal, !isTopDrawerOpen, !hasFatalError else {
+        guard isPictureReadyForReveal, !hasFatalError else {
             return false
         }
-        if isScrubbing || showBottomBar {
+        if isQuickPanelOpen || isScrubbing || showBottomBar {
             return true
         }
         return playbackPhase == .paused && !isPausedOSDResting
@@ -27,13 +28,19 @@ internal enum PlayerOSDVisibilityPolicy {
         playbackPhase: PlaybackPhase,
         isPausedOSDResting: Bool,
         isScrubbing: Bool,
-        isTopDrawerOpen: Bool
+        isQuickPanelOpen: Bool
     ) -> Bool {
-        playbackPhase == .paused && isPausedOSDResting && !isScrubbing && !isTopDrawerOpen
+        playbackPhase == .paused && isPausedOSDResting && !isScrubbing && !isQuickPanelOpen
     }
 }
 
 struct PlayerContainerView: View {
+    private enum FatalErrorAction: Hashable {
+        case retry
+        case pickSource
+        case dismiss
+    }
+
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.scenePhase) private var scenePhase
 
@@ -42,14 +49,19 @@ struct PlayerContainerView: View {
     let initialRequest: PlaybackLaunchRequest
     let isPreviewMode: Bool
     let previewFocusDirection: PreviewFocusDirection?
-    let previewDrawerTab: PlayerTopDrawerTab
+    let previewQuickPanel: PlayerQuickPanelTab?
+    let previewFatalError: String?
     let onDismiss: () -> Void
 
     @StateObject private var viewModel: PlayerViewModel
     @State private var showBottomBar: Bool = false
     @State private var isPausedOSDResting: Bool = false
-    @State private var isTopDrawerOpen: Bool = false
-    @State private var selectedDrawerTab: PlayerTopDrawerTab = .audioAndSubtitles
+    @State private var activeQuickPanel: PlayerQuickPanelTab? = nil
+    @State private var lastSelectedQuickTab: PlayerQuickPanelTab = .subtitles
+    @State private var isQuickActionsModeActive: Bool = false
+    @State private var bottomBarFocusRequestNonce: Int = 0
+    @State private var bottomBarClearFocusNonce: Int = 0
+    @State private var requestedBottomBarAction: PlayerBottomBarAction = .panel(.subtitles)
     @State private var hasSeriesPrompt: Bool = false
     @State private var isSeriesPromptFocused: Bool = false
     @State private var seriesPromptDismissNonce: Int = 0
@@ -57,9 +69,10 @@ struct PlayerContainerView: View {
     @State private var dismissedNextForSessionID: String?
     @State private var hideBottomBarTask: Task<Void, Never>?
     @State private var pauseRestTask: Task<Void, Never>?
-    @State private var suspendedFatalErrorForDrawer: String? = nil
+    @State private var suspendedFatalErrorForPanel: String? = nil
 
     @FocusState private var isCanvasFocused: Bool
+    @FocusState private var focusedFatalErrorButton: FatalErrorAction?
     @Namespace private var playerFocusNamespace
 
     init(
@@ -68,7 +81,8 @@ struct PlayerContainerView: View {
         initialRequest: PlaybackLaunchRequest,
         isPreviewMode: Bool = false,
         previewFocusDirection: PreviewFocusDirection? = nil,
-        previewDrawerTab: PlayerTopDrawerTab = .audioAndSubtitles,
+        previewQuickPanel: PlayerQuickPanelTab? = nil,
+        previewFatalError: String? = nil,
         onDismiss: @escaping () -> Void
     ) {
         self.engine = engine
@@ -76,24 +90,26 @@ struct PlayerContainerView: View {
         self.initialRequest = initialRequest
         self.isPreviewMode = isPreviewMode
         self.previewFocusDirection = previewFocusDirection
-        self.previewDrawerTab = previewDrawerTab
+        self.previewQuickPanel = previewQuickPanel
+        self.previewFatalError = previewFatalError
         self.onDismiss = onDismiss
         _viewModel = StateObject(wrappedValue: PlayerViewModel(engine: engine, comfort: comfort))
-        _selectedDrawerTab = State(initialValue: previewDrawerTab)
     }
 
     private var shouldEnableCanvasAnchor: Bool {
         viewModel.isPictureReadyForReveal &&
             viewModel.fatalError == nil &&
-            !isTopDrawerOpen
+            activeQuickPanel == nil &&
+            !isQuickActionsModeActive
     }
 
     var body: some View {
         let client = sessionStore.makeClient()
         let effectiveRequest = viewModel.currentRequest ?? initialRequest
+        let isQuickPanelOpen = (activeQuickPanel != nil)
         let isBottomBarShown = PlayerOSDVisibilityPolicy.shouldShowBottomBar(
             isPictureReadyForReveal: viewModel.isPictureReadyForReveal,
-            isTopDrawerOpen: isTopDrawerOpen,
+            isQuickPanelOpen: isQuickPanelOpen,
             hasFatalError: viewModel.fatalError != nil,
             isScrubbing: viewModel.isScrubbing,
             showBottomBar: showBottomBar,
@@ -104,7 +120,7 @@ struct PlayerContainerView: View {
             playbackPhase: viewModel.playbackPhase,
             isPausedOSDResting: isPausedOSDResting,
             isScrubbing: viewModel.isScrubbing,
-            isTopDrawerOpen: isTopDrawerOpen
+            isQuickPanelOpen: isQuickPanelOpen
         )
 
         ZStack {
@@ -191,7 +207,7 @@ struct PlayerContainerView: View {
                         if viewModel.isScrubbing {
                             viewModel.cancelTouchScrub()
                         }
-                        openTopDrawer()
+                        revealBottomBarAndFocusQuickActions(target: .panel(.subtitles))
                     }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -214,7 +230,7 @@ struct PlayerContainerView: View {
             }
 
             // 3. Optional 1 Hz Isolated Nerd-HUD (top-left, also dims during 12s OLED pause rest)
-            if comfort.showNerdHUD && viewModel.isPictureReadyForReveal && !isTopDrawerOpen && !isHUDResting {
+            if comfort.showNerdHUD && viewModel.isPictureReadyForReveal && !isHUDResting {
                 VStack {
                     HStack {
                         NerdHUDView(engine: engine, viewModel: viewModel)
@@ -229,7 +245,7 @@ struct PlayerContainerView: View {
             }
 
             // 4. Series Continuity Overlays («Hopp over intro» & «Neste episode»)
-            if viewModel.isPictureReadyForReveal && !isTopDrawerOpen && !viewModel.isScrubbing && viewModel.fatalError == nil {
+            if viewModel.isPictureReadyForReveal && !isQuickPanelOpen && !viewModel.isScrubbing && viewModel.fatalError == nil {
                 SeriesFlowOverlays(
                     viewModel: viewModel,
                     isBottomBarVisible: isBottomBarShown,
@@ -246,8 +262,8 @@ struct PlayerContainerView: View {
                     onSilentReturnFocusToCanvas: {
                         restoreCanvasFocusSoon()
                     },
-                    onOpenTopDrawer: {
-                        openTopDrawer()
+                    onFocusQuickActions: {
+                        revealBottomBarAndFocusQuickActions(target: .panel(.subtitles))
                     },
                     onSeekRelative: { delta in
                         viewModel.coalesceRelativeSeek(delta: delta)
@@ -258,18 +274,56 @@ struct PlayerContainerView: View {
                 .zIndex(4)
             }
 
-            // 5. Minimalist Bottom Bar + Coalesced Tactile Seek Pill
-            if viewModel.isPictureReadyForReveal && !isTopDrawerOpen && viewModel.fatalError == nil {
+            // 5. Classic Bottom OSD + Quick Actions + Floating Vertical Quick-List + Coalesced Seek Pill
+            if viewModel.isPictureReadyForReveal && viewModel.fatalError == nil {
                 if isBottomBarShown {
                     PlayerBottomBarView(
                         viewModel: viewModel,
-                        fallbackRequest: effectiveRequest
+                        fallbackRequest: effectiveRequest,
+                        activeQuickPanel: activeQuickPanel,
+                        focusRequestNonce: bottomBarFocusRequestNonce,
+                        clearFocusNonce: bottomBarClearFocusNonce,
+                        requestedAction: requestedBottomBarAction,
+                        onOpenQuickPanel: { tab in
+                            openQuickPanel(tab)
+                        },
+                        onPlayNextEpisode: { next in
+                            viewModel.playNextEpisode(next)
+                        },
+                        onFocusPresenceChanged: { isFocused in
+                            if isFocused && !isQuickActionsModeActive && activeQuickPanel == nil {
+                                isQuickActionsModeActive = true
+                            }
+                        },
+                        onUserNavigatedOSD: {
+                            if activeQuickPanel == nil {
+                                scheduleBottomBarAutoHide()
+                            }
+                        },
+                        onReturnFocusToCanvas: {
+                            isQuickActionsModeActive = false
+                            revealBottomBarTemporarily()
+                            restoreCanvasFocusSoon()
+                        }
                     )
                     .transition(.opacity)
                     .zIndex(5)
                 }
 
-                if abs(viewModel.coalescedSeekDelta) >= 1 && !viewModel.isScrubbing {
+                if let activeQuickPanel {
+                    PlayerQuickPanelView(
+                        viewModel: viewModel,
+                        comfort: comfort,
+                        tab: activeQuickPanel,
+                        onClose: { returnFocusToPill in
+                            closeQuickPanel(returnFocusToPill: returnFocusToPill)
+                        }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(6)
+                }
+
+                if abs(viewModel.coalescedSeekDelta) >= 1 && !viewModel.isScrubbing && !isQuickPanelOpen {
                     coalescedSeekFeedbackPill
                         .transition(.scale(scale: 0.92).combined(with: .opacity))
                         .zIndex(5.5)
@@ -320,20 +374,17 @@ struct PlayerContainerView: View {
                     .transition(.opacity)
                     .zIndex(5.7)
                 }
-            }
-
-            // 6. Swipe-Down 4-Tab Dark Cinema Glass Top Drawer
-            if isTopDrawerOpen && viewModel.fatalError == nil {
-                PlayerTopDrawerView(
+            } else if let activeQuickPanel, viewModel.fatalError == nil {
+                // Recovery case: "Velg kilde" opened from fatalErrorOverlay before first frame was revealed
+                PlayerQuickPanelView(
                     viewModel: viewModel,
                     comfort: comfort,
-                    selectedTab: $selectedDrawerTab,
-                    roomEquipmentOverride: sessionStore.availableRooms.first(where: {
-                        $0.roomName.caseInsensitiveCompare(viewModel.activeSession?.roomName ?? sessionStore.roomName) == .orderedSame
-                    })?.equipmentLabel,
-                    onClose: closeTopDrawer
+                    tab: activeQuickPanel,
+                    onClose: { returnFocusToPill in
+                        closeQuickPanel(returnFocusToPill: returnFocusToPill)
+                    }
                 )
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(6)
             }
 
@@ -346,7 +397,7 @@ struct PlayerContainerView: View {
         .focusScope(playerFocusNamespace)
         .animation(.easeOut(duration: 0.28), value: viewModel.isPictureReadyForReveal)
         .onChange(of: viewModel.isPictureReadyForReveal) { _, ready in
-            if ready {
+            if ready && activeQuickPanel == nil && !isQuickActionsModeActive {
                 revealBottomBarTemporarily()
                 restoreCanvasFocusSoon()
             }
@@ -359,14 +410,16 @@ struct PlayerContainerView: View {
         .onChange(of: viewModel.playbackPhase) { oldPhase, phase in
             if phase == .paused {
                 isPausedOSDResting = false
-                schedulePausedIdleRestTimer()
+                if activeQuickPanel == nil {
+                    schedulePausedIdleRestTimer()
+                }
             } else {
                 pauseRestTask?.cancel()
                 pauseRestTask = nil
                 if isPausedOSDResting {
                     isPausedOSDResting = false
                 }
-                if oldPhase == .paused && phase == .playing && viewModel.isPictureReadyForReveal && !isTopDrawerOpen {
+                if oldPhase == .paused && phase == .playing && viewModel.isPictureReadyForReveal && activeQuickPanel == nil {
                     revealBottomBarTemporarily()
                 }
             }
@@ -385,8 +438,8 @@ struct PlayerContainerView: View {
         }
         .onPlayPauseCommand {
             guard !viewModel.isResolving else { return }
-            if isTopDrawerOpen {
-                closeTopDrawer()
+            if activeQuickPanel != nil {
+                closeQuickPanel(returnFocusToPill: false)
             }
             if viewModel.isScrubbing {
                 viewModel.commitTouchScrub()
@@ -396,19 +449,22 @@ struct PlayerContainerView: View {
             revealBottomBarTemporarily()
         }
         .onExitCommand {
-            if isTopDrawerOpen {
-                closeTopDrawer()
+            if activeQuickPanel != nil {
+                closeQuickPanel(returnFocusToPill: true)
             } else if viewModel.isScrubbing {
                 viewModel.cancelTouchScrub()
                 revealBottomBarTemporarily()
             } else if hasSeriesPrompt && !isHUDResting {
                 seriesPromptDismissNonce &+= 1
                 restoreCanvasFocusSoon()
+            } else if isQuickActionsModeActive {
+                clearQuickActionFocusAndHideBarIfPlaying()
             } else if showBottomBar && viewModel.playbackPhase == .playing {
                 hideBottomBarTask?.cancel()
                 withAnimation(.easeOut(duration: 0.2)) {
                     showBottomBar = false
                 }
+                restoreCanvasFocusSoon()
             } else {
                 closePlayer()
             }
@@ -428,11 +484,16 @@ struct PlayerContainerView: View {
                     session: PreviewMockFixtures.playerSession,
                     client: client
                 )
-                selectedDrawerTab = previewDrawerTab
-                if previewFocusDirection == .up {
-                    revealBottomBarTemporarily()
+                if let previewFatalError {
+                    viewModel.fatalError = previewFatalError
+                    viewModel.isResolving = false
+                    focusedFatalErrorButton = .retry
+                } else if previewFocusDirection == .up {
+                    revealBottomBarAndFocusQuickActions(target: .panel(.subtitles))
+                } else if let previewQuickPanel {
+                    openQuickPanel(previewQuickPanel)
                 } else {
-                    openTopDrawer(tab: previewDrawerTab)
+                    revealBottomBarTemporarily()
                 }
             } else {
                 viewModel.start(request: initialRequest, client: client)
@@ -442,8 +503,8 @@ struct PlayerContainerView: View {
             viewModel.handleScenePhaseChange(phase)
         }
         .onChange(of: viewModel.isRestoringFromBackground) { _, restoring in
-            if restoring, isTopDrawerOpen, suspendedFatalErrorForDrawer == nil {
-                isTopDrawerOpen = false
+            if restoring, activeQuickPanel != nil, suspendedFatalErrorForPanel == nil {
+                activeQuickPanel = nil
             }
         }
         .onDisappear {
@@ -487,40 +548,79 @@ struct PlayerContainerView: View {
                     .multilineTextAlignment(.center)
                     .shadow(color: .black.opacity(0.96), radius: 3, x: 0, y: 2)
                     .padding(.horizontal, 120)
-                    .padding(.bottom, isBottomBarShown ? 212 : 80)
+                    .padding(.bottom, isBottomBarShown ? 290 : 80)
             }
         }
         .allowsHitTesting(false)
     }
 
-    // MARK: - Focus, 4s Playing Auto-Hide & ~12s OLED/Gallery Pause Rest
+    // MARK: - Focus, Auto-Hide & Quick Panel Coordination
 
-    private func openTopDrawer(tab: PlayerTopDrawerTab? = nil) {
+    private func revealBottomBarAndFocusQuickActions(target: PlayerBottomBarAction) {
         hideBottomBarTask?.cancel()
         pauseRestTask?.cancel()
         isPausedOSDResting = false
-        if let tab {
-            selectedDrawerTab = tab
+        isQuickActionsModeActive = true
+        requestedBottomBarAction = target
+        withAnimation(.easeOut(duration: 0.16)) {
+            showBottomBar = true
         }
+        bottomBarFocusRequestNonce &+= 1
+        scheduleBottomBarAutoHide()
+    }
+
+    private func openQuickPanel(_ tab: PlayerQuickPanelTab) {
+        hideBottomBarTask?.cancel()
+        pauseRestTask?.cancel()
+        isPausedOSDResting = false
+        isQuickActionsModeActive = false
+        lastSelectedQuickTab = tab
+        requestedBottomBarAction = .panel(tab)
+        bottomBarClearFocusNonce &+= 1
         withAnimation(LunaFocusStyle.focusSpring) {
-            showBottomBar = false
-            isTopDrawerOpen = true
+            showBottomBar = true
+            activeQuickPanel = tab
+        }
+        if tab == .source,
+           viewModel.alternativesSessionId != viewModel.activeSession?.sessionId || viewModel.alternatives.isEmpty {
+            Task { await viewModel.loadAlternatives() }
         }
     }
 
-    private func closeTopDrawer() {
-        withAnimation(.easeOut(duration: 0.22)) {
-            isTopDrawerOpen = false
+    private func closeQuickPanel(returnFocusToPill: Bool) {
+        if returnFocusToPill {
+            isQuickActionsModeActive = true
+        } else {
+            isQuickActionsModeActive = false
         }
-        if let suspended = suspendedFatalErrorForDrawer {
-            suspendedFatalErrorForDrawer = nil
+        withAnimation(.easeOut(duration: 0.18)) {
+            activeQuickPanel = nil
+        }
+        if let suspended = suspendedFatalErrorForPanel {
+            suspendedFatalErrorForPanel = nil
+            isQuickActionsModeActive = false
             if !viewModel.isSwitchingSource && viewModel.fatalError == nil {
                 viewModel.fatalError = suspended
                 return
             }
         }
-        if viewModel.playbackPhase == .paused {
+        if returnFocusToPill {
+            revealBottomBarAndFocusQuickActions(target: .panel(lastSelectedQuickTab))
+        } else {
+            bottomBarClearFocusNonce &+= 1
             revealBottomBarTemporarily()
+            restoreCanvasFocusSoon()
+        }
+    }
+
+    private func clearQuickActionFocusAndHideBarIfPlaying() {
+        hideBottomBarTask?.cancel()
+        isQuickActionsModeActive = false
+        bottomBarClearFocusNonce &+= 1
+        if viewModel.playbackPhase == .playing {
+            withAnimation(.easeOut(duration: 0.2)) {
+                showBottomBar = false
+            }
         }
         restoreCanvasFocusSoon()
     }
@@ -530,29 +630,47 @@ struct PlayerContainerView: View {
             isPausedOSDResting = false
             showBottomBar = true
         }
+        scheduleBottomBarAutoHide()
+    }
+
+    private func scheduleBottomBarAutoHide() {
         hideBottomBarTask?.cancel()
-        let autoHideNs = UInt64(PlayerOSDVisibilityPolicy.playingAutoHideSeconds * 1_000_000_000)
+        guard activeQuickPanel == nil else {
+            pauseRestTask?.cancel()
+            return
+        }
+        let delaySeconds = isQuickActionsModeActive
+            ? PlayerOSDVisibilityPolicy.playingQuickActionsAutoHideSeconds
+            : PlayerOSDVisibilityPolicy.playingAutoHideSeconds
+        let autoHideNs = UInt64(delaySeconds * 1_000_000_000)
         hideBottomBarTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: autoHideNs)
             guard !Task.isCancelled else { return }
-            if viewModel.playbackPhase == .playing && !viewModel.isScrubbing && !isTopDrawerOpen {
-                withAnimation(.easeOut(duration: 0.28)) {
-                    showBottomBar = false
+            if viewModel.playbackPhase == .playing && !viewModel.isScrubbing && activeQuickPanel == nil {
+                if isQuickActionsModeActive {
+                    clearQuickActionFocusAndHideBarIfPlaying()
+                } else {
+                    withAnimation(.easeOut(duration: 0.28)) {
+                        showBottomBar = false
+                    }
                 }
             }
         }
-        if viewModel.playbackPhase == .paused && !viewModel.isScrubbing && !isTopDrawerOpen {
+        if viewModel.playbackPhase == .paused && !viewModel.isScrubbing && activeQuickPanel == nil {
             schedulePausedIdleRestTimer()
         }
     }
 
     private func schedulePausedIdleRestTimer() {
         pauseRestTask?.cancel()
+        guard activeQuickPanel == nil else { return }
         let restNs = UInt64(PlayerOSDVisibilityPolicy.pausedIdleRestSeconds * 1_000_000_000)
         pauseRestTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: restNs)
             guard !Task.isCancelled else { return }
-            if viewModel.playbackPhase == .paused && !viewModel.isScrubbing && !isTopDrawerOpen {
+            if viewModel.playbackPhase == .paused && !viewModel.isScrubbing && activeQuickPanel == nil {
+                isQuickActionsModeActive = false
+                bottomBarClearFocusNonce &+= 1
                 withAnimation(.easeInOut(duration: 0.65)) {
                     showBottomBar = false
                     isPausedOSDResting = true
@@ -565,7 +683,7 @@ struct PlayerContainerView: View {
     private func restoreCanvasFocusSoon() {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 60_000_000)
-            if shouldEnableCanvasAnchor && !isSeriesPromptFocused {
+            if shouldEnableCanvasAnchor && !isSeriesPromptFocused && !isQuickActionsModeActive {
                 isCanvasFocused = true
             }
         }
@@ -620,8 +738,8 @@ struct PlayerContainerView: View {
                     .frame(maxWidth: 820)
 
                 HStack(spacing: 20) {
-                    LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise", prominence: .primaryAmber) {
-                        suspendedFatalErrorForDrawer = nil
+                    LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise", prominence: .glassPill) {
+                        suspendedFatalErrorForPanel = nil
                         let base = viewModel.currentRequest ?? initialRequest
                         let retryRequest = PlaybackLaunchRequest(
                             itemId: base.itemId,
@@ -637,23 +755,36 @@ struct PlayerContainerView: View {
                         )
                         viewModel.start(request: retryRequest, client: sessionStore.makeClient())
                     }
+                    .focused($focusedFatalErrorButton, equals: .retry)
 
                     if viewModel.activeSession != nil {
                         LunaPillButton("Velg kilde", systemImage: "arrow.triangle.2.circlepath", prominence: .glassPill) {
-                            suspendedFatalErrorForDrawer = message
+                            suspendedFatalErrorForPanel = message
                             viewModel.fatalError = nil
-                            openTopDrawer(tab: .source)
+                            openQuickPanel(.source)
                         }
+                        .focused($focusedFatalErrorButton, equals: .pickSource)
                     }
 
                     LunaPillButton("Avslutt", systemImage: "xmark", prominence: .subtleChip) {
-                        suspendedFatalErrorForDrawer = nil
+                        suspendedFatalErrorForPanel = nil
                         closePlayer()
                     }
+                    .focused($focusedFatalErrorButton, equals: .dismiss)
                 }
                 .padding(.top, 8)
             }
             .padding(60)
+        }
+        .onAppear {
+            focusedFatalErrorButton = .retry
+        }
+        .task(id: message) {
+            try? await Task.sleep(nanoseconds: 24_000_000)
+            guard !Task.isCancelled else { return }
+            if focusedFatalErrorButton == nil {
+                focusedFatalErrorButton = .retry
+            }
         }
     }
 }

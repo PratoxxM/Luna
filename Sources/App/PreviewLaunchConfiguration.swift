@@ -7,8 +7,9 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
     case library
     case details
     case settings
-    case playerAudio = "player-audio"
+    case playerSubtitles = "player-subtitles"
     case playerSource = "player-source"
+    case playerError = "player-error"
 
     public static func parse(_ raw: String) -> PreviewScreenTarget? {
         switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
@@ -24,17 +25,19 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
             return .details
         case "settings", "innstillinger":
             return .settings
-        case "player", "playback", "avspiller", "player-audio", "player_audio":
-            return .playerAudio
+        case "player", "playback", "avspiller", "player-audio", "player_audio", "player-subtitles", "player_subtitles":
+            return .playerSubtitles
         case "player-source", "player_source":
             return .playerSource
+        case "player-error", "player_error":
+            return .playerError
         default:
             return nil
         }
     }
 
     public var isPlayerScreen: Bool {
-        self == .playerAudio || self == .playerSource
+        self == .playerSubtitles || self == .playerSource || self == .playerError
     }
 
     public var isHomeScreen: Bool {
@@ -67,7 +70,7 @@ public enum PreviewFocusDirection: String, CaseIterable, Equatable, Sendable {
     }
 }
 
-/// Parses `--preview-screen <home|home-poster|catalog|library|details|settings|player-audio|player-source>`
+/// Parses `--preview-screen <home|home-poster|catalog|library|details|settings|player-subtitles|player-source|player-error>`
 /// and optional `--preview-focus <up|down|left|right|select>` launch arguments for deterministic
 /// tvOS Simulator visual verification without live network dependencies.
 public struct PreviewLaunchConfiguration: Equatable, Sendable {

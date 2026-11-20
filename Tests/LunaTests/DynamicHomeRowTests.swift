@@ -178,6 +178,44 @@ final class DynamicHomeRowTests: XCTestCase {
         XCTAssertEqual(rows.map(\.rowId), ["medialogg-continue", "custom:lokal-4k"])
         XCTAssertEqual(rows[0].items.map(\.itemId), ["movie:tmdb:693134", "series:tmdb:95396"])
         XCTAssertEqual(rows[0].items.first?.origin, "phone")
-        XCTAssertEqual(LibrarySidebarSection.allCases.map(\.label), ["Lokalt", "Filmer", "Serier", "Huskeliste", "Egne lister"])
+        XCTAssertEqual(LibraryFilterSection.allCases.map(\.label), ["Filmer", "Serier", "Huskeliste"])
+
+        let zeroMoviesCounts = TvLibraryCounts(
+            favorites: 0,
+            watchlist: 2,
+            localTotal: 4,
+            localMovies: 0,
+            localSeries: 4,
+            nvme: 4,
+            archive: 0,
+            vfs: 0,
+            customLists: 0
+        )
+        let fallbackRes = LibraryFilterSection.resolveInitialSection(
+            counts: zeroMoviesCounts,
+            didApplyInitialFallback: false,
+            current: .movies
+        )
+        XCTAssertEqual(fallbackRes.section, .series)
+        XCTAssertTrue(fallbackRes.didApplyInitialFallback)
+
+        let normalCounts = TvLibraryCounts(
+            favorites: 0,
+            watchlist: 2,
+            localTotal: 9,
+            localMovies: 5,
+            localSeries: 4,
+            nvme: 9,
+            archive: 0,
+            vfs: 0,
+            customLists: 0
+        )
+        let defaultRes = LibraryFilterSection.resolveInitialSection(
+            counts: normalCounts,
+            didApplyInitialFallback: false,
+            current: .movies
+        )
+        XCTAssertEqual(defaultRes.section, .movies)
+        XCTAssertTrue(defaultRes.didApplyInitialFallback)
     }
 }

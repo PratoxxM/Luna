@@ -104,7 +104,7 @@ struct SubtitleOverlayView: View {
             case .bottom: return .bottom
             }
         }()
-        let bottomInset: CGFloat = isBottomBarVisible ? 204 : 74
+        let bottomInset: CGFloat = isBottomBarVisible ? 290 : 74
 
         return VStack(spacing: 8) {
             ForEach(slotCues) { cue in
@@ -151,7 +151,7 @@ struct SubtitleOverlayView: View {
                 canvasSize: bitmap.canvasSize,
                 containerSize: containerSize
             )
-            let safeBottomY = containerSize.height - 204
+            let safeBottomY = containerSize.height - 290
             let adjustedMidY: CGFloat = {
                 guard isBottomBarVisible, baseRect.maxY > safeBottomY else {
                     return baseRect.midY

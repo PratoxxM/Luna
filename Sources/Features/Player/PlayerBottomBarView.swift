@@ -17,12 +17,29 @@ internal enum TimelineClockBucketer {
     }
 }
 
-/// Minimalist evening-cinema transport overlay.
-/// Contains zero focusable buttons so `SiriRemoteTouchSurface` retains uninterrupted
-/// touch-scrubbing and clickpad control across playing, paused, and scrubbing states.
+enum PlayerBottomBarAction: Hashable {
+    case panel(PlayerQuickPanelTab)
+    case nextEpisode
+}
+
+/// Compact evening-cinema transport OSD with bottom quick-action strip (`Tekst · Lyd · Kilde · Bilde · Kapitler`).
+/// Leaf timeline & subtitle/clock observers remain isolated so 10 Hz engine ticks never re-render the strip.
 struct PlayerBottomBarView: View {
     @ObservedObject var viewModel: PlayerViewModel
     let fallbackRequest: PlaybackLaunchRequest
+    var activeQuickPanel: PlayerQuickPanelTab? = nil
+    var focusRequestNonce: Int = 0
+    var clearFocusNonce: Int = 0
+    var requestedAction: PlayerBottomBarAction = .panel(.subtitles)
+    var onOpenQuickPanel: (PlayerQuickPanelTab) -> Void = { _ in }
+    var onPlayNextEpisode: (TvNextEpisodeSummary) -> Void = { _ in }
+    var onFocusPresenceChanged: (Bool) -> Void = { _ in }
+    var onUserNavigatedOSD: () -> Void = {}
+    var onReturnFocusToCanvas: () -> Void = {}
+
+    @FocusState private var focusedAction: PlayerBottomBarAction?
+    @State private var focusRetryTask: Task<Void, Never>?
+    @Namespace private var bottomBarFocusNamespace
 
     private var isPaused: Bool {
         viewModel.playbackPhase == .paused
@@ -94,12 +111,25 @@ struct PlayerBottomBarView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .allowsHitTesting(false)
+
+                    if let qualityBadge = viewModel.liveQualitySummaryBadge {
+                        Text(qualityBadge)
+                            .font(LunaTheme.Font.badge)
+                            .foregroundStyle(LunaTheme.moonlight)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(LunaTheme.surfaceRaised, in: Capsule())
+                            .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
+                            .allowsHitTesting(false)
+                    }
 
                     EndsAtLeafView(
                         engine: viewModel.engine,
                         duration: duration,
                         previewTimeOverride: viewModel.previewPlayheadOverrideSeconds
                     )
+                    .allowsHitTesting(false)
                 }
 
                 TimelineScrubberLeafView(
@@ -109,24 +139,121 @@ struct PlayerBottomBarView: View {
                     duration: duration,
                     isPaused: isPaused
                 )
+                .allowsHitTesting(false)
+
+                quickActionsRow
+                    .padding(.top, 4)
             }
             .padding(.horizontal, LunaTheme.horizontalGutter)
-            .padding(.top, 56)
-            .padding(.bottom, 44)
+            .padding(.top, 52)
+            .padding(.bottom, 60)
             .background {
                 LinearGradient(
                     colors: [
                         Color.clear,
-                        LunaTheme.pureBlack.opacity(0.58),
-                        LunaTheme.pureBlack.opacity(0.90),
+                        LunaTheme.pureBlack.opacity(0.62),
+                        LunaTheme.pureBlack.opacity(0.92),
                     ],
                     startPoint: .top,
                     endPoint: .bottom
                 )
                 .ignoresSafeArea(edges: [.bottom, .horizontal])
+                .allowsHitTesting(false)
             }
         }
-        .allowsHitTesting(false)
+        .onAppear {
+            if focusRequestNonce > 0 && activeQuickPanel == nil {
+                applyRequestedActionFocus()
+            }
+        }
+        .onChange(of: focusRequestNonce) { _, _ in
+            guard activeQuickPanel == nil else { return }
+            applyRequestedActionFocus()
+        }
+        .onChange(of: clearFocusNonce) { _, _ in
+            focusRetryTask?.cancel()
+            focusRetryTask = nil
+            focusedAction = nil
+        }
+        .onChange(of: focusedAction) { _, newValue in
+            onFocusPresenceChanged(newValue != nil)
+            if newValue != nil {
+                onUserNavigatedOSD()
+            }
+        }
+        .onDisappear {
+            focusRetryTask?.cancel()
+            focusRetryTask = nil
+            onFocusPresenceChanged(false)
+        }
+    }
+
+    @ViewBuilder
+    private var quickActionsRow: some View {
+        let tabs = PlayerQuickPanelTab.visibleTabs(hasChapters: !viewModel.chapters.isEmpty)
+        HStack(spacing: 12) {
+            ForEach(tabs) { tab in
+                let isActiveItem = (activeQuickPanel == tab)
+                    || (tab == .subtitles && viewModel.activeSubtitleTrackIndex != nil)
+                    || (tab == .picture && viewModel.isMetalFXActive)
+                LunaPillButton(
+                    tab.title,
+                    systemImage: tab.systemImage,
+                    badgeText: tab == .picture && viewModel.isMetalFXActive ? "MetalFX" : nil,
+                    isSelected: isActiveItem,
+                    prominence: .glassPill,
+                    size: .compact
+                ) {
+                    onOpenQuickPanel(tab)
+                }
+                .focused($focusedAction, equals: .panel(tab))
+                .prefersDefaultFocus(requestedAction == .panel(tab), in: bottomBarFocusNamespace)
+            }
+
+            Spacer(minLength: 16)
+
+            if let next = viewModel.activeSession?.nextEpisode {
+                LunaPillButton(
+                    "Neste episode",
+                    systemImage: "forward.end.fill",
+                    badgeText: "S\(next.season) · E\(next.episode)",
+                    prominence: .glassPill,
+                    size: .compact
+                ) {
+                    onPlayNextEpisode(next)
+                }
+                .focused($focusedAction, equals: .nextEpisode)
+            }
+        }
+        .focusScope(bottomBarFocusNamespace)
+        .focusSection()
+        .allowsHitTesting(activeQuickPanel == nil)
+        .disabled(activeQuickPanel != nil)
+        .onMoveCommand { direction in
+            if direction == .up {
+                focusRetryTask?.cancel()
+                focusRetryTask = nil
+                focusedAction = nil
+                onReturnFocusToCanvas()
+            }
+        }
+    }
+
+    private func applyRequestedActionFocus() {
+        focusRetryTask?.cancel()
+        let target = requestedAction
+        focusedAction = target
+        focusRetryTask = Task { @MainActor in
+            for delayNs: UInt64 in [16_000_000, 48_000_000] {
+                try? await Task.sleep(nanoseconds: delayNs)
+                guard !Task.isCancelled, activeQuickPanel == nil else { return }
+                if focusedAction == nil {
+                    focusedAction = target
+                } else {
+                    return
+                }
+            }
+        }
     }
 }
 
@@ -312,7 +439,7 @@ struct TimelineScrubberLeafView: View {
                         .font(LunaTheme.Font.caption)
                         .foregroundStyle(LunaTheme.muted)
                 } else if showFirstTimeScrubHint {
-                    Text("Sveip på styreflaten for å spole · Sveip ned for valg")
+                    Text("Sveip på styreflaten for å spole · Trykk ned for hurtigvalg")
                         .font(LunaTheme.Font.caption)
                         .foregroundStyle(LunaTheme.muted)
                 }

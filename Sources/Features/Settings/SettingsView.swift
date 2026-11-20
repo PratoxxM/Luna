@@ -70,7 +70,6 @@ struct SettingsView: View {
                     }
                     .prefersDefaultFocus(selectedCategory == category, in: settingsSidebarNamespace)
                 }
-                .defaultFocus($focusedCategory, selectedCategory as SettingsCategory?, priority: .userInitiated)
 
                 Spacer(minLength: 0)
             }
@@ -110,12 +109,6 @@ struct SettingsView: View {
         .padding(.top, LunaTopBarView.contentTopPadding)
         .padding(.horizontal, LunaTheme.horizontalGutter)
         .ignoresSafeArea()
-        .defaultFocus($focusedCategory, selectedCategory as SettingsCategory?, priority: .userInitiated)
-        .onAppear {
-            if focusedCategory == nil {
-                focusedCategory = selectedCategory
-            }
-        }
         .confirmationDialog(
             "Koble til LunaCore på nytt?",
             isPresented: $showReconnectDialog,

@@ -218,12 +218,13 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
 
     func testPausedTwelveSecondOledRestPolicyAndTimelineClockBucketing() {
         XCTAssertEqual(PlayerOSDVisibilityPolicy.playingAutoHideSeconds, 4.0, accuracy: 0.001)
+        XCTAssertEqual(PlayerOSDVisibilityPolicy.playingQuickActionsAutoHideSeconds, 7.0, accuracy: 0.001)
         XCTAssertEqual(PlayerOSDVisibilityPolicy.pausedIdleRestSeconds, 12.0, accuracy: 0.001)
 
         XCTAssertFalse(
             PlayerOSDVisibilityPolicy.shouldShowBottomBar(
                 isPictureReadyForReveal: false,
-                isTopDrawerOpen: false,
+                isQuickPanelOpen: false,
                 hasFatalError: false,
                 isScrubbing: false,
                 showBottomBar: true,
@@ -231,15 +232,16 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
                 isPausedOSDResting: false
             )
         )
-        XCTAssertFalse(
+        // Open quick panel keeps bottom OSD anchored even while idle resting would otherwise trigger
+        XCTAssertTrue(
             PlayerOSDVisibilityPolicy.shouldShowBottomBar(
                 isPictureReadyForReveal: true,
-                isTopDrawerOpen: true,
+                isQuickPanelOpen: true,
                 hasFatalError: false,
                 isScrubbing: false,
-                showBottomBar: true,
+                showBottomBar: false,
                 playbackPhase: .paused,
-                isPausedOSDResting: false
+                isPausedOSDResting: true
             )
         )
 
@@ -247,7 +249,7 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
         XCTAssertTrue(
             PlayerOSDVisibilityPolicy.shouldShowBottomBar(
                 isPictureReadyForReveal: true,
-                isTopDrawerOpen: false,
+                isQuickPanelOpen: false,
                 hasFatalError: false,
                 isScrubbing: false,
                 showBottomBar: false,
@@ -260,7 +262,7 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
                 playbackPhase: .paused,
                 isPausedOSDResting: false,
                 isScrubbing: false,
-                isTopDrawerOpen: false
+                isQuickPanelOpen: false
             )
         )
 
@@ -268,7 +270,7 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
         XCTAssertFalse(
             PlayerOSDVisibilityPolicy.shouldShowBottomBar(
                 isPictureReadyForReveal: true,
-                isTopDrawerOpen: false,
+                isQuickPanelOpen: false,
                 hasFatalError: false,
                 isScrubbing: false,
                 showBottomBar: false,
@@ -281,7 +283,17 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
                 playbackPhase: .paused,
                 isPausedOSDResting: true,
                 isScrubbing: false,
-                isTopDrawerOpen: false
+                isQuickPanelOpen: false
+            )
+        )
+
+        // Open quick panel suppresses ambient pause rest
+        XCTAssertFalse(
+            PlayerOSDVisibilityPolicy.shouldRestAmbientPlayerHUD(
+                playbackPhase: .paused,
+                isPausedOSDResting: true,
+                isScrubbing: false,
+                isQuickPanelOpen: true
             )
         )
 
@@ -289,7 +301,7 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
         XCTAssertTrue(
             PlayerOSDVisibilityPolicy.shouldShowBottomBar(
                 isPictureReadyForReveal: true,
-                isTopDrawerOpen: false,
+                isQuickPanelOpen: false,
                 hasFatalError: false,
                 isScrubbing: true,
                 showBottomBar: false,
@@ -300,7 +312,7 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
         XCTAssertTrue(
             PlayerOSDVisibilityPolicy.shouldShowBottomBar(
                 isPictureReadyForReveal: true,
-                isTopDrawerOpen: false,
+                isQuickPanelOpen: false,
                 hasFatalError: false,
                 isScrubbing: false,
                 showBottomBar: true,

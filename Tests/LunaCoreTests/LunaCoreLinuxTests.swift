@@ -503,7 +503,7 @@ final class LunaCoreLinuxTests: XCTestCase {
             roomName: "Stua",
             hardwareProfile: "hdr10-512",
             allowSelfSignedLanTLS: true,
-            appVersion: "2.8.2",
+            appVersion: "2.8.3",
             osVersion: "Linux-CI",
             session: session
         )
@@ -611,8 +611,15 @@ final class LunaCoreLinuxTests: XCTestCase {
         let playerCfg = PreviewLaunchConfiguration.parse(
             arguments: ["Luna", "--preview-screen=player", "--preview-focus=down"]
         )
-        XCTAssertEqual(playerCfg?.screen, .playerAudio)
+        XCTAssertEqual(playerCfg?.screen, .playerSubtitles)
         XCTAssertEqual(playerCfg?.focusDirection, .down)
+
+        let subtitlesCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "player-subtitles"])
+        XCTAssertEqual(subtitlesCfg?.screen, .playerSubtitles)
+
+        let errorCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "player-error"])
+        XCTAssertEqual(errorCfg?.screen, .playerError)
+        XCTAssertEqual(errorCfg?.screen.isPlayerScreen, true)
 
         let posterCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "home-poster"])
         XCTAssertEqual(posterCfg?.screen, .homePoster)
@@ -685,6 +692,29 @@ final class LunaCoreLinuxTests: XCTestCase {
         )
         XCTAssertTrue(cand.capabilityBadges.contains("HEVC"))
         XCTAssertEqual(cand.humanDrawerSubtitle(isActive: false), "På NVMe · HEVC · Bluray-2160p · 60,0 GB")
+        XCTAssertEqual(cand.quickRowTitle(roomName: "Stua", isRecommended: true), "Anbefalt for Stua · 4K HDR10+ TrueHD Atmos")
+
+        // Numeric channel regression from live SQLite probe
+        let numericChannelJson = #"""
+        {
+          "candidateId": "cand-num-ch",
+          "displayHeadline": "1080p WEB-DL",
+          "releaseTitle": "Movie.2026.1080p.WEB-DL",
+          "source": "nvme",
+          "tier": "nvme",
+          "resolution": "1080p",
+          "audioCodec": "aac",
+          "channels": 2,
+          "sizeBytes": 2147483648.0,
+          "tvScore": 850.0,
+          "isNorwegian": 0
+        }
+        """#
+        let numCand = try JSONDecoder().decode(TvCandidateInfo.self, from: Data(numericChannelJson.utf8))
+        XCTAssertEqual(numCand.channels, "2.0")
+        XCTAssertEqual(numCand.sizeBytes, 2_147_483_648)
+        XCTAssertEqual(numCand.tvScore, 850)
+        XCTAssertEqual(numCand.isNorwegian, false)
 
         // 4. Transport excludes legacy split-brain X-Room-Name / X-Hardware-Profile headers
         let client = LunaCoreClient(

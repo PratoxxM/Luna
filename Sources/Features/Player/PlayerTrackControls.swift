@@ -118,6 +118,16 @@ extension PlayerViewModel {
         activeUpscale != nil && activeUpscale?.disabledReason == nil
     }
 
+    var liveQualitySummaryBadge: String? {
+        if let metalBadge = activeMetalFXBadge {
+            return metalBadge
+        }
+        if let quality = activeSession?.selectedCandidate.humanQualitySummary, !quality.isEmpty {
+            return quality
+        }
+        return nil
+    }
+
     var activeMetalFXBadge: String? {
         guard isMetalFXActive else { return nil }
         let rawH = sourceVideoHeight > 0
@@ -162,15 +172,8 @@ extension PlayerViewModel {
         return nil
     }
 
-    func cycleMetalFXModeLive() {
-        let all = LowResUpscaleMode.allCases
-        let nextMode: LowResUpscaleMode = {
-            guard let idx = all.firstIndex(of: comfort.lowResUpscaleMode) else {
-                return .auto
-            }
-            return all[(idx + 1) % all.count]
-        }()
-        comfort.lowResUpscaleMode = nextMode
+    func setMetalFXModeLive(_ targetMode: LowResUpscaleMode) {
+        comfort.lowResUpscaleMode = targetMode
 
         guard !isResolving, !isSwitchingSource, previewAudioOptions.isEmpty else {
             return
@@ -180,7 +183,7 @@ extension PlayerViewModel {
         upscaleReloadTask = Task { @MainActor [weak self] in
             guard let self else { return }
             _ = try? await self.engine.reloadAtCurrentPosition { options in
-                switch nextMode {
+                switch targetMode {
                 case .off:
                     options.upscalesLowResolutionVideo = false
                 case .auto:
@@ -195,5 +198,16 @@ extension PlayerViewModel {
                 self.upscaleReloadTask = nil
             }
         }
+    }
+
+    func cycleMetalFXModeLive() {
+        let all = LowResUpscaleMode.allCases
+        let nextMode: LowResUpscaleMode = {
+            guard let idx = all.firstIndex(of: comfort.lowResUpscaleMode) else {
+                return .auto
+            }
+            return all[(idx + 1) % all.count]
+        }()
+        setMetalFXModeLive(nextMode)
     }
 }

@@ -11,6 +11,7 @@ struct MainNavigationShell: View {
     let previewConfiguration: PreviewLaunchConfiguration?
     @State private var selectedTab: MainNavigationTab
     @State private var lastBootstrapRefreshAt: Date = .distantPast
+    @State private var allowColdHomeCardFocus: Bool
 
     init(
         engine: AetherEngine,
@@ -32,18 +33,34 @@ struct MainNavigationShell: View {
             initialTab = .home
         }
         _selectedTab = State(initialValue: initialTab)
+        let shouldAllowColdFocus = (previewConfiguration == nil
+            || previewConfiguration?.screen == .home
+            || previewConfiguration?.screen == .homePoster)
+            && previewConfiguration?.focusDirection != .up
+        _allowColdHomeCardFocus = State(initialValue: shouldAllowColdFocus)
     }
 
     var body: some View {
         if let screen = previewConfiguration?.screen, screen.isPlayerScreen {
-            let drawerTab: PlayerTopDrawerTab = screen == .playerSource ? .source : .audioAndSubtitles
+            let previewPanel: PlayerQuickPanelTab? = {
+                switch screen {
+                case .playerSource: return .source
+                case .playerSubtitles: return .subtitles
+                case .playerError: return nil
+                default: return nil
+                }
+            }()
+            let previewError: String? = screen == .playerError
+                ? "Kunne ikke lese svaret fra LunaCore akkurat nå."
+                : nil
             PlayerContainerView(
                 engine: engine,
                 comfort: sessionStore.comfort,
                 initialRequest: PreviewMockFixtures.playerLaunchRequest,
                 isPreviewMode: true,
                 previewFocusDirection: previewConfiguration?.focusDirection ?? .down,
-                previewDrawerTab: drawerTab,
+                previewQuickPanel: previewPanel,
+                previewFatalError: previewError,
                 onDismiss: {}
             )
             .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
@@ -83,7 +100,8 @@ struct MainNavigationShell: View {
                         initialRoomName: sessionStore.roomName,
                         initialHardwareProfile: sessionStore.effectiveHardwareProfile,
                         isActiveTab: selectedTab == .home,
-                        previewFocusPosterRow: focusPosterPreview
+                        previewFocusPosterRow: focusPosterPreview,
+                        allowInitialColdFocus: allowColdHomeCardFocus
                     )
                     .toolbar(.hidden, for: .tabBar)
                     .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
@@ -184,8 +202,12 @@ struct MainNavigationShell: View {
                 selectedTab: $selectedTab,
                 roomName: sessionStore.roomName,
                 focusRequestNonce: navBarVisibility.focusRequestNonce,
+                isUpwardBridgeEnabled: !hideTopBar && !navBarVisibility.isTopBarFocused && !navBarVisibility.isModalActive && !isPlaybackActive,
                 onFocusPresenceChanged: { isFocused in
                     navBarVisibility.updateTopBarFocused(isFocused)
+                    if isFocused && allowColdHomeCardFocus {
+                        allowColdHomeCardFocus = false
+                    }
                 }
             )
             .opacity(hideTopBar ? 0 : 1)
@@ -200,6 +222,7 @@ struct MainNavigationShell: View {
         .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
         .environmentObject(sessionStore.comfort)
         .onChange(of: selectedTab) { _, newTab in
+            allowColdHomeCardFocus = false
             navBarVisibility.syncActiveTab(newTab)
         }
         .onExitCommand(perform: interceptMenu ? {

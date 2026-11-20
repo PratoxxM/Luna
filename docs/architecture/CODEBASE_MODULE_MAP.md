@@ -1,4 +1,4 @@
-# Luna (`v2.8.2`) — Codebase Module Map
+# Luna (`v2.8.3`) — Codebase Module Map
 
 Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced bidirectionally by `ops/bin/luna-check`).
 
@@ -7,7 +7,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | Module Path | Responsibility | `/api/tv/v1` Endpoints & Protocols | Unit Test Coverage |
 | :--- | :--- | :--- | :--- |
 | `Sources/App/LunaApp.swift` | Owns single `@MainActor AetherEngine`, root `AppSessionStore`, `ComfortPreferences` & `--preview-screen` boot | — | `LunaCoreLinuxTests.swift` |
-| `Sources/App/PreviewLaunchConfiguration.swift` | Parses `--preview-screen` (`home`, `home-poster`, `catalog`, `library`, `details`, `settings`, `player-audio`, `player-source`) & `--preview-focus` CLI arguments | — | `LunaCoreLinuxTests.swift` |
+| `Sources/App/PreviewLaunchConfiguration.swift` | Parses `--preview-screen` (`home`, `home-poster`, `catalog`, `library`, `details`, `settings`, `player-subtitles`, `player-source`, `player-error`) & `--preview-focus` CLI arguments | — | `LunaCoreLinuxTests.swift` |
 | `Sources/App/PreviewMockFixtures.swift` | Deterministic offline Lampelys catalog, 28-season detail & playback fixtures | Mock `/api/tv/v1/*` | — |
 | `Sources/App/PreviewMockURLProtocol.swift` | Offline `URLProtocol` router & procedural cinema artwork PNG generator for preview mode | Mock `/api/tv/v1/*`, `/preview-art/*` | — |
 | `Sources/App/MainNavigationShell.swift` | Custom top bar + hidden stock tab bar, room atmosphere env, bootstrap sync & player sheet | `GET /api/tv/v1/bootstrap` | `LunaNavigationAndDetailRaceTests.swift`, `PlayerOverlayAndCacheTests.swift` |
@@ -66,8 +66,8 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Features/Home/ShelfRowView.swift` | Horizontal focus-safe shelf carousel supporting poster & backdrop styles | — | `DynamicHomeRowTests.swift` |
 | `Sources/Features/Browse/CatalogBrowseView.swift` | Paginated genre & sort catalog browser | `GET /api/tv/v1/catalog/{movies,series}` | `SeriesFlowAndHomePolicyTests.swift` |
 | `Sources/Features/Browse/CustomRowBrowseView.swift` | Paginated custom row browser | `GET /api/tv/v1/rows/:id` | `DynamicHomeRowTests.swift` |
-| `Sources/Features/Library/LibraryHubView.swift` | Split 2-column Bibliotek hub (*Lokalt · Filmer · Serier · Huskeliste · Egne lister*) | `GET /api/tv/v1/library?section={watchlist,lists,local}` | `NavigationSettingsAndDeleteTests.swift`, `DynamicHomeRowTests.swift` |
-| `Sources/Features/Library/LibrarySidebarAndEmptyViews.swift` | Focus-driven Bibliotek sidebar rows, list tiles & crescent-serif empty states | — | `DynamicHomeRowTests.swift` |
+| `Sources/Features/Library/LibraryHubView.swift` | Clean 3-pill horizontal Bibliotek hub (*Filmer · Serier · Huskeliste*) above a 5-column poster grid | `GET /api/tv/v1/library?section={watchlist,local}` | `NavigationSettingsAndDeleteTests.swift`, `DynamicHomeRowTests.swift` |
+| `Sources/Features/Library/LibrarySidebarAndEmptyViews.swift` | `LibraryFilterSection` filter model, default `Filmer`/`Serier` resolver & crescent-serif empty states | — | `DynamicHomeRowTests.swift` |
 | `Sources/Features/Search/SearchView.swift` | Instant search across local library & TMDB catalog | `GET /api/tv/v1/search` | `LunaNavigationAndDetailRaceTests.swift` |
 | `Sources/Features/Detail/MediaDetailView.swift` | Title detail container coordinating hero, seasons, source picker & delete sheet | `GET /api/tv/v1/items/*` | `LunaNavigationAndDetailRaceTests.swift` |
 | `Sources/Features/Detail/MediaDetailViewModel.swift` | Observable detail state, episode loading & pre-resolve orchestration | `GET /items/*`, `GET /playback/:id/alternatives` | `MediaDetailViewModelTests.swift`, `LunaNavigationAndDetailRaceTests.swift` |
@@ -94,9 +94,8 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Features/Player/PlayerNowPlayingCoordinator.swift` | `MPNowPlayingInfoCenter` metadata & remote command center bindings | — | `PlaybackTitleAndNowPlayingTests.swift` |
 | `Sources/Features/Player/PlayerTransportProtocol.swift` | Testable transport abstraction decoupling `PlayerViewModel` from `AetherEngine` | — | `PlayerTestDoubles.swift` |
 | `Sources/Features/Player/PlayerTrackControls.swift` | Audio, subtitle & video track selection state and `SmartTrackRuleEngine` wiring | — | `SmartTrackRuleEngineTests.swift` |
-| `Sources/Features/Player/PlayerBottomBarView.swift` | Leaf scrubber bar observing `engine.clock`, live timecode commits & first-time scrub hint | — | `PausedScrubCommitTests.swift` |
-| `Sources/Features/Player/PlayerTopDrawerView.swift` | Focus-isolated 4-tab top drawer (*Info · Lyd og tekst · Kilde · Kapitler*) & row cards | `GET /playback/:id/alternatives` | `PlayerOverlayAndCacheTests.swift` |
-| `Sources/Features/Player/PlayerTopDrawerPanelsView.swift` | Content panels for Info, Lyd og tekst (`Kveldslys`), Kilde & Kapitler drawer tabs | `GET /playback/:id/alternatives` | `SeriesFlowAndHomePolicyTests.swift` |
+| `Sources/Features/Player/PlayerBottomBarView.swift` | Leaf scrubber bar observing `engine.clock`, live quality badge, `Neste episode` & quick-action row | — | `PausedScrubCommitTests.swift` |
+| `Sources/Features/Player/PlayerQuickPanelView.swift` | Floating vertical quick-lists (*Tekst · Lyd · Kilde · Bilde · Kapitler*) with `Kveldslys` & MetalFX controls | `GET /playback/:id/alternatives` | `PlayerOverlayAndCacheTests.swift`, `SeriesFlowAndHomePolicyTests.swift` |
 | `Sources/Features/Player/SiriRemoteTouchSurface.swift` | `UIView` Siri Remote pan/tap/menu handler with `.focusEffectDisabled()` | — | `PausedScrubCommitTests.swift` |
 | `Sources/Features/Player/ResolvingCurtainView.swift` | Hold curtain preventing HDMI black flash on display-mode switches | — | `PlayerExitBlinkRegressionTests.swift` |
 | `Sources/Features/Player/ScrubPreviewBubbleView.swift` | Frame-accurate scrub thumbnail preview bubble | — | — |
@@ -106,7 +105,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 
 ## 4. Build, Guardrails, Actions & `LunaTests` (`Tests/LunaTests/`)
 
-- **Build, Tokens & CI**: `project.yml` (`MARKETING_VERSION: "2.8.2"`, `CURRENT_PROJECT_VERSION: "62"`, `bundleIdPrefix: local.lunacore`), `Package.swift` (Linux `LunaCore` test target), `design/tokens.json`, `Resources/Localizable.xcstrings`, `ops/bin/luna-design-tokens`, `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/workflows/tvos-vision.yml`, `scripts/test-core.sh`, `scripts/preview-capture.sh`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, `>= 22 pt` tvOS font floor, zero system `Material`, sideload, zero private infra leaks, token parity & bidirectional doc parity).
+- **Build, Tokens & CI**: `project.yml` (`MARKETING_VERSION: "2.8.3"`, `CURRENT_PROJECT_VERSION: "63"`, `bundleIdPrefix: local.lunacore`), `Package.swift` (Linux `LunaCore` test target), `design/tokens.json`, `Resources/Localizable.xcstrings`, `ops/bin/luna-design-tokens`, `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/workflows/tvos-vision.yml`, `scripts/test-core.sh`, `scripts/preview-capture.sh`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, `>= 22 pt` tvOS font floor, zero system `Material`, sideload, zero private infra leaks, token parity & bidirectional doc parity).
 - **23 XCTest Suites + Test Doubles (`Tests/LunaTests/`)**:
   - `Tests/LunaTests/BonjourServerBrowserTests.swift`
   - `Tests/LunaTests/ChapterClassificationTests.swift`

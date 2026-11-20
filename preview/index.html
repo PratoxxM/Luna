@@ -357,9 +357,69 @@
     .poster-caption-title { font-size: 25px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .poster-caption-meta  { font-size: 22px; color: var(--text-muted); }
 
-    /* Catalog Filter Strip & Grid */
+    /* Catalog / Library Filter Strip & 5-Column Grid */
     .filter-strip { display: flex; gap: 14px; align-items: center; }
-    .catalog-grid { display: flex; gap: var(--card-gap); flex-wrap: nowrap; }
+    .catalog-grid, .library-grid { display: flex; gap: var(--card-gap); flex-wrap: nowrap; }
+
+    /* Player Quick-Action Strip & Floating Vertical Quick-List */
+    #screen-player {
+      padding: 0;
+      background:
+        radial-gradient(circle at 62% 34%, rgba(108, 180, 238, 0.22), transparent 58%),
+        linear-gradient(180deg, rgba(10, 9, 8, 0.45) 0%, rgba(16, 26, 40, 0.40) 48%, rgba(0, 0, 0, 0.90) 100%);
+      justify-content: flex-end;
+    }
+
+    .player-quick-panel {
+      display: none;
+      margin: 0 0 22px var(--safe-x);
+      width: 680px;
+      padding: 22px 26px;
+      border-radius: 24px;
+      background: var(--glass);
+      border: 1px solid var(--edge-strong);
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.72);
+      flex-direction: column;
+      gap: 10px;
+      z-index: 25;
+    }
+
+    .player-quick-panel.is-open { display: flex; }
+    .player-quick-panel.is-wide { width: 1120px; }
+
+    .quick-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--edge-subtle);
+    }
+
+    .quick-row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 20px;
+      border-radius: 16px;
+      background: transparent;
+      border: 1.5px solid transparent;
+      color: var(--text-primary);
+      text-align: left;
+      cursor: pointer;
+      transition: transform var(--spring), background var(--spring), border-color 180ms ease;
+    }
+
+    .quick-row.is-active {
+      background: var(--surface-2);
+      border-color: var(--edge-subtle);
+    }
+
+    .quick-row-title { font-size: 26px; font-weight: 600; color: var(--text-primary); }
+    .quick-row-sub { font-size: 22px; color: var(--text-muted); margin-top: 3px; }
+    .quick-row-check { font-size: 26px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
+    .quick-actions-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
 
     /* Details Hero & Episode Strip */
     .detail-hero {
@@ -377,42 +437,12 @@
     .detail-overview { font-size: 29px; line-height: 1.38; color: var(--text-secondary); max-width: 1080px; margin-top: 18px; }
     .detail-actions { display: flex; gap: 18px; margin-top: 28px; }
 
-    /* Player Screen */
-    #screen-player {
-      padding: 0;
-      background:
-        radial-gradient(circle at 62% 34%, rgba(108, 180, 238, 0.22), transparent 58%),
-        linear-gradient(180deg, rgba(10, 9, 8, 0.52) 0%, rgba(16, 26, 40, 0.45) 48%, rgba(0, 0, 0, 0.92) 100%);
-      justify-content: space-between;
-    }
-
-    .player-drawer {
-      margin: var(--safe-y) var(--safe-x) 0 var(--safe-x);
-      padding: 24px 32px;
-      border-radius: 24px;
-      background: var(--glass);
-      border: 1px solid var(--edge-strong);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .subtitle-cue {
-      align-self: center;
-      font-size: 42px;
-      font-weight: 600;
-      color: rgb(194, 184, 166); /* 75% Kveldslys warm-white */
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.96), 0 4px 12px rgba(0, 0, 0, 0.92);
-      margin-top: auto;
-      margin-bottom: 28px;
-    }
-
     .player-bottom {
-      padding: 36px var(--safe-x) var(--safe-y) var(--safe-x);
-      background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.88));
+      padding: 36px var(--safe-x) 60px var(--safe-x);
+      background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.92));
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
     }
 
     .scrubber-bar {
@@ -479,7 +509,7 @@
         <button class="nav-tab is-active" data-focusable="true" data-target-screen="home">Hjem</button>
         <button class="nav-tab" data-focusable="true" data-target-screen="catalog">Filmer</button>
         <button class="nav-tab" data-focusable="true" data-target-screen="details">Serier</button>
-        <button class="nav-tab" data-focusable="true" data-target-screen="player" data-label="Bibliotek">Bibliotek</button>
+        <button class="nav-tab" data-focusable="true" data-target-screen="library" data-label="Bibliotek">Bibliotek</button>
         <span style="width: 1px; height: 28px; background: rgba(255, 240, 222, 0.16); margin: 0 4px;"></span>
         <button class="nav-tab" data-focusable="true" data-target-screen="catalog" data-label="Søk" aria-label="Søk">🔍</button>
         <button class="nav-tab" data-focusable="true" data-target-screen="details" data-label="Innstillinger" aria-label="Innstillinger">⚙</button>
@@ -660,7 +690,22 @@
       </section>
     </main>
 
-    <!-- 3. DETAILS SCREEN -->
+    <!-- 3. LIBRARY SCREEN (3 Horizontal Filter Pills + 5-Column Grid) -->
+    <main id="screen-library" class="screen">
+      <section class="focus-section" data-section="library-filters">
+        <div class="filter-strip">
+          <button class="pill-btn is-selected" style="background: var(--surface-selected); border-color: var(--edge-strong);" data-focusable="true" data-lib-filter="movies">Filmer (5)</button>
+          <button class="pill-btn" data-focusable="true" data-lib-filter="series">Serier (3)</button>
+          <button class="pill-btn" data-focusable="true" data-lib-filter="watchlist">Huskeliste (2)</button>
+        </div>
+      </section>
+
+      <section class="focus-section" data-section="library-grid">
+        <div class="library-grid" id="library-grid-container"></div>
+      </section>
+    </main>
+
+    <!-- 4. DETAILS SCREEN -->
     <main id="screen-details" class="screen">
       <section class="detail-hero focus-section" data-section="detail-hero">
         <div>
@@ -711,37 +756,40 @@
       </section>
     </main>
 
-    <!-- 4. PLAYER SCREEN -->
+    <!-- 5. PLAYER SCREEN (Bottom OSD + Quick Actions + Floating Vertical Quick-List) -->
     <main id="screen-player" class="screen">
-      <section class="player-drawer focus-section" data-section="player-drawer" style="margin-top: 162px;">
-        <div style="display: flex; gap: 14px; flex-wrap: wrap;">
-          <button class="pill-btn primary-amber" data-focusable="true">Lyd og tekst</button>
-          <button class="pill-btn" data-focusable="true">Kilde (HDR10+ · 7.1.4)</button>
-          <button class="pill-btn" data-focusable="true">MetalFX: Auto (< 1080p 8-bit SDR)</button>
-          <button class="pill-btn" data-focusable="true" style="opacity: 0.52;">Kveldslys · Slå på undertekst</button>
-          <button class="pill-btn" data-focusable="true">Kapitler (4)</button>
-        </div>
-        <span class="badge tier-nvme" style="white-space: nowrap; flex-shrink: 0;">7.1.4 TrueHD Atmos · QMS 60 Hz HDR</span>
-      </section>
-
-      <div class="subtitle-cue">Velkommen tilbake til Lumon. Avdelingen venter på dere.</div>
+      <section id="player-quick-panel" class="player-quick-panel focus-section" data-section="player-quick-panel"></section>
 
       <section class="player-bottom focus-section" data-section="player-scrubber">
         <div style="display: flex; justify-content: space-between; align-items: baseline;">
-          <div>
-            <div class="section-sub" style="color: var(--text-secondary);">Severance · S02E04 · Woe's Hollow</div>
-            <div class="section-title" style="margin-top: 4px;">⏸ Woe's Hollow</div>
+          <div style="display: flex; align-items: baseline; gap: 16px;">
+            <div>
+              <div class="section-sub" style="color: var(--text-secondary);">Severance · S02E04 · Introduksjon</div>
+              <div style="display: flex; align-items: center; gap: 14px; margin-top: 4px;">
+                <span class="section-title">⏸ Woe's Hollow</span>
+                <span class="badge">4K HDR10+ TrueHD Atmos</span>
+              </div>
+            </div>
           </div>
           <div class="section-sub">Ferdig kl. 23.18</div>
         </div>
-        <div class="scrubber-bar" data-focusable="true" data-label="Timeline Scrubber 18:42">
+        <div class="scrubber-bar">
           <div class="scrubber-buffer"></div>
           <div class="scrubber-playhead"></div>
         </div>
         <div style="display: flex; justify-content: space-between;">
           <span class="section-sub" style="color: var(--text-secondary);">18:42</span>
-          <span class="section-sub">Sveip på styreflaten for å spole · Esc/Backspace for Meny</span>
+          <span class="section-sub">Sveip på styreflaten for å spole · Trykk ned for hurtigvalg</span>
           <span class="section-sub">−34:18</span>
+        </div>
+        <div class="quick-actions-row">
+          <button class="pill-btn" data-focusable="true" data-quick-panel="subtitles">Tekst</button>
+          <button class="pill-btn" data-focusable="true" data-quick-panel="audio">Lyd</button>
+          <button class="pill-btn" data-focusable="true" data-quick-panel="source">Kilde</button>
+          <button class="pill-btn" data-focusable="true" data-quick-panel="picture">Bilde</button>
+          <button class="pill-btn" data-focusable="true" data-quick-panel="chapters">Kapitler</button>
+          <div style="flex: 1"></div>
+          <button class="pill-btn" data-focusable="true">Neste episode S2 · E5</button>
         </div>
       </section>
     </main>
@@ -771,7 +819,137 @@
       fitViewport();
 
       let currentScreen = params.get('screen') || 'home';
+      let currentLibraryFilter = 'movies';
+      let activeQuickPanel = null;
       let focusedEl = null;
+
+      const LIBRARY_ITEMS = {
+        movies: [
+          { title: 'Dune: Part Two', year: '2024 · ★ 8,5', art: 'art-ochre', badge: 'På NVMe', cls: 'tier-nvme' },
+          { title: 'Nosferatu', year: '2024 · ★ 7,7', art: 'art-aubergine', badge: 'På NVMe', cls: 'tier-nvme' },
+          { title: 'Blade Runner 2049', year: '2017 · ★ 8,0', art: 'art-teal', badge: 'I Arkiv', cls: 'tier-archive' },
+          { title: 'Oppenheimer', year: '2023 · ★ 8,3', art: 'art-ochre', badge: 'På NVMe', cls: 'tier-nvme' },
+          { title: 'Interstellar', year: '2014 · ★ 8,7', art: 'art-navy', badge: 'På NVMe', cls: 'tier-nvme' }
+        ],
+        series: [
+          { title: 'Lykkeland', year: '2018 · ★ 8,1', art: 'art-ochre', badge: 'På NVMe', cls: 'tier-nvme' },
+          { title: 'Severance', year: '2022 · ★ 8,7', art: 'art-navy', badge: 'På NVMe', cls: 'tier-nvme' },
+          { title: 'Andor', year: '2022 · ★ 8,4', art: 'art-teal', badge: 'På NVMe', cls: 'tier-nvme' }
+        ],
+        watchlist: [
+          { title: 'Dune: Part Two', year: '2024 · ★ 8,5', art: 'art-ochre', badge: 'På NVMe', cls: 'tier-nvme' },
+          { title: 'Lykkeland', year: '2018 · ★ 8,1', art: 'art-ochre', badge: 'På NVMe', cls: 'tier-nvme' }
+        ]
+      };
+
+      const QUICK_PANELS = {
+        subtitles: {
+          title: 'Tekst', meta: 'Norsk', wide: false,
+          rows: [
+            { id: 'off', title: 'Av', sub: 'Ingen undertekster', active: false },
+            { id: 'nob', title: 'Norsk', sub: 'Innebygd i utgaven', active: true },
+            { id: 'eng', title: 'Engelsk', sub: 'Fra egen tekstfil', active: false },
+            { id: 'kveldslys', title: 'Kveldslys', sub: 'Varm 75 % (Standard)', active: true, keepOpen: true }
+          ]
+        },
+        audio: {
+          title: 'Lyd', meta: 'TrueHD Atmos 7.1.4', wide: false,
+          rows: [
+            { id: 'eng', title: 'Engelsk', sub: 'TrueHD Atmos 7.1.4', active: true },
+            { id: 'ref', title: 'Ren kino', sub: 'Ubehandlet dynamikk og objektlyd', active: true, keepOpen: true },
+            { id: 'dialog', title: 'Dialogløft', sub: '+4 dB senterkanal', active: false, keepOpen: true }
+          ]
+        },
+        source: {
+          title: 'Kilde', meta: 'Tilpasset Stua', wide: true,
+          rows: [
+            { id: 's1', title: 'Anbefalt for Stua · 4K HDR10+ TrueHD Atmos', sub: 'På NVMe · HEVC · Bluray-2160p · 58,4 GB · Spilles nå', badge: '🇳🇴 Norsk', active: true },
+            { id: 's2', title: '4K Dolby Vision Dolby Atmos', sub: 'Strømmes ved start · HEVC · WEB-DL · 21,6 GB', active: false },
+            { id: 's3', title: '1080p Dolby Digital+ 5.1', sub: 'I Arkiv · HEVC · WEB-DL · 6,2 GB', active: false }
+          ]
+        },
+        picture: {
+          title: 'Bilde', meta: 'Klar for ≤ 1080p 8-bit SDR', wide: false,
+          rows: [
+            { id: 'off', title: 'MetalFX: Av', sub: 'Standard tvOS-skalering uten MetalFX.', active: false, keepOpen: true },
+            { id: 'auto', title: 'MetalFX: Auto (< 1080p 8-bit SDR)', sub: 'MetalFX for SD/720p/1080p 8-bit SDR.', active: true, keepOpen: true },
+            { id: 'hud', title: 'Teknisk info (HUD)', sub: 'Skjult', active: false, keepOpen: true }
+          ]
+        },
+        chapters: {
+          title: 'Kapitler', meta: '4 kapitler', wide: false,
+          rows: [
+            { id: 'c1', title: 'Prolog', sub: '00:00', active: false },
+            { id: 'c2', title: 'Introduksjon', sub: '04:00 · Spilles nå', active: true },
+            { id: 'c3', title: 'Hjemreise', sub: '05:20', active: false }
+          ]
+        }
+      };
+
+      function renderLibraryGrid() {
+        const container = document.getElementById('library-grid-container');
+        if (!container) return;
+        const items = LIBRARY_ITEMS[currentLibraryFilter] || [];
+        container.innerHTML = items.map((item) => `
+          <div class="poster-slot">
+            <article class="poster-card ${item.art}" data-focusable="true" data-action="open-details">
+              <div class="card-top-badges"><span class="badge ${item.cls}">${item.badge}</span></div>
+              <div class="poster-emblem">${item.title}</div>
+            </article>
+            <div class="poster-focus-caption">
+              <div class="poster-caption-title">${item.title}</div>
+              <div class="poster-caption-meta">${item.year}</div>
+            </div>
+          </div>
+        `).join('');
+        document.querySelectorAll('[data-lib-filter]').forEach((btn) => {
+          const active = btn.dataset.libFilter === currentLibraryFilter;
+          btn.style.background = active ? 'var(--surface-selected)' : 'var(--glass-pill)';
+          btn.style.borderColor = active ? 'var(--edge-strong)' : 'var(--edge-subtle)';
+        });
+      }
+
+      function openQuickPanel(panelKey) {
+        const spec = QUICK_PANELS[panelKey];
+        const panelEl = document.getElementById('player-quick-panel');
+        if (!spec || !panelEl) return;
+        activeQuickPanel = panelKey;
+        panelEl.className = `player-quick-panel focus-section is-open${spec.wide ? ' is-wide' : ''}`;
+        panelEl.innerHTML = `
+          <div class="quick-panel-header">
+            <span class="section-title" style="font-size: 28px;">${spec.title}</span>
+            <span class="section-sub">${spec.meta}</span>
+          </div>
+          ${spec.rows.map((r) => `
+            <button class="quick-row${r.active ? ' is-active' : ''}" data-focusable="true" data-quick-row="${r.id}" data-keep-open="${r.keepOpen ? '1' : '0'}">
+              <div>
+                <div class="quick-row-title">${r.title}</div>
+                <div class="quick-row-sub">${r.sub}</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;">
+                ${r.badge ? `<span class="badge">${r.badge}</span>` : ''}
+                ${r.active ? '<span class="quick-row-check">✓</span>' : ''}
+              </div>
+            </button>
+          `).join('')}
+        `;
+        const activeBtn = panelEl.querySelector('.quick-row.is-active') || panelEl.querySelector('.quick-row');
+        if (activeBtn) setFocus(activeBtn);
+      }
+
+      function closeQuickPanel(returnToPill) {
+        const prev = activeQuickPanel;
+        activeQuickPanel = null;
+        const panelEl = document.getElementById('player-quick-panel');
+        if (panelEl) {
+          panelEl.classList.remove('is-open');
+          panelEl.innerHTML = '';
+        }
+        if (returnToPill && prev) {
+          const pill = document.querySelector(`#screen-player [data-quick-panel="${prev}"]`);
+          if (pill) setFocus(pill);
+        }
+      }
 
       function setGuidesVisible(visible) {
         guides.classList.toggle('is-visible', visible);
@@ -788,7 +966,12 @@
       function visibleFocusables() {
         return Array.from(stage.querySelectorAll('[data-focusable="true"]')).filter((el) => {
           const parentScreen = el.closest('.screen');
-          return !parentScreen || parentScreen.classList.contains('is-visible');
+          if (parentScreen && !parentScreen.classList.contains('is-visible')) return false;
+          if (activeQuickPanel && currentScreen === 'player') {
+            return !!el.closest('#player-quick-panel');
+          }
+          if (el.closest('#player-quick-panel') && !activeQuickPanel) return false;
+          return true;
         });
       }
 
@@ -803,31 +986,77 @@
         focusHud.textContent = `Safe-Zone 90×60px · Screen: ${currentScreen} · Fokus: ${label}`;
       }
 
-      function switchScreen(nextScreen, focusFirstContent) {
-        if (!['home', 'catalog', 'details', 'player'].includes(nextScreen)) {
+      function switchScreen(nextScreen, focusContentTarget = true, keepTopBarFocus = false) {
+        if (!['home', 'catalog', 'library', 'details', 'player'].includes(nextScreen)) {
           nextScreen = 'home';
         }
+        if (nextScreen !== 'player') closeQuickPanel(false);
         currentScreen = nextScreen;
         stage.dataset.activeScreen = nextScreen;
+        const topBar = document.querySelector('.top-bar');
+        if (topBar) topBar.style.display = nextScreen === 'player' ? 'none' : 'flex';
         document.querySelectorAll('.screen').forEach((sc) => {
           sc.classList.toggle('is-visible', sc.id === `screen-${nextScreen}`);
         });
         document.querySelectorAll('.nav-tab').forEach((tab) => {
           tab.classList.toggle('is-active', tab.dataset.targetScreen === nextScreen);
         });
-        if (focusFirstContent) {
-          const firstInScreen = document.querySelector(`#screen-${nextScreen} [data-focusable="true"]`);
+        if (nextScreen === 'library') renderLibraryGrid();
+        if (focusContentTarget && !keepTopBarFocus) {
+          const selector = nextScreen === 'player'
+            ? '#screen-player [data-quick-panel="subtitles"]'
+            : `#screen-${nextScreen} [data-focusable="true"]`;
+          const firstInScreen = document.querySelector(selector);
           if (firstInScreen) setFocus(firstInScreen);
         }
       }
 
       function moveSpatialFocus(direction) {
+        if (activeQuickPanel) {
+          const rows = Array.from(document.querySelectorAll('#player-quick-panel [data-focusable="true"]'));
+          const idx = rows.indexOf(focusedEl);
+          if (direction === 'ArrowDown' && idx >= 0 && idx + 1 < rows.length) setFocus(rows[idx + 1]);
+          if (direction === 'ArrowUp' && idx > 0) setFocus(rows[idx - 1]);
+          return;
+        }
         const candidates = visibleFocusables();
         if (!candidates.length) return;
         if (!focusedEl || !candidates.includes(focusedEl)) {
           setFocus(candidates[0]);
           return;
         }
+        const inTopBar = !!focusedEl.closest('.top-bar');
+        if (inTopBar && (direction === 'ArrowLeft' || direction === 'ArrowRight')) {
+          const tabs = Array.from(document.querySelectorAll('.top-bar .nav-tab'));
+          const idx = tabs.indexOf(focusedEl);
+          const nextIdx = direction === 'ArrowRight' ? Math.min(tabs.length - 1, idx + 1) : Math.max(0, idx - 1);
+          const nextTab = tabs[nextIdx];
+          if (nextTab) {
+            if (nextTab.dataset.targetScreen) {
+              switchScreen(nextTab.dataset.targetScreen, false, true);
+            }
+            setFocus(nextTab);
+          }
+          return;
+        }
+        if (inTopBar && direction === 'ArrowDown') {
+          const firstInScreen = document.querySelector(`#screen-${currentScreen} [data-focusable="true"]`);
+          if (firstInScreen) setFocus(firstInScreen);
+          return;
+        }
+        if (!inTopBar && direction === 'ArrowUp') {
+          const screenCandidates = candidates.filter((el) => !el.closest('.top-bar'));
+          const curRect = focusedEl.getBoundingClientRect();
+          const hasContentAbove = screenCandidates.some((el) => el !== focusedEl && el.getBoundingClientRect().bottom < curRect.top - 12);
+          if (!hasContentAbove && currentScreen !== 'player' && currentScreen !== 'details') {
+            const activeTab = document.querySelector(`.nav-tab[data-target-screen="${currentScreen}"]`) || document.querySelector('.nav-tab.is-active');
+            if (activeTab) {
+              setFocus(activeTab);
+              return;
+            }
+          }
+        }
+
         const curRect = focusedEl.getBoundingClientRect();
         const cx = curRect.left + curRect.width / 2;
         const cy = curRect.top + curRect.height / 2;
@@ -861,6 +1090,22 @@
 
       function activateFocused() {
         if (!focusedEl) return;
+        if (focusedEl.dataset.libFilter) {
+          currentLibraryFilter = focusedEl.dataset.libFilter;
+          renderLibraryGrid();
+          setFocus(focusedEl);
+          return;
+        }
+        if (focusedEl.dataset.quickPanel) {
+          openQuickPanel(focusedEl.dataset.quickPanel);
+          return;
+        }
+        if (focusedEl.dataset.quickRow) {
+          if (focusedEl.dataset.keepOpen !== '1') {
+            closeQuickPanel(true);
+          }
+          return;
+        }
         if (focusedEl.dataset.targetScreen) {
           switchScreen(focusedEl.dataset.targetScreen, true);
           return;
@@ -891,7 +1136,9 @@
           activateFocused();
         } else if (e.key === 'Escape' || e.key === 'Backspace') {
           e.preventDefault();
-          if (currentScreen === 'player' || currentScreen === 'details') {
+          if (currentScreen === 'player' && activeQuickPanel) {
+            closeQuickPanel(true);
+          } else if (currentScreen === 'player' || currentScreen === 'details') {
             switchScreen('home', true);
           } else {
             const screenEl = document.getElementById(`screen-${currentScreen}`);
@@ -914,6 +1161,10 @@
       }
 
       switchScreen(currentScreen, true);
+      const initialPanel = params.get('panel');
+      if (currentScreen === 'player' && initialPanel) {
+        openQuickPanel(initialPanel);
+      }
       const initialFocusDir = params.get('focus');
       if (initialFocusDir === 'right') moveSpatialFocus('ArrowRight');
       if (initialFocusDir === 'down') moveSpatialFocus('ArrowDown');

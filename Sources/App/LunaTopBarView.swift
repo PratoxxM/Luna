@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct LunaTopBarView: View {
     static let contentTopPadding: CGFloat = 162
@@ -9,6 +10,7 @@ struct LunaTopBarView: View {
     @Binding var selectedTab: MainNavigationTab
     var roomName: String? = nil
     var focusRequestNonce: Int = 0
+    var isUpwardBridgeEnabled: Bool = false
     var onFocusPresenceChanged: (Bool) -> Void = { _ in }
 
     @FocusState private var focusedTab: MainNavigationTab?
@@ -18,40 +20,50 @@ struct LunaTopBarView: View {
     @Namespace private var topBarFocusNamespace
 
     var body: some View {
-        HStack(spacing: 24) {
-            emblemView
-                .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 0) {
+            HStack(spacing: 24) {
+                emblemView
+                    .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 10) {
-                ForEach(MainNavigationTab.primaryTabs) { tab in
-                    tabButton(for: tab, isIconOnly: false)
+                HStack(spacing: 10) {
+                    ForEach(MainNavigationTab.primaryTabs) { tab in
+                        tabButton(for: tab, isIconOnly: false)
+                    }
+
+                    Rectangle()
+                        .fill(LunaTheme.warmBorderStrong)
+                        .frame(width: 1, height: 28)
+                        .padding(.horizontal, 6)
+                        .allowsHitTesting(false)
+
+                    ForEach(MainNavigationTab.utilityTabs) { tab in
+                        tabButton(for: tab, isIconOnly: true)
+                    }
                 }
+                .fixedSize(horizontal: true, vertical: false)
 
-                Rectangle()
-                    .fill(LunaTheme.warmBorderStrong)
-                    .frame(width: 1, height: 28)
-                    .padding(.horizontal, 6)
+                Color.clear
+                    .frame(minWidth: 220, maxWidth: .infinity, alignment: .trailing)
+                    .frame(height: 1)
                     .allowsHitTesting(false)
-
-                ForEach(MainNavigationTab.utilityTabs) { tab in
-                    tabButton(for: tab, isIconOnly: true)
-                }
             }
-            .fixedSize(horizontal: true, vertical: false)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, LunaTheme.horizontalGutter)
+            .padding(.top, 46)
+            .padding(.bottom, 14)
+            .defaultFocus($focusedTab, selectedTab as MainNavigationTab?, priority: .automatic)
+            .focusScope(topBarFocusNamespace)
+            .focusSection()
 
-            Color.clear
-                .frame(minWidth: 220, maxWidth: .infinity, alignment: .trailing)
-                .frame(height: 1)
-                .allowsHitTesting(false)
+            // Full-width 1920 pt upward-only trampoline active solely when content is focused,
+            // guaranteeing pressing Up from left-edge controls never misses the centered dock.
+            TopBarUpwardFocusBridge(isEnabled: isUpwardBridgeEnabled && focusedTab == nil) {
+                redirectFocusToSelectedTab()
+            }
+            .frame(maxWidth: .infinity, minHeight: 2, maxHeight: 2)
+            .focusEffectDisabled(true)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, LunaTheme.horizontalGutter)
-        .padding(.top, 46)
-        .padding(.bottom, 16)
         .ignoresSafeArea(edges: [.top, .horizontal])
-        .defaultFocus($focusedTab, selectedTab as MainNavigationTab?, priority: .automatic)
-        .focusScope(topBarFocusNamespace)
-        .focusSection()
         .onChange(of: focusedTab) { _, newFocus in
             onFocusPresenceChanged(newFocus != nil)
             guard let newTab = newFocus else {
@@ -76,22 +88,7 @@ struct LunaTopBarView: View {
             }
         }
         .onChange(of: focusRequestNonce) { _, _ in
-            tabDebounceTask?.cancel()
-            tabDebounceTask = nil
-            focusRetryTask?.cancel()
-            let target = selectedTab
-            focusedTab = target
-            focusRetryTask = Task { @MainActor in
-                for delayNs: UInt64 in [16_000_000, 44_000_000, 72_000_000] {
-                    try? await Task.sleep(nanoseconds: delayNs)
-                    guard !Task.isCancelled, selectedTab == target else { return }
-                    if focusedTab == nil {
-                        focusedTab = target
-                    } else {
-                        return
-                    }
-                }
-            }
+            redirectFocusToSelectedTab()
         }
         .onAppear {
             wasBarFocused = (focusedTab != nil)
@@ -103,6 +100,25 @@ struct LunaTopBarView: View {
             tabDebounceTask = nil
             focusRetryTask?.cancel()
             focusRetryTask = nil
+        }
+    }
+
+    private func redirectFocusToSelectedTab() {
+        tabDebounceTask?.cancel()
+        tabDebounceTask = nil
+        focusRetryTask?.cancel()
+        let target = selectedTab
+        focusedTab = target
+        focusRetryTask = Task { @MainActor in
+            for delayNs: UInt64 in [16_000_000, 44_000_000, 72_000_000] {
+                try? await Task.sleep(nanoseconds: delayNs)
+                guard !Task.isCancelled, selectedTab == target else { return }
+                if focusedTab == nil {
+                    focusedTab = target
+                } else {
+                    return
+                }
+            }
         }
     }
 
@@ -247,5 +263,62 @@ struct TopBarTabPillButton: View {
         .contentShape(Capsule())
         .focusEffectDisabled(true)
         .accessibilityLabel(tab.title)
+    }
+}
+
+@MainActor
+private struct TopBarUpwardFocusBridge: UIViewRepresentable {
+    let isEnabled: Bool
+    let onRedirectUp: () -> Void
+
+    func makeUIView(context: Context) -> TopBarUpwardFocusBridgeUIView {
+        let view = TopBarUpwardFocusBridgeUIView()
+        view.isBridgeEnabled = isEnabled
+        view.onRedirectUp = onRedirectUp
+        return view
+    }
+
+    func updateUIView(_ uiView: TopBarUpwardFocusBridgeUIView, context: Context) {
+        uiView.isBridgeEnabled = isEnabled
+        uiView.onRedirectUp = onRedirectUp
+    }
+}
+
+@MainActor
+private final class TopBarUpwardFocusBridgeUIView: UIView {
+    var isBridgeEnabled: Bool = false
+    var onRedirectUp: (() -> Void)?
+    private var isBouncing: Bool = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        backgroundColor = .clear
+        isOpaque = false
+    }
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        false
+    }
+
+    override var canBecomeFocused: Bool {
+        isBridgeEnabled && !isBouncing
+    }
+
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        guard context.nextFocusedView === self else { return }
+        isBouncing = true
+        DispatchQueue.main.async { [weak self] in
+            self?.onRedirectUp?()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            self?.isBouncing = false
+        }
     }
 }

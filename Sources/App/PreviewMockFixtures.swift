@@ -20,7 +20,7 @@ enum PreviewMockFixtures {
             roomName: previewRoomName,
             hardwareProfile: previewHardwareProfile,
             allowSelfSignedLanTLS: true,
-            appVersion: "2.8.2",
+            appVersion: "2.8.3",
             osVersion: "tvOS 26.0",
             session: session,
             imageSession: session,
@@ -334,16 +334,9 @@ enum PreviewMockFixtures {
         ),
     ]
 
-    static let libraryLocalCards: [TvMediaCard] = [
-        dunePartTwoCard,
-        catalogMovies[6],
-        catalogMovies[7],
-        lykkelandCard,
-        catalogMovies[4],
-        catalogMovies[3],
-        severanceCard,
-        luksusfellenCard,
-    ]
+    static let libraryLocalMovies: [TvMediaCard] = Array(catalogMovies.prefix(5))
+    static let libraryLocalSeries: [TvMediaCard] = Array(seriesCards.prefix(3))
+    static let libraryLocalCards: [TvMediaCard] = libraryLocalMovies + libraryLocalSeries
 
     static var genreChips: [TvGenreChip] {
         [
@@ -436,37 +429,41 @@ enum PreviewMockFixtures {
         )
     }
 
-    static var libraryResponse: TvLibraryResponse {
-        TvLibraryResponse(
+    static func libraryResponse(mediaType: String = "movie") -> TvLibraryResponse {
+        let items: [TvMediaCard]
+        switch mediaType {
+        case "series":
+            items = libraryLocalSeries
+        case "movie":
+            items = libraryLocalMovies
+        default:
+            items = libraryLocalCards
+        }
+        return TvLibraryResponse(
             ok: true,
             section: "local",
-            activeFilters: TvLibraryActiveFilters(tier: "all", mediaType: "all", sort: "recent"),
+            activeFilters: TvLibraryActiveFilters(tier: "all", mediaType: mediaType, sort: "recent"),
             counts: TvLibraryCounts(
                 favorites: 2,
                 watchlist: 2,
-                localTotal: 15,
-                nvme: 10,
-                archive: 5,
+                localTotal: libraryLocalCards.count,
+                localMovies: libraryLocalMovies.count,
+                localSeries: libraryLocalSeries.count,
+                nvme: 6,
+                archive: 2,
                 vfs: 0,
-                customLists: 4
+                customLists: 0
             ),
             favorites: [],
             watchlist: [dunePartTwoCard, lykkelandCard],
-            localItems: libraryLocalCards,
+            localItems: items,
             localHasMore: false,
-            customLists: [
-                TvCustomListSummary(
-                    id: "nordisk-kveld",
-                    name: "Nordisk kveld",
-                    mediaType: "series",
-                    sourceType: "curated",
-                    listMode: "curated",
-                    rowStyle: "poster",
-                    itemCount: 6,
-                    browsePath: "/api/tv/v1/catalog/series"
-                )
-            ]
+            customLists: []
         )
+    }
+
+    static var libraryResponse: TvLibraryResponse {
+        libraryResponse(mediaType: "movie")
     }
 
     static var luksusfellenSeason28Episodes: [TvEpisodeCard] {

@@ -44,16 +44,24 @@ with sync_playwright() as p:
     page.wait_for_timeout(200)
     page.screenshot(path="/out/preview-catalog.png")
 
+    page.goto("file:///preview/index.html?screen=library&guides=1")
+    page.wait_for_timeout(150)
+    page.screenshot(path="/out/preview-library.png")
+
     page.goto("file:///preview/index.html?screen=details&guides=1")
     page.wait_for_timeout(200)
     page.screenshot(path="/out/preview-details.png")
 
-    page.goto("file:///preview/index.html?screen=player&guides=1")
+    page.goto("file:///preview/index.html?screen=player&panel=subtitles&guides=1")
     page.wait_for_timeout(200)
     page.screenshot(path="/out/preview-player.png")
 
+    page.goto("file:///preview/index.html?screen=player&panel=source&guides=1")
+    page.wait_for_timeout(200)
+    page.screenshot(path="/out/preview-player-source.png")
+
     browser.close()
-print("  [OK] Captured 5 1920x1080 sandbox screenshots via Playwright Python -> /out")
+print("  [OK] Captured 7 1920x1080 sandbox screenshots via Playwright Python -> /out")
 PY
 else
   CHROME_BIN="$(find /ms-playwright -name chrome -type f 2>/dev/null | head -n 1)"
@@ -70,8 +78,10 @@ else
   render_url "file:///preview/index.html?screen=home&guides=1&focus=right" "/out/preview-home.png"
   render_url "file:///preview/index.html?screen=home&guides=1&focus=down" "/out/preview-home-poster-focus.png"
   render_url "file:///preview/index.html?screen=catalog&guides=1&focus=down" "/out/preview-catalog.png"
+  render_url "file:///preview/index.html?screen=library&guides=1" "/out/preview-library.png"
   render_url "file:///preview/index.html?screen=details&guides=1" "/out/preview-details.png"
-  render_url "file:///preview/index.html?screen=player&guides=1" "/out/preview-player.png"
-  echo "  [OK] Captured 5 1920x1080 sandbox screenshots via headless Chromium -> /out"
+  render_url "file:///preview/index.html?screen=player&panel=subtitles&guides=1" "/out/preview-player.png"
+  render_url "file:///preview/index.html?screen=player&panel=source&guides=1" "/out/preview-player-source.png"
+  echo "  [OK] Captured 7 1920x1080 sandbox screenshots via headless Chromium -> /out"
 fi
 SH

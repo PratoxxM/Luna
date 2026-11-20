@@ -39,7 +39,7 @@ final class PreviewMockURLProtocol: URLProtocol {
             contentType = "image/png"
         } else {
             contentType = "application/json"
-            responseData = Self.routeJSON(for: path)
+            responseData = Self.routeJSON(for: url)
         }
 
         if let http = HTTPURLResponse(
@@ -58,7 +58,8 @@ final class PreviewMockURLProtocol: URLProtocol {
 
     // MARK: - Route Dispatch
 
-    private static func routeJSON(for path: String) -> Data {
+    private static func routeJSON(for url: URL) -> Data {
+        let path = url.path
         if path == "/api/tv/v1/bootstrap" {
             let boot = TvBootstrapResponse(
                 ok: true,
@@ -80,7 +81,9 @@ final class PreviewMockURLProtocol: URLProtocol {
             return (try? LunaCoreClient.encodeJSON(PreviewMockFixtures.homeResponse)) ?? Data("{}".utf8)
         }
         if path == "/api/tv/v1/library" {
-            return (try? LunaCoreClient.encodeJSON(PreviewMockFixtures.libraryResponse)) ?? Data("{}".utf8)
+            let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            let mediaType = comps?.queryItems?.first(where: { $0.name == "mediaType" })?.value ?? "movie"
+            return (try? LunaCoreClient.encodeJSON(PreviewMockFixtures.libraryResponse(mediaType: mediaType))) ?? Data("{}".utf8)
         }
         if path.hasPrefix("/api/tv/v1/catalog/") {
             let isSeries = path.hasSuffix("/series")

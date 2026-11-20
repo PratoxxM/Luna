@@ -8,10 +8,8 @@ struct LibraryHubView: View {
     let isActiveTab: Bool
     var onSelectTab: ((MainNavigationTab) -> Void)? = nil
 
-    @State private var activeSection: LibrarySidebarSection = .localAll
-    @State private var localTierFilter: String = "all"
-    @State private var localSort: String = "recent"
-    @State private var watchlistTypeFilter: String = "all"
+    @State private var activeSection: LibraryFilterSection = .movies
+    @State private var didApplyInitialSectionFallback: Bool = false
 
     @State private var libraryPayload: TvLibraryResponse?
     @State private var localItems: [TvMediaCard] = []
@@ -25,13 +23,13 @@ struct LibraryHubView: View {
     @State private var mutationBannerTask: Task<Void, Never>?
 
     @State private var selectedCard: TvMediaCard?
-    @State private var selectedCustomList: TvCustomListSummary?
     @State private var pendingDeleteTarget: TvDeleteRequestTarget?
     @State private var modalToken = UUID()
     @State private var reloadTask: Task<Void, Never>?
     @State private var reloadGeneration: UInt64 = 0
-    @FocusState private var focusedSidebarSection: LibrarySidebarSection?
-    @Namespace private var sidebarFocusNamespace
+
+    @FocusState private var focusedFilterPill: LibraryFilterSection?
+    @Namespace private var filterFocusNamespace
 
     init(isActiveTab: Bool = true, onSelectTab: ((MainNavigationTab) -> Void)? = nil) {
         self.isActiveTab = isActiveTab
@@ -41,78 +39,76 @@ struct LibraryHubView: View {
     private let pageSize = 36
     private let columns = Array(
         repeating: GridItem(.fixed(LunaTokens.Layout.posterW), spacing: LunaTokens.Layout.cardGap, alignment: .topLeading),
-        count: 4
+        count: 5
     )
 
-    private var activeMediaTypeFilter: String {
-        activeSection == .watchlist ? watchlistTypeFilter : activeSection.apiMediaType
-    }
-
     private var queryKey: String {
-        "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(activeSection.rawValue)#\(activeMediaTypeFilter)#\(localTierFilter)#\(localSort)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
+        "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(activeSection.rawValue)#\(activeSection.apiMediaType)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
     }
 
     var body: some View {
         let client = sessionStore.makeClient()
         let counts = libraryPayload?.counts
 
-        HStack(alignment: .top, spacing: 56) {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(LibrarySidebarSection.allCases) { section in
-                    LibrarySidebarRowButton(
-                        section: section,
-                        countText: countLabel(for: section, counts: counts),
-                        isSelected: activeSection == section
-                    ) {
-                        activeSection = section
-                    }
-                    .focused($focusedSidebarSection, equals: section)
-                    .prefersDefaultFocus(activeSection == section, in: sidebarFocusNamespace)
-                }
-                Spacer(minLength: 0)
-            }
-            .frame(width: 280, alignment: .topLeading)
-            .padding(.top, 12)
-            .defaultFocus($focusedSidebarSection, activeSection as LibrarySidebarSection?, priority: .userInitiated)
-            .focusScope(sidebarFocusNamespace)
-            .focusSection()
+        ScrollViewReader { scrollProxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 28) {
+                    Color.clear
+                        .frame(height: 0)
+                        .id("luna-scroll-top")
 
-            ScrollViewReader { scrollProxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 24) {
-                        Color.clear
-                            .frame(height: 0)
-                            .id("luna-scroll-top")
-
-                        if isLoading && libraryPayload == nil {
-                        HStack(spacing: 16) {
-                            ProgressView()
-                            Text("Henter samlingen…")
-                                .font(LunaTheme.Font.subtitle)
-                                .foregroundStyle(LunaTheme.moonlight)
-                        }
-                        .padding(.vertical, 56)
-                    } else if let errorMessage, libraryPayload == nil {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text(errorMessage)
-                                .font(LunaTheme.Font.body)
-                                .foregroundStyle(LunaTheme.danger)
-                            LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                                scheduleReloadLibrary(forceNetwork: true)
+                    HStack(spacing: 14) {
+                        ForEach(LibraryFilterSection.allCases) { section in
+                            LunaPillButton(
+                                section.pillTitle(counts: counts),
+                                isSelected: activeSection == section,
+                                prominence: .glassPill
+                            ) {
+                                didApplyInitialSectionFallback = true
+                                guard activeSection != section else { return }
+                                activeSection = section
                             }
+                            .focused($focusedFilterPill, equals: section)
+                            .prefersDefaultFocus(activeSection == section, in: filterFocusNamespace)
                         }
-                    } else if activeSection == .lists {
-                        customListsGridSection(libraryPayload?.customLists ?? [])
-                    } else {
-                        sectionGrid(client: client)
+                        Spacer(minLength: 0)
                     }
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .padding(.top, 4)
+                    .focusScope(filterFocusNamespace)
+                    .focusSection()
+
+                    Group {
+                        if isLoading && libraryPayload == nil {
+                            HStack(spacing: 16) {
+                                ProgressView()
+                                Text("Henter samlingen…")
+                                    .font(LunaTheme.Font.subtitle)
+                                    .foregroundStyle(LunaTheme.moonlight)
+                            }
+                            .padding(.vertical, 56)
+                        } else if let errorMessage, libraryPayload == nil {
+                            VStack(alignment: .leading, spacing: 14) {
+                                Text(errorMessage)
+                                    .font(LunaTheme.Font.body)
+                                    .foregroundStyle(LunaTheme.danger)
+                                LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
+                                    scheduleReloadLibrary(forceNetwork: true)
+                                }
+                            }
+                        } else {
+                            sectionGrid(client: client)
+                        }
+                    }
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 12)
+                .padding(.top, LunaTopBarView.contentTopPadding)
                 .padding(.bottom, 84)
             }
             .contentMargins(.zero, for: .scrollContent)
             .scrollClipDisabled()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .ignoresSafeArea()
             .lunaRootScrollTopBarTracking(tab: .library)
             .focusSection()
             .onChange(of: scrollToTopNonce) { _, _ in
@@ -120,17 +116,6 @@ struct LibraryHubView: View {
                 withAnimation(.easeOut(duration: 0.22)) {
                     scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
                 }
-            }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.top, LunaTopBarView.contentTopPadding)
-        .padding(.horizontal, LunaTheme.horizontalGutter)
-        .ignoresSafeArea()
-        .defaultFocus($focusedSidebarSection, activeSection as LibrarySidebarSection?, priority: .userInitiated)
-        .onAppear {
-            if focusedSidebarSection == nil {
-                focusedSidebarSection = activeSection
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -143,17 +128,6 @@ struct LibraryHubView: View {
         }
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
-        }
-        .navigationDestination(item: $selectedCustomList) { list in
-            CustomRowBrowseView(
-                title: list.name,
-                pathOrRowId: list.browsePath,
-                isOngoingList: CustomRowContextPolicy.isOngoingList(
-                    explicitFlag: false,
-                    rowId: list.id,
-                    sourceKind: list.sourceType
-                )
-            )
         }
         .sheet(item: $pendingDeleteTarget) { target in
             DetailDeleteSheetView(
@@ -214,40 +188,6 @@ struct LibraryHubView: View {
         }
     }
 
-    private func countLabel(for section: LibrarySidebarSection, counts: TvLibraryCounts?) -> String? {
-        guard let counts else { return nil }
-        switch section {
-        case .localAll: return counts.localTotal > 0 ? String(counts.localTotal) : nil
-        case .localMovies:
-            if let movies = counts.localMovies, movies > 0 { return String(movies) }
-            return nil
-        case .localSeries:
-            if let series = counts.localSeries, series > 0 { return String(series) }
-            return nil
-        case .watchlist: return counts.watchlist > 0 ? String(counts.watchlist) : nil
-        case .lists: return counts.customLists > 0 ? String(counts.customLists) : nil
-        }
-    }
-
-    @ViewBuilder
-    private func customListsGridSection(_ lists: [TvCustomListSummary]) -> some View {
-        if lists.isEmpty {
-            emptyStateCard
-        } else {
-            let listColumns = [
-                GridItem(.adaptive(minimum: 340, maximum: 460), spacing: 26)
-            ]
-            LazyVGrid(columns: listColumns, spacing: 24) {
-                ForEach(lists) { list in
-                    LibraryCustomListTileButton(list: list) {
-                        selectedCustomList = list
-                    }
-                }
-            }
-            .padding(.vertical, 6)
-        }
-    }
-
     @ViewBuilder
     private func sectionGrid(client: LunaCoreClient?) -> some View {
         let activeItems: [TvMediaCard] = activeSection == .watchlist
@@ -263,7 +203,7 @@ struct LibraryHubView: View {
                         card: card,
                         client: client,
                         width: LunaTokens.Layout.posterW,
-                        showStorageBadge: activeSection != .watchlist,
+                        showStorageBadge: true,
                         onSelect: {
                             selectedCard = card
                         },
@@ -321,24 +261,15 @@ struct LibraryHubView: View {
         }
     }
 
-    @ViewBuilder
     private var emptyStateCard: some View {
-        let hasActiveLocalFilter = activeSection != .watchlist && activeSection != .lists && localTierFilter != "all"
-        let buttonTitle: String? = hasActiveLocalFilter
-            ? "Vis alle lokale"
-            : (onSelectTab != nil ? activeSection.emptyActionTitle : nil)
-
-        LibraryEmptyStateView(
+        let buttonTitle = onSelectTab != nil ? activeSection.emptyActionTitle : nil
+        return LibraryEmptyStateView(
             headline: activeSection.emptyHeadline,
             subtitle: activeSection.emptySubtitle,
             actionTitle: buttonTitle,
-            actionSymbol: activeSection == .localSeries ? "tv" : "film",
+            actionSymbol: activeSection == .series ? "tv" : "film",
             onAction: buttonTitle == nil ? nil : {
-                if hasActiveLocalFilter {
-                    localTierFilter = "all"
-                } else {
-                    onSelectTab?(activeSection.emptyTargetTab)
-                }
+                onSelectTab?(activeSection.emptyTargetTab)
             }
         )
     }
@@ -370,6 +301,18 @@ struct LibraryHubView: View {
         }
     }
 
+    private func applyInitialSectionResolutionIfNeeded(counts: TvLibraryCounts) {
+        let resolution = LibraryFilterSection.resolveInitialSection(
+            counts: counts,
+            didApplyInitialFallback: didApplyInitialSectionFallback,
+            current: activeSection
+        )
+        didApplyInitialSectionFallback = resolution.didApplyInitialFallback
+        if resolution.section != activeSection {
+            activeSection = resolution.section
+        }
+    }
+
     private func loadLibrary(forceNetwork: Bool = false, generation: UInt64? = nil) async {
         guard let client = sessionStore.makeClient() else { return }
         let targetKey = queryKey
@@ -381,6 +324,7 @@ struct LibraryHubView: View {
             localOffset = cached.localOffset
             localHasMore = cached.localHasMore
             isLoading = false
+            applyInitialSectionResolutionIfNeeded(counts: cached.payload.counts)
 
             if !forceNetwork,
                TabContentFreshnessPolicy.isCacheFresh(
@@ -401,9 +345,9 @@ struct LibraryHubView: View {
         do {
             let res = try await client.fetchLibrary(
                 section: activeSection.apiSection,
-                tier: localTierFilter,
-                mediaType: activeMediaTypeFilter,
-                sort: localSort,
+                tier: "all",
+                mediaType: activeSection.apiMediaType,
+                sort: "recent",
                 offset: 0,
                 limit: pageSize
             )
@@ -413,6 +357,7 @@ struct LibraryHubView: View {
             localOffset = res.localItems.count
             localHasMore = res.localHasMore ?? false
             persistLibrarySnapshot(for: targetKey, payload: res, fetchedAt: Date())
+            applyInitialSectionResolutionIfNeeded(counts: res.counts)
         } catch is CancellationError {
             return
         } catch LunaCoreError.unauthorized {
@@ -437,9 +382,9 @@ struct LibraryHubView: View {
 
         guard let res = try? await client.fetchLibrary(
             section: "local",
-            tier: localTierFilter,
-            mediaType: activeMediaTypeFilter,
-            sort: localSort,
+            tier: "all",
+            mediaType: activeSection.apiMediaType,
+            sort: "recent",
             offset: localOffset,
             limit: pageSize
         ), queryKey == targetKey else {
