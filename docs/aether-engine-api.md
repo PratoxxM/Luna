@@ -124,6 +124,10 @@ public final class AetherEngine: ObservableObject {
     public func selectSubtitleTrack(index: Int)
     public func clearSubtitle()
     public func setSoftwareSubtitleDelay(_ seconds: Double)
+
+    // Now Playing System Controls
+    public func setVideoNowPlayingInfo(_ info: [String: Any])
+    public func setNowPlayingTrackCommands(next: (() -> Void)?, previous: (() -> Void)?)
 }
 ```
 
@@ -247,7 +251,7 @@ public enum SpatialSpeakerLayout: String, Sendable {
 }
 
 public enum PlaybackState: Equatable, Sendable {
-    case idle, loading, playing, paused, seeking, ended
+    case idle, loading, playing, paused, seeking, ended, error
 }
 
 public enum PlaybackPhase: Equatable, Sendable {
@@ -308,6 +312,12 @@ public struct SubtitleCue: Identifiable, Sendable {
     public let endTime: Double
     public let placement: SubtitleTextPlacement?
     public let body: SubtitleCueBody // .text(String) | .richText([SubtitleTextRun]) | .image(SubtitleBitmap)
+}
+
+public struct SubtitleBitmap: Sendable {
+    public let position: CGRect
+    public let canvasSize: CGSize
+    public let cgImage: CGImage
 }
 
 public struct SubtitleTextPlacement: Sendable {

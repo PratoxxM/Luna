@@ -431,7 +431,11 @@ struct PlayerContainerView: View {
                     client: client
                 )
                 selectedDrawerTab = previewDrawerTab
-                openTopDrawer(tab: previewDrawerTab)
+                if previewFocusDirection == .up {
+                    revealBottomBarTemporarily()
+                } else {
+                    openTopDrawer(tab: previewDrawerTab)
+                }
             } else {
                 viewModel.start(request: initialRequest, client: client)
             }

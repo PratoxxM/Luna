@@ -125,11 +125,6 @@ struct CatalogBrowseView: View {
     var body: some View {
         let client = sessionStore.makeClient()
 
-        let columns = Array(
-            repeating: GridItem(.fixed(LunaTokens.Layout.posterW), spacing: LunaTokens.Layout.cardGap, alignment: .topLeading),
-            count: 5
-        )
-        _ = columns
         return ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 26) {
                 Text(headerTitle)
