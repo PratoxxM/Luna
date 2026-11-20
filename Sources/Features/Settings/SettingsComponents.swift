@@ -34,6 +34,7 @@ struct SettingsSectionDivider: View {
 struct SettingsControlRow<Controls: View>: View {
     let title: String
     var subtitle: String? = nil
+    var axis: Axis = .vertical
     @ViewBuilder let controls: () -> Controls
 
     private var labelBlock: some View {
@@ -53,21 +54,23 @@ struct SettingsControlRow<Controls: View>: View {
     }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: 20) {
-                labelBlock
-                    .frame(minWidth: 280, maxWidth: .infinity, alignment: .leading)
+        Group {
+            if axis == .horizontal {
+                HStack(alignment: .center, spacing: 20) {
+                    labelBlock
+                        .frame(minWidth: 280, maxWidth: .infinity, alignment: .leading)
 
-                controls()
-                    .fixedSize(horizontal: true, vertical: false)
-            }
+                    controls()
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    labelBlock
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-            VStack(alignment: .leading, spacing: 12) {
-                labelBlock
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                controls()
-                    .fixedSize(horizontal: true, vertical: false)
+                    controls()
+                        .fixedSize(horizontal: true, vertical: false)
+                }
             }
         }
         .padding(.vertical, 4)

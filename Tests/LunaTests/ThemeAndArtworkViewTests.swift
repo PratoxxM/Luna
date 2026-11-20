@@ -171,7 +171,7 @@ final class ThemeAndArtworkViewTests: XCTestCase {
             accent: .amber
         )
         try assertRGB(selectedSecondaryIcon, r: 245, g: 240, b: 232)
-        XCTAssertEqual(try rgbaComponents(selectedSecondaryBorder).a, 0.18, accuracy: 0.015)
+        XCTAssertEqual(try rgbaComponents(selectedSecondaryBorder).a, 0.45, accuracy: 0.015)
 
         let watchedButton = LunaPillButton(
             "Sett",
@@ -293,6 +293,21 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         ) {}
         XCTAssertEqual(topBarPillWithFocus.tab, .movies)
         XCTAssertTrue(topBarPillWithFocus.isBarFocused)
+        XCTAssertEqual(TopBarTabPillButton.utilityButtonSize, 56)
+        XCTAssertEqual(TopBarTabPillButton.restingIndicatorWidth, 22)
+        XCTAssertEqual(TopBarTabPillButton.restingIndicatorHeight, 2.5, accuracy: 0.01)
+        XCTAssertTrue(
+            TopBarTabPillButton.shouldShowRestingActiveIndicator(isActive: true, isFocused: false, isBarFocused: false)
+        )
+        XCTAssertFalse(
+            TopBarTabPillButton.shouldShowRestingActiveIndicator(isActive: true, isFocused: true, isBarFocused: true)
+        )
+        XCTAssertFalse(
+            TopBarTabPillButton.shouldShowRestingActiveIndicator(isActive: true, isFocused: false, isBarFocused: true)
+        )
+        XCTAssertFalse(
+            TopBarTabPillButton.shouldShowRestingActiveIndicator(isActive: false, isFocused: false, isBarFocused: false)
+        )
 
         let sampleCard = TvMediaCard(
             itemId: "movie:tmdb:550",

@@ -20,6 +20,7 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
     @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
+    @Environment(\.lunaContentEntryFocusNonce) private var contentEntryFocusNonce
 
     let isActiveTab: Bool
     var previewFocusPosterRow: Bool = false
@@ -41,8 +42,10 @@ struct HomeView: View {
     @State private var mutationBannerTask: Task<Void, Never>?
     @State private var reloadTask: Task<Void, Never>?
     @State private var reloadGeneration: UInt64 = 0
+    @State private var entryFocusRetryTask: Task<Void, Never>?
 
     @FocusState private var focusedCardKey: String?
+    @FocusState private var isRetryButtonFocused: Bool
     @Namespace private var homeFocusNamespace
 
     nonisolated static func filterVisibleRows(_ rows: [TvShelfRow]) -> [TvShelfRow] {
@@ -104,7 +107,7 @@ struct HomeView: View {
 
         ScrollViewReader { scrollProxy in
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 44) {
+                VStack(alignment: .leading, spacing: 28) {
                     Color.clear
                         .frame(height: 0)
                         .id("luna-scroll-top")
@@ -128,6 +131,7 @@ struct HomeView: View {
                             LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                                 scheduleRevalidateHome(forceUnconditional: true)
                             }
+                            .focused($isRetryButtonFocused)
                         }
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                     }
@@ -200,6 +204,10 @@ struct HomeView: View {
                 withAnimation(.easeOut(duration: 0.22)) {
                     scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
                 }
+            }
+            .onChange(of: contentEntryFocusNonce) { _, _ in
+                guard isActiveTab else { return }
+                focusLeftmostHomeTarget(scrollProxy: scrollProxy)
             }
         }
         .overlay(alignment: .topLeading) {
@@ -326,12 +334,37 @@ struct HomeView: View {
             scheduleRevalidateHome(forceUnconditional: false)
         }
         .onDisappear {
+            entryFocusRetryTask?.cancel()
+            entryFocusRetryTask = nil
             mutationBannerTask?.cancel()
             reloadTask?.cancel()
             reloadTask = nil
             if sourcePickerContext == nil {
                 subpageVisibility.leaveModal(modalToken)
             }
+        }
+    }
+
+    private func focusLeftmostHomeTarget(scrollProxy: ScrollViewProxy) {
+        entryFocusRetryTask?.cancel()
+        if let firstRow = visibleRows.first(where: { !$0.items.isEmpty }),
+           let firstCard = firstRow.items.first {
+            let targetKey = "\(firstRow.rowId)#\(firstCard.itemId)"
+            scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
+            focusedCardKey = targetKey
+            entryFocusRetryTask = Task { @MainActor in
+                for delayNs: UInt64 in [16_000_000, 48_000_000] {
+                    try? await Task.sleep(nanoseconds: delayNs)
+                    guard !Task.isCancelled, isActiveTab else { return }
+                    if focusedCardKey == nil {
+                        focusedCardKey = targetKey
+                    } else {
+                        return
+                    }
+                }
+            }
+        } else if errorMessage != nil && visibleRows.isEmpty {
+            isRetryButtonFocused = true
         }
     }
 

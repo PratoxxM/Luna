@@ -67,6 +67,7 @@ struct SeriesFlowOverlays: View {
         case restartFromBeginning
         case skipIntro
         case playNext
+        case dismissNext
     }
 
     @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
@@ -100,32 +101,36 @@ struct SeriesFlowOverlays: View {
         let showNextButton = shouldShowNextEpisodeButton
         let resumeSecs = showNextButton ? nil : activeResumeStartSeconds
 
-        VStack {
-            Spacer()
-            HStack {
-                if let resumeSecs {
-                    Spacer()
+        ZStack {
+            if let resumeSecs {
+                VStack {
                     resumeBannerView(seconds: resumeSecs)
+                        .padding(.top, 64)
                         .transition(.scale(scale: 0.94).combined(with: .opacity))
-                    Spacer()
-                } else {
-                    Spacer()
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
 
+            VStack {
+                Spacer(minLength: 0)
+                HStack {
+                    Spacer(minLength: 0)
                     if showNextButton, let next = viewModel.activeSession?.nextEpisode {
-                        nextEpisodeButton(next)
+                        nextEpisodeCard(next)
                             .transition(.scale(scale: 0.94).combined(with: .opacity))
                     } else if let intro = activeIntro {
                         skipIntroButton(intro)
                             .transition(.scale(scale: 0.94).combined(with: .opacity))
                     }
                 }
+                .padding(.horizontal, LunaTheme.horizontalGutter)
+                .padding(.bottom, isBottomBarVisible ? 304 : 60)
             }
-            .padding(.horizontal, LunaTheme.horizontalGutter)
-            .padding(.bottom, isBottomBarVisible ? 304 : 58)
-            .animation(LunaFocusStyle.focusSpring, value: showNextButton)
-            .animation(LunaFocusStyle.focusSpring, value: activeIntro?.id)
-            .animation(LunaFocusStyle.focusSpring, value: resumeSecs != nil)
         }
+        .animation(LunaFocusStyle.focusSpring, value: showNextButton)
+        .animation(LunaFocusStyle.focusSpring, value: activeIntro?.id)
+        .animation(LunaFocusStyle.focusSpring, value: resumeSecs != nil)
         .opacity(isResting ? 0 : 1)
         .allowsHitTesting(!isResting)
         .disabled(isResting)
@@ -339,20 +344,69 @@ struct SeriesFlowOverlays: View {
         .focused($focusedPromptControl, equals: .skipIntro)
     }
 
-    private func nextEpisodeButton(_ next: TvNextEpisodeSummary) -> some View {
-        let epLabel = "S\(next.season) · E\(next.episode)"
-        let isFocused = (focusedPromptControl == .playNext)
-        return LunaPillButton(
-            isFocused ? "Neste episode" : "▲ Neste episode",
-            systemImage: "play.fill",
-            badgeText: epLabel,
-            prominence: .primaryAmber
-        ) {
-            focusedPromptControl = nil
-            hasActivePrompt = false
-            viewModel.playNextEpisode(next)
+    private func nextEpisodeCard(_ next: TvNextEpisodeSummary) -> some View {
+        let epLabel = "Neste episode · S\(next.season) E\(next.episode)"
+        let cleanTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
+            next.title,
+            seriesTitle: viewModel.activeSession?.item.seriesTitle,
+            season: next.season,
+            episode: next.episode
+        )
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Text(epLabel)
+                .font(LunaTheme.Font.caption)
+                .foregroundStyle(LunaTheme.amber)
+
+            if let cleanTitle, !cleanTitle.isEmpty {
+                Text(cleanTitle)
+                    .font(LunaTheme.Font.cardTitle)
+                    .foregroundStyle(LunaTheme.linen)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            HStack(spacing: 10) {
+                LunaPillButton(
+                    "Spill nå",
+                    systemImage: "play.fill",
+                    prominence: .primaryAmber,
+                    size: .compact
+                ) {
+                    focusedPromptControl = nil
+                    hasActivePrompt = false
+                    viewModel.playNextEpisode(next)
+                }
+                .focused($focusedPromptControl, equals: .playNext)
+
+                LunaPillButton(
+                    "Skjul",
+                    prominence: .glassPill,
+                    size: .compact
+                ) {
+                    dismissCurrentPrompt()
+                }
+                .focused($focusedPromptControl, equals: .dismissNext)
+            }
         }
-        .focused($focusedPromptControl, equals: .playNext)
+        .padding(20)
+        .frame(width: 460, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
+                .fill(LunaTheme.cinemaGlass)
+        )
+        .lunaTopLightEdge(
+            cornerRadius: LunaTokens.Radius.panel,
+            topColor: LunaTokens.Edge.top3,
+            sideColor: LunaTokens.Edge.top1
+        )
+        .shadow(
+            color: roomAtmosphere.lampColor.opacity(0.14),
+            radius: 24,
+            x: 0,
+            y: 10
+        )
+        .focusSection()
     }
 
     // MARK: - Dismissal & Resume Banner Helpers

@@ -159,6 +159,35 @@ extension PlayerViewModel {
         return "Klar for ≤ 1080p 8-bit SDR"
     }
 
+    var videoFormatSummaryLine: String {
+        var parts: [String] = []
+        if sourceVideoHeight > 0 {
+            parts.append(sourceVideoHeight >= 1800 ? "4K" : "\(sourceVideoHeight)p")
+        }
+        switch videoFormat {
+        case .dolbyVision:
+            parts.append("Dolby Vision")
+        case .hdr10Plus:
+            parts.append("HDR10+")
+        case .hdr10:
+            parts.append("HDR10")
+        case .hlg:
+            parts.append("HLG")
+        case .sdr:
+            parts.append("SDR")
+        @unknown default:
+            break
+        }
+        if let fps = sourceVideoFrameRate, fps > 0 {
+            let rounded = (fps * 100).rounded() / 100
+            parts.append(rounded == rounded.rounded() ? "\(Int(rounded))p" : "\(LunaCopy.formatDecimal(rounded, decimals: 2))p")
+        }
+        if let dec = activeVideoDecoder, !dec.isEmpty {
+            parts.append(dec)
+        }
+        return parts.isEmpty ? "Video: Avspillingsklar" : "Video: " + parts.joined(separator: " · ")
+    }
+
     var kveldslysLockReason: String? {
         guard let activeSubtitleTrackIndex else {
             return "Slå på undertekst for å justere"

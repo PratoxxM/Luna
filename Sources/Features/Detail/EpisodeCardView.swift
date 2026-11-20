@@ -4,6 +4,8 @@ struct EpisodeCardView: View {
     private static let cardWidth: CGFloat = 420
     private static let cardHeight: CGFloat = 236
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let episode: TvEpisodeCard
     var seriesTitle: String? = nil
     var isNextForYou: Bool = false
@@ -21,7 +23,7 @@ struct EpisodeCardView: View {
         let upcoming = episode.isUpcoming == true
         let displayTitle = EpisodeTitleFormatter.episodeCardTitle(episode: episode, seriesTitle: seriesTitle)
 
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 12) {
             Button(action: onPlay) {
                 ZStack {
                     LunaTheme.surface
@@ -82,8 +84,12 @@ struct EpisodeCardView: View {
                     isFocused: isFocused,
                     showRestingTopEdge: false
                 )
+                .scaleEffect((isFocused && !reduceMotion) ? 1.03 : 1.0)
+                .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
             }
-            .buttonStyle(.card)
+            .buttonStyle(LunaChromelessButtonStyle())
+            .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
+            .focusEffectDisabled(true)
             .lunaCardLampGlow(isFocused: isFocused)
             .focused($isFocused)
             .accessibilityLabel(displayTitle)

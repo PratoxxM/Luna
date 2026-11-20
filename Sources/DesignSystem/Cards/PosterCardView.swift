@@ -51,6 +51,7 @@ public struct PosterCardView: View {
     let client: LunaCoreClient?
     let width: CGFloat
     let showStorageBadge: Bool
+    let showRestingTitle: Bool
     let onSelect: () -> Void
     let onPlayShortcut: (() -> Void)?
 
@@ -61,6 +62,7 @@ public struct PosterCardView: View {
         client: LunaCoreClient?,
         width: CGFloat = LunaTokens.Layout.posterW,
         showStorageBadge: Bool = false,
+        showRestingTitle: Bool = false,
         onSelect: @escaping () -> Void,
         onPlayShortcut: (() -> Void)? = nil
     ) {
@@ -68,6 +70,7 @@ public struct PosterCardView: View {
         self.client = client
         self.width = width
         self.showStorageBadge = showStorageBadge
+        self.showRestingTitle = showRestingTitle
         self.onSelect = onSelect
         self.onPlayShortcut = onPlayShortcut
     }
@@ -79,8 +82,9 @@ public struct PosterCardView: View {
     public var body: some View {
         let posterURL = client?.resolveArtworkURL(card.preferredPosterPath)
         let pct = min(100.0, max(0.0, card.progress?.percent ?? 0))
+        let captionHeight: CGFloat = showRestingTitle ? 58 : 62
 
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: 14) {
             Button(action: onSelect) {
                 ZStack {
                     LunaTheme.surface
@@ -108,7 +112,7 @@ public struct PosterCardView: View {
                                     .background(LunaTheme.cinemaGlass, in: Circle())
                             }
                             Spacer(minLength: 4)
-                            if showStorageBadge, let avail = card.availability,
+                            if isFocused && showStorageBadge, let avail = card.availability,
                                avail.isPhysicalLocal || avail.isLocalVfs {
                                 LunaTierMarkView(availability: avail)
                             }
@@ -151,20 +155,21 @@ public struct PosterCardView: View {
                 onPlayShortcut?()
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(card.title)
-                    .font(LunaTheme.Font.posterTitle)
-                    .foregroundStyle(LunaTheme.cardTitleColor(isFocused: isFocused))
+                    .font(showRestingTitle ? LunaTheme.Font.subtitle : LunaTheme.Font.posterTitle)
+                    .foregroundStyle(isFocused ? LunaTheme.linen : (showRestingTitle ? LunaTheme.moonlight : LunaTheme.linen))
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .opacity((showRestingTitle || isFocused) ? 1.0 : 0.0)
 
                 Text(subtitleText)
-                    .font(LunaTheme.Font.posterSubtitle)
+                    .font(showRestingTitle ? LunaTheme.Font.caption : LunaTheme.Font.posterSubtitle)
                     .foregroundStyle(LunaTheme.cardSubtitleColor(isFocused: isFocused))
                     .lineLimit(1)
+                    .opacity(isFocused ? 1.0 : 0.0)
             }
-            .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: 82, maxHeight: 82, alignment: .topLeading)
-            .opacity(isFocused ? 1.0 : 0.0)
+            .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: captionHeight, maxHeight: captionHeight, alignment: .topLeading)
             .animation(
                 reduceMotion
                     ? .linear(duration: 0.01)

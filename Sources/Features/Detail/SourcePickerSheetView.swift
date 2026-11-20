@@ -349,15 +349,18 @@ struct SourcePickerSheetView: View {
                     Spacer()
                 } else {
                     ScrollView(.vertical, showsIndicators: false) {
-                        LazyVStack(spacing: 16) {
+                        LazyVStack(spacing: 14) {
                             ForEach(Array(viewModel.candidates.enumerated()), id: \.element.id) { index, candidate in
                                 let isCurrent = viewModel.activeCandidateId != nil
                                     ? (candidate.candidateId == viewModel.activeCandidateId)
                                     : (candidate.isActive == true)
-                                CandidateRowButton(
+                                SourceCandidateRowView(
                                     candidate: candidate,
+                                    roomName: sessionStore.roomName,
                                     isRecommended: index == 0,
-                                    isCurrentWinner: isCurrent
+                                    isSelected: isCurrent,
+                                    activeStatusLabel: "Forhåndsvalgt",
+                                    isFocused: focusedCandidateID == candidate.id
                                 ) {
                                     viewModel.selectCandidate(
                                         candidate,
@@ -371,6 +374,8 @@ struct SourcePickerSheetView: View {
                                 .prefersDefaultFocus(candidate.id == defaultID, in: sourcePickerFocusNamespace)
                             }
                         }
+                        .frame(maxWidth: 1020)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 16)
                     }
@@ -415,53 +420,5 @@ struct SourcePickerSheetView: View {
                 onCancel()
             }
         )
-    }
-}
-
-private struct CandidateRowButton: View {
-    let candidate: TvCandidateInfo
-    let isRecommended: Bool
-    let isCurrentWinner: Bool
-    let onPick: () -> Void
-
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        Button(action: onPick) {
-            HStack(spacing: 20) {
-                Image(systemName: isCurrentWinner ? "checkmark.circle.fill" : "play.circle.fill")
-                    .font(LunaTheme.Font.sectionTitle)
-                    .foregroundStyle(isCurrentWinner ? LunaTheme.amber : (isFocused ? LunaTheme.linen : LunaTheme.moonlight))
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(candidate.humanDrawerTitle(roomName: "", isRecommended: isRecommended, isActive: false))
-                        .font(LunaTheme.Font.cardTitle)
-                        .foregroundStyle(LunaTheme.linen)
-                        .lineLimit(1)
-
-                    Text(candidate.humanDrawerSubtitle(isActive: isCurrentWinner))
-                        .font(LunaTheme.Font.subtitle)
-                        .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
-                        .lineLimit(1)
-                }
-
-                Spacer()
-            }
-            .padding(.horizontal, 26)
-            .padding(.vertical, 18)
-            .background {
-                RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
-                    .fill(
-                        isFocused
-                            ? LunaTheme.surfaceSelected
-                            : LunaTheme.surfaceRaised
-                    )
-            }
-            .lunaFocusSurface(.listRow, isFocused: isFocused, cornerRadius: LunaTheme.cardRadius)
-        }
-        .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
-        .focusEffectDisabled(true)
-        .focused($isFocused)
     }
 }

@@ -1,11 +1,11 @@
-// Generated from design/tokens.json (sha256: 7eb7329a736f677b4a2687ebdca2d967ab5aa49fde0221ba6059bd15c64003c8) — DO NOT EDIT MANUALLY.
+// Generated from design/tokens.json (sha256: 3014a71f18dcd62007e1db646dbf7726a48599441fe6a171d6b8cc99561ae0d5) — DO NOT EDIT MANUALLY.
 // Regenerate via: ./ops/bin/luna-design-tokens --sync
 
 import CoreGraphics
 import SwiftUI
 
 public enum LunaTokens {
-    public static let tokensSha256 = "7eb7329a736f677b4a2687ebdca2d967ab5aa49fde0221ba6059bd15c64003c8"
+    public static let tokensSha256 = "3014a71f18dcd62007e1db646dbf7726a48599441fe6a171d6b8cc99561ae0d5"
 
     public enum Surface {
         public static let canvas = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0)
@@ -132,9 +132,12 @@ public enum LunaTokens {
         public static let gutter: CGFloat = 90.0
         public static let posterW: CGFloat = 280.0
         public static let posterH: CGFloat = 420.0
+        public static let gridPosterW: CGFloat = 260.0
+        public static let gridPosterH: CGFloat = 390.0
         public static let backdropW: CGFloat = 520.0
         public static let backdropH: CGFloat = 293.0
         public static let cardGap: CGFloat = 40.0
+        public static let gridCardGap: CGFloat = 36.0
         public static let playBadgeSize: CGFloat = 48.0
         public static let focusBorderWidth: CGFloat = 1.5
         public static let focusBorderOpacity: CGFloat = 0.7

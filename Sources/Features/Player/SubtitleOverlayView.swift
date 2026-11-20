@@ -1,6 +1,35 @@
 import SwiftUI
 import AetherBridge
 
+/// Pure subtitle placement rules preventing collisions with both bottom OSD
+/// (`320 pt` clearance) and open quick-panel popovers (upper cinema safe zone `y = 84..168 pt`).
+internal enum SubtitleOverlayLayout {
+    struct VerticalPlacement: Equatable, Sendable {
+        let relocateToTop: Bool
+        let topInset: CGFloat
+        let bottomInset: CGFloat
+    }
+
+    nonisolated static func verticalPlacement(
+        isBottomBarVisible: Bool,
+        isQuickPanelOpen: Bool,
+        isNerdHUDVisible: Bool
+    ) -> VerticalPlacement {
+        if isQuickPanelOpen {
+            return VerticalPlacement(
+                relocateToTop: true,
+                topInset: isNerdHUDVisible ? 168 : 84,
+                bottomInset: 0
+            )
+        }
+        return VerticalPlacement(
+            relocateToTop: false,
+            topInset: 72,
+            bottomInset: isBottomBarVisible ? 320 : 74
+        )
+    }
+}
+
 /// Leaf subtitle overlay subscribing exclusively to `engine.clock.$sourceTime`
 /// so 10 Hz clock ticks never re-render the surrounding player UI.
 ///
@@ -14,6 +43,8 @@ struct SubtitleOverlayView: View {
     let engine: AetherEngine
     @ObservedObject var comfort: ComfortPreferences
     var isBottomBarVisible: Bool = false
+    var isQuickPanelOpen: Bool = false
+    var isNerdHUDVisible: Bool = false
 
     @State private var clockBox = SubtitleClockBox()
     @State private var cues: [SubtitleCue] = []
@@ -23,29 +54,39 @@ struct SubtitleOverlayView: View {
     @State private var videoFormat: VideoFormat = .sdr
 
     var body: some View {
+        let placement = SubtitleOverlayLayout.verticalPlacement(
+            isBottomBarVisible: isBottomBarVisible,
+            isQuickPanelOpen: isQuickPanelOpen,
+            isNerdHUDVisible: isNerdHUDVisible
+        )
+
         GeometryReader { geo in
             if !isNativeSubtitleActive {
                 let isHDR = (videoFormat != .sdr)
-                let topCues = visibleCues.filter { isTextCue($0) && resolveVerticalSlot(for: $0.placement) == .top }
+                let topCues = visibleCues.filter {
+                    isTextCue($0) && (resolveVerticalSlot(for: $0.placement) == .top || (placement.relocateToTop && resolveVerticalSlot(for: $0.placement) == .bottom))
+                }
                 let centerCues = visibleCues.filter { isTextCue($0) && resolveVerticalSlot(for: $0.placement) == .center }
-                let bottomCues = visibleCues.filter { isTextCue($0) && resolveVerticalSlot(for: $0.placement) == .bottom }
+                let bottomCues = visibleCues.filter {
+                    isTextCue($0) && !placement.relocateToTop && resolveVerticalSlot(for: $0.placement) == .bottom
+                }
                 let bitmapCues = visibleCues.filter { !isTextCue($0) }
 
                 ZStack {
                     Color.clear
 
                     ForEach(bitmapCues) { cue in
-                        renderBitmapCue(cue, containerSize: geo.size, isHDR: isHDR)
+                        renderBitmapCue(cue, containerSize: geo.size, isHDR: isHDR, placement: placement)
                     }
 
                     if !topCues.isEmpty {
-                        stackedTextSlot(topCues, verticalSlot: .top, isHDR: isHDR)
+                        stackedTextSlot(topCues, verticalSlot: .top, isHDR: isHDR, placement: placement)
                     }
                     if !centerCues.isEmpty {
-                        stackedTextSlot(centerCues, verticalSlot: .center, isHDR: isHDR)
+                        stackedTextSlot(centerCues, verticalSlot: .center, isHDR: isHDR, placement: placement)
                     }
                     if !bottomCues.isEmpty {
-                        stackedTextSlot(bottomCues, verticalSlot: .bottom, isHDR: isHDR)
+                        stackedTextSlot(bottomCues, verticalSlot: .bottom, isHDR: isHDR, placement: placement)
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
@@ -95,7 +136,8 @@ struct SubtitleOverlayView: View {
     private func stackedTextSlot(
         _ slotCues: [SubtitleCue],
         verticalSlot: VerticalSlot,
-        isHDR: Bool
+        isHDR: Bool,
+        placement: SubtitleOverlayLayout.VerticalPlacement
     ) -> some View {
         let alignment: Alignment = {
             switch verticalSlot {
@@ -104,7 +146,6 @@ struct SubtitleOverlayView: View {
             case .bottom: return .bottom
             }
         }()
-        let bottomInset: CGFloat = isBottomBarVisible ? 290 : 74
 
         return VStack(spacing: 8) {
             ForEach(slotCues) { cue in
@@ -112,10 +153,10 @@ struct SubtitleOverlayView: View {
             }
         }
         .padding(.horizontal, 120)
-        .padding(.top, verticalSlot == .top ? 72 : 0)
-        .padding(.bottom, verticalSlot == .bottom ? bottomInset : 0)
+        .padding(.top, verticalSlot == .top ? placement.topInset : 0)
+        .padding(.bottom, verticalSlot == .bottom ? placement.bottomInset : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-        .animation(.easeOut(duration: 0.16), value: isBottomBarVisible)
+        .animation(.easeOut(duration: 0.16), value: placement)
     }
 
     @ViewBuilder
@@ -144,15 +185,23 @@ struct SubtitleOverlayView: View {
     }
 
     @ViewBuilder
-    private func renderBitmapCue(_ cue: SubtitleCue, containerSize: CGSize, isHDR: Bool) -> some View {
+    private func renderBitmapCue(
+        _ cue: SubtitleCue,
+        containerSize: CGSize,
+        isHDR: Bool,
+        placement: SubtitleOverlayLayout.VerticalPlacement
+    ) -> some View {
         if case .image(let bitmap) = cue.body {
             let baseRect = Self.computeBitmapFrame(
                 position: bitmap.position,
                 canvasSize: bitmap.canvasSize,
                 containerSize: containerSize
             )
-            let safeBottomY = containerSize.height - 290
             let adjustedMidY: CGFloat = {
+                if placement.relocateToTop, baseRect.midY > containerSize.height * 0.48 {
+                    return max(baseRect.height / 2.0 + 24, placement.topInset + baseRect.height / 2.0)
+                }
+                let safeBottomY = containerSize.height - placement.bottomInset
                 guard isBottomBarVisible, baseRect.maxY > safeBottomY else {
                     return baseRect.midY
                 }

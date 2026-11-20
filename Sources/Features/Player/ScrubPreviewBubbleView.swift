@@ -16,8 +16,8 @@ struct ScrubPreviewBubbleView: View {
     let drawsInCompositorView: Bool
     let onMountCompositorView: (AetherScrubPreviewView?) -> Void
 
-    static let frameWidth: CGFloat = 236
-    static let compactWidth: CGFloat = 212
+    static let frameWidth: CGFloat = 260
+    static let compactWidth: CGFloat = 220
 
     var hasVisualFrame: Bool {
         drawsInCompositorView || previewImage != nil
@@ -31,18 +31,18 @@ struct ScrubPreviewBubbleView: View {
         VStack(spacing: 8) {
             if drawsInCompositorView {
                 CompositorScrubPreviewRepresentable(onMount: onMountCompositorView)
-                    .frame(width: 208, height: 117)
+                    .frame(width: 236, height: 133)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else if let cg = previewImage {
                 Image(decorative: cg, scale: 1.0)
                     .resizable()
                     .interpolation(.medium)
                     .aspectRatio(16.0 / 9.0, contentMode: .fill)
-                    .frame(width: 208, height: 117)
+                    .frame(width: 236, height: 133)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
 
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Text(TimelineScrubberLeafView.formatSeconds(targetSeconds))
                     .font(LunaTheme.Font.subtitle.monospacedDigit())
                     .foregroundStyle(LunaTheme.linen)
@@ -53,7 +53,7 @@ struct ScrubPreviewBubbleView: View {
                 if abs(delta) >= 1.0 {
                     Text(Self.formatSignedDelta(delta))
                         .font(LunaTheme.Font.badge.monospacedDigit())
-                        .foregroundStyle(LunaTheme.moonlight)
+                        .foregroundStyle(LunaTheme.amber)
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
                 }
@@ -171,10 +171,78 @@ extension PlayerViewModel {
         enqueueScrubPreview(at: clamped)
     }
 
+    func beginRingHoldScrub(direction: Int) {
+        guard !isResolving, effectiveDurationSeconds > 5, direction != 0 else { return }
+        let signedDir = direction > 0 ? 1.0 : -1.0
+        beginTouchScrub()
+        ringHoldLoopTask?.cancel()
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        ringHoldLoopTask = Task { @MainActor [weak self] in
+            var lastTick = startedAt
+            while let self, !Task.isCancelled, self.isScrubbing {
+                let now = ProcessInfo.processInfo.systemUptime
+                let dt = min(0.12, max(0.01, now - lastTick))
+                lastTick = now
+                let speed = RemoteScrubMath.ringHoldSpeedSecondsPerSecond(holdDurationSeconds: now - startedAt)
+                self.updateTouchScrub(deltaSeconds: signedDir * speed * dt)
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+    }
+
+    func endRingHoldScrub(cancelled: Bool = false) {
+        ringHoldLoopTask?.cancel()
+        ringHoldLoopTask = nil
+        guard isScrubbing else { return }
+        if cancelled {
+            cancelTouchScrub()
+            return
+        }
+        if wasPlayingBeforeScrub {
+            let target = scrubState.targetSeconds
+            resetScrubStateOnSessionChange()
+            performScrubSeekCommit(target: target, exact: false, shouldPlayAfterSeek: true)
+        }
+        // When started while paused, stay in paused scrub mode so the user can fine-tune or click Play.
+    }
+
     func commitTouchScrub() {
+        ringHoldLoopTask?.cancel()
+        ringHoldLoopTask = nil
         guard isScrubbing else { return }
         let target = scrubState.targetSeconds
         resetScrubStateOnSessionChange()
+        performScrubSeekCommit(target: target, exact: true, shouldPlayAfterSeek: true)
+    }
+
+    /// Commits any active scrubbed position while staying paused (e.g. pressing Down into quick actions).
+    func commitTouchScrubPaused() {
+        ringHoldLoopTask?.cancel()
+        ringHoldLoopTask = nil
+        guard isScrubbing else { return }
+        let origin = scrubState.originSeconds
+        let target = scrubState.targetSeconds
+        resetScrubStateOnSessionChange()
+        guard abs(target - origin) >= 0.25 else { return }
+        performScrubSeekCommit(target: target, exact: true, shouldPlayAfterSeek: false)
+    }
+
+    func cancelTouchScrub() {
+        ringHoldLoopTask?.cancel()
+        ringHoldLoopTask = nil
+        guard isScrubbing else { return }
+        cancelPendingScrubCommit()
+        let origin = scrubState.originSeconds
+        let shouldResume = wasPlayingBeforeScrub
+        resetScrubStateOnSessionChange()
+        if abs(transport.currentTime - origin) > 0.25 {
+            performScrubSeekCommit(target: origin, exact: true, shouldPlayAfterSeek: shouldResume)
+        } else if shouldResume {
+            transport.play()
+        }
+    }
+
+    private func performScrubSeekCommit(target: Double, exact: Bool, shouldPlayAfterSeek: Bool) {
         cancelPendingPausedRestoreResume()
         cancelPendingScrubCommit()
         scrubCommitToken &+= 1
@@ -183,14 +251,14 @@ extension PlayerViewModel {
 
         scrubCommitTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.transport.seek(to: target, exact: true)
+            await self.transport.seek(to: target, exact: exact)
             guard self.canFinishScrubCommit(expectedToken: commitToken, expectedSessionId: expectedSessionId) else {
                 if self.scrubCommitToken == commitToken {
                     self.scrubCommitTask = nil
                 }
                 return
             }
-            if self.needsNativeAudioActivationAfterPausedRestore {
+            if shouldPlayAfterSeek && self.needsNativeAudioActivationAfterPausedRestore {
                 await self.activateNativeAudioForPendingResumeIfNeeded()
                 guard self.canFinishScrubCommit(expectedToken: commitToken, expectedSessionId: expectedSessionId) else {
                     if self.scrubCommitToken == commitToken {
@@ -203,25 +271,17 @@ extension PlayerViewModel {
             if self.scrubCommitToken == commitToken {
                 self.scrubCommitTask = nil
             }
-            if self.transport.state == .paused || self.transport.state == .loading {
-                self.transport.play()
+            if shouldPlayAfterSeek {
+                if self.transport.state == .paused || self.transport.state == .loading {
+                    self.transport.play()
+                }
+                if self.isForegroundActive && !self.transport.needsForegroundVideoRestore {
+                    self.lastForegroundPlaybackWasPlaying = Self.isActiveTransportIntent(
+                        playbackPhase: self.transport.playbackPhase,
+                        engineState: self.transport.state
+                    )
+                }
             }
-            if self.isForegroundActive && !self.transport.needsForegroundVideoRestore {
-                self.lastForegroundPlaybackWasPlaying = Self.isActiveTransportIntent(
-                    playbackPhase: self.transport.playbackPhase,
-                    engineState: self.transport.state
-                )
-            }
-        }
-    }
-
-    func cancelTouchScrub() {
-        guard isScrubbing else { return }
-        cancelPendingScrubCommit()
-        let shouldResume = wasPlayingBeforeScrub
-        resetScrubStateOnSessionChange()
-        if shouldResume {
-            transport.play()
         }
     }
 
@@ -235,6 +295,8 @@ extension PlayerViewModel {
     }
 
     func resetScrubStateOnSessionChange() {
+        ringHoldLoopTask?.cancel()
+        ringHoldLoopTask = nil
         scrubPreviewLoopTask?.cancel()
         scrubPreviewLoopTask = nil
         pendingScrubPreviewTarget = nil

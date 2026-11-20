@@ -40,6 +40,7 @@ struct SettingsView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
     @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
+    @Environment(\.lunaContentEntryFocusNonce) private var contentEntryFocusNonce
 
     let isActiveTab: Bool
     @State private var selectedCategory: SettingsCategory
@@ -47,6 +48,7 @@ struct SettingsView: View {
     @State private var cacheClearedNotice: Bool = false
     @State private var showReconnectDialog: Bool = false
     @State private var modalToken = UUID()
+    @State private var entryFocusRetryTask: Task<Void, Never>?
     @FocusState private var focusedCategory: SettingsCategory?
     @Namespace private var settingsSidebarNamespace
 
@@ -58,8 +60,8 @@ struct SettingsView: View {
     var body: some View {
         let caps = AetherEngine.displayCapabilities
 
-        HStack(alignment: .top, spacing: 56) {
-            VStack(alignment: .leading, spacing: 8) {
+        HStack(alignment: .top, spacing: 48) {
+            VStack(alignment: .leading, spacing: 10) {
                 ForEach(SettingsCategory.allCases) { category in
                     SettingsCategoryRowButton(
                         category: category,
@@ -73,7 +75,7 @@ struct SettingsView: View {
 
                 Spacer(minLength: 0)
             }
-            .frame(width: 300, alignment: .topLeading)
+            .frame(width: 320, alignment: .topLeading)
             .padding(.top, 12)
             .focusScope(settingsSidebarNamespace)
             .focusSection()
@@ -87,7 +89,7 @@ struct SettingsView: View {
 
                         selectedCategoryPanel(caps: caps)
                     }
-                    .frame(maxWidth: 1280, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                     .padding(.top, 12)
                     .padding(.bottom, 84)
                 }
@@ -135,9 +137,32 @@ struct SettingsView: View {
                 subpageVisibility.leaveModal(modalToken)
             }
         }
+        .onChange(of: contentEntryFocusNonce) { _, _ in
+            guard isActiveTab else { return }
+            focusSidebarCategoryEntry()
+        }
         .onDisappear {
+            entryFocusRetryTask?.cancel()
+            entryFocusRetryTask = nil
             if !showReconnectDialog {
                 subpageVisibility.leaveModal(modalToken)
+            }
+        }
+    }
+
+    private func focusSidebarCategoryEntry() {
+        entryFocusRetryTask?.cancel()
+        let targetCategory = selectedCategory
+        focusedCategory = targetCategory
+        entryFocusRetryTask = Task { @MainActor in
+            for delayNs: UInt64 in [16_000_000, 48_000_000] {
+                try? await Task.sleep(nanoseconds: delayNs)
+                guard !Task.isCancelled, isActiveTab else { return }
+                if focusedCategory == nil {
+                    focusedCategory = targetCategory
+                } else {
+                    return
+                }
             }
         }
     }
@@ -184,7 +209,12 @@ private struct SettingsCategoryRowButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
+                Image(systemName: category.systemImage)
+                    .font(LunaTheme.Font.pillIcon)
+                    .foregroundStyle(isFocused ? LunaTheme.linen : (isSelected ? LunaTheme.amber : LunaTheme.muted))
+                    .frame(width: 28, alignment: .center)
+
                 Text(category.title)
                     .font(LunaTheme.Font.cardTitle)
                     .foregroundStyle(isFocused || isSelected ? LunaTheme.linen : LunaTheme.muted)
@@ -193,13 +223,35 @@ private struct SettingsCategoryRowButton: View {
                 Spacer(minLength: 8)
             }
             .transaction { $0.animation = nil }
-            .padding(.horizontal, 22)
+            .padding(.horizontal, 20)
             .padding(.vertical, 16)
             .background(
                 RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
-                    .fill(isFocused ? LunaTheme.surfaceSelected : Color.clear)
+                    .fill(isFocused ? LunaTheme.surfaceSelected : (isSelected ? LunaTheme.surfaceRaised : Color.clear))
+                    .overlay {
+                        if isSelected && !isFocused {
+                            RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
+                                .fill(LunaTokens.Accent.soft)
+                        }
+                    }
                     .transaction { $0.animation = nil }
             )
+            .overlay {
+                if isSelected && !isFocused {
+                    HStack {
+                        Capsule()
+                            .fill(LunaTheme.amber)
+                            .frame(width: LunaFocusStyle.listMarkerWidth)
+                            .padding(.vertical, 12)
+                        Spacer(minLength: 0)
+                    }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
+                            .strokeBorder(LunaTokens.Accent.border, lineWidth: 1.0)
+                    )
+                    .allowsHitTesting(false)
+                }
+            }
             .lunaFocusSurface(.listRow, isFocused: isFocused, cornerRadius: LunaTokens.Radius.card)
         }
         .buttonStyle(LunaChromelessButtonStyle())

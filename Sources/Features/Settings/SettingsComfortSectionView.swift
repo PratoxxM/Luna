@@ -52,12 +52,12 @@ struct SettingsRoomDisplaySectionView: View {
                 title: "MetalFX 4K-oppskalering",
                 subtitle: comfort.lowResUpscaleMode.shortDescription
             ) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     ForEach(LowResUpscaleMode.allCases) { mode in
                         LunaPillButton(
                             mode.displayTitle,
                             isSelected: comfort.lowResUpscaleMode == mode,
-                            prominence: comfort.lowResUpscaleMode == mode ? .glassPill : .subtleChip,
+                            prominence: .glassPill,
                             size: .compact
                         ) {
                             comfort.lowResUpscaleMode = mode
@@ -72,12 +72,12 @@ struct SettingsRoomDisplaySectionView: View {
                 title: "Skjermmodus i meny etter film",
                 subtitle: comfort.menuDisplayMode.shortDescription
             ) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     ForEach(MenuDisplayMode.allCases) { mode in
                         LunaPillButton(
                             mode.displayTitle,
                             isSelected: comfort.menuDisplayMode == mode,
-                            prominence: comfort.menuDisplayMode == mode ? .glassPill : .subtleChip,
+                            prominence: .glassPill,
                             size: .compact
                         ) {
                             comfort.menuDisplayMode = mode
@@ -114,12 +114,12 @@ struct SettingsSubtitlesSectionView: View {
                 title: "Kveldslys",
                 subtitle: "\(comfort.hdrSubtitlePreset.settingsDescription) · Gjelder HDR og Dolby Vision"
             ) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     ForEach(HDRSubtitlePreset.allCases) { preset in
                         LunaPillButton(
                             preset.displayTitle,
                             isSelected: comfort.hdrSubtitlePreset == preset,
-                            prominence: comfort.hdrSubtitlePreset == preset ? .glassPill : .subtleChip,
+                            prominence: .glassPill,
                             size: .compact
                         ) {
                             comfort.hdrSubtitlePreset = preset
@@ -130,13 +130,13 @@ struct SettingsSubtitlesSectionView: View {
 
             SettingsSectionDivider()
 
-            SettingsControlRow(title: "Tekststørrelse") {
-                HStack(spacing: 8) {
+            SettingsControlRow(title: "Tekststørrelse", axis: .horizontal) {
+                HStack(spacing: 10) {
                     ForEach(SubtitleFontSizePreset.allCases) { sz in
                         LunaPillButton(
                             sz.displayTitle,
                             isSelected: comfort.subtitleFontSize == sz,
-                            prominence: comfort.subtitleFontSize == sz ? .glassPill : .subtleChip,
+                            prominence: .glassPill,
                             size: .compact
                         ) {
                             comfort.subtitleFontSize = sz
@@ -147,13 +147,13 @@ struct SettingsSubtitlesSectionView: View {
 
             SettingsSectionDivider()
 
-            SettingsControlRow(title: "Bakgrunn bak tekst") {
-                HStack(spacing: 8) {
+            SettingsControlRow(title: "Bakgrunn bak tekst", axis: .horizontal) {
+                HStack(spacing: 10) {
                     ForEach(SubtitleBoxOpacityPreset.allCases) { box in
                         LunaPillButton(
                             box.displayTitle,
                             isSelected: comfort.subtitleBoxOpacity == box,
-                            prominence: comfort.subtitleBoxOpacity == box ? .glassPill : .subtleChip,
+                            prominence: .glassPill,
                             size: .compact
                         ) {
                             comfort.subtitleBoxOpacity = box
@@ -188,7 +188,7 @@ struct SettingsPlaybackSectionView: View {
 
             SettingsInfoRow(
                 title: "Siri Remote-spoling",
-                value: "18 % dødsonesikring · opptil 75 s per sveip"
+                value: "Kun ved pause · adaptiv over hele lengden · hold ring for hurtigspoling"
             )
         }
     }

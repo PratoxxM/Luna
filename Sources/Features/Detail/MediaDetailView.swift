@@ -46,7 +46,7 @@ struct MediaDetailView: View {
             LunaTheme.canvas.ignoresSafeArea()
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 40) {
+                VStack(alignment: .leading, spacing: 20) {
                     if let detail = viewModel.detail {
                         DetailHeroHeaderView(
                             item: detail,

@@ -213,4 +213,76 @@ final class PausedScrubCommitTests: XCTestCase {
         XCTAssertEqual(recorded.first?.0, 320)
         XCTAssertEqual(recorded.first?.1, true)
     }
+
+    @MainActor
+    func testPausedScrubCommitAndRingHoldFromPlayingAndPausedStates() async throws {
+        let suite = "luna.test.ringhold.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let engine = try AetherEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+
+        let seeks = TestLockedBox<[(Double, Bool)]>([])
+        let transport = MockPlayerTransport(state: .paused, playbackPhase: .paused)
+        transport.currentTime = 120
+        transport.onSeek = { pos, exact in
+            seeks.withLock { $0.append((pos, exact)) }
+        }
+
+        let vm = PlayerViewModel(
+            engine: engine,
+            comfort: ComfortPreferences(defaults: defaults),
+            transport: transport
+        )
+        vm.isResolving = false
+        vm.durationSeconds = 3600
+
+        // 1. Pressing Down during paused scrub commits exact seek while remaining paused
+        vm.beginTouchScrub()
+        vm.updateTouchScrub(deltaSeconds: 185)
+        XCTAssertEqual(vm.scrubState.targetSeconds, 305, accuracy: 0.01)
+        vm.commitTouchScrubPaused()
+        XCTAssertFalse(vm.isScrubbing)
+        await vm.scrubCommitTask?.value
+        XCTAssertEqual(transport.state, .paused)
+        XCTAssertEqual(seeks.withLock { $0 }.last?.0 ?? -1, 305, accuracy: 0.01)
+        XCTAssertEqual(seeks.withLock { $0 }.last?.1, true)
+
+        // 2. Ring-hold while playing pauses -> advances -> releases -> fast seek (exact: false) & auto-plays
+        seeks.withLock { $0.removeAll() }
+        transport.state = .playing
+        transport.playbackPhase = .playing
+        vm.playbackPhase = .playing
+        vm.beginRingHoldScrub(direction: 1)
+        XCTAssertTrue(vm.isScrubbing)
+        XCTAssertEqual(transport.state, .paused)
+        vm.updateTouchScrub(deltaSeconds: 420)
+        vm.endRingHoldScrub(cancelled: false)
+        XCTAssertFalse(vm.isScrubbing)
+        await vm.scrubCommitTask?.value
+        XCTAssertEqual(transport.state, .playing)
+        XCTAssertEqual(seeks.withLock { $0 }.last?.1, false)
+        XCTAssertEqual(seeks.withLock { $0 }.last?.0 ?? -1, 725, accuracy: 0.1)
+
+        // 3. Ring-hold while already paused stays paused in scrub mode on release, and Menu cancels to origin
+        seeks.withLock { $0.removeAll() }
+        transport.pause()
+        transport.currentTime = 725
+        vm.playbackPhase = .paused
+        vm.beginRingHoldScrub(direction: -1)
+        vm.updateTouchScrub(deltaSeconds: -200)
+        vm.endRingHoldScrub(cancelled: false)
+        XCTAssertTrue(vm.isScrubbing)
+        XCTAssertEqual(vm.scrubState.targetSeconds, 525, accuracy: 0.1)
+        vm.cancelTouchScrub()
+        XCTAssertFalse(vm.isScrubbing)
+        XCTAssertEqual(transport.state, .paused)
+    }
 }

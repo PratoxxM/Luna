@@ -22,14 +22,15 @@ struct DetailHeroHeaderView: View {
     var onReadMore: ((String) -> Void)? = nil
 
     private var heroMinHeight: CGFloat {
-        item.mediaType == "movie" ? 860 : 760
+        item.mediaType == "movie" ? 760 : 500
     }
 
     var body: some View {
         let landscapeURL = client?.resolveArtworkURL(item.backdropUrl ?? item.cardBackdropUrl)
         let fallbackPosterURL = landscapeURL == nil ? client?.resolveArtworkURL(item.posterUrl) : nil
+        let isMovie = (item.mediaType == "movie")
 
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: isMovie ? 18 : 12) {
             if let kicker = item.studioOrNetworkKicker, !kicker.isEmpty {
                 Text(kicker.uppercased())
                     .font(LunaTheme.Font.detailKicker)
@@ -72,15 +73,15 @@ struct DetailHeroHeaderView: View {
 
             // Overview preview + optional «Les mer»
             if let overview = item.preferredOverview {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text(overview)
                         .font(LunaTheme.Font.body)
                         .foregroundStyle(LunaTheme.moonlight)
-                        .lineSpacing(5)
-                        .lineLimit(3)
+                        .lineSpacing(4)
+                        .lineLimit(isMovie ? 3 : 2)
                         .frame(maxWidth: 920, alignment: .leading)
 
-                    if overview.count > 165, let onReadMore {
+                    if overview.count > (isMovie ? 165 : 120), let onReadMore {
                         LunaPillButton("Les mer", prominence: .subtleChip, size: .compact) {
                             onReadMore(overview)
                         }
@@ -112,8 +113,8 @@ struct DetailHeroHeaderView: View {
                 .padding(.top, 2)
             }
 
-            // Action row: rounded-rect gold PrimaryPlayButton + 3 borderless matte circles
-            HStack(spacing: 18) {
+            // Action row: gold PrimaryPlayButton + Kilde + Huskeliste + Sett + Mer
+            HStack(spacing: 14) {
                 PrimaryPlayButton(
                     title: primaryPlayTitle,
                     isWarmReady: isPreResolvedReady,
@@ -121,19 +122,32 @@ struct DetailHeroHeaderView: View {
                 )
                 .prefersDefaultFocus(true, in: focusNamespace)
 
-                DetailCircleIconButton(
+                LunaPillButton(
+                    "Kilde",
+                    systemImage: "film.stack",
+                    prominence: .glassPill
+                ) {
+                    onPickSource()
+                }
+
+                LunaPillButton(
+                    "Huskeliste",
                     systemImage: item.inWatchlist ? "bookmark.fill" : "bookmark",
                     isSelected: item.inWatchlist,
-                    accessibilityLabel: item.inWatchlist ? "Fjern fra huskeliste" : "Legg til i huskeliste",
-                    action: onToggleWatchlist
-                )
+                    prominence: .glassPill
+                ) {
+                    onToggleWatchlist()
+                }
 
-                DetailCircleIconButton(
-                    systemImage: "checkmark",
+                LunaPillButton(
+                    watchedButtonTitle,
+                    systemImage: item.watched ? "checkmark.circle.fill" : "checkmark",
                     isSelected: item.watched,
-                    accessibilityLabel: watchedButtonTitle,
-                    action: onToggleWatched
-                )
+                    prominence: .glassPill,
+                    accent: .emerald
+                ) {
+                    onToggleWatched()
+                }
 
                 DetailCircleIconButton(
                     systemImage: "ellipsis",
@@ -148,14 +162,14 @@ struct DetailHeroHeaderView: View {
                     }
                 )
             }
-            .padding(.top, 12)
+            .padding(.top, isMovie ? 12 : 6)
             .focusSection()
             .onPlayPauseCommand {
                 onPlay()
             }
         }
-        .padding(.top, item.mediaType == "movie" ? 170 : 180)
-        .padding(.bottom, 34)
+        .padding(.top, isMovie ? 136 : 64)
+        .padding(.bottom, isMovie ? 30 : 18)
         .padding(.horizontal, horizontalGutter)
         .frame(maxWidth: .infinity, minHeight: heroMinHeight, alignment: .bottomLeading)
         .background {
@@ -301,8 +315,8 @@ private struct PrimaryPlayLabel: View {
         }
         .foregroundStyle(LunaTheme.canvas)
         .transaction { $0.animation = nil }
-        .padding(.horizontal, 36)
-        .padding(.vertical, 22)
+        .padding(.horizontal, 32)
+        .padding(.vertical, 16)
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -335,7 +349,7 @@ private struct DetailCircleIconButton: View {
                 .foregroundStyle(
                     isSelected ? LunaTheme.amber : (isFocused ? LunaTheme.linen : LunaTheme.moonlight)
                 )
-                .frame(width: 72, height: 72)
+                .frame(width: 60, height: 60)
                 .background(
                     Circle()
                         .fill(isFocused ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)

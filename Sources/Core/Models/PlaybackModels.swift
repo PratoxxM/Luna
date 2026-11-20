@@ -406,7 +406,7 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
         return quality.isEmpty ? "Anbefalt for \(trimmedRoom)" : "Anbefalt for \(trimmedRoom) · \(quality)"
     }
 
-    public func quickRowMetadata(isActive: Bool = false) -> String {
+    public func quickRowMetadata(activeLabel: String?) -> String {
         var parts: [String] = [sourceBadgeLabel]
         if let vc = videoCodec?.trimmingCharacters(in: .whitespacesAndNewlines),
            !vc.isEmpty, vc.caseInsensitiveCompare("unknown") != .orderedSame {
@@ -417,8 +417,12 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
             parts.append(sq)
         }
         if let size = formattedSize, !size.isEmpty { parts.append(size) }
-        if isActive { parts.append("Spilles nå") }
+        if let activeLabel, !activeLabel.isEmpty { parts.append(activeLabel) }
         return parts.joined(separator: " · ")
+    }
+
+    public func quickRowMetadata(isActive: Bool = false) -> String {
+        quickRowMetadata(activeLabel: isActive ? "Spilles nå" : nil)
     }
 }
 

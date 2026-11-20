@@ -85,6 +85,17 @@ final class PreviewMockURLProtocol: URLProtocol {
             let mediaType = comps?.queryItems?.first(where: { $0.name == "mediaType" })?.value ?? "movie"
             return (try? LunaCoreClient.encodeJSON(PreviewMockFixtures.libraryResponse(mediaType: mediaType))) ?? Data("{}".utf8)
         }
+        if path == "/api/tv/v1/search" {
+            let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            let q = comps?.queryItems?.first(where: { $0.name == "q" })?.value ?? "Dune"
+            let searchRes = TvSearchResponse(
+                ok: true,
+                query: q,
+                localCount: 5,
+                items: PreviewMockFixtures.catalogMovies
+            )
+            return (try? LunaCoreClient.encodeJSON(searchRes)) ?? Data("{}".utf8)
+        }
         if path.hasPrefix("/api/tv/v1/catalog/") {
             let isSeries = path.hasSuffix("/series")
             let cat = TvCatalogResponse(

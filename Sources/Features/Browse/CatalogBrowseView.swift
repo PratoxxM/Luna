@@ -46,6 +46,7 @@ struct CatalogBrowseView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
     @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
+    @Environment(\.lunaContentEntryFocusNonce) private var contentEntryFocusNonce
 
     let mediaType: String
     let initialGenre: TvGenreChip?
@@ -72,13 +73,15 @@ struct CatalogBrowseView: View {
     @State private var mutationBannerTask: Task<Void, Never>?
     @State private var reloadTask: Task<Void, Never>?
     @State private var reloadGeneration: UInt64 = 0
+    @State private var entryFocusRetryTask: Task<Void, Never>?
 
     @State private var selectedCard: TvMediaCard?
+    @FocusState private var focusedFilterId: String?
     @FocusState private var focusedCardId: String?
 
     private let columns = Array(
-        repeating: GridItem(.fixed(LunaTokens.Layout.posterW), spacing: LunaTokens.Layout.cardGap, alignment: .topLeading),
-        count: 5
+        repeating: GridItem(.fixed(LunaTokens.Layout.gridPosterW), spacing: LunaTokens.Layout.gridCardGap, alignment: .topLeading),
+        count: 6
     )
 
     private var sortOptions: [(id: String, label: String)] {
@@ -138,19 +141,20 @@ struct CatalogBrowseView: View {
                         .foregroundStyle(LunaTheme.linen)
                         .padding(.horizontal, LunaTheme.horizontalGutter)
 
-                // Single calm compact filter strip within 90 pt margins
+                // Uniform compact capsule filter strip within 90 pt margins + trailing fade mask
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(sortOptions, id: \.id) { opt in
                             LunaPillButton(
                                 opt.label,
                                 isSelected: selectedSort == opt.id,
-                                prominence: .subtleChip,
+                                prominence: .glassPill,
                                 size: .compact
                             ) {
                                 guard selectedSort != opt.id else { return }
                                 selectedSort = opt.id
                             }
+                            .focused($focusedFilterId, equals: "sort-\(opt.id)")
                         }
 
                         if !isRootTab {
@@ -158,45 +162,49 @@ struct CatalogBrowseView: View {
                                 "Kun lokalt",
                                 systemImage: localOnly ? "checkmark" : nil,
                                 isSelected: localOnly,
-                                prominence: .subtleChip,
+                                prominence: .glassPill,
                                 size: .compact
                             ) {
                                 localOnly.toggle()
                             }
+                            .focused($focusedFilterId, equals: "local-only")
                         }
 
                         LunaPillButton(
                             "Skjul sette",
                             systemImage: unwatchedOnly ? "checkmark" : nil,
                             isSelected: unwatchedOnly,
-                            prominence: .subtleChip,
+                            prominence: .glassPill,
                             size: .compact
                         ) {
                             unwatchedOnly.toggle()
                         }
+                        .focused($focusedFilterId, equals: "unwatched")
 
                         if !availableGenres.isEmpty {
-                            Text("·")
-                                .font(LunaTheme.Font.caption)
-                                .foregroundStyle(LunaTheme.muted)
-                                .padding(.horizontal, 6)
+                            Rectangle()
+                                .fill(LunaTheme.warmBorderStrong)
+                                .frame(width: 1, height: 22)
+                                .padding(.horizontal, 8)
+                                .allowsHitTesting(false)
 
                             LunaPillButton(
                                 "Alle sjangre",
                                 isSelected: selectedGenreSlug == nil,
-                                prominence: .subtleChip,
+                                prominence: .glassPill,
                                 size: .compact
                             ) {
                                 selectedGenreSlug = nil
                                 selectedGenreLabel = nil
                             }
+                            .focused($focusedFilterId, equals: "genre-all")
 
                             ForEach(availableGenres) { chip in
                                 let active = selectedGenreSlug == chip.slug
                                 LunaPillButton(
                                     chip.label,
                                     isSelected: active,
-                                    prominence: .subtleChip,
+                                    prominence: .glassPill,
                                     size: .compact
                                 ) {
                                     if active {
@@ -207,15 +215,28 @@ struct CatalogBrowseView: View {
                                         selectedGenreLabel = chip.label
                                     }
                                 }
+                                .focused($focusedFilterId, equals: "genre-\(chip.slug)")
                             }
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 8)
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
+                .mask(
+                    HStack(spacing: 0) {
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 48)
+                    }
+                )
                 .focusSection()
+                .onMoveCommand { direction in
+                    if direction == .down, let firstCardID = items.first?.id {
+                        focusedCardId = firstCardID
+                    }
+                }
 
                 // Content Grid
                 if isLoading && items.isEmpty {
@@ -254,13 +275,14 @@ struct CatalogBrowseView: View {
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.vertical, 48)
                 } else {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 34) {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 26) {
                         ForEach(items) { card in
                             PosterCardView(
                                 card: card,
                                 client: client,
-                                width: LunaTokens.Layout.posterW,
+                                width: LunaTokens.Layout.gridPosterW,
                                 showStorageBadge: true,
+                                showRestingTitle: true,
                                 onSelect: {
                                     selectedCard = card
                                 },
@@ -268,6 +290,7 @@ struct CatalogBrowseView: View {
                                     MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
                                 }
                             )
+                            .id(card.id)
                             .focused($focusedCardId, equals: card.id)
                             .contextMenu {
                                 StandardPosterContextMenuItems(
@@ -306,7 +329,7 @@ struct CatalogBrowseView: View {
                     }
                 }
             }
-            .padding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 32)
+            .padding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 60)
             .padding(.bottom, 84)
         }
         .contentMargins(.zero, for: .scrollContent)
@@ -325,11 +348,15 @@ struct CatalogBrowseView: View {
                 scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
             }
         }
+        .onChange(of: contentEntryFocusNonce) { _, _ in
+            guard isRootTab, isActiveTab else { return }
+            focusEntryFilterTarget(scrollProxy: scrollProxy)
+        }
         .overlay(alignment: .topLeading) {
             if let mutationErrorBanner {
                 TransientErrorBanner(message: mutationErrorBanner)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.top, (isRootTab ? LunaTopBarView.contentTopPadding : 24) + 8)
+                    .padding(.top, (isRootTab ? LunaTopBarView.contentTopPadding : 60) + 8)
                     .allowsHitTesting(false)
             }
         }
@@ -375,6 +402,8 @@ struct CatalogBrowseView: View {
             scheduleReloadFirstPage(forceNetwork: true)
         }
         .onDisappear {
+            entryFocusRetryTask?.cancel()
+            entryFocusRetryTask = nil
             mutationBannerTask?.cancel()
             reloadTask?.cancel()
             reloadTask = nil
@@ -386,6 +415,24 @@ struct CatalogBrowseView: View {
                 subpageVisibility.leaveSubpage(subpageToken)
             }
         }
+        }
+    }
+
+    private func focusEntryFilterTarget(scrollProxy: ScrollViewProxy) {
+        entryFocusRetryTask?.cancel()
+        let targetID = "sort-\(selectedSort)"
+        scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
+        focusedFilterId = targetID
+        entryFocusRetryTask = Task { @MainActor in
+            for delayNs: UInt64 in [16_000_000, 48_000_000] {
+                try? await Task.sleep(nanoseconds: delayNs)
+                guard !Task.isCancelled, isRootTab, isActiveTab else { return }
+                if focusedFilterId == nil {
+                    focusedFilterId = targetID
+                } else {
+                    return
+                }
+            }
         }
     }
 

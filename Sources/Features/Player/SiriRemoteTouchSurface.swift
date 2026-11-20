@@ -7,12 +7,13 @@ import UIKit
 /// - Plain `UIView` (`canBecomeFocused = true`, `backgroundColor = .clear`) paired with
 ///   `.focusEffectDisabled()` in SwiftUI draws **zero** tvOS system halo or Liquid Glass
 ///   focus rectangle over `AetherPlayerSurface`.
-/// - Captures continuous `UITouch.TouchType.indirect` thumb movement on the Siri Remote clickpad
-///   for smooth 60/120 Hz velocity-aware timeline scrubbing, light-touch OSD wake, vertical swipe-down
-///   for the top drawer, and crisp physical ring/center clicks.
+/// - Captures `UITouch.TouchType.indirect` clickpad movement for paused-only adaptive scrubbing
+///   and light-touch OSD wake, while differentiating `< 280 ms` ring clicks (`±10 s`) from
+///   `>= 280 ms` progressive hold-on-ring seeking.
 @MainActor
 struct SiriRemoteTouchSurface: UIViewRepresentable {
     var isPlayingProvider: () -> Bool = { false }
+    var durationSecondsProvider: () -> Double = { 0 }
     let onLightTouch: () -> Void
     let onScrubBegan: () -> Void
     let onScrubChanged: (_ deltaSeconds: Double) -> Void
@@ -20,6 +21,8 @@ struct SiriRemoteTouchSurface: UIViewRepresentable {
     let onSelectClick: () -> Void
     let onLeftClick: () -> Void
     let onRightClick: () -> Void
+    var onRingHoldBegan: (_ direction: Int) -> Void = { _ in }
+    var onRingHoldEnded: (_ cancelled: Bool) -> Void = { _ in }
     let onUpClick: () -> Void
     let onDownClick: () -> Void
 
@@ -35,6 +38,7 @@ struct SiriRemoteTouchSurface: UIViewRepresentable {
 
     private func updateCallbacks(on view: TouchCaptureUIView) {
         view.isPlayingProvider = isPlayingProvider
+        view.durationSecondsProvider = durationSecondsProvider
         view.onLightTouch = onLightTouch
         view.onScrubBegan = onScrubBegan
         view.onScrubChanged = onScrubChanged
@@ -42,6 +46,8 @@ struct SiriRemoteTouchSurface: UIViewRepresentable {
         view.onSelectClick = onSelectClick
         view.onLeftClick = onLeftClick
         view.onRightClick = onRightClick
+        view.onRingHoldBegan = onRingHoldBegan
+        view.onRingHoldEnded = onRingHoldEnded
         view.onUpClick = onUpClick
         view.onDownClick = onDownClick
     }
@@ -50,6 +56,7 @@ struct SiriRemoteTouchSurface: UIViewRepresentable {
 @MainActor
 final class TouchCaptureUIView: UIView {
     var isPlayingProvider: () -> Bool = { false }
+    var durationSecondsProvider: () -> Double = { 0 }
     var onLightTouch: (() -> Void)?
     var onScrubBegan: (() -> Void)?
     var onScrubChanged: ((_ deltaSeconds: Double) -> Void)?
@@ -57,6 +64,8 @@ final class TouchCaptureUIView: UIView {
     var onSelectClick: (() -> Void)?
     var onLeftClick: (() -> Void)?
     var onRightClick: (() -> Void)?
+    var onRingHoldBegan: ((_ direction: Int) -> Void)?
+    var onRingHoldEnded: ((_ cancelled: Bool) -> Void)?
     var onUpClick: (() -> Void)?
     var onDownClick: (() -> Void)?
 
@@ -66,13 +75,15 @@ final class TouchCaptureUIView: UIView {
         case verticalCommand
     }
 
-    private let scrubTrackReferenceWidth: CGFloat = 260.0
     private var panAxis: PanAxis = .undecided
-    private var lastAppliedScrubDeltaSeconds: Double = 0
-    private var maxAbsNormalizedX: Double = 0
+    private var prevPanDx: Double = 0
+    private var smoothedSpeedNorm: Double = 0
     private var lastDiscreteClickUptime: TimeInterval?
     private var didCommitDuringCurrentPan: Bool = false
     private var activeSelectPress: Bool = false
+    private var activeRingDirection: Int?
+    private var didEnterRingHold: Bool = false
+    private var ringHoldTask: Task<Void, Never>?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -92,6 +103,14 @@ final class TouchCaptureUIView: UIView {
         true
     }
 
+    override func willMove(toWindow newWindow: UIWindow?) {
+        super.willMove(toWindow: newWindow)
+        if newWindow == nil {
+            cancelActiveRingHold(cancelled: true)
+            activeSelectPress = false
+        }
+    }
+
     private func configureSurface() {
         backgroundColor = .clear
         isOpaque = false
@@ -103,7 +122,7 @@ final class TouchCaptureUIView: UIView {
         addGestureRecognizer(pan)
     }
 
-    // MARK: - Indirect Touch (Wake OSD & Continuous Scrubbing)
+    // MARK: - Indirect Touch (Wake OSD & Paused Adaptive Scrubbing)
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
@@ -116,8 +135,8 @@ final class TouchCaptureUIView: UIView {
         switch recognizer.state {
         case .began:
             panAxis = .undecided
-            lastAppliedScrubDeltaSeconds = 0
-            maxAbsNormalizedX = 0
+            prevPanDx = 0
+            smoothedSpeedNorm = 0
             didCommitDuringCurrentPan = false
 
         case .changed:
@@ -125,8 +144,6 @@ final class TouchCaptureUIView: UIView {
             let translation = recognizer.translation(in: self)
             let dx = Double(translation.x)
             let dy = Double(translation.y)
-            let normalizedX = dx / Double(scrubTrackReferenceWidth)
-            maxAbsNormalizedX = max(maxAbsNormalizedX, abs(normalizedX))
 
             switch panAxis {
             case .undecided:
@@ -146,34 +163,36 @@ final class TouchCaptureUIView: UIView {
                 let elapsedSinceClick = lastDiscreteClickUptime.map {
                     ProcessInfo.processInfo.systemUptime - $0
                 }
-                if RemoteScrubMath.shouldSuppressPanCommit(
-                    secondsSinceDiscreteClick: elapsedSinceClick,
-                    maxAbsNormalizedX: maxAbsNormalizedX
-                ) {
-                    return
-                }
-
-                let eval = RemoteScrubMath.evaluatePan(
+                guard RemoteScrubMath.shouldActivateTouchScrub(
                     dx: dx,
                     dy: dy,
-                    normalizedX: normalizedX,
                     isPlaying: isPlayingProvider(),
-                    alreadyActive: false
-                )
-                guard eval.shouldActivate else { return }
-                panAxis = .horizontalScrub
-                lastAppliedScrubDeltaSeconds = eval.deltaSeconds
-                onScrubBegan?()
-                if abs(eval.deltaSeconds) > 0.01 {
-                    onScrubChanged?(eval.deltaSeconds)
+                    isSelectPressed: activeSelectPress,
+                    secondsSinceDiscreteClick: elapsedSinceClick
+                ) else {
+                    return
                 }
+                panAxis = .horizontalScrub
+                prevPanDx = dx
+                smoothedSpeedNorm = 0
+                onScrubBegan?()
 
             case .horizontalScrub:
-                let targetDelta = RemoteScrubMath.deltaSeconds(forNormalizedX: normalizedX)
-                let step = targetDelta - lastAppliedScrubDeltaSeconds
-                if abs(step) > 0.01 {
-                    lastAppliedScrubDeltaSeconds = targetDelta
-                    onScrubChanged?(step)
+                guard !activeSelectPress else { return }
+                let stepDx = dx - prevPanDx
+                prevPanDx = dx
+                let velocityX = Double(recognizer.velocity(in: self).x)
+                smoothedSpeedNorm = RemoteScrubMath.smoothedSpeedNorm(
+                    previous: smoothedSpeedNorm,
+                    velocityXPointsPerSecond: velocityX
+                )
+                let delta = RemoteScrubMath.incrementalStepSeconds(
+                    stepDxPoints: stepDx,
+                    durationSeconds: durationSecondsProvider(),
+                    speedNorm: smoothedSpeedNorm
+                )
+                if abs(delta) > 0.001 {
+                    onScrubChanged?(delta)
                 }
 
             case .verticalCommand:
@@ -182,19 +201,11 @@ final class TouchCaptureUIView: UIView {
 
         case .ended, .cancelled, .failed:
             if panAxis == .horizontalScrub && !didCommitDuringCurrentPan {
-                let elapsedSinceClick = lastDiscreteClickUptime.map {
-                    ProcessInfo.processInfo.systemUptime - $0
-                }
-                if !RemoteScrubMath.shouldSuppressPanCommit(
-                    secondsSinceDiscreteClick: elapsedSinceClick,
-                    maxAbsNormalizedX: maxAbsNormalizedX
-                ) {
-                    onScrubTouchLifted?()
-                }
+                onScrubTouchLifted?()
             }
             panAxis = .undecided
-            lastAppliedScrubDeltaSeconds = 0
-            maxAbsNormalizedX = 0
+            prevPanDx = 0
+            smoothedSpeedNorm = 0
             didCommitDuringCurrentPan = false
 
         default:
@@ -202,7 +213,7 @@ final class TouchCaptureUIView: UIView {
         }
     }
 
-    // MARK: - Physical Clickpad & Remote Button Presses
+    // MARK: - Physical Clickpad & Ring Hold
 
     private static func isLocallyHandledPress(_ type: UIPress.PressType) -> Bool {
         switch type {
@@ -210,6 +221,46 @@ final class TouchCaptureUIView: UIView {
             return true
         default:
             return false
+        }
+    }
+
+    private func beginRingArrowPress(direction: Int) {
+        ringHoldTask?.cancel()
+        activeRingDirection = direction
+        didEnterRingHold = false
+        let thresholdNs = UInt64(RemoteScrubMath.ringHoldThresholdSeconds * 1_000_000_000)
+        ringHoldTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: thresholdNs)
+            guard !Task.isCancelled, let self, self.activeRingDirection == direction else { return }
+            self.didEnterRingHold = true
+            self.onRingHoldBegan?(direction)
+        }
+    }
+
+    private func endRingArrowPress() {
+        ringHoldTask?.cancel()
+        ringHoldTask = nil
+        guard let direction = activeRingDirection else { return }
+        let held = didEnterRingHold
+        activeRingDirection = nil
+        didEnterRingHold = false
+        if held {
+            onRingHoldEnded?(false)
+        } else if direction < 0 {
+            onLeftClick?()
+        } else {
+            onRightClick?()
+        }
+    }
+
+    private func cancelActiveRingHold(cancelled: Bool) {
+        ringHoldTask?.cancel()
+        ringHoldTask = nil
+        let held = didEnterRingHold
+        activeRingDirection = nil
+        didEnterRingHold = false
+        if held {
+            onRingHoldEnded?(cancelled)
         }
     }
 
@@ -224,9 +275,9 @@ final class TouchCaptureUIView: UIView {
             case .select:
                 activeSelectPress = true
             case .leftArrow:
-                onLeftClick?()
+                beginRingArrowPress(direction: -1)
             case .rightArrow:
-                onRightClick?()
+                beginRingArrowPress(direction: 1)
             case .upArrow:
                 onUpClick?()
             case .downArrow:
@@ -245,13 +296,18 @@ final class TouchCaptureUIView: UIView {
         var passthrough = Set<UIPress>()
 
         for press in presses {
-            if press.type == .select {
+            switch press.type {
+            case .select:
                 if activeSelectPress {
                     activeSelectPress = false
                     didCommitDuringCurrentPan = true
                     onSelectClick?()
                 }
-            } else if !Self.isLocallyHandledPress(press.type) {
+            case .leftArrow, .rightArrow:
+                endRingArrowPress()
+            case .upArrow, .downArrow:
+                break
+            default:
                 passthrough.insert(press)
             }
         }
@@ -265,9 +321,14 @@ final class TouchCaptureUIView: UIView {
         var passthrough = Set<UIPress>()
 
         for press in presses {
-            if press.type == .select {
+            switch press.type {
+            case .select:
                 activeSelectPress = false
-            } else if !Self.isLocallyHandledPress(press.type) {
+            case .leftArrow, .rightArrow:
+                cancelActiveRingHold(cancelled: true)
+            case .upArrow, .downArrow:
+                break
+            default:
                 passthrough.insert(press)
             }
         }

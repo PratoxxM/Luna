@@ -35,12 +35,6 @@ internal enum PlayerOSDVisibilityPolicy {
 }
 
 struct PlayerContainerView: View {
-    private enum FatalErrorAction: Hashable {
-        case retry
-        case pickSource
-        case dismiss
-    }
-
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.scenePhase) private var scenePhase
 
@@ -58,6 +52,7 @@ struct PlayerContainerView: View {
     @State private var isPausedOSDResting: Bool = false
     @State private var activeQuickPanel: PlayerQuickPanelTab? = nil
     @State private var lastSelectedQuickTab: PlayerQuickPanelTab = .subtitles
+    @State private var quickActionFrames: [PlayerQuickPanelTab: CGRect] = [:]
     @State private var isQuickActionsModeActive: Bool = false
     @State private var bottomBarFocusRequestNonce: Int = 0
     @State private var bottomBarClearFocusNonce: Int = 0
@@ -72,7 +67,6 @@ struct PlayerContainerView: View {
     @State private var suspendedFatalErrorForPanel: String? = nil
 
     @FocusState private var isCanvasFocused: Bool
-    @FocusState private var focusedFatalErrorButton: FatalErrorAction?
     @Namespace private var playerFocusNamespace
 
     init(
@@ -131,25 +125,34 @@ struct PlayerContainerView: View {
                 .ignoresSafeArea()
                 .zIndex(0)
 
-            if isPreviewMode {
-                previewCinemaStage(client: client, isBottomBarShown: isBottomBarShown)
-                    .ignoresSafeArea()
-                    .zIndex(0.5)
+            if isPreviewMode && viewModel.fatalError == nil {
+                previewCinemaStage(
+                    client: client,
+                    isBottomBarShown: isBottomBarShown,
+                    isQuickPanelOpen: isQuickPanelOpen
+                )
+                .ignoresSafeArea()
+                .zIndex(0.5)
             }
 
-            // 1. Leaf-isolated HDR/OLED Subtitle Overlay
-            SubtitleOverlayView(
-                engine: engine,
-                comfort: comfort,
-                isBottomBarVisible: isBottomBarShown
-            )
-            .ignoresSafeArea()
-            .zIndex(1)
+            // 1. Leaf-isolated HDR/OLED Subtitle Overlay (never mounted behind fatal error)
+            if viewModel.fatalError == nil {
+                SubtitleOverlayView(
+                    engine: engine,
+                    comfort: comfort,
+                    isBottomBarVisible: isBottomBarShown,
+                    isQuickPanelOpen: isQuickPanelOpen,
+                    isNerdHUDVisible: comfort.showNerdHUD
+                )
+                .ignoresSafeArea()
+                .zIndex(1)
+            }
 
             // 1.5 Invisible UIKit Siri Remote Touch & Click Surface (`focusEffect = nil`)
             if shouldEnableCanvasAnchor {
                 SiriRemoteTouchSurface(
                     isPlayingProvider: { viewModel.playbackPhase == .playing },
+                    durationSecondsProvider: { viewModel.effectiveDurationSeconds },
                     onLightTouch: {
                         if !viewModel.isScrubbing {
                             revealBottomBarTemporarily()
@@ -195,6 +198,19 @@ struct PlayerContainerView: View {
                             revealBottomBarTemporarily()
                         }
                     },
+                    onRingHoldBegan: { direction in
+                        hideBottomBarTask?.cancel()
+                        pauseRestTask?.cancel()
+                        withAnimation(.easeOut(duration: 0.16)) {
+                            isPausedOSDResting = false
+                            showBottomBar = true
+                        }
+                        viewModel.beginRingHoldScrub(direction: direction)
+                    },
+                    onRingHoldEnded: { cancelled in
+                        viewModel.endRingHoldScrub(cancelled: cancelled)
+                        revealBottomBarTemporarily()
+                    },
                     onUpClick: {
                         if !viewModel.isScrubbing {
                             if hasSeriesPrompt && !isHUDResting {
@@ -205,9 +221,9 @@ struct PlayerContainerView: View {
                     },
                     onDownClick: {
                         if viewModel.isScrubbing {
-                            viewModel.cancelTouchScrub()
+                            viewModel.commitTouchScrubPaused()
                         }
-                        revealBottomBarAndFocusQuickActions(target: .panel(.subtitles))
+                        revealBottomBarAndFocusQuickActions(target: .panel(lastSelectedQuickTab))
                     }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -274,13 +290,14 @@ struct PlayerContainerView: View {
                 .zIndex(4)
             }
 
-            // 5. Classic Bottom OSD + Quick Actions + Floating Vertical Quick-List + Coalesced Seek Pill
+            // 5. Classic Bottom OSD + Quick Actions + Floating Button-Anchored Popover + Coalesced Seek Pill
             if viewModel.isPictureReadyForReveal && viewModel.fatalError == nil {
                 if isBottomBarShown {
                     PlayerBottomBarView(
                         viewModel: viewModel,
                         fallbackRequest: effectiveRequest,
                         activeQuickPanel: activeQuickPanel,
+                        suppressFloatingNextPill: hasSeriesPrompt,
                         focusRequestNonce: bottomBarFocusRequestNonce,
                         clearFocusNonce: bottomBarClearFocusNonce,
                         requestedAction: requestedBottomBarAction,
@@ -315,6 +332,7 @@ struct PlayerContainerView: View {
                         viewModel: viewModel,
                         comfort: comfort,
                         tab: activeQuickPanel,
+                        triggerFrame: quickActionFrames[activeQuickPanel],
                         onClose: { returnFocusToPill in
                             closeQuickPanel(returnFocusToPill: returnFocusToPill)
                         }
@@ -324,7 +342,7 @@ struct PlayerContainerView: View {
                 }
 
                 if abs(viewModel.coalescedSeekDelta) >= 1 && !viewModel.isScrubbing && !isQuickPanelOpen {
-                    coalescedSeekFeedbackPill
+                    CoalescedSeekFeedbackPillView(deltaSeconds: viewModel.coalescedSeekDelta)
                         .transition(.scale(scale: 0.92).combined(with: .opacity))
                         .zIndex(5.5)
                 }
@@ -380,6 +398,7 @@ struct PlayerContainerView: View {
                     viewModel: viewModel,
                     comfort: comfort,
                     tab: activeQuickPanel,
+                    triggerFrame: quickActionFrames[activeQuickPanel],
                     onClose: { returnFocusToPill in
                         closeQuickPanel(returnFocusToPill: returnFocusToPill)
                     }
@@ -388,11 +407,44 @@ struct PlayerContainerView: View {
                 .zIndex(6)
             }
 
-            // 7. Fatal Error Recovery Overlay
+            // 7. Fatal Error Recovery Overlay (100% opaque Lampelys card)
             if let err = viewModel.fatalError {
-                fatalErrorOverlay(err)
-                    .zIndex(7)
+                PlayerFatalErrorOverlayView(
+                    message: err,
+                    canPickSource: viewModel.activeSession != nil,
+                    onRetry: {
+                        suspendedFatalErrorForPanel = nil
+                        let base = viewModel.currentRequest ?? initialRequest
+                        let retryRequest = PlaybackLaunchRequest(
+                            itemId: base.itemId,
+                            title: base.title,
+                            seriesTitle: base.seriesTitle,
+                            season: base.season,
+                            episode: base.episode,
+                            startPositionSeconds: base.startPositionSeconds,
+                            candidateId: base.candidateId,
+                            prepareToken: nil,
+                            backdropUrl: base.backdropUrl,
+                            logoUrl: base.logoUrl
+                        )
+                        viewModel.start(request: retryRequest, client: sessionStore.makeClient())
+                    },
+                    onPickSource: {
+                        suspendedFatalErrorForPanel = err
+                        viewModel.fatalError = nil
+                        openQuickPanel(.source)
+                    },
+                    onDismiss: {
+                        suspendedFatalErrorForPanel = nil
+                        closePlayer()
+                    }
+                )
+                .zIndex(7)
             }
+        }
+        .coordinateSpace(name: "playerOSD")
+        .onPreferenceChange(QuickActionAnchorFramesKey.self) { frames in
+            quickActionFrames = frames
         }
         .focusScope(playerFocusNamespace)
         .animation(.easeOut(duration: 0.28), value: viewModel.isPictureReadyForReveal)
@@ -487,7 +539,6 @@ struct PlayerContainerView: View {
                 if let previewFatalError {
                     viewModel.fatalError = previewFatalError
                     viewModel.isResolving = false
-                    focusedFatalErrorButton = .retry
                 } else if previewFocusDirection == .up {
                     revealBottomBarAndFocusQuickActions(target: .panel(.subtitles))
                 } else if let previewQuickPanel {
@@ -519,7 +570,17 @@ struct PlayerContainerView: View {
     }
 
     @ViewBuilder
-    private func previewCinemaStage(client: LunaCoreClient?, isBottomBarShown: Bool) -> some View {
+    private func previewCinemaStage(
+        client: LunaCoreClient?,
+        isBottomBarShown: Bool,
+        isQuickPanelOpen: Bool
+    ) -> some View {
+        let placement = SubtitleOverlayLayout.verticalPlacement(
+            isBottomBarVisible: isBottomBarShown,
+            isQuickPanelOpen: isQuickPanelOpen,
+            isNerdHUDVisible: comfort.showNerdHUD
+        )
+
         ZStack {
             if let backdropURL = client?.resolveArtworkURL(initialRequest.backdropUrl) {
                 CachedArtworkView(
@@ -541,14 +602,20 @@ struct PlayerContainerView: View {
                 endPoint: .bottom
             )
             VStack {
-                Spacer()
+                if !placement.relocateToTop {
+                    Spacer()
+                }
                 Text("Velkommen tilbake til Lumon. Avdelingen venter på dere.")
                     .font(LunaTheme.Font.subtitleCue(size: comfort.subtitleFontSize.pointSize))
                     .foregroundStyle(comfort.hdrSubtitlePreset.foregroundColor(isHDR: true))
                     .multilineTextAlignment(.center)
                     .shadow(color: .black.opacity(0.96), radius: 3, x: 0, y: 2)
                     .padding(.horizontal, 120)
-                    .padding(.bottom, isBottomBarShown ? 290 : 80)
+                    .padding(.top, placement.relocateToTop ? placement.topInset : 0)
+                    .padding(.bottom, placement.relocateToTop ? 0 : placement.bottomInset)
+                if placement.relocateToTop {
+                    Spacer()
+                }
             }
         }
         .allowsHitTesting(false)
@@ -694,97 +761,5 @@ struct PlayerContainerView: View {
         pauseRestTask?.cancel()
         viewModel.prepareForDismissal()
         onDismiss()
-    }
-
-    // MARK: - Coalesced Seek Pill & Fatal Error Overlay
-
-    private var coalescedSeekFeedbackPill: some View {
-        let secs = Int(viewModel.coalescedSeekDelta.rounded())
-        let isForward = secs >= 0
-        let displayText = isForward ? "+\(secs) s" : "−\(abs(secs)) s"
-
-        return HStack(spacing: 12) {
-            Image(systemName: isForward ? "goforward" : "gobackward")
-                .font(LunaTheme.Font.sectionTitle)
-                .foregroundStyle(LunaTheme.moonlight)
-            Text(displayText)
-                .font(LunaTheme.Font.sectionTitle.monospacedDigit())
-                .foregroundStyle(LunaTheme.linen)
-        }
-        .padding(.horizontal, 28)
-        .padding(.vertical, 16)
-        .background(LunaTheme.cinemaGlass, in: Capsule())
-        .overlay(Capsule().strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1))
-        .allowsHitTesting(false)
-    }
-
-    private func fatalErrorOverlay(_ message: String) -> some View {
-        ZStack {
-            LunaTheme.pureBlack.opacity(0.94).ignoresSafeArea()
-
-            VStack(spacing: 24) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(LunaTheme.Font.largeStatusIcon)
-                    .foregroundStyle(LunaTheme.danger)
-
-                Text("Avspilling kunne ikke starte")
-                    .font(LunaTheme.Font.pageTitle)
-                    .foregroundStyle(LunaTheme.linen)
-
-                Text(message)
-                    .font(LunaTheme.Font.body)
-                    .foregroundStyle(LunaTheme.muted)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 820)
-
-                HStack(spacing: 20) {
-                    LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise", prominence: .glassPill) {
-                        suspendedFatalErrorForPanel = nil
-                        let base = viewModel.currentRequest ?? initialRequest
-                        let retryRequest = PlaybackLaunchRequest(
-                            itemId: base.itemId,
-                            title: base.title,
-                            seriesTitle: base.seriesTitle,
-                            season: base.season,
-                            episode: base.episode,
-                            startPositionSeconds: base.startPositionSeconds,
-                            candidateId: base.candidateId,
-                            prepareToken: nil,
-                            backdropUrl: base.backdropUrl,
-                            logoUrl: base.logoUrl
-                        )
-                        viewModel.start(request: retryRequest, client: sessionStore.makeClient())
-                    }
-                    .focused($focusedFatalErrorButton, equals: .retry)
-
-                    if viewModel.activeSession != nil {
-                        LunaPillButton("Velg kilde", systemImage: "arrow.triangle.2.circlepath", prominence: .glassPill) {
-                            suspendedFatalErrorForPanel = message
-                            viewModel.fatalError = nil
-                            openQuickPanel(.source)
-                        }
-                        .focused($focusedFatalErrorButton, equals: .pickSource)
-                    }
-
-                    LunaPillButton("Avslutt", systemImage: "xmark", prominence: .subtleChip) {
-                        suspendedFatalErrorForPanel = nil
-                        closePlayer()
-                    }
-                    .focused($focusedFatalErrorButton, equals: .dismiss)
-                }
-                .padding(.top, 8)
-            }
-            .padding(60)
-        }
-        .onAppear {
-            focusedFatalErrorButton = .retry
-        }
-        .task(id: message) {
-            try? await Task.sleep(nanoseconds: 24_000_000)
-            guard !Task.isCancelled else { return }
-            if focusedFatalErrorButton == nil {
-                focusedFatalErrorButton = .retry
-            }
-        }
     }
 }

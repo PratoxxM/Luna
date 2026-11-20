@@ -60,15 +60,15 @@ struct CustomRowBrowseView: View {
 
     private let pageSize = 36
     private let columns = Array(
-        repeating: GridItem(.fixed(LunaTokens.Layout.posterW), spacing: LunaTokens.Layout.cardGap, alignment: .topLeading),
-        count: 5
+        repeating: GridItem(.fixed(LunaTokens.Layout.gridPosterW), spacing: LunaTokens.Layout.gridCardGap, alignment: .topLeading),
+        count: 6
     )
 
     var body: some View {
         let client = sessionStore.makeClient()
 
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 26) {
+            VStack(alignment: .leading, spacing: 24) {
                 Text(title)
                     .font(LunaTheme.Font.pageTitle)
                     .foregroundStyle(LunaTheme.linen)
@@ -94,13 +94,14 @@ struct CustomRowBrowseView: View {
                         .foregroundStyle(LunaTheme.muted)
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 34) {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 26) {
                         ForEach(items) { card in
                             PosterCardView(
                                 card: card,
                                 client: client,
-                                width: LunaTokens.Layout.posterW,
+                                width: LunaTokens.Layout.gridPosterW,
                                 showStorageBadge: true,
+                                showRestingTitle: true,
                                 onSelect: {
                                     selectedCard = card
                                 },
@@ -156,16 +157,17 @@ struct CustomRowBrowseView: View {
                     }
                 }
             }
+            .padding(.top, 60)
             .padding(.bottom, 72)
         }
         .contentMargins(.zero, for: .scrollContent)
         .scrollClipDisabled()
-        .ignoresSafeArea(edges: .horizontal)
+        .ignoresSafeArea()
         .overlay(alignment: .topLeading) {
             if let mutationErrorBanner {
                 TransientErrorBanner(message: mutationErrorBanner)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.top, 32)
+                    .padding(.top, 68)
                     .allowsHitTesting(false)
             }
         }

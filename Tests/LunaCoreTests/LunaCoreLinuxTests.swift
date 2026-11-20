@@ -503,7 +503,7 @@ final class LunaCoreLinuxTests: XCTestCase {
             roomName: "Stua",
             hardwareProfile: "hdr10-512",
             allowSelfSignedLanTLS: true,
-            appVersion: "2.8.3",
+            appVersion: "2.9.0",
             osVersion: "Linux-CI",
             session: session
         )
@@ -627,11 +627,27 @@ final class LunaCoreLinuxTests: XCTestCase {
         let libCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "library"])
         XCTAssertEqual(libCfg?.screen, .library)
 
+        let searchCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "search"])
+        XCTAssertEqual(searchCfg?.screen, .search)
+        XCTAssertEqual(searchCfg?.screen.isPlayerScreen, false)
+
         let settingsCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "settings"])
         XCTAssertEqual(settingsCfg?.screen, .settings)
 
+        let audioCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "player-audio"])
+        XCTAssertEqual(audioCfg?.screen, .playerAudio)
+        XCTAssertEqual(audioCfg?.screen.isPlayerScreen, true)
+
         let sourceCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "player-source"])
         XCTAssertEqual(sourceCfg?.screen, .playerSource)
+
+        let pictureCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "player-picture"])
+        XCTAssertEqual(pictureCfg?.screen, .playerPicture)
+        XCTAssertEqual(pictureCfg?.screen.isPlayerScreen, true)
+
+        let chaptersCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "player-chapters"])
+        XCTAssertEqual(chaptersCfg?.screen, .playerChapters)
+        XCTAssertEqual(chaptersCfg?.screen.isPlayerScreen, true)
 
         let detailCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "details"])
         XCTAssertEqual(detailCfg?.screen, .details)
@@ -639,23 +655,35 @@ final class LunaCoreLinuxTests: XCTestCase {
     }
 
     func testRemoteScrubMathDeviceCapabilitiesAndLibraryModels() throws {
-        // 1. RemoteScrubMath deadzones, playing threshold, axis lock, 75 s cubic curve & click drift
-        XCTAssertEqual(RemoteScrubMath.deltaSeconds(forNormalizedX: 0.10), 0)
-        XCTAssertEqual(RemoteScrubMath.deltaSeconds(forNormalizedX: -0.18), 0)
-        XCTAssertGreaterThan(RemoteScrubMath.deltaSeconds(forNormalizedX: 0.25), 0)
-        XCTAssertEqual(RemoteScrubMath.deltaSeconds(forNormalizedX: 1.0), 75.0, accuracy: 0.001)
-        XCTAssertEqual(RemoteScrubMath.deltaSeconds(forNormalizedX: -1.0), -75.0, accuracy: 0.001)
-
-        let playingSmall = RemoteScrubMath.evaluatePan(dx: 65, dy: 4, normalizedX: 0.25, isPlaying: true, alreadyActive: false)
-        XCTAssertFalse(playingSmall.shouldActivate)
-        let pausedSmall = RemoteScrubMath.evaluatePan(dx: 65, dy: 4, normalizedX: 0.25, isPlaying: false, alreadyActive: false)
-        XCTAssertTrue(pausedSmall.shouldActivate)
-        let verticalDrag = RemoteScrubMath.evaluatePan(dx: 40, dy: 45, normalizedX: 0.40, isPlaying: false, alreadyActive: false)
-        XCTAssertFalse(verticalDrag.shouldActivate)
-
-        XCTAssertTrue(RemoteScrubMath.shouldSuppressPanCommit(secondsSinceDiscreteClick: 0.08, maxAbsNormalizedX: 0.22))
-        XCTAssertFalse(RemoteScrubMath.shouldSuppressPanCommit(secondsSinceDiscreteClick: 0.08, maxAbsNormalizedX: 0.45))
-        XCTAssertFalse(RemoteScrubMath.shouldSuppressPanCommit(secondsSinceDiscreteClick: 1.5, maxAbsNormalizedX: 0.22))
+        // 1. RemoteScrubMath v2.9.0: paused-only activation, 20 pt breakaway, 3-zone adaptive scaling & ring hold
+        XCTAssertFalse(
+            RemoteScrubMath.shouldActivateTouchScrub(
+                dx: 80,
+                dy: 0,
+                isPlaying: true,
+                isSelectPressed: false,
+                secondsSinceDiscreteClick: nil
+            )
+        )
+        XCTAssertTrue(
+            RemoteScrubMath.shouldActivateTouchScrub(
+                dx: 20,
+                dy: 0,
+                isPlaying: false,
+                isSelectPressed: false,
+                secondsSinceDiscreteClick: nil
+            )
+        )
+        XCTAssertFalse(
+            RemoteScrubMath.shouldActivateTouchScrub(
+                dx: 40,
+                dy: 45,
+                isPlaying: false,
+                isSelectPressed: false,
+                secondsSinceDiscreteClick: nil
+            )
+        )
+        XCTAssertGreaterThan(RemoteScrubMath.secondsPerFullSwipe(durationSeconds: 10800, speedNorm: 3.8), 2500)
 
         // 2. DeviceHardwareCapabilities RAM tier rounding
         XCTAssertEqual(DeviceHardwareCapabilities.roundedGigabytes(for: 4 * 1_073_741_824), 4)

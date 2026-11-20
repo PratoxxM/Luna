@@ -12,40 +12,58 @@ struct LunaTopBarView: View {
     var focusRequestNonce: Int = 0
     var isUpwardBridgeEnabled: Bool = false
     var onFocusPresenceChanged: (Bool) -> Void = { _ in }
+    var onRequestDownwardContentFocus: (MainNavigationTab) -> Void = { _ in }
 
     @FocusState private var focusedTab: MainNavigationTab?
     @State private var wasBarFocused: Bool = false
+    @State private var lastHighlightedTab: MainNavigationTab
     @State private var tabDebounceTask: Task<Void, Never>?
     @State private var focusRetryTask: Task<Void, Never>?
     @Namespace private var topBarFocusNamespace
 
+    init(
+        selectedTab: Binding<MainNavigationTab>,
+        roomName: String? = nil,
+        focusRequestNonce: Int = 0,
+        isUpwardBridgeEnabled: Bool = false,
+        onFocusPresenceChanged: @escaping (Bool) -> Void = { _ in },
+        onRequestDownwardContentFocus: @escaping (MainNavigationTab) -> Void = { _ in }
+    ) {
+        self._selectedTab = selectedTab
+        self.roomName = roomName
+        self.focusRequestNonce = focusRequestNonce
+        self.isUpwardBridgeEnabled = isUpwardBridgeEnabled
+        self.onFocusPresenceChanged = onFocusPresenceChanged
+        self.onRequestDownwardContentFocus = onRequestDownwardContentFocus
+        self._lastHighlightedTab = State(initialValue: selectedTab.wrappedValue)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 24) {
+            HStack(spacing: 16) {
                 emblemView
-                    .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
 
-                HStack(spacing: 10) {
+                Rectangle()
+                    .fill(LunaTheme.warmBorderStrong)
+                    .frame(width: 1, height: 24)
+                    .padding(.horizontal, 10)
+                    .allowsHitTesting(false)
+
+                HStack(spacing: 8) {
                     ForEach(MainNavigationTab.primaryTabs) { tab in
                         tabButton(for: tab, isIconOnly: false)
                     }
+                }
+                .fixedSize(horizontal: true, vertical: false)
 
-                    Rectangle()
-                        .fill(LunaTheme.warmBorderStrong)
-                        .frame(width: 1, height: 28)
-                        .padding(.horizontal, 6)
-                        .allowsHitTesting(false)
+                Spacer(minLength: 32)
 
+                HStack(spacing: 10) {
                     ForEach(MainNavigationTab.utilityTabs) { tab in
                         tabButton(for: tab, isIconOnly: true)
                     }
                 }
                 .fixedSize(horizontal: true, vertical: false)
-
-                Color.clear
-                    .frame(minWidth: 220, maxWidth: .infinity, alignment: .trailing)
-                    .frame(height: 1)
-                    .allowsHitTesting(false)
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -55,15 +73,32 @@ struct LunaTopBarView: View {
             .focusScope(topBarFocusNamespace)
             .focusSection()
 
-            // Full-width 1920 pt upward-only trampoline active solely when content is focused,
-            // guaranteeing pressing Up from left-edge controls never misses the centered dock.
-            TopBarUpwardFocusBridge(isEnabled: isUpwardBridgeEnabled && focusedTab == nil) {
-                redirectFocusToSelectedTab()
+            // Full-width 1920 pt bidirectional-safe focus bridges with mutually exclusive activation:
+            // - Downward bridge fires when leaving top bar downward: commits any in-flight debounce tab
+            //   and routes focus deterministically to the left-aligned x=90 entry target on the page.
+            // - Upward bridge fires when content presses Up: returns focus straight to selectedTab.
+            ZStack {
+                TopBarFocusBridge(
+                    isEnabled: focusedTab != nil,
+                    cooldownSeconds: 0.14
+                ) {
+                    routeDownwardToContent()
+                }
+
+                TopBarFocusBridge(
+                    isEnabled: isUpwardBridgeEnabled && focusedTab == nil,
+                    cooldownSeconds: 0.12
+                ) {
+                    redirectFocusToSelectedTab()
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 2, maxHeight: 2)
             .focusEffectDisabled(true)
         }
         .ignoresSafeArea(edges: [.top, .horizontal])
+        .onChange(of: selectedTab) { _, newTab in
+            lastHighlightedTab = newTab
+        }
         .onChange(of: focusedTab) { _, newFocus in
             onFocusPresenceChanged(newFocus != nil)
             guard let newTab = newFocus else {
@@ -73,6 +108,7 @@ struct LunaTopBarView: View {
                 return
             }
             wasBarFocused = true
+            lastHighlightedTab = newTab
             tabDebounceTask?.cancel()
             guard selectedTab != newTab else {
                 tabDebounceTask = nil
@@ -92,6 +128,7 @@ struct LunaTopBarView: View {
         }
         .onAppear {
             wasBarFocused = (focusedTab != nil)
+            lastHighlightedTab = focusedTab ?? selectedTab
             onFocusPresenceChanged(focusedTab != nil)
         }
         .onDisappear {
@@ -103,12 +140,25 @@ struct LunaTopBarView: View {
         }
     }
 
+    private func routeDownwardToContent() {
+        tabDebounceTask?.cancel()
+        tabDebounceTask = nil
+        let target = focusedTab ?? lastHighlightedTab
+        if selectedTab != target {
+            selectedTab = target
+        }
+        focusedTab = nil
+        wasBarFocused = false
+        onRequestDownwardContentFocus(target)
+    }
+
     private func redirectFocusToSelectedTab() {
         tabDebounceTask?.cancel()
         tabDebounceTask = nil
         focusRetryTask?.cancel()
         let target = selectedTab
         focusedTab = target
+        lastHighlightedTab = target
         focusRetryTask = Task { @MainActor in
             for delayNs: UInt64 in [16_000_000, 44_000_000, 72_000_000] {
                 try? await Task.sleep(nanoseconds: delayNs)
@@ -136,6 +186,7 @@ struct LunaTopBarView: View {
             if selectedTab != tab {
                 selectedTab = tab
             }
+            lastHighlightedTab = tab
             focusedTab = tab
         }
         .focused($focusedTab, equals: tab)
@@ -149,13 +200,14 @@ struct LunaTopBarView: View {
         }()
 
         return HStack(spacing: 14) {
-            LunaCrescentMarkView(size: 36, color: LunaTheme.amber)
+            LunaCrescentMarkView(size: 34, color: LunaTheme.amber)
 
             Text(displayLabel)
                 .font(LunaTheme.Font.brandSerif)
                 .foregroundStyle(LunaTheme.moonlight)
                 .lineLimit(1)
         }
+        .fixedSize(horizontal: true, vertical: false)
         .allowsHitTesting(false)
     }
 }
@@ -170,6 +222,18 @@ struct TopBarTabPillButton: View {
     var isBarFocused: Bool = false
     var isIconOnly: Bool = false
     let action: () -> Void
+
+    nonisolated static let utilityButtonSize: CGFloat = 56
+    nonisolated static let restingIndicatorWidth: CGFloat = 22
+    nonisolated static let restingIndicatorHeight: CGFloat = 2.5
+
+    nonisolated static func shouldShowRestingActiveIndicator(
+        isActive: Bool,
+        isFocused: Bool,
+        isBarFocused: Bool = false
+    ) -> Bool {
+        isActive && !isFocused && !isBarFocused
+    }
 
     nonisolated static func resolveIconColor(
         isActive: Bool,
@@ -203,6 +267,12 @@ struct TopBarTabPillButton: View {
     }
 
     var body: some View {
+        let showRestingBar = Self.shouldShowRestingActiveIndicator(
+            isActive: isActive,
+            isFocused: isFocused,
+            isBarFocused: isBarFocused
+        )
+
         Button(action: action) {
             Group {
                 if isIconOnly {
@@ -215,7 +285,7 @@ struct TopBarTabPillButton: View {
                                 isBarFocused: isBarFocused
                             )
                         )
-                        .frame(width: 64, height: 64)
+                        .frame(width: Self.utilityButtonSize, height: Self.utilityButtonSize)
                 } else {
                     Text(tab.title)
                         .font(LunaTheme.Font.tabTitle)
@@ -227,8 +297,8 @@ struct TopBarTabPillButton: View {
                             )
                         )
                         .lineLimit(1)
-                        .padding(.horizontal, 26)
-                        .frame(height: 64)
+                        .padding(.horizontal, 24)
+                        .frame(height: Self.utilityButtonSize)
                 }
             }
             .transaction { $0.animation = nil }
@@ -250,6 +320,16 @@ struct TopBarTabPillButton: View {
                     )
                     .transaction { $0.animation = nil }
             )
+            .overlay(alignment: .bottom) {
+                if showRestingBar {
+                    Capsule()
+                        .fill(LunaTheme.amber)
+                        .frame(width: Self.restingIndicatorWidth, height: Self.restingIndicatorHeight)
+                        .padding(.bottom, 5)
+                        .allowsHitTesting(false)
+                        .transaction { $0.animation = nil }
+                }
+            }
             .shadow(
                 color: isFocused ? roomAtmosphere.lampColor.opacity(roomAtmosphere.lampStrength) : .clear,
                 radius: isFocused ? 24 : 0,
@@ -267,27 +347,31 @@ struct TopBarTabPillButton: View {
 }
 
 @MainActor
-private struct TopBarUpwardFocusBridge: UIViewRepresentable {
+private struct TopBarFocusBridge: UIViewRepresentable {
     let isEnabled: Bool
-    let onRedirectUp: () -> Void
+    let cooldownSeconds: TimeInterval
+    let onRedirect: () -> Void
 
-    func makeUIView(context: Context) -> TopBarUpwardFocusBridgeUIView {
-        let view = TopBarUpwardFocusBridgeUIView()
+    func makeUIView(context: Context) -> TopBarFocusBridgeUIView {
+        let view = TopBarFocusBridgeUIView()
         view.isBridgeEnabled = isEnabled
-        view.onRedirectUp = onRedirectUp
+        view.cooldownSeconds = cooldownSeconds
+        view.onRedirect = onRedirect
         return view
     }
 
-    func updateUIView(_ uiView: TopBarUpwardFocusBridgeUIView, context: Context) {
+    func updateUIView(_ uiView: TopBarFocusBridgeUIView, context: Context) {
         uiView.isBridgeEnabled = isEnabled
-        uiView.onRedirectUp = onRedirectUp
+        uiView.cooldownSeconds = cooldownSeconds
+        uiView.onRedirect = onRedirect
     }
 }
 
 @MainActor
-private final class TopBarUpwardFocusBridgeUIView: UIView {
+private final class TopBarFocusBridgeUIView: UIView {
     var isBridgeEnabled: Bool = false
-    var onRedirectUp: (() -> Void)?
+    var cooldownSeconds: TimeInterval = 0.12
+    var onRedirect: (() -> Void)?
     private var isBouncing: Bool = false
 
     override init(frame: CGRect) {
@@ -315,9 +399,9 @@ private final class TopBarUpwardFocusBridgeUIView: UIView {
         guard context.nextFocusedView === self else { return }
         isBouncing = true
         DispatchQueue.main.async { [weak self] in
-            self?.onRedirectUp?()
+            self?.onRedirect?()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + cooldownSeconds) { [weak self] in
             self?.isBouncing = false
         }
     }

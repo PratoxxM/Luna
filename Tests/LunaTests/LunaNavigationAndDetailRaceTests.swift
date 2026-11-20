@@ -38,7 +38,7 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
 
         XCTAssertEqual(
             AppSessionStore.currentAppVersionDisplayString(infoDictionary: nil),
-            "2.8.3"
+            "2.9.0"
         )
     }
 
@@ -432,6 +432,13 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
         XCTAssertTrue(visibility.isCollapsedByScroll)
         visibility.reportScrollZone(.atTop, for: .home)
         XCTAssertFalse(visibility.isCollapsedByScroll)
+
+        // Pressing Down from top bar requests deterministic left-axis content entry focus
+        let prevEntryNonce = visibility.contentEntryFocusNonce
+        visibility.updateTopBarFocused(true)
+        visibility.requestContentEntryFocus(for: .settings)
+        XCTAssertEqual(visibility.contentEntryFocusNonce, prevEntryNonce + 1)
+        XCTAssertFalse(visibility.isTopBarFocused)
 
         // 3. Subpage disappear guard when direct playback launches (`activePlaybackTarget != nil`)
         XCTAssertTrue(

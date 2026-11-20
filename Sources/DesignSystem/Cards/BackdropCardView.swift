@@ -59,10 +59,8 @@ public struct BackdropCardView: View {
                     contentMode: .fill
                 )
                 .frame(width: width, height: height)
-                .scaleEffect((isFocused && !reduceMotion) ? 1.025 : 1.0)
                 .opacity(isFocused ? 1.0 : LunaTokens.Layout.restPosterBrightness)
                 .clipped()
-                .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
 
                 LinearGradient(
                     stops: [
@@ -84,7 +82,7 @@ public struct BackdropCardView: View {
 
                         Spacer(minLength: 4)
 
-                        if showStorageBadge, let avail = card.availability,
+                        if isFocused && showStorageBadge, let avail = card.availability,
                            avail.isPhysicalLocal || avail.isLocalVfs {
                             LunaTierMarkView(availability: avail)
                         }
@@ -146,8 +144,12 @@ public struct BackdropCardView: View {
                 isFocused: isFocused,
                 showRestingTopEdge: false
             )
+            .scaleEffect((isFocused && !reduceMotion) ? 1.03 : 1.0)
+            .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
         }
-        .buttonStyle(.card)
+        .buttonStyle(LunaChromelessButtonStyle())
+        .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
+        .focusEffectDisabled(true)
         .lunaCardLampGlow(isFocused: isFocused)
         .focused($isFocused)
         .accessibilityLabel(card.title)

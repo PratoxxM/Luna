@@ -1,11 +1,24 @@
 import SwiftUI
 
 struct SearchView: View {
+    private enum SearchFocusTarget: Hashable {
+        case queryField
+        case clearQuery
+        case recent(String)
+        case clearHistory
+        case card(String)
+        case retry
+        case emptyReset
+    }
+
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
+    @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
+    @Environment(\.lunaContentEntryFocusNonce) private var contentEntryFocusNonce
 
     let initialQuery: String
     let isRootTab: Bool
+    let isActiveTab: Bool
 
     @State private var subpageToken = UUID()
 
@@ -20,15 +33,19 @@ struct SearchView: View {
     @State private var lastCompletedQuery: String = ""
     @State private var searchTask: Task<Void, Never>?
     @State private var bannerClearTask: Task<Void, Never>?
+    @State private var entryFocusRetryTask: Task<Void, Never>?
+
+    @FocusState private var searchFocus: SearchFocusTarget?
 
     private let columns = Array(
-        repeating: GridItem(.fixed(LunaTokens.Layout.posterW), spacing: LunaTokens.Layout.cardGap, alignment: .topLeading),
-        count: 5
+        repeating: GridItem(.fixed(LunaTokens.Layout.gridPosterW), spacing: LunaTokens.Layout.gridCardGap, alignment: .topLeading),
+        count: 6
     )
 
-    init(initialQuery: String = "", isRootTab: Bool = false) {
+    init(initialQuery: String = "", isRootTab: Bool = false, isActiveTab: Bool = true) {
         self.initialQuery = initialQuery
         self.isRootTab = isRootTab
+        self.isActiveTab = isActiveTab
         _query = State(initialValue: initialQuery)
     }
 
@@ -36,159 +53,213 @@ struct SearchView: View {
         let client = sessionStore.makeClient()
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack(spacing: 14) {
-                    TextField("Søk etter film, serie, person eller originaltittel…", text: $query)
+        ScrollViewReader { scrollProxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 22) {
+                    Color.clear
+                        .frame(height: 0)
+                        .id("luna-scroll-top")
 
-                    if !query.isEmpty {
-                        LunaPillButton("Tøm", systemImage: "xmark.circle", prominence: .subtleChip) {
-                            query = ""
-                        }
-                    }
-                }
-                .padding(.horizontal, LunaTheme.horizontalGutter)
-                .padding(.top, 4)
-                .focusSection()
+                    Text("Søk")
+                        .font(LunaTheme.Font.pageTitle)
+                        .foregroundStyle(LunaTheme.linen)
+                        .padding(.horizontal, LunaTheme.horizontalGutter)
 
-                if trimmedQuery.count < 2 {
-                    if !recentSearches.isEmpty {
-                        VStack(alignment: .leading, spacing: 14) {
-                            HStack(spacing: 16) {
-                                Text("Tidligere søk")
-                                    .font(LunaTheme.Font.cardTitle)
-                                    .foregroundStyle(LunaTheme.moonlight)
-                                LunaPillButton("Tøm logg", systemImage: "trash", prominence: .subtleChip, accent: .coral) {
-                                    clearRecentSearches()
-                                }
-                            }
+                    HStack(spacing: 14) {
+                        HStack(spacing: 14) {
+                            Image(systemName: "magnifyingglass")
+                                .font(LunaTheme.Font.pillIcon)
+                                .foregroundStyle(searchFocus == .queryField ? LunaTheme.amber : LunaTheme.muted)
 
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
-                                    ForEach(recentSearches, id: \.self) { term in
-                                        LunaPillButton(term, systemImage: "clock.arrow.circlepath") {
-                                            query = term
-                                        }
+                            TextField("Søk etter film, serie, person eller originaltittel…", text: $query)
+                                .font(LunaTheme.Font.body)
+                                .foregroundStyle(LunaTheme.linen)
+                                .focused($searchFocus, equals: .queryField)
+                                .onMoveCommand { direction in
+                                    if direction == .down {
+                                        focusFirstResultOrHistory(trimmedQuery: trimmedQuery)
                                     }
                                 }
-                                .padding(.vertical, 4)
-                            }
-                            .contentMargins(.zero, for: .scrollContent)
-                            .scrollClipDisabled()
-                            .focusSection()
                         }
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                    } else {
-                        Text("Skriv minst to tegn for å søke i bibliotek og katalog.")
-                            .font(LunaTheme.Font.body)
-                            .foregroundStyle(LunaTheme.muted)
-                            .padding(.horizontal, LunaTheme.horizontalGutter)
-                            .padding(.top, 8)
-                    }
-                } else {
-                    if !results.isEmpty {
-                        HStack(spacing: 12) {
-                            if localCount > 0 {
-                                Text("\(localCount) i Lokalt")
-                                    .font(LunaTheme.Font.badge)
-                                    .foregroundStyle(LunaTheme.moonlight)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 5)
-                                    .background(LunaTheme.surfaceRaised, in: Capsule())
-                                    .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
-                            }
-                            Text("\(LunaCopy.searchHits(results.count)) totalt")
-                                .font(LunaTheme.Font.caption)
-                                .foregroundStyle(LunaTheme.muted)
-                        }
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                    }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
+                                .fill(searchFocus == .queryField ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
+                        )
+                        .lunaFocusSurface(.listRow, isFocused: searchFocus == .queryField, cornerRadius: LunaTokens.Radius.card)
 
-                    if isSearching && results.isEmpty {
-                        HStack(spacing: 14) {
-                            ProgressView()
-                            Text("Søker…")
-                                .font(LunaTheme.Font.body)
-                                .foregroundStyle(LunaTheme.moonlight)
-                        }
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                    } else if let errorMessage, results.isEmpty {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text(errorMessage)
-                                .font(LunaTheme.Font.body)
-                                .foregroundStyle(LunaTheme.danger)
-                            LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                                triggerSearch(trimmedQuery, debounceNanoseconds: 0)
-                            }
-                        }
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                        .padding(.top, 12)
-                    } else if !isSearching && results.isEmpty {
-                        VStack(spacing: 18) {
-                            LunaCrescentMarkView(size: 64, color: LunaTheme.moonlight.opacity(0.65))
-                            Text("Fant ikke «\(trimmedQuery)»")
-                                .font(isRootTab ? LunaTheme.Font.pageTitle : LunaTheme.Font.heroSerif)
-                                .foregroundStyle(LunaTheme.linen)
-                            Text("Prøv originaltittelen eller en annen stavemåte.")
-                                .font(LunaTheme.Font.body)
-                                .foregroundStyle(LunaTheme.moonlight)
-                            LunaPillButton("Tøm søk", systemImage: "xmark.circle", prominence: .subtleChip) {
+                        if !query.isEmpty {
+                            LunaPillButton("Tøm", systemImage: "xmark.circle", prominence: .glassPill, size: .compact) {
                                 query = ""
                             }
+                            .focused($searchFocus, equals: .clearQuery)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                        .padding(.top, 48)
-                    } else {
-                        LazyVGrid(columns: columns, alignment: .leading, spacing: 34) {
-                            ForEach(results) { card in
-                                PosterCardView(
-                                    card: card,
-                                    client: client,
-                                    width: LunaTokens.Layout.posterW,
-                                    showStorageBadge: true,
-                                    onSelect: {
-                                        selectedCard = card
-                                    },
-                                    onPlayShortcut: {
-                                        MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
+                    }
+                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .focusSection()
+
+                    if trimmedQuery.count < 2 {
+                        if !recentSearches.isEmpty {
+                            VStack(alignment: .leading, spacing: 14) {
+                                HStack(spacing: 16) {
+                                    Text("Tidligere søk")
+                                        .font(LunaTheme.Font.cardTitle)
+                                        .foregroundStyle(LunaTheme.moonlight)
+
+                                    Spacer(minLength: 16)
+
+                                    LunaPillButton("Tøm logg", systemImage: "trash", prominence: .subtleChip, accent: .coral, size: .compact) {
+                                        clearRecentSearches()
                                     }
-                                )
-                                .contextMenu {
-                                    StandardPosterContextMenuItems(
+                                    .focused($searchFocus, equals: .clearHistory)
+                                }
+
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 12) {
+                                        ForEach(recentSearches, id: \.self) { term in
+                                            LunaPillButton(term, systemImage: "clock.arrow.circlepath", prominence: .glassPill, size: .compact) {
+                                                query = term
+                                            }
+                                            .focused($searchFocus, equals: .recent(term))
+                                        }
+                                    }
+                                    .padding(.vertical, 6)
+                                }
+                                .contentMargins(.zero, for: .scrollContent)
+                                .scrollClipDisabled()
+                                .focusSection()
+                            }
+                            .padding(.horizontal, LunaTheme.horizontalGutter)
+                        } else {
+                            Text("Skriv minst to tegn for å søke i bibliotek og katalog.")
+                                .font(LunaTheme.Font.body)
+                                .foregroundStyle(LunaTheme.muted)
+                                .padding(.horizontal, LunaTheme.horizontalGutter)
+                                .padding(.top, 8)
+                        }
+                    } else {
+                        if !results.isEmpty {
+                            HStack(spacing: 12) {
+                                if localCount > 0 {
+                                    Text("\(localCount) i Lokalt")
+                                        .font(LunaTheme.Font.badge)
+                                        .foregroundStyle(LunaTheme.moonlight)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 5)
+                                        .background(LunaTheme.surfaceRaised, in: Capsule())
+                                        .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
+                                }
+                                Text("\(LunaCopy.searchHits(results.count)) totalt")
+                                    .font(LunaTheme.Font.caption)
+                                    .foregroundStyle(LunaTheme.muted)
+                            }
+                            .padding(.horizontal, LunaTheme.horizontalGutter)
+                        }
+
+                        if isSearching && results.isEmpty {
+                            HStack(spacing: 14) {
+                                ProgressView()
+                                Text("Søker…")
+                                    .font(LunaTheme.Font.body)
+                                    .foregroundStyle(LunaTheme.moonlight)
+                            }
+                            .padding(.horizontal, LunaTheme.horizontalGutter)
+                        } else if let errorMessage, results.isEmpty {
+                            VStack(alignment: .leading, spacing: 14) {
+                                Text(errorMessage)
+                                    .font(LunaTheme.Font.body)
+                                    .foregroundStyle(LunaTheme.danger)
+                                LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
+                                    triggerSearch(trimmedQuery, debounceNanoseconds: 0)
+                                }
+                                .focused($searchFocus, equals: .retry)
+                            }
+                            .padding(.horizontal, LunaTheme.horizontalGutter)
+                            .padding(.top, 12)
+                        } else if !isSearching && results.isEmpty {
+                            VStack(spacing: 18) {
+                                LunaCrescentMarkView(size: 64, color: LunaTheme.moonlight.opacity(0.65))
+                                Text("Fant ikke «\(trimmedQuery)»")
+                                    .font(isRootTab ? LunaTheme.Font.pageTitle : LunaTheme.Font.heroSerif)
+                                    .foregroundStyle(LunaTheme.linen)
+                                Text("Prøv originaltittelen eller en annen stavemåte.")
+                                    .font(LunaTheme.Font.body)
+                                    .foregroundStyle(LunaTheme.moonlight)
+                                LunaPillButton("Tøm søk", systemImage: "xmark.circle", prominence: .glassPill) {
+                                    query = ""
+                                }
+                                .focused($searchFocus, equals: .emptyReset)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, LunaTheme.horizontalGutter)
+                            .padding(.top, 48)
+                        } else {
+                            LazyVGrid(columns: columns, alignment: .leading, spacing: 26) {
+                                ForEach(results) { card in
+                                    PosterCardView(
                                         card: card,
-                                        onPlay: {
-                                            MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
-                                        },
-                                        onOpenDetails: {
+                                        client: client,
+                                        width: LunaTokens.Layout.gridPosterW,
+                                        showStorageBadge: true,
+                                        showRestingTitle: true,
+                                        onSelect: {
                                             selectedCard = card
                                         },
-                                        onToggleWatched: {
-                                            Task { await toggleWatched(card) }
-                                        },
-                                        onToggleWatchlist: {
-                                            Task { await toggleWatchlist(card) }
+                                        onPlayShortcut: {
+                                            MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
                                         }
                                     )
+                                    .id(card.id)
+                                    .focused($searchFocus, equals: .card(card.id))
+                                    .contextMenu {
+                                        StandardPosterContextMenuItems(
+                                            card: card,
+                                            onPlay: {
+                                                MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
+                                            },
+                                            onOpenDetails: {
+                                                selectedCard = card
+                                            },
+                                            onToggleWatched: {
+                                                Task { await toggleWatched(card) }
+                                            },
+                                            onToggleWatchlist: {
+                                                Task { await toggleWatchlist(card) }
+                                            }
+                                        )
+                                    }
                                 }
                             }
+                            .padding(.horizontal, LunaTheme.horizontalGutter)
+                            .padding(.bottom, 72)
                         }
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                        .padding(.bottom, 72)
                     }
                 }
+                .padding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 60)
+                .padding(.bottom, 72)
+            }
+            .contentMargins(.zero, for: .scrollContent)
+            .scrollClipDisabled()
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .ignoresSafeArea()
+            .lunaRootScrollTopBarTracking(tab: .search, isEnabled: isRootTab)
+            .onChange(of: scrollToTopNonce) { _, _ in
+                guard isRootTab, isActiveTab else { return }
+                withAnimation(.easeOut(duration: 0.22)) {
+                    scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
+                }
+            }
+            .onChange(of: contentEntryFocusNonce) { _, _ in
+                guard isRootTab, isActiveTab else { return }
+                focusSearchQueryField(scrollProxy: scrollProxy)
             }
         }
-        .contentMargins(.zero, for: .scrollContent)
-        .scrollClipDisabled()
-        .ignoresSafeArea(edges: .horizontal)
-        .lunaRootScrollTopBarTracking(tab: .search, isEnabled: isRootTab)
-        .safeAreaPadding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 0)
         .overlay(alignment: .topLeading) {
             if let mutationErrorBanner {
                 TransientErrorBanner(message: mutationErrorBanner)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.top, (isRootTab ? LunaTopBarView.contentTopPadding : 24) + 8)
+                    .padding(.top, (isRootTab ? LunaTopBarView.contentTopPadding : 60) + 8)
                     .allowsHitTesting(false)
             }
         }
@@ -227,6 +298,8 @@ struct SearchView: View {
             triggerSearch(trimmed, debounceNanoseconds: 180_000_000)
         }
         .onDisappear {
+            entryFocusRetryTask?.cancel()
+            entryFocusRetryTask = nil
             searchTask?.cancel()
             bannerClearTask?.cancel()
             if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
@@ -236,6 +309,37 @@ struct SearchView: View {
             ) {
                 subpageVisibility.leaveSubpage(subpageToken)
             }
+        }
+    }
+
+    private func focusSearchQueryField(scrollProxy: ScrollViewProxy) {
+        entryFocusRetryTask?.cancel()
+        scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
+        searchFocus = .queryField
+        entryFocusRetryTask = Task { @MainActor in
+            for delayNs: UInt64 in [16_000_000, 48_000_000] {
+                try? await Task.sleep(nanoseconds: delayNs)
+                guard !Task.isCancelled, isRootTab, isActiveTab else { return }
+                if searchFocus == nil {
+                    searchFocus = .queryField
+                } else {
+                    return
+                }
+            }
+        }
+    }
+
+    private func focusFirstResultOrHistory(trimmedQuery: String) {
+        if trimmedQuery.count < 2 {
+            if let firstRecent = recentSearches.first {
+                searchFocus = .recent(firstRecent)
+            }
+        } else if let firstCard = results.first {
+            searchFocus = .card(firstCard.id)
+        } else if errorMessage != nil {
+            searchFocus = .retry
+        } else if !isSearching {
+            searchFocus = .emptyReset
         }
     }
 

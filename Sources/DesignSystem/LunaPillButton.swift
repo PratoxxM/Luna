@@ -146,7 +146,7 @@ public struct LunaPillButton: View {
                 return Color.clear
             }
             if isSelected {
-                return accent == .emerald ? LunaTheme.emerald.opacity(0.38) : LunaTheme.warmBorderStrong
+                return accent == .emerald ? LunaTheme.emerald.opacity(0.38) : LunaTokens.Accent.border
             }
             return LunaTheme.warmBorder
         }
@@ -320,6 +320,11 @@ private struct LunaPillLabel: View {
             } else {
                 Capsule()
                     .fill(effectiveFocused ? focusedSecondaryFill : restingSolidColor)
+                    .overlay {
+                        if !effectiveFocused && prominence == .glassPill && isSelected && accent == .amber {
+                            Capsule().fill(LunaTokens.Accent.soft)
+                        }
+                    }
             }
         }
         .transaction { $0.animation = nil }

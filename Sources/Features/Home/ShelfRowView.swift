@@ -39,7 +39,7 @@ struct ShelfRowView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             Text(row.title)
                 .font(LunaTheme.Font.sectionTitle)
                 .foregroundStyle(LunaTheme.linen)
@@ -100,7 +100,7 @@ struct ShelfRowView: View {
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 28)
+                    .padding(.vertical, 10)
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
@@ -142,7 +142,7 @@ struct ShelfRowView: View {
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 28)
+                    .padding(.vertical, 10)
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
@@ -196,7 +196,7 @@ struct ShelfRowView: View {
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 28)
+                    .padding(.vertical, 10)
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
@@ -210,6 +210,7 @@ struct ShelfRowView: View {
                                 client: client,
                                 width: LunaTokens.Layout.posterW,
                                 showStorageBadge: true,
+                                showRestingTitle: false,
                                 onSelect: {
                                     onSelectCard(card)
                                 },
@@ -249,7 +250,7 @@ struct ShelfRowView: View {
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 28)
+                    .padding(.vertical, 10)
                 }
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()

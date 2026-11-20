@@ -166,6 +166,8 @@ extension PlayerViewModel {
         PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
         cancelPendingPausedRestoreResume()
         cancelPendingScrubCommit()
+        ringHoldLoopTask?.cancel()
+        ringHoldLoopTask = nil
         needsNativeAudioActivationAfterPausedRestore = false
         try Task.checkCancellation()
 
@@ -500,6 +502,8 @@ extension PlayerViewModel {
     func cancelAllSessionTasks() {
         cancelPendingPausedRestoreResume()
         cancelPendingScrubCommit()
+        ringHoldLoopTask?.cancel()
+        ringHoldLoopTask = nil
         foregroundRestoreTask?.cancel()
         foregroundRestoreTask = nil
         isRestoringFromBackground = false

@@ -152,6 +152,7 @@ final class PlayerViewModel: ObservableObject {
     private var pausedRestoreResumeToken: UInt64 = 0
     var scrubCommitTask: Task<Void, Never>?
     var scrubCommitToken: UInt64 = 0
+    var ringHoldLoopTask: Task<Void, Never>?
     private var didTeardown: Bool = false
     var engineOwnerToken: UInt64 = 0
     var isDismissing: Bool = false

@@ -247,6 +247,13 @@ public struct TvSearchResponse: Codable, Equatable, Sendable {
     public let query: String
     public let localCount: Int?
     public let items: [TvMediaCard]
+
+    public init(ok: Bool, query: String, localCount: Int?, items: [TvMediaCard]) {
+        self.ok = ok
+        self.query = query
+        self.localCount = localCount
+        self.items = items
+    }
 }
 
 public struct TvMutationAckResponse: Codable, Equatable, Sendable {

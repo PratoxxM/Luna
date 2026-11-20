@@ -515,4 +515,53 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
         ]
         XCTAssertNil(vm.kveldslysLockReason)
     }
+
+    @MainActor
+    func testQuickPanelAnchoringAndCollisionFreeSubtitlePlacement() {
+        // 1. Popover widths & button-anchored leading-X clamping inside 1920x1080 90 pt gutters
+        XCTAssertEqual(PlayerQuickPanelView.panelWidth(for: .subtitles), 580)
+        XCTAssertEqual(PlayerQuickPanelView.panelWidth(for: .source), 780)
+
+        let sourceTrigger = CGRect(x: 412, y: 950, width: 130, height: 48)
+        XCTAssertEqual(
+            PlayerQuickPanelView.resolvedPanelLeadingX(triggerFrame: sourceTrigger, tab: .source),
+            412,
+            accuracy: 0.1
+        )
+        let farRightTrigger = CGRect(x: 1700, y: 950, width: 120, height: 48)
+        XCTAssertEqual(
+            PlayerQuickPanelView.resolvedPanelLeadingX(triggerFrame: farRightTrigger, tab: .source),
+            1050,
+            accuracy: 0.1
+        )
+        XCTAssertGreaterThan(
+            PlayerQuickPanelView.resolvedPanelLeadingX(triggerFrame: nil, tab: .source),
+            300
+        )
+
+        // 2. Collision-free subtitle vertical zones (bottom 320 with OSD, top 84/168 with popover)
+        let osdOnly = SubtitleOverlayLayout.verticalPlacement(
+            isBottomBarVisible: true,
+            isQuickPanelOpen: false,
+            isNerdHUDVisible: false
+        )
+        XCTAssertFalse(osdOnly.relocateToTop)
+        XCTAssertEqual(osdOnly.bottomInset, 320)
+
+        let popoverOpen = SubtitleOverlayLayout.verticalPlacement(
+            isBottomBarVisible: true,
+            isQuickPanelOpen: true,
+            isNerdHUDVisible: false
+        )
+        XCTAssertTrue(popoverOpen.relocateToTop)
+        XCTAssertEqual(popoverOpen.topInset, 84)
+
+        let popoverWithHud = SubtitleOverlayLayout.verticalPlacement(
+            isBottomBarVisible: true,
+            isQuickPanelOpen: true,
+            isNerdHUDVisible: true
+        )
+        XCTAssertTrue(popoverWithHud.relocateToTop)
+        XCTAssertEqual(popoverWithHud.topInset, 168)
+    }
 }

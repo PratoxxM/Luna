@@ -38,7 +38,7 @@ struct SettingsServerDiagnosticsSectionView: View {
                 LunaPillButton(
                     "Tøm hurtigbuffer",
                     systemImage: "trash",
-                    prominence: .subtleChip,
+                    prominence: .glassPill,
                     accent: .coral,
                     size: .compact
                 ) {
@@ -58,7 +58,7 @@ struct SettingsServerDiagnosticsSectionView: View {
                 LunaPillButton(
                     "Koble til på nytt…",
                     systemImage: "arrow.triangle.2.circlepath",
-                    prominence: .subtleChip,
+                    prominence: .glassPill,
                     accent: .coral,
                     size: .compact
                 ) {

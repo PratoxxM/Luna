@@ -20,7 +20,7 @@ enum PreviewMockFixtures {
             roomName: previewRoomName,
             hardwareProfile: previewHardwareProfile,
             allowSelfSignedLanTLS: true,
-            appVersion: "2.8.3",
+            appVersion: "2.9.0",
             osVersion: "tvOS 26.0",
             session: session,
             imageSession: session,
@@ -334,7 +334,7 @@ enum PreviewMockFixtures {
         ),
     ]
 
-    static let libraryLocalMovies: [TvMediaCard] = Array(catalogMovies.prefix(5))
+    static let libraryLocalMovies: [TvMediaCard] = Array(catalogMovies.prefix(8))
     static let libraryLocalSeries: [TvMediaCard] = Array(seriesCards.prefix(3))
     static let libraryLocalCards: [TvMediaCard] = libraryLocalMovies + libraryLocalSeries
 

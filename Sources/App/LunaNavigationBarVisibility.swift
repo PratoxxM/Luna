@@ -111,6 +111,7 @@ final class LunaNavigationBarVisibility: ObservableObject {
     @Published private(set) var isTopBarFocused: Bool = false
     @Published private(set) var focusRequestNonce: Int = 0
     @Published private(set) var scrollToTopNonce: Int = 0
+    @Published private(set) var contentEntryFocusNonce: Int = 0
 
     private var scrollZonesByTab: [MainNavigationTab: ScrollTopZone] = [:]
     private var activeTab: MainNavigationTab = .home
@@ -250,6 +251,14 @@ final class LunaNavigationBarVisibility: ObservableObject {
         focusRequestNonce &+= 1
         scrollToTopNonce &+= 1
     }
+
+    func requestContentEntryFocus(for tab: MainNavigationTab) {
+        activeTab = tab
+        pendingMenuBypassExit = false
+        isTopBarFocused = false
+        isCollapsedByScroll = (scrollZonesByTab[tab] == .scrolledDown)
+        contentEntryFocusNonce &+= 1
+    }
 }
 
 public struct LunaSubpageVisibilitySink: Sendable {
@@ -276,6 +285,10 @@ private struct LunaScrollToTopNonceKey: EnvironmentKey {
     static let defaultValue: Int = 0
 }
 
+private struct LunaContentEntryFocusNonceKey: EnvironmentKey {
+    static let defaultValue: Int = 0
+}
+
 public extension EnvironmentValues {
     var lunaSubpageVisibility: LunaSubpageVisibilitySink {
         get { self[LunaSubpageVisibilitySinkKey.self] }
@@ -285,6 +298,11 @@ public extension EnvironmentValues {
     var lunaScrollToTopNonce: Int {
         get { self[LunaScrollToTopNonceKey.self] }
         set { self[LunaScrollToTopNonceKey.self] = newValue }
+    }
+
+    var lunaContentEntryFocusNonce: Int {
+        get { self[LunaContentEntryFocusNonceKey.self] }
+        set { self[LunaContentEntryFocusNonceKey.self] = newValue }
     }
 }
 

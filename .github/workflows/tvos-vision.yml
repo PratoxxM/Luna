@@ -144,7 +144,7 @@ jobs:
           mkdir -p .ci-screenshots
           BUNDLE_ID="local.lunacore.luna"
 
-          for SCREEN in home home-poster catalog library details settings player-subtitles player-source player-error; do
+          for SCREEN in home home-poster catalog library search details settings player-subtitles player-audio player-source player-picture player-chapters player-error; do
             echo "==> Terminating prior instance and launching ${BUNDLE_ID} --preview-screen ${SCREEN}..."
             xcrun simctl terminate "$TVOS_SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
             sleep 1

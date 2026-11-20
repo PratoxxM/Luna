@@ -4,6 +4,7 @@ struct LibraryHubView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
     @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
+    @Environment(\.lunaContentEntryFocusNonce) private var contentEntryFocusNonce
 
     let isActiveTab: Bool
     var onSelectTab: ((MainNavigationTab) -> Void)? = nil
@@ -27,8 +28,10 @@ struct LibraryHubView: View {
     @State private var modalToken = UUID()
     @State private var reloadTask: Task<Void, Never>?
     @State private var reloadGeneration: UInt64 = 0
+    @State private var entryFocusRetryTask: Task<Void, Never>?
 
     @FocusState private var focusedFilterPill: LibraryFilterSection?
+    @FocusState private var focusedCardId: String?
     @Namespace private var filterFocusNamespace
 
     init(isActiveTab: Bool = true, onSelectTab: ((MainNavigationTab) -> Void)? = nil) {
@@ -38,8 +41,8 @@ struct LibraryHubView: View {
 
     private let pageSize = 36
     private let columns = Array(
-        repeating: GridItem(.fixed(LunaTokens.Layout.posterW), spacing: LunaTokens.Layout.cardGap, alignment: .topLeading),
-        count: 5
+        repeating: GridItem(.fixed(LunaTokens.Layout.gridPosterW), spacing: LunaTokens.Layout.gridCardGap, alignment: .topLeading),
+        count: 6
     )
 
     private var queryKey: String {
@@ -52,17 +55,23 @@ struct LibraryHubView: View {
 
         ScrollViewReader { scrollProxy in
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 22) {
                     Color.clear
                         .frame(height: 0)
                         .id("luna-scroll-top")
+
+                    Text("Bibliotek")
+                        .font(LunaTheme.Font.pageTitle)
+                        .foregroundStyle(LunaTheme.linen)
+                        .padding(.horizontal, LunaTheme.horizontalGutter)
 
                     HStack(spacing: 14) {
                         ForEach(LibraryFilterSection.allCases) { section in
                             LunaPillButton(
                                 section.pillTitle(counts: counts),
                                 isSelected: activeSection == section,
-                                prominence: .glassPill
+                                prominence: .glassPill,
+                                size: .compact
                             ) {
                                 didApplyInitialSectionFallback = true
                                 guard activeSection != section else { return }
@@ -74,9 +83,14 @@ struct LibraryHubView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.top, 4)
+                    .padding(.vertical, 6)
                     .focusScope(filterFocusNamespace)
                     .focusSection()
+                    .onMoveCommand { direction in
+                        if direction == .down {
+                            focusFirstLibraryContentItem()
+                        }
+                    }
 
                     Group {
                         if isLoading && libraryPayload == nil {
@@ -95,9 +109,11 @@ struct LibraryHubView: View {
                                 LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
                                     scheduleReloadLibrary(forceNetwork: true)
                                 }
+                                .focused($focusedCardId, equals: "__library_retry__")
                             }
                         } else {
                             sectionGrid(client: client)
+                                .focusSection()
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -110,15 +126,18 @@ struct LibraryHubView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .ignoresSafeArea()
             .lunaRootScrollTopBarTracking(tab: .library)
-            .focusSection()
             .onChange(of: scrollToTopNonce) { _, _ in
                 guard isActiveTab else { return }
                 withAnimation(.easeOut(duration: 0.22)) {
                     scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
                 }
             }
+            .onChange(of: contentEntryFocusNonce) { _, _ in
+                guard isActiveTab else { return }
+                focusLibraryEntryPill(scrollProxy: scrollProxy)
+            }
         }
-        .overlay(alignment: .topTrailing) {
+        .overlay(alignment: .topLeading) {
             if let mutationErrorBanner {
                 TransientErrorBanner(message: mutationErrorBanner)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -179,12 +198,45 @@ struct LibraryHubView: View {
             scheduleReloadLibrary(forceNetwork: true)
         }
         .onDisappear {
+            entryFocusRetryTask?.cancel()
+            entryFocusRetryTask = nil
             mutationBannerTask?.cancel()
             reloadTask?.cancel()
             reloadTask = nil
             if pendingDeleteTarget == nil {
                 subpageVisibility.leaveModal(modalToken)
             }
+        }
+    }
+
+    private func focusLibraryEntryPill(scrollProxy: ScrollViewProxy) {
+        entryFocusRetryTask?.cancel()
+        let targetPill = activeSection
+        scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
+        focusedFilterPill = targetPill
+        entryFocusRetryTask = Task { @MainActor in
+            for delayNs: UInt64 in [16_000_000, 48_000_000] {
+                try? await Task.sleep(nanoseconds: delayNs)
+                guard !Task.isCancelled, isActiveTab else { return }
+                if focusedFilterPill == nil {
+                    focusedFilterPill = targetPill
+                } else {
+                    return
+                }
+            }
+        }
+    }
+
+    private func focusFirstLibraryContentItem() {
+        let activeItems: [TvMediaCard] = activeSection == .watchlist
+            ? (libraryPayload?.watchlist ?? [])
+            : localItems
+        if let firstID = activeItems.first?.id {
+            focusedCardId = firstID
+        } else if errorMessage != nil && libraryPayload == nil {
+            focusedCardId = "__library_retry__"
+        } else {
+            focusedCardId = "__library_empty__"
         }
     }
 
@@ -196,14 +248,16 @@ struct LibraryHubView: View {
 
         if activeItems.isEmpty {
             emptyStateCard
+                .focused($focusedCardId, equals: "__library_empty__")
         } else {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 34) {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 26) {
                 ForEach(activeItems) { card in
                     PosterCardView(
                         card: card,
                         client: client,
-                        width: LunaTokens.Layout.posterW,
+                        width: LunaTokens.Layout.gridPosterW,
                         showStorageBadge: true,
+                        showRestingTitle: true,
                         onSelect: {
                             selectedCard = card
                         },
@@ -211,6 +265,8 @@ struct LibraryHubView: View {
                             MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
                         }
                     )
+                    .id(card.id)
+                    .focused($focusedCardId, equals: card.id)
                     .contextMenu {
                         StandardPosterContextMenuItems(
                             card: card,

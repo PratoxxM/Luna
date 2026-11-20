@@ -33,9 +33,19 @@ public enum PlayerQuickPanelTab: String, CaseIterable, Identifiable, Sendable {
     public static func visibleTabs(hasChapters: Bool) -> [PlayerQuickPanelTab] {
         allCases.filter { hasChapters || $0 != .chapters }
     }
+
+    public var fallbackTriggerMinX: CGFloat {
+        switch self {
+        case .subtitles: return 90
+        case .audio: return 242
+        case .source: return 384
+        case .picture: return 530
+        case .chapters: return 676
+        }
+    }
 }
 
-/// Compact floating vertical quick-list panel anchored above the bottom OSD.
+/// Button-anchored Lampelys popover positioned directly above the triggering bottom-bar pill.
 /// Focus starts deterministically on the active (`✓`) item inside each list and closes back cleanly.
 struct PlayerQuickPanelView: View {
     @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
@@ -43,6 +53,7 @@ struct PlayerQuickPanelView: View {
     @ObservedObject var viewModel: PlayerViewModel
     @ObservedObject var comfort: ComfortPreferences
     let tab: PlayerQuickPanelTab
+    var triggerFrame: CGRect? = nil
     let onClose: (_ returnFocusToPill: Bool) -> Void
 
     @FocusState private var focusedItemID: String?
@@ -51,8 +62,34 @@ struct PlayerQuickPanelView: View {
     @State private var focusRetryTask: Task<Void, Never>?
     @Namespace private var panelFocusNamespace
 
+    nonisolated static func panelWidth(for tab: PlayerQuickPanelTab) -> CGFloat {
+        switch tab {
+        case .subtitles: return 580
+        case .audio: return 600
+        case .source: return 780
+        case .picture: return 670
+        case .chapters: return 600
+        }
+    }
+
+    nonisolated static func resolvedPanelLeadingX(
+        triggerFrame: CGRect?,
+        tab: PlayerQuickPanelTab,
+        containerWidth: CGFloat = 1920,
+        gutter: CGFloat = LunaTheme.horizontalGutter
+    ) -> CGFloat {
+        let width = panelWidth(for: tab)
+        let rawMinX: CGFloat = {
+            if let frame = triggerFrame, frame.width > 1 {
+                return frame.minX
+            }
+            return tab.fallbackTriggerMinX
+        }()
+        return min(max(gutter, rawMinX), max(gutter, containerWidth - gutter - width))
+    }
+
     private var panelWidth: CGFloat {
-        tab == .source ? 1120 : 680
+        Self.panelWidth(for: tab)
     }
 
     private var preferredActiveItemID: String {
@@ -92,73 +129,72 @@ struct PlayerQuickPanelView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
+        let leadingX = Self.resolvedPanelLeadingX(triggerFrame: triggerFrame, tab: tab)
 
-            HStack {
-                VStack(alignment: .leading, spacing: 14) {
-                    panelHeader
+        VStack(alignment: .leading, spacing: 14) {
+            panelHeader
 
-                    Rectangle()
-                        .fill(LunaTheme.warmBorderSubtle)
-                        .frame(height: 1)
+            Rectangle()
+                .fill(LunaTheme.warmBorderSubtle)
+                .frame(height: 1)
 
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical, showsIndicators: false) {
-                            VStack(alignment: .leading, spacing: 10) {
-                                panelListContent
-                            }
-                            .padding(.vertical, 4)
-                            .padding(.horizontal, 4)
-                            .onGeometryChange(for: CGFloat.self) { geo in
-                                geo.size.height
-                            } action: { newHeight in
-                                if newHeight > 10, abs(contentHeight - newHeight) > 1 {
-                                    contentHeight = newHeight
-                                }
-                            }
-                        }
-                        .frame(height: min(max(contentHeight, 120), 540))
-                        .onAppear {
-                            chapterSnapshotTime = max(0, viewModel.engine.currentTime)
-                            focusPreferredActiveItem(proxy: proxy)
-                        }
-                        .onChange(of: tab) { _, _ in
-                            chapterSnapshotTime = max(0, viewModel.engine.currentTime)
-                            focusPreferredActiveItem(proxy: proxy)
-                        }
-                        .onChange(of: viewModel.alternatives.map(\.id)) { _, _ in
-                            if tab == .source {
-                                focusPreferredActiveItem(proxy: proxy)
-                            }
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        panelListContent
+                    }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 4)
+                    .onGeometryChange(for: CGFloat.self) { geo in
+                        geo.size.height
+                    } action: { newHeight in
+                        if newHeight > 10, abs(contentHeight - newHeight) > 1 {
+                            contentHeight = newHeight
                         }
                     }
-                    .focusScope(panelFocusNamespace)
-                    .focusSection()
                 }
-                .padding(.horizontal, 26)
-                .padding(.vertical, 22)
-                .frame(width: panelWidth, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(LunaTheme.cinemaGlass)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1)
-                )
-                .shadow(
-                    color: LunaTheme.pureBlack.opacity(0.68),
-                    radius: 34,
-                    x: 0,
-                    y: 16
-                )
-
-                Spacer(minLength: 0)
+                .frame(height: min(max(contentHeight, 120), 460))
+                .onAppear {
+                    chapterSnapshotTime = max(0, viewModel.engine.currentTime)
+                    focusPreferredActiveItem(proxy: proxy)
+                }
+                .onChange(of: tab) { _, _ in
+                    chapterSnapshotTime = max(0, viewModel.engine.currentTime)
+                    focusPreferredActiveItem(proxy: proxy)
+                }
+                .onChange(of: viewModel.alternatives.map(\.id)) { _, _ in
+                    if tab == .source {
+                        focusPreferredActiveItem(proxy: proxy)
+                    }
+                }
             }
-            .padding(.horizontal, LunaTheme.horizontalGutter)
-            .padding(.bottom, 286)
+            .focusScope(panelFocusNamespace)
+            .focusSection()
         }
+        .padding(.horizontal, 26)
+        .padding(.vertical, 22)
+        .frame(width: panelWidth, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(LunaTheme.cinemaGlass)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1)
+        )
+        .lunaTopLightEdge(
+            cornerRadius: 24,
+            topColor: LunaTokens.Edge.top3,
+            sideColor: LunaTokens.Edge.top1
+        )
+        .shadow(
+            color: LunaTheme.pureBlack.opacity(0.68),
+            radius: 34,
+            x: 0,
+            y: 16
+        )
+        .padding(.leading, leadingX)
+        .padding(.bottom, 274)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         .onDisappear {
             focusRetryTask?.cancel()
@@ -264,19 +300,43 @@ struct PlayerQuickPanelView: View {
             .frame(height: 1)
             .padding(.vertical, 4)
 
-        let kveldslysLock = viewModel.kveldslysLockReason
-        QuickPanelRowButton(
-            title: "Kveldslys",
-            subtitle: kveldslysLock ?? comfort.hdrSubtitlePreset.displayTitle,
-            isSelected: kveldslysLock == nil && comfort.hdrSubtitlePreset != .white100,
-            isDimmedLocked: kveldslysLock != nil,
-            isFocused: focusedItemID == "sub-kveldslys"
-        ) {
-            guard viewModel.kveldslysLockReason == nil else { return }
-            cycleNightLightPreset()
+        if let lockReason = viewModel.kveldslysLockReason {
+            HStack(spacing: 12) {
+                Text("Kveldslys")
+                    .font(LunaTheme.Font.caption)
+                    .foregroundStyle(LunaTheme.muted)
+                Spacer(minLength: 8)
+                Text(lockReason)
+                    .font(LunaTheme.Font.caption)
+                    .foregroundStyle(LunaTheme.muted)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Kveldslys")
+                    .font(LunaTheme.Font.caption)
+                    .foregroundStyle(LunaTheme.muted)
+
+                HStack(spacing: 8) {
+                    ForEach(HDRSubtitlePreset.allCases) { preset in
+                        LunaPillButton(
+                            compactNightLightLabel(preset),
+                            isSelected: comfort.hdrSubtitlePreset == preset,
+                            prominence: .glassPill,
+                            size: .compact
+                        ) {
+                            comfort.hdrSubtitlePreset = preset
+                        }
+                        .focused($focusedItemID, equals: "sub-kveldslys-\(preset.rawValue)")
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .focusSection()
         }
-        .id("sub-kveldslys")
-        .focused($focusedItemID, equals: "sub-kveldslys")
 
         HStack(spacing: 10) {
             Text("Tekstsynk")
@@ -285,21 +345,22 @@ struct PlayerQuickPanelView: View {
 
             Spacer(minLength: 8)
 
-            Text(formatSubtitleDelay(viewModel.subtitleDelaySeconds))
-                .font(LunaTheme.Font.settingsAudioDelay)
-                .foregroundStyle(LunaTheme.moonlight)
-
-            LunaPillButton("−0,1 s", prominence: .subtleChip, size: .compact) {
+            LunaPillButton("−0,1 s", prominence: .glassPill, size: .compact) {
                 viewModel.adjustSubtitleDelay(by: -0.1)
             }
             .focused($focusedItemID, equals: "sub-sync-minus")
 
-            LunaPillButton("0 s", isSelected: abs(viewModel.subtitleDelaySeconds) < 0.01, prominence: .subtleChip, size: .compact) {
+            LunaPillButton(
+                formatSubtitleDelay(viewModel.subtitleDelaySeconds),
+                isSelected: true,
+                prominence: .glassPill,
+                size: .compact
+            ) {
                 viewModel.resetSubtitleDelay()
             }
             .focused($focusedItemID, equals: "sub-sync-zero")
 
-            LunaPillButton("+0,1 s", prominence: .subtleChip, size: .compact) {
+            LunaPillButton("+0,1 s", prominence: .glassPill, size: .compact) {
                 viewModel.adjustSubtitleDelay(by: 0.1)
             }
             .focused($focusedItemID, equals: "sub-sync-plus")
@@ -356,21 +417,22 @@ struct PlayerQuickPanelView: View {
 
             Spacer(minLength: 8)
 
-            Text(ComfortPreferences.formatAudioDelayMs(viewModel.audioDelayMs))
-                .font(LunaTheme.Font.settingsAudioDelay)
-                .foregroundStyle(LunaTheme.moonlight)
-
-            LunaPillButton("−25 ms", prominence: .subtleChip, size: .compact) {
+            LunaPillButton("−25 ms", prominence: .glassPill, size: .compact) {
                 viewModel.adjustAudioDelay(byMs: -25)
             }
             .focused($focusedItemID, equals: "aud-sync-minus")
 
-            LunaPillButton("0 ms", isSelected: viewModel.audioDelayMs == 0, prominence: .subtleChip, size: .compact) {
+            LunaPillButton(
+                ComfortPreferences.formatAudioDelayMs(viewModel.audioDelayMs).replacingOccurrences(of: "-", with: "−"),
+                isSelected: true,
+                prominence: .glassPill,
+                size: .compact
+            ) {
                 viewModel.resetAudioDelay()
             }
             .focused($focusedItemID, equals: "aud-sync-zero")
 
-            LunaPillButton("+25 ms", prominence: .subtleChip, size: .compact) {
+            LunaPillButton("+25 ms", prominence: .glassPill, size: .compact) {
                 viewModel.adjustAudioDelay(byMs: 25)
             }
             .focused($focusedItemID, equals: "aud-sync-plus")
@@ -406,11 +468,12 @@ struct PlayerQuickPanelView: View {
                     ? (cand.candidateId == activeCandidateId)
                     : (cand.isActive == true)
                 let rowID = "src-\(cand.candidateId)"
-                QuickPanelRowButton(
-                    title: cand.quickRowTitle(roomName: room, isRecommended: idx == 0),
-                    subtitle: cand.quickRowMetadata(isActive: isCurrent),
-                    badgeText: cand.isNorwegian == true ? "🇳🇴 Norsk" : nil,
+                SourceCandidateRowView(
+                    candidate: cand,
+                    roomName: room,
+                    isRecommended: idx == 0,
                     isSelected: isCurrent,
+                    activeStatusLabel: "Spilles nå",
                     isFocused: focusedItemID == rowID
                 ) {
                     if !isCurrent {
@@ -459,6 +522,13 @@ struct PlayerQuickPanelView: View {
         }
         .id("pic-hud")
         .focused($focusedItemID, equals: "pic-hud")
+
+        Text(viewModel.videoFormatSummaryLine)
+            .font(LunaTheme.Font.caption)
+            .foregroundStyle(LunaTheme.muted)
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .padding(.top, 2)
     }
 
     // MARK: - Kapitler
@@ -506,13 +576,13 @@ struct PlayerQuickPanelView: View {
         }
     }
 
-    private func cycleNightLightPreset() {
-        let all = HDRSubtitlePreset.allCases
-        guard let idx = all.firstIndex(of: comfort.hdrSubtitlePreset) else {
-            comfort.hdrSubtitlePreset = .warm75
-            return
+    private func compactNightLightLabel(_ preset: HDRSubtitlePreset) -> String {
+        switch preset {
+        case .white100: return "100 %"
+        case .warm75: return "75 %"
+        case .warm60: return "60 %"
+        case .soft50: return "50 %"
         }
-        comfort.hdrSubtitlePreset = all[(idx + 1) % all.count]
     }
 
     private func formatSubtitleDelay(_ seconds: Double) -> String {
@@ -535,7 +605,6 @@ private struct QuickPanelRowButton: View {
     var subtitle: String? = nil
     var badgeText: String? = nil
     let isSelected: Bool
-    var isDimmedLocked: Bool = false
     let isFocused: Bool
     let action: () -> Void
 
@@ -545,7 +614,7 @@ private struct QuickPanelRowButton: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(LunaTheme.Font.cardTitle)
-                        .foregroundStyle(isDimmedLocked ? LunaTheme.muted : LunaTheme.linen)
+                        .foregroundStyle(LunaTheme.linen)
                         .lineLimit(1)
                         .truncationMode(.tail)
 
@@ -569,11 +638,7 @@ private struct QuickPanelRowButton: View {
                         .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
                 }
 
-                if isDimmedLocked {
-                    Image(systemName: "lock.fill")
-                        .font(LunaTheme.Font.pillIcon)
-                        .foregroundStyle(LunaTheme.muted)
-                } else if isSelected {
+                if isSelected {
                     Text("✓")
                         .font(LunaTheme.Font.cardTitle)
                         .foregroundStyle(LunaTheme.amber)
@@ -586,13 +651,12 @@ private struct QuickPanelRowButton: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(isFocused ? LunaTheme.surfaceSelected : (isSelected ? LunaTheme.surfaceRaised : Color.clear))
             )
-            .opacity(isDimmedLocked ? (isFocused ? 0.85 : 0.55) : 1.0)
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(
                         isFocused
                             ? LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity)
-                            : (isSelected ? LunaTheme.warmBorder : Color.clear),
+                            : (isSelected ? LunaTokens.Accent.border : Color.clear),
                         lineWidth: isFocused ? LunaFocusStyle.borderWidth : 1.0
                     )
             )

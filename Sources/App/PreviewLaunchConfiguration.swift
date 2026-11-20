@@ -5,10 +5,14 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
     case homePoster = "home-poster"
     case catalog
     case library
+    case search
     case details
     case settings
     case playerSubtitles = "player-subtitles"
+    case playerAudio = "player-audio"
     case playerSource = "player-source"
+    case playerPicture = "player-picture"
+    case playerChapters = "player-chapters"
     case playerError = "player-error"
 
     public static func parse(_ raw: String) -> PreviewScreenTarget? {
@@ -21,14 +25,22 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
             return .catalog
         case "library", "bibliotek":
             return .library
+        case "search", "sok", "søk":
+            return .search
         case "details", "detail", "detalj", "detaljer":
             return .details
         case "settings", "innstillinger":
             return .settings
-        case "player", "playback", "avspiller", "player-audio", "player_audio", "player-subtitles", "player_subtitles":
+        case "player", "playback", "avspiller", "player-subtitles", "player_subtitles":
             return .playerSubtitles
+        case "player-audio", "player_audio":
+            return .playerAudio
         case "player-source", "player_source":
             return .playerSource
+        case "player-picture", "player_picture":
+            return .playerPicture
+        case "player-chapters", "player_chapters":
+            return .playerChapters
         case "player-error", "player_error":
             return .playerError
         default:
@@ -37,7 +49,12 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
     }
 
     public var isPlayerScreen: Bool {
-        self == .playerSubtitles || self == .playerSource || self == .playerError
+        switch self {
+        case .playerSubtitles, .playerAudio, .playerSource, .playerPicture, .playerChapters, .playerError:
+            return true
+        case .home, .homePoster, .catalog, .library, .search, .details, .settings:
+            return false
+        }
     }
 
     public var isHomeScreen: Bool {
@@ -70,7 +87,7 @@ public enum PreviewFocusDirection: String, CaseIterable, Equatable, Sendable {
     }
 }
 
-/// Parses `--preview-screen <home|home-poster|catalog|library|details|settings|player-subtitles|player-source|player-error>`
+/// Parses `--preview-screen` (`home|home-poster|catalog|library|search|details|settings|player-*`)
 /// and optional `--preview-focus <up|down|left|right|select>` launch arguments for deterministic
 /// tvOS Simulator visual verification without live network dependencies.
 public struct PreviewLaunchConfiguration: Equatable, Sendable {

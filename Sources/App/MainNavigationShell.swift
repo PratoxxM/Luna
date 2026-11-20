@@ -25,6 +25,8 @@ struct MainNavigationShell: View {
             initialTab = .movies
         case .library:
             initialTab = .library
+        case .search:
+            initialTab = .search
         case .settings:
             initialTab = .settings
         case .details:
@@ -45,6 +47,9 @@ struct MainNavigationShell: View {
             let previewPanel: PlayerQuickPanelTab? = {
                 switch screen {
                 case .playerSource: return .source
+                case .playerAudio: return .audio
+                case .playerPicture: return .picture
+                case .playerChapters: return .chapters
                 case .playerSubtitles: return .subtitles
                 case .playerError: return nil
                 default: return nil
@@ -158,9 +163,13 @@ struct MainNavigationShell: View {
                 .tag(MainNavigationTab.library)
 
                 NavigationStack {
-                    SearchView(isRootTab: true)
-                        .toolbar(.hidden, for: .tabBar)
-                        .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
+                    SearchView(
+                        initialQuery: previewConfiguration?.screen == .search ? "Dune" : "",
+                        isRootTab: true,
+                        isActiveTab: selectedTab == .search
+                    )
+                    .toolbar(.hidden, for: .tabBar)
+                    .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
                 }
                 .toolbar(.hidden, for: .tabBar)
                 .tabItem {
@@ -208,6 +217,10 @@ struct MainNavigationShell: View {
                     if isFocused && allowColdHomeCardFocus {
                         allowColdHomeCardFocus = false
                     }
+                },
+                onRequestDownwardContentFocus: { tab in
+                    allowColdHomeCardFocus = false
+                    navBarVisibility.requestContentEntryFocus(for: tab)
                 }
             )
             .opacity(hideTopBar ? 0 : 1)
@@ -219,6 +232,7 @@ struct MainNavigationShell: View {
         }
         .environment(\.lunaSubpageVisibility, navBarVisibility.sink)
         .environment(\.lunaScrollToTopNonce, navBarVisibility.scrollToTopNonce)
+        .environment(\.lunaContentEntryFocusNonce, navBarVisibility.contentEntryFocusNonce)
         .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
         .environmentObject(sessionStore.comfort)
         .onChange(of: selectedTab) { _, newTab in
