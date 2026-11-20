@@ -404,6 +404,8 @@ final class MediaDetailViewModelTests: XCTestCase {
         }
 
         let context = MockDetailSessionContext()
+        context.roomName = "Stua"
+        context.effectiveHardwareProfile = "hdr10-512"
         context.client = try MockURLProtocol.makeClient(host: host)
         let vm = MediaDetailViewModel(mediaType: "series", itemId: "series:tmdb:246810", initialTitle: "Luksusfellen")
         await vm.handleTaskAppearance(scopeKey: "series#series:tmdb:246810#Stua#hdr10-512", sessionContext: context)
