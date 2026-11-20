@@ -98,6 +98,7 @@ extension PlayerViewModel {
         engine.$sourceVideoFrameRate.assign(to: &$sourceVideoFrameRate)
         engine.$activeVideoDecoder.assign(to: &$activeVideoDecoder)
         engine.$activeAudioDecoder.assign(to: &$activeAudioDecoder)
+        engine.$activeUpscale.assign(to: &$activeUpscale)
 
         engine.$audioTracks
             .sink { [weak self] tracks in

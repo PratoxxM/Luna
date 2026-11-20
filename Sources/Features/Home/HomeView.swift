@@ -19,6 +19,7 @@ struct HomeView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
+    @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
 
     let isActiveTab: Bool
     var previewFocusPosterRow: Bool = false
@@ -101,6 +102,10 @@ struct HomeView: View {
         ScrollViewReader { scrollProxy in
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 44) {
+                    Color.clear
+                        .frame(height: 0)
+                        .id("luna-scroll-top")
+
                     if visibleRows.isEmpty && isInitialColdFetch {
                         HStack(spacing: 16) {
                             ProgressView()
@@ -187,6 +192,12 @@ struct HomeView: View {
                     focusedCardKey = nextKey
                 }
             }
+            .onChange(of: scrollToTopNonce) { _, _ in
+                guard isActiveTab else { return }
+                withAnimation(.easeOut(duration: 0.22)) {
+                    scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
+                }
+            }
         }
         .overlay(alignment: .topLeading) {
             if let mutationErrorMessage {
@@ -257,7 +268,8 @@ struct HomeView: View {
                    hasCachedContent: homePayload != nil,
                    lastValidatedAt: lastValidatedAt,
                    cachedRefreshNonce: lastSeenRefreshNonce,
-                   currentRefreshNonce: sessionStore.homeRefreshNonce
+                   currentRefreshNonce: sessionStore.homeRefreshNonce,
+                   freshnessInterval: DeviceHardwareCapabilities.isHighMemoryDevice ? 600 : TabContentFreshnessPolicy.defaultFreshnessInterval
                ) {
                 return
             }
@@ -286,7 +298,8 @@ struct HomeView: View {
                 hasCachedContent: homePayload != nil,
                 lastValidatedAt: lastValidatedAt,
                 cachedRefreshNonce: lastSeenRefreshNonce,
-                currentRefreshNonce: sessionStore.homeRefreshNonce
+                currentRefreshNonce: sessionStore.homeRefreshNonce,
+                freshnessInterval: DeviceHardwareCapabilities.isHighMemoryDevice ? 600 : TabContentFreshnessPolicy.defaultFreshnessInterval
             )
             if !isFresh {
                 lastSeenRefreshNonce = sessionStore.homeRefreshNonce

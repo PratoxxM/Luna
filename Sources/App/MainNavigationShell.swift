@@ -151,7 +151,7 @@ struct MainNavigationShell: View {
                 .tag(MainNavigationTab.search)
 
                 NavigationStack {
-                    SettingsView()
+                    SettingsView(isActiveTab: selectedTab == .settings)
                         .toolbar(.hidden, for: .tabBar)
                         .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
                 }
@@ -173,7 +173,7 @@ struct MainNavigationShell: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 152)
+            .frame(height: 164)
             .ignoresSafeArea(edges: [.top, .horizontal])
             .opacity(hideTopBar ? 0 : 1)
             .allowsHitTesting(false)
@@ -196,6 +196,7 @@ struct MainNavigationShell: View {
             .zIndex(10)
         }
         .environment(\.lunaSubpageVisibility, navBarVisibility.sink)
+        .environment(\.lunaScrollToTopNonce, navBarVisibility.scrollToTopNonce)
         .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
         .environmentObject(sessionStore.comfort)
         .onChange(of: selectedTab) { _, newTab in
@@ -241,8 +242,8 @@ struct MainNavigationShell: View {
             }
             Task { await refreshBootstrapProfile() }
         }
-        .onReceive(sessionStore.comfort.$keepDisplayModeInMenuAfterPlayback.dropFirst()) { keepInMenu in
-            if !keepInMenu && sessionStore.activePlaybackTarget == nil {
+        .onReceive(sessionStore.comfort.$menuDisplayMode.dropFirst()) { mode in
+            if mode == .sdr60Hz && sessionStore.activePlaybackTarget == nil {
                 PlayerAudioSessionCoordinator.shared.flushDeferredDisplayCriteriaResetIfIdle(engine: engine)
             }
         }

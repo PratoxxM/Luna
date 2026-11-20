@@ -64,6 +64,13 @@ struct LunaApp: App {
             }
             .environmentObject(sessionStore)
             .preferredColorScheme(.dark)
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name("UIApplicationDidReceiveMemoryWarningNotification"))) { _ in
+                CatalogBrowseMemoryCache.shared.clear()
+                LibraryBrowseMemoryCache.shared.clear()
+                DiskSWRStore.clearMemory()
+                AetherEngine.discardPrewarmedSources()
+                AetherEngine.discardRetainedSessionCache()
+            }
         }
     }
 }

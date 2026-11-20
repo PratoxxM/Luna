@@ -9,18 +9,26 @@ extension LunaCoreClient {
     public func requestPairingCode(
         model: String,
         osVersion: String,
-        appVersion: String = SideloadSafeStorage.currentAppVersionString()
+        appVersion: String = SideloadSafeStorage.currentAppVersionString(),
+        capabilities: TvDeviceCapabilities = DeviceHardwareCapabilities.asTvCapabilities
     ) async throws -> TvPairingRequestResponse {
         struct Payload: Encodable, Sendable {
             let deviceId: String
             let model: String
             let osVersion: String
             let appVersion: String
+            let capabilities: TvDeviceCapabilities
         }
         return try await sendJSON(
             method: "POST",
             path: "/api/tv/v1/pair/request",
-            body: Payload(deviceId: deviceID, model: model, osVersion: osVersion, appVersion: appVersion),
+            body: Payload(
+                deviceId: deviceID,
+                model: model,
+                osVersion: osVersion,
+                appVersion: appVersion,
+                capabilities: capabilities
+            ),
             includeAuth: false
         )
     }
@@ -63,17 +71,24 @@ extension LunaCoreClient {
     public func updateDeviceProfile(
         roomName: String? = nil,
         hardwareProfile: String? = nil,
-        overrides: TvDeviceOverrides? = nil
+        overrides: TvDeviceOverrides? = nil,
+        capabilities: TvDeviceCapabilities? = nil
     ) async throws {
         struct BodyPayload: Encodable, Sendable {
             let roomName: String?
             let hardwareProfile: String?
             let overrides: TvDeviceOverrides?
+            let capabilities: TvDeviceCapabilities?
         }
         let _: TvMutationAckResponse = try await sendJSON(
             method: "PATCH",
             path: "/api/tv/v1/device/profile",
-            body: BodyPayload(roomName: roomName, hardwareProfile: hardwareProfile, overrides: overrides)
+            body: BodyPayload(
+                roomName: roomName,
+                hardwareProfile: hardwareProfile,
+                overrides: overrides,
+                capabilities: capabilities
+            )
         )
     }
 

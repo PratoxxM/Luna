@@ -208,13 +208,17 @@ final class DetailPreResolveController: ObservableObject {
                let relStreamPath = prep.playbackSession?.stream.url,
                let streamURL = client.buildAbsoluteURL(relStreamPath) {
                 let headers = client.streamHTTPHeaders()
+                let prewarmBudget: Int = (
+                    DeviceHardwareCapabilities.isHighMemoryDevice
+                    && DeviceHardwareCapabilities.availableMemoryBytes() > 640 * 1024 * 1024
+                ) ? (28 * 1024 * 1024) : (8 * 1024 * 1024)
                 Task.detached(priority: .utility) {
                     guard !Task.isCancelled else { return }
                     if !AetherEngine.isPrewarmed(url: streamURL) {
                         _ = await AetherEngine.prewarm(
                             url: streamURL,
                             httpHeaders: headers,
-                            byteBudget: 8 * 1024 * 1024
+                            byteBudget: prewarmBudget
                         )
                     }
                 }

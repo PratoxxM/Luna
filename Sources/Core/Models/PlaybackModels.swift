@@ -94,6 +94,25 @@ public struct TvPairingRequestResponse: Codable, Equatable, Sendable {
     public let pollIntervalSeconds: Int?
 }
 
+public struct TvDeviceCapabilities: Codable, Equatable, Sendable {
+    public var supportsHardwareAv1: Bool?
+    public var physicalMemoryGB: Int?
+
+    public init(supportsHardwareAv1: Bool? = nil, physicalMemoryGB: Int? = nil) {
+        self.supportsHardwareAv1 = supportsHardwareAv1
+        self.physicalMemoryGB = physicalMemoryGB
+    }
+}
+
+extension DeviceHardwareCapabilities {
+    public static var asTvCapabilities: TvDeviceCapabilities {
+        TvDeviceCapabilities(
+            supportsHardwareAv1: supportsHardwareAV1,
+            physicalMemoryGB: physicalMemoryGB
+        )
+    }
+}
+
 public struct TvPairedDeviceInfo: Codable, Equatable, Sendable {
     public let deviceId: String
     public let deviceName: String
@@ -102,6 +121,7 @@ public struct TvPairedDeviceInfo: Codable, Equatable, Sendable {
     public let equipmentLabel: String?
     public let atmosphere: String?
     public let overrides: TvDeviceOverrides?
+    public let capabilities: TvDeviceCapabilities?
 
     public init(
         deviceId: String,
@@ -110,7 +130,8 @@ public struct TvPairedDeviceInfo: Codable, Equatable, Sendable {
         hardwareProfile: String,
         equipmentLabel: String? = nil,
         atmosphere: String? = nil,
-        overrides: TvDeviceOverrides? = nil
+        overrides: TvDeviceOverrides? = nil,
+        capabilities: TvDeviceCapabilities? = nil
     ) {
         self.deviceId = deviceId
         self.deviceName = deviceName
@@ -119,6 +140,7 @@ public struct TvPairedDeviceInfo: Codable, Equatable, Sendable {
         self.equipmentLabel = equipmentLabel
         self.atmosphere = atmosphere
         self.overrides = overrides
+        self.capabilities = capabilities
     }
 }
 
@@ -147,6 +169,51 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
     public let explanationChips: [String]?
     public let releaseGroup: String?
     public let isNorwegian: Bool?
+    public let videoCodec: String?
+    public let sourceQuality: String?
+    public let channels: String?
+
+    public init(
+        candidateId: String,
+        displayHeadline: String,
+        releaseTitle: String,
+        source: String,
+        tier: String?,
+        resolution: String?,
+        videoRangeType: String?,
+        dvProfile: Int?,
+        dvEnhancementLayer: String?,
+        audioCodec: String?,
+        sizeBytes: Int64?,
+        tvScore: Int?,
+        isActive: Bool?,
+        explanationChips: [String]?,
+        releaseGroup: String?,
+        isNorwegian: Bool?,
+        videoCodec: String? = nil,
+        sourceQuality: String? = nil,
+        channels: String? = nil
+    ) {
+        self.candidateId = candidateId
+        self.displayHeadline = displayHeadline
+        self.releaseTitle = releaseTitle
+        self.source = source
+        self.tier = tier
+        self.resolution = resolution
+        self.videoRangeType = videoRangeType
+        self.dvProfile = dvProfile
+        self.dvEnhancementLayer = dvEnhancementLayer
+        self.audioCodec = audioCodec
+        self.sizeBytes = sizeBytes
+        self.tvScore = tvScore
+        self.isActive = isActive
+        self.explanationChips = explanationChips
+        self.releaseGroup = releaseGroup
+        self.isNorwegian = isNorwegian
+        self.videoCodec = videoCodec
+        self.sourceQuality = sourceQuality
+        self.channels = channels
+    }
 
     public var id: String { candidateId }
 
@@ -198,7 +265,14 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
         } else if let range = videoRangeType, !range.isEmpty, range != "SDR" {
             tags.append(range.replacingOccurrences(of: "HDR10Plus", with: "HDR10+"))
         }
-        if let ac = audioCodec, !ac.isEmpty, ac != "unknown" {
+        if let vc = videoCodec?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !vc.isEmpty,
+           vc.caseInsensitiveCompare("unknown") != .orderedSame {
+            tags.append(vc.uppercased())
+        }
+        if let audio = humanAudioSummary, !audio.isEmpty {
+            tags.append(audio)
+        } else if let ac = audioCodec, !ac.isEmpty, ac != "unknown" {
             tags.append(ac)
         }
         if let size = formattedSize {
@@ -244,6 +318,7 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
 
     public var humanAudioSummary: String? {
         let lower = (audioCodec ?? displayHeadline).lowercased()
+        let chanLower = (channels ?? "").lowercased()
         if lower.contains("atmos") && lower.contains("truehd") {
             return "TrueHD Atmos"
         }
@@ -254,13 +329,13 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
             return "DTS:X"
         }
         if lower.contains("truehd") {
-            return "TrueHD 7.1"
+            return chanLower.contains("5.1") ? "TrueHD 5.1" : "TrueHD 7.1"
         }
         if lower.contains("dts-hd") || lower.contains("dts hd") {
-            return "DTS-HD"
+            return chanLower.contains("7.1") ? "DTS-HD 7.1" : "DTS-HD"
         }
         if lower.contains("eac3") || lower.contains("ddp") || lower.contains("dd+") || lower.contains("dolby digital+") {
-            return lower.contains("5.1") ? "Dolby Digital+ 5.1" : "Dolby Digital+"
+            return (lower.contains("5.1") || chanLower.contains("5.1")) ? "Dolby Digital+ 5.1" : "Dolby Digital+"
         }
         if lower.contains("ac3") || lower.contains("dd 5.1") {
             return "Surround 5.1"
@@ -294,6 +369,16 @@ public struct TvCandidateInfo: Codable, Identifiable, Equatable, Sendable {
 
     public func humanDrawerSubtitle(isActive: Bool = false) -> String {
         var parts: [String] = [sourceBadgeLabel]
+        if let vc = videoCodec?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !vc.isEmpty,
+           vc.caseInsensitiveCompare("unknown") != .orderedSame {
+            parts.append(vc.uppercased())
+        }
+        if let sq = sourceQuality?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sq.isEmpty,
+           sq.caseInsensitiveCompare("unknown") != .orderedSame {
+            parts.append(sq)
+        }
         if let size = formattedSize, !size.isEmpty {
             parts.append(size)
         }

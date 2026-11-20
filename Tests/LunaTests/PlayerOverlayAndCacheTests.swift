@@ -61,7 +61,7 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
         let store = AppSessionStore(defaults: defaults)
         let customRooms = [
             TvRoomDefinition(roomName: "Kino", hardwareProfile: "dv-fel-714", label: "Kino 7.1.4"),
-            TvRoomDefinition(roomName: "Loft", hardwareProfile: "hdr10-512", label: "Loft 5.1.2"),
+            TvRoomDefinition(roomName: "Loft", hardwareProfile: "hdr10-512", label: "Loft 7.1.4"),
         ]
         let device = TvPairedDeviceInfo(
             deviceId: store.deviceID,
@@ -445,5 +445,62 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
         XCTAssertNotNil(BlurHashDecoder.cachedImage(sampleHash, width: 32, height: 24))
         await ArtworkPipeline.shared.clearAll()
         XCTAssertNil(BlurHashDecoder.cachedImage(sampleHash, width: 32, height: 24))
+    }
+
+    @MainActor
+    func testMetalFXKveldslysLockQMSModeAndSpeakerMigration() throws {
+        let suite = "luna.test.v282.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // Legacy 5.1.2 speaker override migrates cleanly to .auto (7.1.4)
+        defaults.set("5.1.2", forKey: SideloadSafeStorage.speakerLayoutOverrideKey)
+        let comfort = ComfortPreferences(defaults: defaults)
+        XCTAssertEqual(comfort.speakerLayoutOverride, .auto)
+        XCTAssertEqual(SpeakerLayoutOverrideMode.allCases, [.auto, .stereo])
+
+        // QMS MenuDisplayMode policy
+        XCTAssertFalse(
+            PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
+                menuDisplayMode: .preserveHDR60HzQMS,
+                videoFormat: .dolbyVision,
+                isForegroundActive: true
+            )
+        )
+        XCTAssertTrue(
+            PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
+                menuDisplayMode: .preserveHDR60HzQMS,
+                videoFormat: .sdr,
+                isForegroundActive: true
+            )
+        )
+
+        // Kveldslys lock messages & honest MetalFX active status
+        let engine = try LunaApp.makeSharedEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+        let vm = PlayerViewModel(engine: engine, comfort: comfort)
+        XCTAssertFalse(vm.isMetalFXActive)
+        XCTAssertNil(vm.activeMetalFXBadge)
+
+        vm.activeSubtitleTrackIndex = nil
+        XCTAssertEqual(vm.kveldslysLockReason, "Slå på undertekst for å justere")
+
+        vm.videoFormat = .sdr
+        vm.activeSubtitleTrackIndex = 1
+        XCTAssertEqual(vm.kveldslysLockReason, "Kun aktiv på HDR-innhold")
+
+        vm.videoFormat = .hdr10Plus
+        XCTAssertNil(vm.kveldslysLockReason)
+
+        vm.previewSubtitleOptions = [
+            PlayerDrawerSubtitleOption(id: 1, languageCode: "nob", rawTitle: "Norsk", isForced: false, isHearingImpaired: false, isExternal: true),
+        ]
+        XCTAssertNil(vm.kveldslysLockReason)
     }
 }

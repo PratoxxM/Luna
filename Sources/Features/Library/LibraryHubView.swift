@@ -3,6 +3,7 @@ import SwiftUI
 struct LibraryHubView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
+    @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
 
     let isActiveTab: Bool
     var onSelectTab: ((MainNavigationTab) -> Void)? = nil
@@ -76,9 +77,14 @@ struct LibraryHubView: View {
             .focusScope(sidebarFocusNamespace)
             .focusSection()
 
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 24) {
-                    if isLoading && libraryPayload == nil {
+            ScrollViewReader { scrollProxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 24) {
+                        Color.clear
+                            .frame(height: 0)
+                            .id("luna-scroll-top")
+
+                        if isLoading && libraryPayload == nil {
                         HStack(spacing: 16) {
                             ProgressView()
                             Text("Henter samlingen…")
@@ -109,6 +115,13 @@ struct LibraryHubView: View {
             .scrollClipDisabled()
             .lunaRootScrollTopBarTracking(tab: .library)
             .focusSection()
+            .onChange(of: scrollToTopNonce) { _, _ in
+                guard isActiveTab else { return }
+                withAnimation(.easeOut(duration: 0.22)) {
+                    scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
+                }
+            }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.top, LunaTopBarView.contentTopPadding)
@@ -184,7 +197,8 @@ struct LibraryHubView: View {
                 hasCachedContent: cached != nil,
                 lastValidatedAt: cached?.fetchedAt ?? .distantPast,
                 cachedRefreshNonce: cached?.refreshNonce ?? lastSeenRefreshNonce,
-                currentRefreshNonce: sessionStore.homeRefreshNonce
+                currentRefreshNonce: sessionStore.homeRefreshNonce,
+                freshnessInterval: DeviceHardwareCapabilities.isHighMemoryDevice ? 600 : TabContentFreshnessPolicy.defaultFreshnessInterval
             )
             guard !isFresh else { return }
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
@@ -204,7 +218,12 @@ struct LibraryHubView: View {
         guard let counts else { return nil }
         switch section {
         case .localAll: return counts.localTotal > 0 ? String(counts.localTotal) : nil
-        case .localMovies, .localSeries: return nil
+        case .localMovies:
+            if let movies = counts.localMovies, movies > 0 { return String(movies) }
+            return nil
+        case .localSeries:
+            if let series = counts.localSeries, series > 0 { return String(series) }
+            return nil
         case .watchlist: return counts.watchlist > 0 ? String(counts.watchlist) : nil
         case .lists: return counts.customLists > 0 ? String(counts.customLists) : nil
         }
@@ -368,7 +387,8 @@ struct LibraryHubView: View {
                    hasCachedContent: true,
                    lastValidatedAt: cached.fetchedAt,
                    cachedRefreshNonce: cached.refreshNonce,
-                   currentRefreshNonce: currentNonce
+                   currentRefreshNonce: currentNonce,
+                   freshnessInterval: DeviceHardwareCapabilities.isHighMemoryDevice ? 600 : TabContentFreshnessPolicy.defaultFreshnessInterval
                ) {
                 errorMessage = nil
                 return

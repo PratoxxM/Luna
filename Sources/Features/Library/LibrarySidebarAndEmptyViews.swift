@@ -12,7 +12,7 @@ internal struct LibraryBrowseSnapshot {
 @MainActor
 internal final class LibraryBrowseMemoryCache {
     static let shared = LibraryBrowseMemoryCache()
-    private let maxEntries = 12
+    private let maxEntries = DeviceHardwareCapabilities.isHighMemoryDevice ? 32 : 12
     private var entries: [String: LibraryBrowseSnapshot] = [:]
     private var order: [String] = []
 

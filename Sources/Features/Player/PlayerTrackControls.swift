@@ -111,4 +111,89 @@ extension PlayerViewModel {
             break
         }
     }
+
+    // MARK: - Tillegg A: Live MetalFX & Kveldslys Diagnostics
+
+    var isMetalFXActive: Bool {
+        activeUpscale != nil && activeUpscale?.disabledReason == nil
+    }
+
+    var activeMetalFXBadge: String? {
+        guard isMetalFXActive else { return nil }
+        let rawH = sourceVideoHeight > 0
+            ? Int(sourceVideoHeight)
+            : Int((activeUpscale?.sourceSize.height ?? 1080).rounded())
+        let sourceLabel = rawH > 0 ? "\(rawH)p" : "SD/HD"
+        if comfort.lowResUpscaleMode == .animeLineArt {
+            return "\(sourceLabel) → 4K MetalFX (Strek)"
+        }
+        return "\(sourceLabel) → 4K MetalFX"
+    }
+
+    var metalFXStatusSubtitle: String {
+        if isMetalFXActive {
+            return "\(activeMetalFXBadge ?? "MetalFX") · Aktiv nå"
+        }
+        if comfort.lowResUpscaleMode == .off {
+            return "Av · Standard tvOS-skalering"
+        }
+        if let reason = activeUpscale?.disabledReason, !reason.isEmpty {
+            return "Inaktiv (\(reason)) · Nativ skalering"
+        }
+        if videoFormat != .sdr {
+            return "HDR-fallback · Nativ skalering"
+        }
+        if sourceVideoHeight >= 1440 || sourceVideoWidth >= 2560 {
+            return "4K-kilde · Nativ skalering"
+        }
+        return "Klar for ≤ 1080p 8-bit SDR"
+    }
+
+    var kveldslysLockReason: String? {
+        guard let activeSubtitleTrackIndex else {
+            return "Slå på undertekst for å justere"
+        }
+        if videoFormat == .sdr {
+            return "Kun aktiv på HDR-innhold"
+        }
+        if subtitleTracks.first(where: { $0.id == activeSubtitleTrackIndex })?.isNativelyRenderedSubtitle == true {
+            return "Gjelder kun overleggstekst"
+        }
+        return nil
+    }
+
+    func cycleMetalFXModeLive() {
+        let all = LowResUpscaleMode.allCases
+        let nextMode: LowResUpscaleMode = {
+            guard let idx = all.firstIndex(of: comfort.lowResUpscaleMode) else {
+                return .auto
+            }
+            return all[(idx + 1) % all.count]
+        }()
+        comfort.lowResUpscaleMode = nextMode
+
+        guard !isResolving, !isSwitchingSource, previewAudioOptions.isEmpty else {
+            return
+        }
+
+        upscaleReloadTask?.cancel()
+        upscaleReloadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = try? await self.engine.reloadAtCurrentPosition { options in
+                switch nextMode {
+                case .off:
+                    options.upscalesLowResolutionVideo = false
+                case .auto:
+                    options.upscalesLowResolutionVideo = true
+                    options.upscaleScaler = .automatic
+                case .animeLineArt:
+                    options.upscalesLowResolutionVideo = true
+                    options.upscaleScaler = .lineArt
+                }
+            }
+            if !Task.isCancelled {
+                self.upscaleReloadTask = nil
+            }
+        }
+    }
 }

@@ -39,7 +39,9 @@ struct SettingsView: View {
 
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
+    @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
 
+    let isActiveTab: Bool
     @State private var selectedCategory: SettingsCategory
     @State private var cacheBytes: Int64 = 0
     @State private var cacheClearedNotice: Bool = false
@@ -48,7 +50,8 @@ struct SettingsView: View {
     @FocusState private var focusedCategory: SettingsCategory?
     @Namespace private var settingsSidebarNamespace
 
-    init(initialCategory: SettingsCategory = .roomAndDisplay) {
+    init(initialCategory: SettingsCategory = .roomAndDisplay, isActiveTab: Bool = true) {
+        self.isActiveTab = isActiveTab
         _selectedCategory = State(initialValue: initialCategory)
     }
 
@@ -76,20 +79,32 @@ struct SettingsView: View {
             .focusScope(settingsSidebarNamespace)
             .focusSection()
 
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 24) {
-                    selectedCategoryPanel(caps: caps)
+            ScrollViewReader { scrollProxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 24) {
+                        Color.clear
+                            .frame(height: 0)
+                            .id("luna-scroll-top")
+
+                        selectedCategoryPanel(caps: caps)
+                    }
+                    .frame(maxWidth: 1280, alignment: .topLeading)
+                    .padding(.top, 12)
+                    .padding(.bottom, 84)
                 }
-                .frame(maxWidth: 1280, alignment: .topLeading)
-                .padding(.top, 12)
-                .padding(.bottom, 84)
+                .scrollClipDisabled()
+                .contentMargins(.zero, for: .scrollContent)
+                .id(selectedCategory)
+                .lunaRootScrollTopBarTracking(tab: .settings)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .focusSection()
+                .onChange(of: scrollToTopNonce) { _, _ in
+                    guard isActiveTab else { return }
+                    withAnimation(.easeOut(duration: 0.22)) {
+                        scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
+                    }
+                }
             }
-            .scrollClipDisabled()
-            .contentMargins(.zero, for: .scrollContent)
-            .id(selectedCategory)
-            .lunaRootScrollTopBarTracking(tab: .settings)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .focusSection()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.top, LunaTopBarView.contentTopPadding)
@@ -118,6 +133,7 @@ struct SettingsView: View {
         }
         .task {
             await refreshCacheMetricsAsync()
+            await sessionStore.refreshProfileFromServer()
         }
         .onChange(of: showReconnectDialog) { _, isShowingDialog in
             if isShowingDialog {

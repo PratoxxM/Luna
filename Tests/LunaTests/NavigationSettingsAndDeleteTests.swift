@@ -343,7 +343,7 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
         XCTAssertLessThanOrEqual(hdrPresetRowSize.width, 1100)
         XCTAssertLessThanOrEqual(hdrPresetRowSize.height, 76)
 
-        store.localProfileOverride = "hdr10-512"
+        store.setRoomAndProfile(roomName: "Stua", hardwareProfile: "hdr10-512")
         for category in SettingsCategory.allCases {
             let settingsHost = UIHostingController(
                 rootView: SettingsView(initialCategory: category)

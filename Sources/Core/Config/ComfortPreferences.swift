@@ -11,10 +11,10 @@ public enum HDRSubtitlePreset: String, CaseIterable, Identifiable, Sendable {
 
     public var displayTitle: String {
         switch self {
-        case .white100: return "100 % hvit"
-        case .warm75: return "75 % varmhvit"
-        case .warm60: return "60 % dempet kveld"
-        case .soft50: return "50 % nattkino"
+        case .white100: return "Klar hvit 100 %"
+        case .warm75: return "Varm 75 % (Standard)"
+        case .warm60: return "Dempet 60 %"
+        case .soft50: return "Kveldsro 50 %"
         }
     }
 
@@ -144,18 +144,49 @@ public enum DualLayerOverrideMode: String, CaseIterable, Identifiable, Sendable 
 
 public enum SpeakerLayoutOverrideMode: String, CaseIterable, Identifiable, Sendable {
     case auto = "auto"
-    case l714 = "7.1.4"
-    case l512 = "5.1.2"
     case stereo = "2.0"
 
     public var id: String { rawValue }
 
     public var displayTitle: String {
         switch self {
-        case .auto: return "Auto fra romprofil"
-        case .l714: return "7.1.4 objektlyd"
-        case .l512: return "5.1.2 objektlyd"
-        case .stereo: return "Stereo 2.0"
+        case .auto: return "Auto (7.1.4)"
+        case .stereo: return "Stereo 2.0 (TV-høyttalere)"
+        }
+    }
+
+    public static func fromStored(_ raw: String?) -> SpeakerLayoutOverrideMode {
+        let clean = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if clean == "2.0" || clean == "stereo" {
+            return .stereo
+        }
+        return .auto
+    }
+}
+
+public enum MenuDisplayMode: String, CaseIterable, Identifiable, Sendable {
+    case sdr60Hz = "sdr_60hz"
+    case preserveHDR60HzQMS = "hdr_60hz_qms"
+    case preserveExactMatch = "exact_match"
+
+    public var id: String { rawValue }
+
+    public var displayTitle: String {
+        switch self {
+        case .sdr60Hz: return "Standard SDR 60 Hz"
+        case .preserveHDR60HzQMS: return "Behold HDR i 60 Hz (QMS)"
+        case .preserveExactMatch: return "Behold filmens eksakte skjermmodus"
+        }
+    }
+
+    public var shortDescription: String {
+        switch self {
+        case .sdr60Hz:
+            return "Går tilbake til SDR 60 Hz i menyen (anbefalt for skjermer uten QMS)."
+        case .preserveHDR60HzQMS:
+            return "Beholder HDR/DV og skifter sømløst 24p → 60 Hz uten HDMI-blink på QMS-skjermer."
+        case .preserveExactMatch:
+            return "Beholder filmens nøyaktige 24p/HDR-modus til appen legges i bakgrunnen."
         }
     }
 }
@@ -194,16 +225,16 @@ public enum LowResUpscaleMode: String, CaseIterable, Identifiable, Sendable {
     public var displayTitle: String {
         switch self {
         case .off: return "Av"
-        case .auto: return "Auto MetalFX"
-        case .animeLineArt: return "Anime og strek"
+        case .auto: return "Auto (< 1080p 8-bit SDR)"
+        case .animeLineArt: return "Skarp strek / Anime (≤ 1080p SDR)"
         }
     }
 
     public var shortDescription: String {
         switch self {
-        case .off: return "Nativ Apple TV-skalering"
-        case .auto: return "Skarp oppskalering for SD / 720p / 1080p"
-        case .animeLineArt: return "Linjekunst-skalerer for animasjon og anime"
+        case .off: return "Standard tvOS-skalering uten MetalFX."
+        case .auto: return "MetalFX for SD/720p/1080p 8-bit SDR. 4K og HDR/DV bruker nativ skalering."
+        case .animeLineArt: return "Linjekunst-skalerer for animasjon og anime i ≤ 1080p 8-bit SDR."
         }
     }
 }
@@ -283,21 +314,23 @@ public final class ComfortPreferences: ObservableObject {
         }
     }
 
-    @Published public var keepDisplayModeInMenuAfterPlayback: Bool {
+    @Published public var menuDisplayMode: MenuDisplayMode {
         didSet {
-            guard oldValue != keepDisplayModeInMenuAfterPlayback else { return }
-            defaults.set(
-                keepDisplayModeInMenuAfterPlayback,
-                forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey
-            )
+            guard oldValue != menuDisplayMode else { return }
+            defaults.set(menuDisplayMode.rawValue, forKey: SideloadSafeStorage.menuDisplayModeKey)
+            defaults.set(menuDisplayMode != .sdr60Hz, forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey)
         }
     }
 
-    /// True (default on v2.4.0+) when exiting the video player immediately restores 60 Hz tvOS menus.
-    /// Turning `keepDisplayModeInMenuAfterPlayback` on ("På" per TV in Settings) holds the video's display mode in menus until backgrounding.
+    /// True when leaving playback keeps HDR/24p criteria active rather than immediately returning to SDR 60 Hz.
+    public var keepDisplayModeInMenuAfterPlayback: Bool {
+        get { menuDisplayMode != .sdr60Hz }
+        set { menuDisplayMode = newValue ? .preserveExactMatch : .sdr60Hz }
+    }
+
     public var returnTo60HzInMenuAfterPlayback: Bool {
-        get { !keepDisplayModeInMenuAfterPlayback }
-        set { keepDisplayModeInMenuAfterPlayback = !newValue }
+        get { menuDisplayMode == .sdr60Hz }
+        set { menuDisplayMode = newValue ? .sdr60Hz : .preserveExactMatch }
     }
 
     @Published public var lowResUpscaleMode: LowResUpscaleMode {
@@ -343,19 +376,29 @@ public final class ComfortPreferences: ObservableObject {
         let rawDL = defaults.string(forKey: SideloadSafeStorage.dualLayerOverrideKey) ?? DualLayerOverrideMode.auto.rawValue
         self.dualLayerOverride = DualLayerOverrideMode(rawValue: rawDL) ?? .auto
 
-        let rawSpk = defaults.string(forKey: SideloadSafeStorage.speakerLayoutOverrideKey) ?? SpeakerLayoutOverrideMode.auto.rawValue
-        self.speakerLayoutOverride = SpeakerLayoutOverrideMode(rawValue: rawSpk) ?? .auto
+        let rawSpk = defaults.string(forKey: SideloadSafeStorage.speakerLayoutOverrideKey)
+        self.speakerLayoutOverride = SpeakerLayoutOverrideMode.fromStored(rawSpk)
+        if let rawSpk, rawSpk == "5.1.2" || rawSpk == "7.1.4" {
+            defaults.set(SpeakerLayoutOverrideMode.auto.rawValue, forKey: SideloadSafeStorage.speakerLayoutOverrideKey)
+        }
 
         self.autoPlayNextEpisode = defaults.object(forKey: SideloadSafeStorage.autoPlayNextEpisodeKey) as? Bool ?? true
         self.smartNordicSubtitleRule = defaults.object(forKey: SideloadSafeStorage.smartNordicSubtitleRuleKey) as? Bool ?? true
         self.showNerdHUD = defaults.object(forKey: SideloadSafeStorage.showNerdHUDKey) as? Bool ?? false
         if !defaults.bool(forKey: SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key) {
             defaults.set(false, forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey)
+            defaults.set(MenuDisplayMode.sdr60Hz.rawValue, forKey: SideloadSafeStorage.menuDisplayModeKey)
             defaults.set(true, forKey: SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key)
         }
-        self.keepDisplayModeInMenuAfterPlayback = defaults.object(
-            forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey
-        ) as? Bool ?? false
+        if let rawMenuMode = defaults.string(forKey: SideloadSafeStorage.menuDisplayModeKey),
+           let parsedMenuMode = MenuDisplayMode(rawValue: rawMenuMode) {
+            self.menuDisplayMode = parsedMenuMode
+        } else {
+            let legacyKeep = defaults.object(
+                forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey
+            ) as? Bool ?? false
+            self.menuDisplayMode = legacyKeep ? .preserveExactMatch : .sdr60Hz
+        }
         let rawUpscale = defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey) ?? LowResUpscaleMode.off.rawValue
         self.lowResUpscaleMode = LowResUpscaleMode(rawValue: rawUpscale) ?? .off
         if defaults.object(forKey: SideloadSafeStorage.audioDelayMsKey) != nil {
@@ -416,8 +459,11 @@ public final class ComfortPreferences: ObservableObject {
         if let dl = ov.dualLayerOverride, let parsed = DualLayerOverrideMode(rawValue: dl), parsed != dualLayerOverride {
             dualLayerOverride = parsed
         }
-        if let spk = ov.speakerLayoutOverride, let parsed = SpeakerLayoutOverrideMode(rawValue: spk), parsed != speakerLayoutOverride {
-            speakerLayoutOverride = parsed
+        if let spk = ov.speakerLayoutOverride {
+            let parsed = SpeakerLayoutOverrideMode.fromStored(spk)
+            if parsed != speakerLayoutOverride {
+                speakerLayoutOverride = parsed
+            }
         }
         if let autoNext = ov.autoPlayNextEpisode, autoNext != autoPlayNextEpisode {
             autoPlayNextEpisode = autoNext
@@ -454,7 +500,7 @@ public final class ComfortPreferences: ObservableObject {
                 dialogueGainDB: 3.5,
                 compressor: .night,
                 loudnessTargetLUFS: -20.0,
-                lfeMixDB: -6.0
+                lfeMixDB: stereoLfeDB
             )
         }
     }

@@ -6,55 +6,6 @@ struct SettingsAdvancedSectionView: View {
 
     var body: some View {
         SettingsSectionPanel(title: "Avansert") {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Velg annet rom på denne TV-en")
-                    .font(LunaTheme.Font.settingsSubLabel)
-                    .foregroundStyle(LunaTheme.muted)
-
-                let matchingProfileCount = Dictionary(
-                    grouping: sessionStore.availableRooms,
-                    by: \.hardwareProfile
-                ).mapValues(\.count)
-
-                ForEach(sessionStore.availableRooms) { room in
-                    let isSelected = sessionStore.effectiveHardwareProfile == room.hardwareProfile &&
-                        (sessionStore.roomName == room.roomName || (matchingProfileCount[room.hardwareProfile] ?? 0) == 1)
-                    let fallbackPreset = HardwareProfilePreset(rawValue: room.hardwareProfile)
-                    let eqLabel = LunaCopy.roomEquipmentLabel(
-                        hardwareProfile: room.hardwareProfile,
-                        roomName: room.roomName,
-                        serverLabel: room.equipmentLabel
-                    )
-                    SettingsRoomRowButton(
-                        title: room.label ?? fallbackPreset?.displayTitle ?? room.roomName,
-                        subtitle: room.description ?? eqLabel,
-                        isSelected: isSelected
-                    ) {
-                        sessionStore.setRoomAndProfile(
-                            roomName: room.roomName,
-                            hardwareProfile: room.hardwareProfile,
-                            persistAsLocalOverride: true
-                        )
-                    }
-                }
-
-                if sessionStore.localProfileOverride != nil {
-                    LunaPillButton(
-                        "Bruk rom valgt i LunaCore",
-                        systemImage: "arrow.uturn.backward",
-                        prominence: .glassPill,
-                        size: .compact
-                    ) {
-                        Task {
-                            await sessionStore.restoreServerManagedRoomAndProfile()
-                        }
-                    }
-                    .padding(.top, 4)
-                }
-            }
-
-            SettingsSectionDivider()
-
             SettingsControlRow(title: "Dolby Vision Dual-Layer (P7 FEL)") {
                 HStack(spacing: 8) {
                     ForEach(DualLayerOverrideMode.allCases) { mode in
@@ -72,7 +23,10 @@ struct SettingsAdvancedSectionView: View {
 
             SettingsSectionDivider()
 
-            SettingsControlRow(title: "Høyttaleroppsett og objektlyd") {
+            SettingsControlRow(
+                title: "Høyttaleroppsett og objektlyd",
+                subtitle: "Auto (7.1.4) lar lydplanke/forsterker dekode full Atmos/DTS:X. Stereo 2.0 brukes som feilsøking for TV-høyttalere."
+            ) {
                 HStack(spacing: 8) {
                     ForEach(SpeakerLayoutOverrideMode.allCases) { mode in
                         LunaPillButton(
@@ -118,26 +72,6 @@ struct SettingsAdvancedSectionView: View {
                         }
                         LunaPillButton("+25 ms", prominence: .subtleChip, size: .compact) {
                             comfort.adjustAudioDelay(byMs: 25)
-                        }
-                    }
-                }
-            }
-
-            SettingsSectionDivider()
-
-            SettingsControlRow(
-                title: "Lavoppløst oppskalering (Auto MetalFX)",
-                subtitle: comfort.lowResUpscaleMode.shortDescription
-            ) {
-                HStack(spacing: 8) {
-                    ForEach(LowResUpscaleMode.allCases) { mode in
-                        LunaPillButton(
-                            mode.displayTitle,
-                            isSelected: comfort.lowResUpscaleMode == mode,
-                            prominence: comfort.lowResUpscaleMode == mode ? .glassPill : .subtleChip,
-                            size: .compact
-                        ) {
-                            comfort.lowResUpscaleMode = mode
                         }
                     }
                 }

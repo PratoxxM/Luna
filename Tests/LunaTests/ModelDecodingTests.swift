@@ -205,7 +205,7 @@ final class ModelDecodingTests: XCTestCase {
 
         let autoNight = comfort.buildAudioShaping(enhancement: .nightMode)
         XCTAssertNil(autoNight.maxChannels)
-        XCTAssertEqual(autoNight.lfeMixDB, -6.0)
+        XCTAssertNil(autoNight.lfeMixDB)
     }
 
     func testFrontPageCardCleanSubtitlesAndUpcomingPills() {

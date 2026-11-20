@@ -13,7 +13,7 @@ internal struct CatalogBrowseSnapshot {
 @MainActor
 internal final class CatalogBrowseMemoryCache {
     static let shared = CatalogBrowseMemoryCache()
-    private let maxEntries = 16
+    private let maxEntries = DeviceHardwareCapabilities.isHighMemoryDevice ? 48 : 16
     private var entries: [String: CatalogBrowseSnapshot] = [:]
     private var order: [String] = []
 
@@ -45,6 +45,7 @@ internal final class CatalogBrowseMemoryCache {
 struct CatalogBrowseView: View {
     @EnvironmentObject private var sessionStore: AppSessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
+    @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
 
     let mediaType: String
     let initialGenre: TvGenreChip?
@@ -125,12 +126,17 @@ struct CatalogBrowseView: View {
     var body: some View {
         let client = sessionStore.makeClient()
 
-        return ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 26) {
-                Text(headerTitle)
-                    .font(LunaTheme.Font.pageTitle)
-                    .foregroundStyle(LunaTheme.linen)
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
+        return ScrollViewReader { scrollProxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 26) {
+                    Color.clear
+                        .frame(height: 0)
+                        .id("luna-scroll-top")
+
+                    Text(headerTitle)
+                        .font(LunaTheme.Font.pageTitle)
+                        .foregroundStyle(LunaTheme.linen)
+                        .padding(.horizontal, LunaTheme.horizontalGutter)
 
                 // Single calm compact filter strip within 90 pt margins
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -254,7 +260,7 @@ struct CatalogBrowseView: View {
                                 card: card,
                                 client: client,
                                 width: LunaTokens.Layout.posterW,
-                                showStorageBadge: !isRootTab && (localOnly || selectedSort == "local_recent"),
+                                showStorageBadge: true,
                                 onSelect: {
                                     selectedCard = card
                                 },
@@ -309,6 +315,12 @@ struct CatalogBrowseView: View {
         .ignoresSafeArea()
         .defaultFocus($focusedCardId, items.first?.id, priority: .userInitiated)
         .lunaRootScrollTopBarTracking(tab: rootNavigationTab, isEnabled: isRootTab)
+        .onChange(of: scrollToTopNonce) { _, _ in
+            guard isRootTab, isActiveTab else { return }
+            withAnimation(.easeOut(duration: 0.22)) {
+                scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
+            }
+        }
         .overlay(alignment: .topLeading) {
             if let mutationErrorBanner {
                 TransientErrorBanner(message: mutationErrorBanner)
@@ -351,7 +363,8 @@ struct CatalogBrowseView: View {
                 hasCachedContent: !(cached?.items.isEmpty ?? items.isEmpty),
                 lastValidatedAt: cached?.fetchedAt ?? .distantPast,
                 cachedRefreshNonce: cached?.refreshNonce ?? lastSeenRefreshNonce,
-                currentRefreshNonce: sessionStore.homeRefreshNonce
+                currentRefreshNonce: sessionStore.homeRefreshNonce,
+                freshnessInterval: DeviceHardwareCapabilities.isHighMemoryDevice ? 600 : TabContentFreshnessPolicy.defaultFreshnessInterval
             )
             guard !isFresh else { return }
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
@@ -368,6 +381,7 @@ struct CatalogBrowseView: View {
             ) {
                 subpageVisibility.leaveSubpage(subpageToken)
             }
+        }
         }
     }
 
@@ -421,7 +435,8 @@ struct CatalogBrowseView: View {
                    hasCachedContent: !cached.items.isEmpty,
                    lastValidatedAt: cached.fetchedAt,
                    cachedRefreshNonce: cached.refreshNonce,
-                   currentRefreshNonce: currentNonce
+                   currentRefreshNonce: currentNonce,
+                   freshnessInterval: DeviceHardwareCapabilities.isHighMemoryDevice ? 600 : TabContentFreshnessPolicy.defaultFreshnessInterval
                ) {
                 errorMessage = nil
                 isLoading = false

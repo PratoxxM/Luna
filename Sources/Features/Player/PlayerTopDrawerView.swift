@@ -189,6 +189,7 @@ struct PlayerDrawerOptionCardButton: View {
     let title: String
     let subtitle: String?
     let isSelected: Bool
+    var isDimmedLocked: Bool = false
     var width: CGFloat = 330
     let action: () -> Void
 
@@ -197,9 +198,9 @@ struct PlayerDrawerOptionCardButton: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(isSelected ? "\(title) ✓" : title)
+                Text(isSelected && !isDimmedLocked ? "\(title) ✓" : title)
                     .font(LunaTheme.Font.cardTitle)
-                    .foregroundStyle(LunaTheme.linen)
+                    .foregroundStyle(isDimmedLocked ? LunaTheme.muted : LunaTheme.linen)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
@@ -219,6 +220,7 @@ struct PlayerDrawerOptionCardButton: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(isFocused ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
             )
+            .opacity(isDimmedLocked ? (isFocused ? 0.82 : 0.52) : 1.0)
             .overlay(
                 Group {
                     if isFocused {

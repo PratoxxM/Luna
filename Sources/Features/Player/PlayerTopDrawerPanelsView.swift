@@ -27,6 +27,17 @@ extension PlayerTopDrawerView {
                     .lineLimit(2)
                     .padding(.top, 2)
             }
+
+            PlayerDrawerOptionCardButton(
+                title: "MetalFX: \(comfort.lowResUpscaleMode.displayTitle)",
+                subtitle: viewModel.metalFXStatusSubtitle,
+                isSelected: viewModel.isMetalFXActive,
+                width: 440
+            ) {
+                viewModel.cycleMetalFXModeLive()
+            }
+            .padding(.top, 8)
+            .focusSection()
         }
         .frame(maxWidth: 1020, alignment: .leading)
         .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -72,12 +83,15 @@ extension PlayerTopDrawerView {
                         viewModel.clearSubtitleManually()
                     }
 
+                    let kveldslysLock = viewModel.kveldslysLockReason
                     PlayerDrawerOptionCardButton(
                         title: "Kveldslys",
-                        subtitle: comfort.hdrSubtitlePreset.displayTitle,
-                        isSelected: comfort.hdrSubtitlePreset != .white100,
+                        subtitle: kveldslysLock ?? comfort.hdrSubtitlePreset.displayTitle,
+                        isSelected: kveldslysLock == nil && comfort.hdrSubtitlePreset != .white100,
+                        isDimmedLocked: kveldslysLock != nil,
                         width: 300
                     ) {
+                        guard viewModel.kveldslysLockReason == nil else { return }
                         cycleNightLightPreset()
                     }
 
@@ -324,6 +338,9 @@ extension PlayerTopDrawerView {
             if !quality.isEmpty {
                 parts.append(quality)
             }
+        }
+        if let badge = viewModel.activeMetalFXBadge {
+            parts.append(badge)
         }
         return parts.joined(separator: " · ")
     }

@@ -58,6 +58,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var sourceVideoFrameRate: Double?
     @Published var activeVideoDecoder: String?
     @Published var activeAudioDecoder: String?
+    @Published var activeUpscale: UpscaleStatus?
 
     @Published var audioTracks: [TrackInfo] = []
     @Published var activeAudioTrackIndex: Int?
@@ -145,6 +146,7 @@ final class PlayerViewModel: ObservableObject {
     var smartRuleTask: Task<Void, Never>?
     var switchSourceTask: Task<Void, Never>?
     var audioDelayCommitTask: Task<Void, Never>?
+    var upscaleReloadTask: Task<Void, Never>?
     var foregroundRestoreTask: Task<Void, Never>?
     private(set) var pausedRestoreResumeTask: Task<Void, Never>?
     private var pausedRestoreResumeToken: UInt64 = 0
@@ -543,13 +545,17 @@ final class PlayerViewModel: ObservableObject {
         if PlayerAudioSessionCoordinator.shared.isCurrentEngineOwner(engineOwnerToken) {
             PlayerNowPlayingCoordinator.clear(engine: engine)
             let resetOnExit = PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
-                keepDisplayModeInMenuAfterPlayback: comfort.keepDisplayModeInMenuAfterPlayback,
+                menuDisplayMode: comfort.menuDisplayMode,
+                videoFormat: videoFormat,
                 isForegroundActive: isForegroundActive
             )
             transport.stop(resetDisplayCriteria: resetOnExit, finalTeardown: true)
             if resetOnExit {
                 PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
             } else {
+                if comfort.menuDisplayMode == .preserveHDR60HzQMS {
+                    PlayerAudioSessionCoordinator.shared.applyMenu60HzHDRCriteriaIfNeeded(videoFormat: videoFormat)
+                }
                 PlayerAudioSessionCoordinator.shared.holdDisplayCriteriaUntilBackground(engine: engine)
             }
         }

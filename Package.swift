@@ -45,6 +45,7 @@ let package = Package(
                 "App/PreviewLaunchConfiguration.swift",
                 "Core/Cache/DiskSWRStore.swift",
                 "Core/Catalog/CatalogShelfIndexer.swift",
+                "Core/Config/DeviceHardwareCapabilities.swift",
                 "Core/Config/SideloadSafeStorage.swift",
                 "Core/Config/SmartTrackRuleEngine.swift",
                 "Core/Models/ChapterModels.swift",
@@ -60,6 +61,7 @@ let package = Package(
                 "Core/Networking/LunaCoreSessionPool.swift",
                 "Core/Networking/PlaybackResolveSocket.swift",
                 "Core/Playback/PlaybackCoreAbstractions.swift",
+                "Core/Playback/RemoteScrubMath.swift",
                 "DesignSystem/LunaCopy.swift",
             ]
         ),

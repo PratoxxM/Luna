@@ -503,7 +503,7 @@ final class LunaCoreLinuxTests: XCTestCase {
             roomName: "Stua",
             hardwareProfile: "hdr10-512",
             allowSelfSignedLanTLS: true,
-            appVersion: "2.8.1",
+            appVersion: "2.8.2",
             osVersion: "Linux-CI",
             session: session
         )
@@ -629,5 +629,76 @@ final class LunaCoreLinuxTests: XCTestCase {
         let detailCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "details"])
         XCTAssertEqual(detailCfg?.screen, .details)
         XCTAssertNil(detailCfg?.focusDirection)
+    }
+
+    func testRemoteScrubMathDeviceCapabilitiesAndLibraryModels() throws {
+        // 1. RemoteScrubMath deadzones, playing threshold, axis lock, 75 s cubic curve & click drift
+        XCTAssertEqual(RemoteScrubMath.deltaSeconds(forNormalizedX: 0.10), 0)
+        XCTAssertEqual(RemoteScrubMath.deltaSeconds(forNormalizedX: -0.18), 0)
+        XCTAssertGreaterThan(RemoteScrubMath.deltaSeconds(forNormalizedX: 0.25), 0)
+        XCTAssertEqual(RemoteScrubMath.deltaSeconds(forNormalizedX: 1.0), 75.0, accuracy: 0.001)
+        XCTAssertEqual(RemoteScrubMath.deltaSeconds(forNormalizedX: -1.0), -75.0, accuracy: 0.001)
+
+        let playingSmall = RemoteScrubMath.evaluatePan(dx: 65, dy: 4, normalizedX: 0.25, isPlaying: true, alreadyActive: false)
+        XCTAssertFalse(playingSmall.shouldActivate)
+        let pausedSmall = RemoteScrubMath.evaluatePan(dx: 65, dy: 4, normalizedX: 0.25, isPlaying: false, alreadyActive: false)
+        XCTAssertTrue(pausedSmall.shouldActivate)
+        let verticalDrag = RemoteScrubMath.evaluatePan(dx: 40, dy: 45, normalizedX: 0.40, isPlaying: false, alreadyActive: false)
+        XCTAssertFalse(verticalDrag.shouldActivate)
+
+        XCTAssertTrue(RemoteScrubMath.shouldSuppressPanCommit(secondsSinceDiscreteClick: 0.08, maxAbsNormalizedX: 0.22))
+        XCTAssertFalse(RemoteScrubMath.shouldSuppressPanCommit(secondsSinceDiscreteClick: 0.08, maxAbsNormalizedX: 0.45))
+        XCTAssertFalse(RemoteScrubMath.shouldSuppressPanCommit(secondsSinceDiscreteClick: 1.5, maxAbsNormalizedX: 0.22))
+
+        // 2. DeviceHardwareCapabilities RAM tier rounding
+        XCTAssertEqual(DeviceHardwareCapabilities.roundedGigabytes(for: 4 * 1_073_741_824), 4)
+        XCTAssertEqual(DeviceHardwareCapabilities.roundedGigabytes(for: 8 * 1_073_741_824), 8)
+        XCTAssertFalse(DeviceHardwareCapabilities.isHighMemory(physicalMemoryBytes: 4 * 1_073_741_824))
+        XCTAssertTrue(DeviceHardwareCapabilities.isHighMemory(physicalMemoryBytes: 8 * 1_073_741_824))
+
+        // 3. TvLibraryCounts localMovies / localSeries + TvCandidateInfo extended fields
+        let countsJson = #"{"localTotal":396,"localMovies":312,"localSeries":84,"favorites":10,"watchlist":24,"nvme":350,"archive":46,"vfs":0,"customLists":2}"#
+        let counts = try JSONDecoder().decode(TvLibraryCounts.self, from: Data(countsJson.utf8))
+        XCTAssertEqual(counts.localMovies, 312)
+        XCTAssertEqual(counts.localSeries, 84)
+
+        let cand = TvCandidateInfo(
+            candidateId: "local:sqlite:42",
+            displayHeadline: "4K HDR10+ · TrueHD Atmos",
+            releaseTitle: "Film.2026.2160p.UHD.BluRay.Remux",
+            source: "ssd",
+            tier: "nvme",
+            resolution: "2160p",
+            videoRangeType: "HDR10Plus",
+            dvProfile: nil,
+            dvEnhancementLayer: nil,
+            audioCodec: "TrueHD Atmos",
+            sizeBytes: 64_424_509_440,
+            tvScore: 1500,
+            isActive: false,
+            explanationChips: nil,
+            releaseGroup: nil,
+            isNorwegian: false,
+            videoCodec: "hevc",
+            sourceQuality: "Bluray-2160p",
+            channels: "7.1"
+        )
+        XCTAssertTrue(cand.capabilityBadges.contains("HEVC"))
+        XCTAssertEqual(cand.humanDrawerSubtitle(isActive: false), "På NVMe · HEVC · Bluray-2160p · 60,0 GB")
+
+        // 4. Transport excludes legacy split-brain X-Room-Name / X-Hardware-Profile headers
+        let client = LunaCoreClient(
+            baseURL: URL(string: "http://127.0.0.1:8090")!,
+            deviceID: "luna-test",
+            deviceToken: "tok-1",
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512",
+            allowSelfSignedLanTLS: true
+        )
+        let headers = client.streamHTTPHeaders()
+        XCTAssertNil(headers["X-Room-Name"])
+        XCTAssertNil(headers["X-Hardware-Profile"])
+        XCTAssertNotNil(headers["X-Supports-HW-AV1"])
+        XCTAssertNotNil(headers["X-Physical-Memory-GB"])
     }
 }

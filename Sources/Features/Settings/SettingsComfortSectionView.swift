@@ -14,28 +14,94 @@ struct SettingsRoomDisplaySectionView: View {
                 value: "\(sessionStore.roomName) · \(sessionStore.effectiveEquipmentLabel)"
             )
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Velg rom for denne Apple TV-en (oppdaterer LunaCore direkte)")
+                    .font(LunaTheme.Font.settingsRowSubtitle)
+                    .foregroundStyle(LunaTheme.muted)
+
+                let matchingProfileCount = Dictionary(
+                    grouping: sessionStore.availableRooms,
+                    by: \.hardwareProfile
+                ).mapValues(\.count)
+
+                ForEach(sessionStore.availableRooms) { room in
+                    let isSelected = sessionStore.effectiveHardwareProfile == room.hardwareProfile &&
+                        (sessionStore.roomName == room.roomName || (matchingProfileCount[room.hardwareProfile] ?? 0) == 1)
+                    let fallbackPreset = HardwareProfilePreset(rawValue: room.hardwareProfile)
+                    let eqLabel = LunaCopy.roomEquipmentLabel(
+                        hardwareProfile: room.hardwareProfile,
+                        roomName: room.roomName,
+                        serverLabel: room.equipmentLabel
+                    )
+                    SettingsRoomRowButton(
+                        title: room.label ?? fallbackPreset?.displayTitle ?? room.roomName,
+                        subtitle: room.description ?? eqLabel,
+                        isSelected: isSelected
+                    ) {
+                        sessionStore.setRoomAndProfile(
+                            roomName: room.roomName,
+                            hardwareProfile: room.hardwareProfile
+                        )
+                    }
+                }
+            }
+
             SettingsSectionDivider()
 
-            SettingsToggleRowButton(
-                title: SettingsView.keepDisplayModeToggleTitle,
-                subtitle: SettingsView.keepDisplayModeExplanationText,
-                isOn: $comfort.keepDisplayModeInMenuAfterPlayback
-            )
+            SettingsControlRow(
+                title: "MetalFX 4K-oppskalering",
+                subtitle: comfort.lowResUpscaleMode.shortDescription
+            ) {
+                HStack(spacing: 8) {
+                    ForEach(LowResUpscaleMode.allCases) { mode in
+                        LunaPillButton(
+                            mode.displayTitle,
+                            isSelected: comfort.lowResUpscaleMode == mode,
+                            prominence: comfort.lowResUpscaleMode == mode ? .glassPill : .subtleChip,
+                            size: .compact
+                        ) {
+                            comfort.lowResUpscaleMode = mode
+                        }
+                    }
+                }
+            }
 
             SettingsSectionDivider()
 
-            SettingsInfoRow(title: "HDMI og skjermstøtte", value: hdmiSummary)
+            SettingsControlRow(
+                title: "Skjermmodus i meny etter film",
+                subtitle: comfort.menuDisplayMode.shortDescription
+            ) {
+                HStack(spacing: 8) {
+                    ForEach(MenuDisplayMode.allCases) { mode in
+                        LunaPillButton(
+                            mode.displayTitle,
+                            isSelected: comfort.menuDisplayMode == mode,
+                            prominence: comfort.menuDisplayMode == mode ? .glassPill : .subtleChip,
+                            size: .compact
+                        ) {
+                            comfort.menuDisplayMode = mode
+                        }
+                    }
+                }
+            }
+
+            SettingsSectionDivider()
+
+            SettingsInfoRow(title: "Aktiv tvOS-videomodus nå", value: activeVideoModeSummary)
         }
     }
 
-    private var hdmiSummary: String {
+    private var activeVideoModeSummary: String {
         var modes: [String] = []
         if caps.supportsDolbyVision { modes.append("Dolby Vision") }
         if caps.supportsHDR10 { modes.append("HDR10") }
         if caps.supportsHLG { modes.append("HLG") }
         if modes.isEmpty { modes.append("SDR") }
-        let appVer = AppSessionStore.currentAppVersionDisplayString()
-        return "Luna \(appVer) · AetherEngine \(AetherBridgeInfo.pinnedAetherEngineVersion) · \(modes.joined(separator: " / "))"
+        if !caps.supportsDolbyVision && caps.supportsHDR10 {
+            return "\(modes.joined(separator: " / ")) · HDR10+ aktiveres dynamisk i spiller"
+        }
+        return modes.joined(separator: " / ")
     }
 }
 
@@ -121,8 +187,8 @@ struct SettingsPlaybackSectionView: View {
             SettingsSectionDivider()
 
             SettingsInfoRow(
-                title: "Avspillingsmotor",
-                value: "AetherEngine \(AetherBridgeInfo.pinnedAetherEngineVersion)"
+                title: "Siri Remote-spoling",
+                value: "18 % dødsonesikring · opptil 75 s per sveip"
             )
         }
     }

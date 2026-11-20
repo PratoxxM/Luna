@@ -116,6 +116,15 @@ public struct LunaCoreClient: Sendable {
         try sharedDecoder.withLock { try $0.decode(type, from: data) }
     }
 
+    internal static func decodeJSONAsync<T: Decodable & Sendable>(_ type: T.Type, from data: Data) async throws -> T {
+        if data.count < 4096 {
+            return try decodeJSON(type, from: data)
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            try decodeJSON(type, from: data)
+        }.value
+    }
+
     internal static func encodeJSON<T: Encodable & Sendable>(_ value: T) throws -> Data {
         try sharedEncoder.withLock { try $0.encode(value) }
     }
@@ -142,19 +151,12 @@ public struct LunaCoreClient: Sendable {
         return URL(string: "\(cleanBase)\(cleanRel)")
     }
 
-    private var asciiSafeRoomHeader: String {
-        if roomName.canBeConverted(to: .ascii) {
-            return roomName
-        }
-        return roomName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "AppleTV"
-    }
-
     public func streamHTTPHeaders() -> [String: String] {
         var headers: [String: String] = [
             "X-Device-Id": deviceID,
-            "X-Room-Name": asciiSafeRoomHeader,
-            "X-Hardware-Profile": hardwareProfile,
             "X-Luna-Version": appVersion,
+            "X-Supports-HW-AV1": DeviceHardwareCapabilities.supportsHardwareAV1 ? "1" : "0",
+            "X-Physical-Memory-GB": String(DeviceHardwareCapabilities.physicalMemoryGB),
         ]
         if !osVersion.isEmpty {
             headers["X-tvOS-Version"] = osVersion
@@ -213,9 +215,9 @@ public struct LunaCoreClient: Sendable {
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue(deviceID, forHTTPHeaderField: "X-Device-Id")
-        req.setValue(asciiSafeRoomHeader, forHTTPHeaderField: "X-Room-Name")
-        req.setValue(hardwareProfile, forHTTPHeaderField: "X-Hardware-Profile")
         req.setValue(appVersion, forHTTPHeaderField: "X-Luna-Version")
+        req.setValue(DeviceHardwareCapabilities.supportsHardwareAV1 ? "1" : "0", forHTTPHeaderField: "X-Supports-HW-AV1")
+        req.setValue(String(DeviceHardwareCapabilities.physicalMemoryGB), forHTTPHeaderField: "X-Physical-Memory-GB")
         if !osVersion.isEmpty {
             req.setValue(osVersion, forHTTPHeaderField: "X-tvOS-Version")
         }
@@ -269,7 +271,7 @@ public struct LunaCoreClient: Sendable {
         }
         try validateHTTPStatus(status, data: data)
         do {
-            let decoded = try Self.decodeJSON(Payload.self, from: data)
+            let decoded = try await Self.decodeJSONAsync(Payload.self, from: data)
             let responseEtag = http?.value(forHTTPHeaderField: "ETag")
             return .updated(payload: decoded, etag: responseEtag, rawPayloadData: data)
         } catch {
@@ -320,7 +322,7 @@ public struct LunaCoreClient: Sendable {
         let status = (rawResp as? HTTPURLResponse)?.statusCode ?? 500
         try validateHTTPStatus(status, data: data)
         do {
-            let decoded = try Self.decodeJSON(Response.self, from: data)
+            let decoded = try await Self.decodeJSONAsync(Response.self, from: data)
             return (status, decoded)
         } catch {
             throw LunaCoreError.decodingFailed(error.localizedDescription)

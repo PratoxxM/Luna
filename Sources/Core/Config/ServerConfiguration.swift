@@ -18,7 +18,7 @@ public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable 
     public var shortBadgeLabel: String {
         switch self {
         case .dvFel714: return "DV FEL · 7.1.4"
-        case .hdr10512: return "HDR10+ · 5.1.2"
+        case .hdr10512: return "HDR10+ · 7.1.4"
         }
     }
 
@@ -27,7 +27,7 @@ public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable 
         case .dvFel714:
             return "Kjellerstua — Dolby Vision FEL + 7.1.4"
         case .hdr10512:
-            return "Stua — HDR10+ / HDR10 + 5.1.2"
+            return "Stua — HDR10+ / HDR10 + 7.1.4"
         }
     }
 
@@ -36,7 +36,7 @@ public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable 
         case .dvFel714:
             return "4K BluRay Remux · Dual-Layer DV P7 FEL / P8 · TrueHD Atmos og DTS:X (7.1.4)"
         case .hdr10512:
-            return "4K HDR10+ / HDR10 · DV Base-Layer · Atmos og tapsfri lyd (5.1.2)"
+            return "4K HDR10+ / HDR10 · DV Base-Layer · Atmos og tapsfri lyd (7.1.4)"
         }
     }
 
@@ -62,7 +62,6 @@ public final class AppSessionStore: ObservableObject {
     @Published public var deviceName: String
     @Published public var roomName: String
     @Published public var hardwareProfile: String
-    @Published public var localProfileOverride: String?
     @Published public var serverEquipmentLabel: String? = nil
     @Published public var serverAtmosphere: String? = nil
     @Published public var deviceOverrides: TvDeviceOverrides? = nil
@@ -87,6 +86,7 @@ public final class AppSessionStore: ObservableObject {
     private var cachedClient: LunaCoreClient?
     private var overrideSyncTask: Task<Void, Never>?
     private var profileSyncTask: Task<Void, Never>?
+    private var didSyncCapabilitiesThisLaunch: Bool = false
     internal private(set) var appliedTLSConfiguredHost: String?
 
     public var isPaired: Bool {
@@ -94,10 +94,7 @@ public final class AppSessionStore: ObservableObject {
     }
 
     public var effectiveHardwareProfile: String {
-        if let localProfileOverride, !localProfileOverride.isEmpty {
-            return localProfileOverride
-        }
-        return hardwareProfile
+        hardwareProfile
     }
 
     public var activePreset: HardwareProfilePreset {
@@ -108,7 +105,7 @@ public final class AppSessionStore: ObservableObject {
         let matchedRoom = availableRooms.first {
             $0.roomName == roomName && $0.hardwareProfile == effectiveHardwareProfile
         } ?? availableRooms.first { $0.hardwareProfile == effectiveHardwareProfile }
-        let preferredLabel = (localProfileOverride == nil ? serverEquipmentLabel : nil) ?? matchedRoom?.equipmentLabel
+        let preferredLabel = serverEquipmentLabel ?? matchedRoom?.equipmentLabel
         return LunaCopy.roomEquipmentLabel(
             hardwareProfile: effectiveHardwareProfile,
             roomName: roomName,
@@ -120,7 +117,7 @@ public final class AppSessionStore: ObservableObject {
         let matchedRoom = availableRooms.first {
             $0.roomName == roomName && $0.hardwareProfile == effectiveHardwareProfile
         } ?? availableRooms.first { $0.hardwareProfile == effectiveHardwareProfile }
-        let rawAtmos = (localProfileOverride == nil ? serverAtmosphere : nil) ?? matchedRoom?.atmosphere
+        let rawAtmos = serverAtmosphere ?? matchedRoom?.atmosphere
         return LunaRoomAtmosphere.resolve(
             atmosphere: rawAtmos,
             hardwareProfile: effectiveHardwareProfile,
@@ -151,7 +148,7 @@ public final class AppSessionStore: ObservableObject {
         self.deviceName = defaults.string(forKey: SideloadSafeStorage.deviceNameKey) ?? "Apple TV"
         self.roomName = defaults.string(forKey: SideloadSafeStorage.roomNameKey) ?? "Kjellerstua"
         self.hardwareProfile = defaults.string(forKey: SideloadSafeStorage.hardwareProfileKey) ?? HardwareProfilePreset.dvFel714.rawValue
-        self.localProfileOverride = defaults.string(forKey: SideloadSafeStorage.localProfileOverrideKey)
+        defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
         self.deviceOverrides = nil
         self.activePlaybackTarget = nil
         self.allowSelfSignedLanTLS = defaults.object(forKey: SideloadSafeStorage.allowSelfSignedLanTLSKey) as? Bool ?? true
@@ -178,7 +175,6 @@ public final class AppSessionStore: ObservableObject {
         self.deviceName = "Apple TV 4K"
         self.roomName = "Stua"
         self.hardwareProfile = HardwareProfilePreset.hdr10512.rawValue
-        self.localProfileOverride = nil
         self.serverEquipmentLabel = LunaCopy.roomEquipmentLabel(hardwareProfile: HardwareProfilePreset.hdr10512.rawValue)
         self.serverAtmosphere = "living"
         self.deviceOverrides = nil
@@ -211,7 +207,10 @@ public final class AppSessionStore: ObservableObject {
         overrideSyncTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 350_000_000)
             guard !Task.isCancelled, let self, let client = self.makeClient() else { return }
-            try? await client.updateDeviceProfile(overrides: overrides)
+            try? await client.updateDeviceProfile(
+                overrides: overrides,
+                capabilities: DeviceHardwareCapabilities.asTvCapabilities
+            )
             if !Task.isCancelled {
                 self.overrideSyncTask = nil
             }
@@ -254,7 +253,7 @@ public final class AppSessionStore: ObservableObject {
         self.serverAtmosphere = pairedDevice.atmosphere
         self.deviceOverrides = pairedDevice.overrides
         self.comfort.adoptServerOverrides(pairedDevice.overrides)
-        self.localProfileOverride = nil
+        self.didSyncCapabilitiesThisLaunch = pairedDevice.capabilities == DeviceHardwareCapabilities.asTvCapabilities
 
         defaults.set(baseURL.absoluteString, forKey: SideloadSafeStorage.serverURLKey)
         defaults.set(pairedDevice.deviceName, forKey: SideloadSafeStorage.deviceNameKey)
@@ -272,23 +271,21 @@ public final class AppSessionStore: ObservableObject {
             self.deviceName = device.deviceName
             defaults.set(device.deviceName, forKey: SideloadSafeStorage.deviceNameKey)
         }
-        if localProfileOverride == nil {
-            if device.roomName != roomName {
-                self.roomName = device.roomName
-                defaults.set(device.roomName, forKey: SideloadSafeStorage.roomNameKey)
-                clientInputsChanged = true
-            }
-            if device.hardwareProfile != hardwareProfile {
-                self.hardwareProfile = device.hardwareProfile
-                defaults.set(device.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
-                clientInputsChanged = true
-            }
-            if device.equipmentLabel != serverEquipmentLabel {
-                self.serverEquipmentLabel = device.equipmentLabel
-            }
-            if device.atmosphere != serverAtmosphere {
-                self.serverAtmosphere = device.atmosphere
-            }
+        if device.roomName != roomName {
+            self.roomName = device.roomName
+            defaults.set(device.roomName, forKey: SideloadSafeStorage.roomNameKey)
+            clientInputsChanged = true
+        }
+        if device.hardwareProfile != hardwareProfile {
+            self.hardwareProfile = device.hardwareProfile
+            defaults.set(device.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
+            clientInputsChanged = true
+        }
+        if device.equipmentLabel != serverEquipmentLabel {
+            self.serverEquipmentLabel = device.equipmentLabel
+        }
+        if device.atmosphere != serverAtmosphere {
+            self.serverAtmosphere = device.atmosphere
         }
         if overrideSyncTask == nil {
             if device.overrides != deviceOverrides {
@@ -302,38 +299,48 @@ public final class AppSessionStore: ObservableObject {
         if clientInputsChanged || cachedClient == nil {
             rebuildCachedClient()
         }
+        let localCaps = DeviceHardwareCapabilities.asTvCapabilities
+        if !didSyncCapabilitiesThisLaunch, device.capabilities != localCaps, let client = makeClient() {
+            didSyncCapabilitiesThisLaunch = true
+            Task { @MainActor in
+                try? await client.updateDeviceProfile(capabilities: localCaps)
+            }
+        } else if device.capabilities == localCaps {
+            didSyncCapabilitiesThisLaunch = true
+        }
     }
 
-    public func setRoomAndProfile(roomName: String, hardwareProfile: String, persistAsLocalOverride: Bool = false) {
+    public func setRoomAndProfile(roomName: String, hardwareProfile: String) {
         self.roomName = roomName
         self.hardwareProfile = hardwareProfile
+        let matchedRoom = availableRooms.first {
+            $0.roomName == roomName && $0.hardwareProfile == hardwareProfile
+        } ?? availableRooms.first { $0.hardwareProfile == hardwareProfile }
+        self.serverEquipmentLabel = matchedRoom?.equipmentLabel
+        self.serverAtmosphere = matchedRoom?.atmosphere
         defaults.set(roomName, forKey: SideloadSafeStorage.roomNameKey)
         defaults.set(hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
+        defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
         profileSyncTask?.cancel()
         profileSyncTask = nil
-
-        if persistAsLocalOverride {
-            self.localProfileOverride = hardwareProfile
-            defaults.set(hardwareProfile, forKey: SideloadSafeStorage.localProfileOverrideKey)
-            rebuildCachedClient()
-        } else {
-            self.localProfileOverride = nil
-            defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
-            rebuildCachedClient()
-            if let client = makeClient() {
-                profileSyncTask = Task { @MainActor [weak self] in
-                    try? await client.updateDeviceProfile(roomName: roomName, hardwareProfile: hardwareProfile)
-                    if !Task.isCancelled {
-                        self?.profileSyncTask = nil
-                    }
+        rebuildCachedClient()
+        if let client = makeClient() {
+            let localCaps = DeviceHardwareCapabilities.asTvCapabilities
+            profileSyncTask = Task { @MainActor [weak self] in
+                try? await client.updateDeviceProfile(
+                    roomName: roomName,
+                    hardwareProfile: hardwareProfile,
+                    capabilities: localCaps
+                )
+                if !Task.isCancelled {
+                    self?.profileSyncTask = nil
                 }
             }
         }
         homeRefreshNonce &+= 1
     }
 
-    public func restoreServerManagedRoomAndProfile() async {
-        self.localProfileOverride = nil
+    public func refreshProfileFromServer() async {
         defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
         rebuildCachedClient()
         if let client = makeClient() {

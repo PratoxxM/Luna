@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LunaTopBarView: View {
-    static let contentTopPadding: CGFloat = 148
+    static let contentTopPadding: CGFloat = 162
     static let focusDebounceNanoseconds: UInt64 = 180_000_000
 
     @Environment(\.lunaRoomAtmosphere) private var environmentAtmosphere
@@ -20,21 +20,29 @@ struct LunaTopBarView: View {
     var body: some View {
         HStack(spacing: 24) {
             emblemView
-                .frame(minWidth: 280, maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 10) {
                 ForEach(MainNavigationTab.primaryTabs) { tab in
                     tabButton(for: tab, isIconOnly: false)
                 }
-            }
-            .fixedSize(horizontal: true, vertical: false)
 
-            HStack(spacing: 12) {
+                Rectangle()
+                    .fill(LunaTheme.warmBorderStrong)
+                    .frame(width: 1, height: 28)
+                    .padding(.horizontal, 6)
+                    .allowsHitTesting(false)
+
                 ForEach(MainNavigationTab.utilityTabs) { tab in
                     tabButton(for: tab, isIconOnly: true)
                 }
             }
-            .frame(minWidth: 280, maxWidth: .infinity, alignment: .trailing)
+            .fixedSize(horizontal: true, vertical: false)
+
+            Color.clear
+                .frame(minWidth: 220, maxWidth: .infinity, alignment: .trailing)
+                .frame(height: 1)
+                .allowsHitTesting(false)
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -191,7 +199,7 @@ struct TopBarTabPillButton: View {
                                 isBarFocused: isBarFocused
                             )
                         )
-                        .frame(width: 60, height: 60)
+                        .frame(width: 64, height: 64)
                 } else {
                     Text(tab.title)
                         .font(LunaTheme.Font.tabTitle)
@@ -204,7 +212,7 @@ struct TopBarTabPillButton: View {
                         )
                         .lineLimit(1)
                         .padding(.horizontal, 26)
-                        .frame(height: 60)
+                        .frame(height: 64)
                 }
             }
             .transaction { $0.animation = nil }

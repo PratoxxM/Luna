@@ -155,25 +155,10 @@ extension PlayerViewModel {
         }
     }
 
-    func updateTouchScrub(deltaPoints: CGFloat, velocityPointsPerSec: CGFloat) {
+    func updateTouchScrub(deltaSeconds: Double) {
         guard isScrubbing else { return }
         let dur = max(1, effectiveDurationSeconds)
-        let durationScale = min(1.45, max(0.65, dur / 5400.0))
-        let speed = Double(abs(velocityPointsPerSec))
-
-        let secondsPerPoint: Double
-        if speed <= 260 {
-            secondsPerPoint = 0.24
-        } else if speed <= 950 {
-            let t = (speed - 260.0) / 690.0
-            secondsPerPoint = (0.24 + t * 1.06) * durationScale
-        } else {
-            let t = min(1.0, (speed - 950.0) / 1400.0)
-            secondsPerPoint = min(3.4, (1.30 + t * 1.55) * durationScale)
-        }
-
-        let rawNext = scrubState.targetSeconds + Double(deltaPoints) * secondsPerPoint
-        let clamped = min(max(0, rawNext), max(0, dur - 0.5))
+        let clamped = min(max(0, scrubState.targetSeconds + deltaSeconds), max(0, dur - 0.5))
         scrubState.targetSeconds = clamped
         enqueueScrubPreview(at: clamped)
     }

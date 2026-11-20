@@ -148,10 +148,13 @@ final class LunaCoreHTTPTransportTests: XCTestCase {
         let patchReq = reqs.last
         XCTAssertEqual(patchReq?.httpMethod, "PATCH")
         XCTAssertEqual(patchReq?.value(forHTTPHeaderField: "Authorization"), "Bearer test-device-token")
-        XCTAssertEqual(patchReq?.value(forHTTPHeaderField: "X-Room-Name"), "Stua")
+        XCTAssertNil(patchReq?.value(forHTTPHeaderField: "X-Room-Name"))
+        XCTAssertNil(patchReq?.value(forHTTPHeaderField: "X-Hardware-Profile"))
+        XCTAssertNotNil(patchReq?.value(forHTTPHeaderField: "X-Supports-HW-AV1"))
+        XCTAssertNotNil(patchReq?.value(forHTTPHeaderField: "X-Physical-Memory-GB"))
     }
 
-    func testFetchRawImageDataSendsAuthOnlyToSameOriginAndEncodesNonASCIIRoomHeader() async throws {
+    func testFetchRawImageDataSendsAuthOnlyToSameOriginAndExcludesRoomProfileHeaders() async throws {
         let lanHost = "transport-img-\(UUID().uuidString.lowercased()).local"
         let cdnHost = "cdn-img-\(UUID().uuidString.lowercased()).example.net"
         defer {
@@ -194,7 +197,10 @@ final class LunaCoreHTTPTransportTests: XCTestCase {
 
         let headers = client.streamHTTPHeaders()
         XCTAssertEqual(headers["Authorization"], "Bearer secret-lan-token")
-        XCTAssertEqual(headers["X-Room-Name"], "S%C3%B8r-Stua")
+        XCTAssertNil(headers["X-Room-Name"])
+        XCTAssertNil(headers["X-Hardware-Profile"])
+        XCTAssertNotNil(headers["X-Supports-HW-AV1"])
+        XCTAssertNotNil(headers["X-Physical-Memory-GB"])
 
         let sameOriginURL = try XCTUnwrap(URL(string: "http://\(lanHost):8090/api/tv/v1/img/poster.webp"))
         let (sameData, _) = try await client.fetchRawImageData(from: sameOriginURL)

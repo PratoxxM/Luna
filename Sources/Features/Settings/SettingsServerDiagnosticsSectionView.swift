@@ -12,8 +12,13 @@ struct SettingsServerDiagnosticsSectionView: View {
     var body: some View {
         SettingsSectionPanel(title: "System") {
             SettingsInfoRow(
-                title: "App-versjon",
-                value: "Luna \(AppSessionStore.currentAppVersionDisplayString())"
+                title: "App og motor",
+                value: "Luna \(AppSessionStore.currentAppVersionDisplayString()) · AetherEngine \(AetherBridgeInfo.pinnedAetherEngineVersion)"
+            )
+            SettingsSectionDivider()
+            SettingsInfoRow(
+                title: "Apple TV-maskinvare",
+                value: "\(DeviceHardwareCapabilities.physicalMemoryGB) GB RAM · Maskinvare-AV1: \(DeviceHardwareCapabilities.supportsHardwareAV1 ? "Støttet" : "Ikke støttet")"
             )
             SettingsSectionDivider()
             SettingsInfoRow(
@@ -43,6 +48,7 @@ struct SettingsServerDiagnosticsSectionView: View {
                         await DiskSWRStore.clearAllAsync()
                         await ArtworkPipeline.shared.clearAll()
                         AetherEngine.discardPrewarmedSources()
+                        AetherEngine.discardRetainedSessionCache()
                         sessionStore.notifyContentMutated()
                         await onRefreshCacheMetrics()
                         cacheClearedNotice = true

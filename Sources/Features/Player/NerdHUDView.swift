@@ -24,6 +24,7 @@ struct NerdHUDView: View {
             hudRow("Video", value: videoSummary)
             hudRow("HDR / Rute", value: "\(viewModel.videoFormatBadge) · \(viewModel.videoRoute.rawValue)")
             hudRow("Dekoder", value: decoderSummary)
+            hudRow("Skalering", value: upscaleSummary)
             hudRow("Lydkjede", value: audioSummary)
             if let obj = telemetry?.objectAudio {
                 hudRow("Objektlyd", value: "\(obj.layout.rawValue) · \(obj.activeObjects)/\(obj.objects) obj (\(obj.elevatedObjects) høyde)")
@@ -58,6 +59,29 @@ struct NerdHUDView: View {
         let vDec = viewModel.activeVideoDecoder ?? (viewModel.videoRoute == .software ? "FFmpeg SW" : "VideoToolbox HW")
         let dropped = telemetry?.droppedFrameCount ?? 0
         return "\(vDec) · \(dropped) mistet"
+    }
+
+    private var upscaleSummary: String {
+        if let up = viewModel.activeUpscale, up.disabledReason == nil {
+            let srcW = Int(up.sourceSize.width.rounded())
+            let srcH = Int(up.sourceSize.height.rounded())
+            let dstW = Int(up.targetSize.width.rounded())
+            let dstH = Int(up.targetSize.height.rounded())
+            return "\(srcW)×\(srcH) → \(dstW)×\(dstH) MetalFX"
+        }
+        if viewModel.comfort.lowResUpscaleMode == .off {
+            return "Nativ (Av)"
+        }
+        if let reason = viewModel.activeUpscale?.disabledReason, !reason.isEmpty {
+            return "Nativ (\(reason))"
+        }
+        if viewModel.videoFormat != .sdr {
+            return "Nativ (HDR-fallback)"
+        }
+        if viewModel.sourceVideoHeight >= 1440 || viewModel.sourceVideoWidth >= 2560 {
+            return "Nativ (4K-kilde)"
+        }
+        return "Nativ (Venter på ≤ 1080p SDR)"
     }
 
     private var audioSummary: String {

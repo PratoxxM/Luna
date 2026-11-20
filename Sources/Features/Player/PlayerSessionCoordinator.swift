@@ -180,6 +180,8 @@ extension PlayerViewModel {
 
         audioDelayCommitTask?.cancel()
         audioDelayCommitTask = nil
+        upscaleReloadTask?.cancel()
+        upscaleReloadTask = nil
         let initialAudioDelayMs = comfort.audioDelayMs
         audioDelayMs = initialAudioDelayMs
 
@@ -519,6 +521,8 @@ extension PlayerViewModel {
         smartRuleTask = nil
         audioDelayCommitTask?.cancel()
         audioDelayCommitTask = nil
+        upscaleReloadTask?.cancel()
+        upscaleReloadTask = nil
         transientBannerTask?.cancel()
         transientBannerTask = nil
         remoteCommandToastTask?.cancel()

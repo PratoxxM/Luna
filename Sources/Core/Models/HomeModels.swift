@@ -553,10 +553,34 @@ public struct TvLibraryCounts: Codable, Equatable, Sendable {
     public let favorites: Int?
     public let watchlist: Int
     public let localTotal: Int
+    public let localMovies: Int?
+    public let localSeries: Int?
     public let nvme: Int
     public let archive: Int
     public let vfs: Int
     public let customLists: Int
+
+    public init(
+        favorites: Int? = nil,
+        watchlist: Int,
+        localTotal: Int,
+        localMovies: Int? = nil,
+        localSeries: Int? = nil,
+        nvme: Int,
+        archive: Int,
+        vfs: Int,
+        customLists: Int
+    ) {
+        self.favorites = favorites
+        self.watchlist = watchlist
+        self.localTotal = localTotal
+        self.localMovies = localMovies
+        self.localSeries = localSeries
+        self.nvme = nvme
+        self.archive = archive
+        self.vfs = vfs
+        self.customLists = customLists
+    }
 }
 
 public struct TvCustomListSummary: Codable, Identifiable, Equatable, Hashable, Sendable {

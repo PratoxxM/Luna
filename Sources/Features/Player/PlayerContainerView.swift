@@ -133,6 +133,7 @@ struct PlayerContainerView: View {
             // 1.5 Invisible UIKit Siri Remote Touch & Click Surface (`focusEffect = nil`)
             if shouldEnableCanvasAnchor {
                 SiriRemoteTouchSurface(
+                    isPlayingProvider: { viewModel.playbackPhase == .playing },
                     onLightTouch: {
                         if !viewModel.isScrubbing {
                             revealBottomBarTemporarily()
@@ -147,11 +148,8 @@ struct PlayerContainerView: View {
                         }
                         viewModel.beginTouchScrub()
                     },
-                    onScrubChanged: { deltaPoints, velocityPointsPerSec in
-                        viewModel.updateTouchScrub(
-                            deltaPoints: deltaPoints,
-                            velocityPointsPerSec: velocityPointsPerSec
-                        )
+                    onScrubChanged: { deltaSeconds in
+                        viewModel.updateTouchScrub(deltaSeconds: deltaSeconds)
                     },
                     onScrubTouchLifted: {
                         // Keep scrub session parked so multi-swipe across a long movie works effortlessly

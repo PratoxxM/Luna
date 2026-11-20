@@ -338,14 +338,14 @@ public enum LunaCopy: Sendable {
         }
         let clean = hardwareProfile.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if clean == "hdr10-512" || clean == "livingroom" || clean == "living" || clean == "stua" {
-            return "Samsung Frame · HDR10+ · 5.1.2"
+            return "Samsung Frame · HDR10+ · 7.1.4"
         }
         if clean == "dv-fel-714" || clean == "cinema" || clean == "kjellerstua" {
             return "LG OLED · Dolby Vision · 7.1.4"
         }
         let roomClean = (roomName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if roomClean.contains("stua") && !roomClean.contains("kjeller") {
-            return "Samsung Frame · HDR10+ · 5.1.2"
+            return "Samsung Frame · HDR10+ · 7.1.4"
         }
         if roomClean.contains("kjeller") || roomClean.contains("kino") {
             return "LG OLED · Dolby Vision · 7.1.4"

@@ -2,7 +2,7 @@
 
 ## 1. Purpose & Public-Repository Security Rules
 
-`Luna` (`v2.8.1`) is a public, standalone tvOS client powered by `AetherEngine` (`7.71.0`) and backed by the native LunaCore TV API (`/api/tv/v1` on `:8090` / `:8920`).
+`Luna` (`v2.8.2`) is a public, standalone tvOS client powered by `AetherEngine` (`7.71.0`) and backed by the native LunaCore TV API (`/api/tv/v1` on `:8090` / `:8920`).
 
 Because this repository is **public on GitHub**, these rules are hard invariants:
 

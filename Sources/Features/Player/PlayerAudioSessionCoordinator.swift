@@ -1,5 +1,9 @@
 import Foundation
 import AVFoundation
+import AVKit
+import CoreMedia
+import CoreVideo
+import UIKit
 import AetherBridge
 import os
 
@@ -84,6 +88,22 @@ final class PlayerAudioSessionCoordinator {
         !keepDisplayModeInMenuAfterPlayback || !isForegroundActive
     }
 
+    nonisolated static func shouldResetDisplayCriteriaOnPlayerExit(
+        menuDisplayMode: MenuDisplayMode,
+        videoFormat: VideoFormat,
+        isForegroundActive: Bool = true
+    ) -> Bool {
+        guard isForegroundActive else { return true }
+        switch menuDisplayMode {
+        case .sdr60Hz:
+            return true
+        case .preserveHDR60HzQMS:
+            return videoFormat == .sdr
+        case .preserveExactMatch:
+            return false
+        }
+    }
+
     nonisolated static func shouldResetHeldDisplayCriteriaOnScenePhase(
         isActiveScene: Bool,
         hasActivePlayback: Bool,
@@ -108,6 +128,45 @@ final class PlayerAudioSessionCoordinator {
         pendingResetAction = nil
     }
 
+    func applyMenu60HzHDRCriteriaIfNeeded(videoFormat: VideoFormat) {
+        guard videoFormat != .sdr,
+              let window = Self.activeKeyWindow() else {
+            return
+        }
+        let displayManager = window.avDisplayManager
+        guard displayManager.isDisplayCriteriaMatchingEnabled else { return }
+
+        let transferFunction: CFString = switch videoFormat {
+        case .hlg:
+            kCVImageBufferTransferFunction_ITU_R_2100_HLG
+        default:
+            kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ
+        }
+        let extensions: NSDictionary? = (videoFormat == .dolbyVision) ? nil : [
+            kCMFormatDescriptionExtension_ColorPrimaries: kCVImageBufferColorPrimaries_ITU_R_2020,
+            kCMFormatDescriptionExtension_TransferFunction: transferFunction,
+            kCMFormatDescriptionExtension_YCbCrMatrix: kCVImageBufferYCbCrMatrix_ITU_R_2020,
+        ]
+        var formatDesc: CMVideoFormatDescription?
+        CMVideoFormatDescriptionCreate(
+            allocator: kCFAllocatorDefault,
+            codecType: (videoFormat == .dolbyVision) ? CMVideoCodecType(0x64766831) : kCMVideoCodecType_HEVC,
+            width: 3840,
+            height: 2160,
+            extensions: extensions,
+            formatDescriptionOut: &formatDesc
+        )
+        guard let desc = formatDesc else { return }
+        displayManager.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: 60.0, formatDescription: desc)
+    }
+
+    private static func activeKeyWindow() -> UIWindow? {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+        return windows.first(where: \.isKeyWindow) ?? windows.first
+    }
+
     func holdDisplayCriteriaUntilBackground(engine: AetherEngine) {
         holdDisplayCriteriaUntilBackground(
             shouldExecute: { [weak engine] in
@@ -116,6 +175,7 @@ final class PlayerAudioSessionCoordinator {
             },
             performReset: { [weak engine] in
                 engine?.stop(resetDisplayCriteria: true)
+                Self.activeKeyWindow()?.avDisplayManager.preferredDisplayCriteria = nil
             }
         )
     }

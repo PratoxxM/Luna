@@ -108,10 +108,10 @@ final class DesignTokensAndCopyTests: XCTestCase {
         XCTAssertEqual(LunaCopy.tierBenefitLabel(tier: "vfs"), "Strømmes ved start")
         XCTAssertEqual(LunaCopy.tierBenefitLabel(tier: "usenet", state: "upcoming"), "Kommer")
         XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "dv-fel-714"), "LG OLED · Dolby Vision · 7.1.4")
-        XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "hdr10-512"), "Samsung Frame · HDR10+ · 5.1.2")
-        XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "livingroom"), "Samsung Frame · HDR10+ · 5.1.2")
-        XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "living"), "Samsung Frame · HDR10+ · 5.1.2")
-        XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "Stua"), "Samsung Frame · HDR10+ · 5.1.2")
+        XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "hdr10-512"), "Samsung Frame · HDR10+ · 7.1.4")
+        XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "livingroom"), "Samsung Frame · HDR10+ · 7.1.4")
+        XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "living"), "Samsung Frame · HDR10+ · 7.1.4")
+        XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "Stua"), "Samsung Frame · HDR10+ · 7.1.4")
         XCTAssertEqual(
             LunaCopy.roomEquipmentLabel(hardwareProfile: "custom", roomName: "Gjestestue"),
             "Apple TV 4K · Direkte avspilling"

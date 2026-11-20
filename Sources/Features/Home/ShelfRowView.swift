@@ -156,7 +156,7 @@ struct ShelfRowView: View {
                                 client: client,
                                 variant: .standard,
                                 width: LunaTokens.Layout.backdropW,
-                                showStorageBadge: row.sourceKind == "local_library",
+                                showStorageBadge: true,
                                 onPrimaryAction: {
                                     onSelectCard(card)
                                 },
@@ -209,7 +209,7 @@ struct ShelfRowView: View {
                                 card: card,
                                 client: client,
                                 width: LunaTokens.Layout.posterW,
-                                showStorageBadge: row.sourceKind == "local_library",
+                                showStorageBadge: true,
                                 onSelect: {
                                     onSelectCard(card)
                                 },

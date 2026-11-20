@@ -17,9 +17,9 @@ private final class CGImageBox: NSObject {
 internal final class ThreadSafeImageMemoryCache: @unchecked Sendable {
     private let cache = NSCache<NSString, CGImageBox>()
 
-    init(totalCostLimit: Int) {
+    init(totalCostLimit: Int, countLimit: Int = 360) {
         cache.totalCostLimit = totalCostLimit
-        cache.countLimit = 360
+        cache.countLimit = countLimit
     }
 
     func image(forKey key: String) -> CGImage? {
@@ -76,7 +76,10 @@ private struct InflightTaskEntry<Value: Sendable>: Sendable {
 public actor ArtworkPipeline {
     public static let shared = ArtworkPipeline()
 
-    private nonisolated let ramCache = ThreadSafeImageMemoryCache(totalCostLimit: 96 * 1024 * 1024)
+    private nonisolated let ramCache = ThreadSafeImageMemoryCache(
+        totalCostLimit: DeviceHardwareCapabilities.isHighMemoryDevice ? 192 * 1024 * 1024 : 96 * 1024 * 1024,
+        countLimit: DeviceHardwareCapabilities.isHighMemoryDevice ? 720 : 360
+    )
     private nonisolated let diskTouchTracker = DiskTouchTracker()
     private nonisolated static let hexChars: [UInt8] = Array("0123456789abcdef".utf8)
     private nonisolated let inflightImages = Mutex<[String: InflightTaskEntry<CGImage>]>([:])
@@ -84,7 +87,10 @@ public actor ArtworkPipeline {
     private var writesSinceLastTrim: Int = 0
     private var didEnsureCacheDir: Bool = false
 
-    private let maxConcurrentDecodes = 4
+    private let maxConcurrentDecodes = DeviceHardwareCapabilities.isHighMemoryDevice ? 6 : 4
+    public nonisolated static var defaultDiskMaxBytes: Int64 {
+        DeviceHardwareCapabilities.isHighMemoryDevice ? 180 * 1024 * 1024 : 115 * 1024 * 1024
+    }
     private var activeDecodeCount: Int = 0
     private var decodeWaiters: [CheckedContinuation<Void, Never>] = []
 
@@ -352,13 +358,14 @@ public actor ArtworkPipeline {
         writesSinceLastTrim += 1
         if writesSinceLastTrim >= 28 {
             writesSinceLastTrim = 0
+            let maxBytes = Self.defaultDiskMaxBytes
             Task.detached(priority: .utility) {
-                Self.trimDiskCacheSynchronously(maxBytes: 115 * 1024 * 1024)
+                Self.trimDiskCacheSynchronously(maxBytes: maxBytes)
             }
         }
     }
 
-    public func trimDiskCacheIfNeeded(maxBytes: Int64 = 115 * 1024 * 1024) {
+    public func trimDiskCacheIfNeeded(maxBytes: Int64 = ArtworkPipeline.defaultDiskMaxBytes) {
         Task.detached(priority: .utility) {
             Self.trimDiskCacheSynchronously(maxBytes: maxBytes)
         }

@@ -12,9 +12,10 @@ import UIKit
 ///   for the top drawer, and crisp physical ring/center clicks.
 @MainActor
 struct SiriRemoteTouchSurface: UIViewRepresentable {
+    var isPlayingProvider: () -> Bool = { false }
     let onLightTouch: () -> Void
     let onScrubBegan: () -> Void
-    let onScrubChanged: (_ deltaPoints: CGFloat, _ velocityPointsPerSec: CGFloat) -> Void
+    let onScrubChanged: (_ deltaSeconds: Double) -> Void
     let onScrubTouchLifted: () -> Void
     let onSelectClick: () -> Void
     let onLeftClick: () -> Void
@@ -33,6 +34,7 @@ struct SiriRemoteTouchSurface: UIViewRepresentable {
     }
 
     private func updateCallbacks(on view: TouchCaptureUIView) {
+        view.isPlayingProvider = isPlayingProvider
         view.onLightTouch = onLightTouch
         view.onScrubBegan = onScrubBegan
         view.onScrubChanged = onScrubChanged
@@ -47,9 +49,10 @@ struct SiriRemoteTouchSurface: UIViewRepresentable {
 
 @MainActor
 final class TouchCaptureUIView: UIView {
+    var isPlayingProvider: () -> Bool = { false }
     var onLightTouch: (() -> Void)?
     var onScrubBegan: (() -> Void)?
-    var onScrubChanged: ((_ deltaPoints: CGFloat, _ velocityPointsPerSec: CGFloat) -> Void)?
+    var onScrubChanged: ((_ deltaSeconds: Double) -> Void)?
     var onScrubTouchLifted: (() -> Void)?
     var onSelectClick: (() -> Void)?
     var onLeftClick: (() -> Void)?
@@ -63,8 +66,11 @@ final class TouchCaptureUIView: UIView {
         case verticalCommand
     }
 
+    private let scrubTrackReferenceWidth: CGFloat = 260.0
     private var panAxis: PanAxis = .undecided
-    private var lastTranslation: CGPoint = .zero
+    private var lastAppliedScrubDeltaSeconds: Double = 0
+    private var maxAbsNormalizedX: Double = 0
+    private var lastDiscreteClickUptime: TimeInterval?
     private var didCommitDuringCurrentPan: Bool = false
     private var activeSelectPress: Bool = false
 
@@ -110,38 +116,64 @@ final class TouchCaptureUIView: UIView {
         switch recognizer.state {
         case .began:
             panAxis = .undecided
-            lastTranslation = .zero
+            lastAppliedScrubDeltaSeconds = 0
+            maxAbsNormalizedX = 0
             didCommitDuringCurrentPan = false
 
         case .changed:
             guard !didCommitDuringCurrentPan else { return }
             let translation = recognizer.translation(in: self)
-            let velocity = recognizer.velocity(in: self)
+            let dx = Double(translation.x)
+            let dy = Double(translation.y)
+            let normalizedX = dx / Double(scrubTrackReferenceWidth)
+            maxAbsNormalizedX = max(maxAbsNormalizedX, abs(normalizedX))
 
             switch panAxis {
             case .undecided:
-                let distance = hypot(translation.x, translation.y)
+                let distance = hypot(dx, dy)
                 guard distance >= 14 else { return }
 
-                if abs(translation.x) >= abs(translation.y) * 1.1 {
-                    panAxis = .horizontalScrub
-                    lastTranslation = translation
-                    onScrubBegan?()
-                    onScrubChanged?(translation.x, velocity.x)
-                } else if abs(translation.y) > abs(translation.x) * 1.35, distance >= 42 {
+                if abs(dy) > abs(dx) * RemoteScrubMath.axisLockRatio, distance >= 42 {
                     panAxis = .verticalCommand
-                    if translation.y > 0 {
+                    if dy > 0 {
                         onDownClick?()
                     } else {
                         onUpClick?()
                     }
+                    return
+                }
+
+                let elapsedSinceClick = lastDiscreteClickUptime.map {
+                    ProcessInfo.processInfo.systemUptime - $0
+                }
+                if RemoteScrubMath.shouldSuppressPanCommit(
+                    secondsSinceDiscreteClick: elapsedSinceClick,
+                    maxAbsNormalizedX: maxAbsNormalizedX
+                ) {
+                    return
+                }
+
+                let eval = RemoteScrubMath.evaluatePan(
+                    dx: dx,
+                    dy: dy,
+                    normalizedX: normalizedX,
+                    isPlaying: isPlayingProvider(),
+                    alreadyActive: false
+                )
+                guard eval.shouldActivate else { return }
+                panAxis = .horizontalScrub
+                lastAppliedScrubDeltaSeconds = eval.deltaSeconds
+                onScrubBegan?()
+                if abs(eval.deltaSeconds) > 0.01 {
+                    onScrubChanged?(eval.deltaSeconds)
                 }
 
             case .horizontalScrub:
-                let deltaX = translation.x - lastTranslation.x
-                lastTranslation = translation
-                if abs(deltaX) > 0.05 {
-                    onScrubChanged?(deltaX, velocity.x)
+                let targetDelta = RemoteScrubMath.deltaSeconds(forNormalizedX: normalizedX)
+                let step = targetDelta - lastAppliedScrubDeltaSeconds
+                if abs(step) > 0.01 {
+                    lastAppliedScrubDeltaSeconds = targetDelta
+                    onScrubChanged?(step)
                 }
 
             case .verticalCommand:
@@ -150,10 +182,19 @@ final class TouchCaptureUIView: UIView {
 
         case .ended, .cancelled, .failed:
             if panAxis == .horizontalScrub && !didCommitDuringCurrentPan {
-                onScrubTouchLifted?()
+                let elapsedSinceClick = lastDiscreteClickUptime.map {
+                    ProcessInfo.processInfo.systemUptime - $0
+                }
+                if !RemoteScrubMath.shouldSuppressPanCommit(
+                    secondsSinceDiscreteClick: elapsedSinceClick,
+                    maxAbsNormalizedX: maxAbsNormalizedX
+                ) {
+                    onScrubTouchLifted?()
+                }
             }
             panAxis = .undecided
-            lastTranslation = .zero
+            lastAppliedScrubDeltaSeconds = 0
+            maxAbsNormalizedX = 0
             didCommitDuringCurrentPan = false
 
         default:
@@ -176,6 +217,9 @@ final class TouchCaptureUIView: UIView {
         var passthrough = Set<UIPress>()
 
         for press in presses {
+            if Self.isLocallyHandledPress(press.type) {
+                lastDiscreteClickUptime = ProcessInfo.processInfo.systemUptime
+            }
             switch press.type {
             case .select:
                 activeSelectPress = true

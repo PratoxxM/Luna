@@ -61,13 +61,13 @@ extension PlayerViewModel {
     }
 
     var effectiveSpeakerLayoutLabel: String {
-        if comfort.speakerLayoutOverride != .auto {
-            return comfort.speakerLayoutOverride.rawValue
+        if comfort.speakerLayoutOverride == .stereo {
+            return "Stereo 2.0"
         }
         if let lay = activeSession?.aetherConfig.objectAudioRendering?.layout, !lay.isEmpty {
-            return lay
+            return lay == "5.1.2" ? "7.1.4" : lay
         }
-        return activeSession?.hardwareProfile == "hdr10-512" ? "5.1.2" : "7.1.4"
+        return "7.1.4"
     }
 
     // MARK: - AetherEngine LoadOptions
@@ -105,6 +105,7 @@ extension PlayerViewModel {
         options.matchContentEnabled = cfg.matchContentEnabled
         options.displayCriteriaOwner = .engine
         options.attemptsHDRMasterOnUnprovenPanel = cfg.attemptsHDRMasterOnUnprovenPanel ?? false
+        options.preferHDR10PlusOverForcedDolbyVision = (session.hardwareProfile == "hdr10-512")
 
         // Let AetherEngine inspect HDMI capabilities directly via AVPlayer.availableHDRModes
         options.panelPresentsDolbyVision = false
@@ -117,10 +118,6 @@ extension PlayerViewModel {
         switch comfort.speakerLayoutOverride {
         case .stereo:
             options.objectAudioRendering = .off
-        case .l714:
-            options.objectAudioRendering = .render(.l714)
-        case .l512:
-            options.objectAudioRendering = .render(.l512)
         case .auto:
             if let obj = cfg.objectAudioRendering {
                 let layout = Self.mapSpeakerLayout(obj.layout)
@@ -134,6 +131,8 @@ extension PlayerViewModel {
                 default:
                     options.objectAudioRendering = .render(layout)
                 }
+            } else {
+                options.objectAudioRendering = .render(.l714)
             }
         }
 
@@ -147,7 +146,21 @@ extension PlayerViewModel {
         options.generatesBackgroundScrubPreviews = cfg.generatesBackgroundScrubPreviews ?? false
         options.serveIFramePlaylist = cfg.serveIFramePlaylist ?? false
         options.confirmAtmos = cfg.confirmAtmos ?? false
-        options.maxConcurrentSourceRequests = cfg.maxConcurrentSourceRequests ?? 2
+        let tierLower = (session.selectedCandidate.tier ?? session.selectedCandidate.source)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let baseRequests = cfg.maxConcurrentSourceRequests ?? 2
+        if tierLower == "ssd" || tierLower == "nvme" || tierLower == "local" {
+            options.maxConcurrentSourceRequests = max(baseRequests, 6)
+        } else {
+            options.maxConcurrentSourceRequests = baseRequests
+        }
+        options.progressiveSegmentDelivery = true
+        options.retainsSessionCacheAfterStop = DeviceHardwareCapabilities.isHighMemoryDevice
+        if DeviceHardwareCapabilities.isHighMemoryDevice
+            && DeviceHardwareCapabilities.availableMemoryBytes() > 640 * 1024 * 1024 {
+            options.forwardBufferSegments = 24
+        }
         options.declaredDurationSeconds = cfg.declaredDurationSeconds ?? session.stream.declaredDurationSeconds
 
         switch comfort.lowResUpscaleMode {
@@ -181,11 +194,10 @@ extension PlayerViewModel {
 
     private static func mapSpeakerLayout(_ raw: String?) -> SpatialSpeakerLayout {
         switch raw {
-        case "7.1.4": return .l714
         case "7.1.2": return .l712
         case "5.1.4": return .l514
         case "9.1.6": return .l916
-        default: return .l512
+        default: return .l714
         }
     }
 }

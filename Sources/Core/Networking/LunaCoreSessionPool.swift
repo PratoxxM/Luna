@@ -80,7 +80,7 @@ public final class LunaCoreSessionPool: Sendable {
             for: baseURL,
             allowSelfSignedLanTLS: allowSelfSignedLanTLS,
             lane: "artwork",
-            maxConnections: 6,
+            maxConnections: DeviceHardwareCapabilities.isHighMemoryDevice ? 12 : 8,
             requestTimeout: 15
         )
     }
@@ -91,7 +91,8 @@ public final class LunaCoreSessionPool: Sendable {
             allowSelfSignedLanTLS: allowSelfSignedLanTLS,
             lane: "ws",
             maxConnections: 4,
-            requestTimeout: 30
+            requestTimeout: 210,
+            resourceTimeout: 210
         )
     }
 
@@ -104,7 +105,7 @@ public final class LunaCoreSessionPool: Sendable {
             let config = URLSessionConfiguration.ephemeral
             config.timeoutIntervalForRequest = 15
             config.timeoutIntervalForResource = 45
-            config.httpMaximumConnectionsPerHost = 6
+            config.httpMaximumConnectionsPerHost = DeviceHardwareCapabilities.isHighMemoryDevice ? 12 : 6
             config.urlCache = nil
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
 
@@ -119,7 +120,8 @@ public final class LunaCoreSessionPool: Sendable {
         allowSelfSignedLanTLS: Bool,
         lane: String,
         maxConnections: Int,
-        requestTimeout: TimeInterval
+        requestTimeout: TimeInterval,
+        resourceTimeout: TimeInterval = 90
     ) -> URLSession {
         let key = "\(lane)|\(baseURL.scheme?.lowercased() ?? "http")://\(baseURL.host?.lowercased() ?? ""):\(baseURL.port ?? -1)|tls:\(allowSelfSignedLanTLS)"
         return sessions.withLock { map in
@@ -128,7 +130,7 @@ public final class LunaCoreSessionPool: Sendable {
             }
             let config = URLSessionConfiguration.ephemeral
             config.timeoutIntervalForRequest = requestTimeout
-            config.timeoutIntervalForResource = 90
+            config.timeoutIntervalForResource = resourceTimeout
             config.httpMaximumConnectionsPerHost = maxConnections
             config.urlCache = nil
             config.requestCachePolicy = .reloadIgnoringLocalCacheData

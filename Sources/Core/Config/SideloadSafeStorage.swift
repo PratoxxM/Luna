@@ -31,6 +31,7 @@ public enum SideloadSafeStorage {
     // Retained strictly for "luna.v1.*" legacy UserDefaults migration compatibility.
     public static let showCatCompanionsKey = "luna.v1.comfort.show_cat_companions"
     public static let keepDisplayModeInMenuAfterPlaybackKey = "luna.v1.comfort.keep_display_mode_in_menu"
+    public static let menuDisplayModeKey = "luna.v1.comfort.menu_display_mode"
     public static let didMigrateMenu60HzDefaultV240Key = "luna.v1.comfort.migrated_menu_60hz_v240"
     public static let recentSearchesKey = "luna.v1.recent_searches"
     public static let playerScrubHintCountKey = "luna.v1.player.scrub_hint_count"
@@ -82,7 +83,7 @@ public enum SideloadSafeStorage {
                 return trimmed
             }
         }
-        return "2.8.1"
+        return "2.8.2"
     }
 
     public nonisolated static func currentBuildNumberString(

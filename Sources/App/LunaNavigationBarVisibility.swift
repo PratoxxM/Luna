@@ -110,6 +110,7 @@ final class LunaNavigationBarVisibility: ObservableObject {
     @Published private(set) var isCollapsedByScroll: Bool = false
     @Published private(set) var isTopBarFocused: Bool = false
     @Published private(set) var focusRequestNonce: Int = 0
+    @Published private(set) var scrollToTopNonce: Int = 0
 
     private var scrollZonesByTab: [MainNavigationTab: ScrollTopZone] = [:]
     private var activeTab: MainNavigationTab = .home
@@ -247,6 +248,7 @@ final class LunaNavigationBarVisibility: ObservableObject {
         pendingMenuBypassExit = true
         menuRevealGraceUntil = now.addingTimeInterval(Self.menuFocusBounceGraceSeconds)
         focusRequestNonce &+= 1
+        scrollToTopNonce &+= 1
     }
 }
 
@@ -270,10 +272,19 @@ private struct LunaSubpageVisibilitySinkKey: EnvironmentKey {
     static let defaultValue: LunaSubpageVisibilitySink = .noop
 }
 
+private struct LunaScrollToTopNonceKey: EnvironmentKey {
+    static let defaultValue: Int = 0
+}
+
 public extension EnvironmentValues {
     var lunaSubpageVisibility: LunaSubpageVisibilitySink {
         get { self[LunaSubpageVisibilitySinkKey.self] }
         set { self[LunaSubpageVisibilitySinkKey.self] = newValue }
+    }
+
+    var lunaScrollToTopNonce: Int {
+        get { self[LunaScrollToTopNonceKey.self] }
+        set { self[LunaScrollToTopNonceKey.self] = newValue }
     }
 }
 

@@ -69,6 +69,7 @@ public final class AetherEngine: ObservableObject {
     @Published public private(set) var hasFirstFrameReadyForDisplay: Bool
     @Published public private(set) var isAwaitingDisplaySwitch: Bool
     @Published public private(set) var startupProgress: StartupProgress?
+    @Published public private(set) var activeUpscale: UpscaleStatus?
     @Published public private(set) var duration: Double
     public var currentTime: Double { get }
     public var bufferedPosition: Double { get }
@@ -112,7 +113,10 @@ public final class AetherEngine: ObservableObject {
         startPosition: Double?,
         options: LoadOptions
     ) async throws -> LoadResult
-    public func reloadAtCurrentPosition(_ mutateOptions: (inout LoadOptions) -> Void) async throws
+    @discardableResult
+    public func reloadAtCurrentPosition(
+        applying change: (inout LoadOptions) -> Void
+    ) async throws -> SessionOptionCorrectionOutcome
     public func prepareForItemReplacement()
     public func play()
     public func pause()
@@ -154,6 +158,13 @@ public final class EngineDiagnostics: ObservableObject {
 
 public struct StartupProgress: Sendable {
     public let fraction: Double
+}
+
+public struct UpscaleStatus: Sendable, Equatable {
+    public let sourceSize: CGSize
+    public let mlScale: Float?
+    public let targetSize: CGSize
+    public let disabledReason: String?
 }
 
 public struct DisplayCapabilities: Sendable {
@@ -219,6 +230,8 @@ public struct LoadOptions: Sendable {
     public var declaredDurationSeconds: Double?
     public var upscalesLowResolutionVideo: Bool
     public var upscaleScaler: UpscaleScaler                   // .automatic | .lineArt
+    public var forwardBufferSegments: Int?
+    public var progressiveSegmentDelivery: Bool
     public var externalSubtitles: [ExternalSubtitleTrack]
     public var retainsSessionCacheAfterStop: Bool
     public var liveJoinsAtPlaylistStart: Bool
@@ -370,5 +383,6 @@ public enum EngineTLS {
 - **tvOS Player Transport Seam (`Sources/Features/Player/PlayerTransportProtocol.swift`)**:
   - `@MainActor protocol PlayerTransportControlling`: `state`, `playbackPhase`, `videoRoute`, `currentTime`, `needsForegroundVideoRestore`, `play()`, `pause()`, `togglePlayPause()`, `seek(to:exact:)`, `stop(resetDisplayCriteria:finalTeardown:)`.
   - `protocol NativeAudioActivating: Sendable`: `activateNativePlaybackIfNeeded(videoRoute:) async`.
-- **Linux-Testable Core Seam (`Sources/Core/Playback/PlaybackCoreAbstractions.swift`)**:
+- **Linux-Testable Core Seam (`Sources/Core/Playback/PlaybackCoreAbstractions.swift` & `RemoteScrubMath.swift`)**:
   - `public protocol PlaybackEngine: AnyObject, Sendable` & `public protocol IOReader: Sendable`, coordinated by `PlaybackCoordinatorStateMachine` and `PlaybackCurtainWatchdog`.
+  - `RemoteScrubMath` handles indirect clickpad pan scrubbing (`18 %` deadzone, `1.35` axis lock, `75 s` duration-independent cubic curve, click drift suppression). Note: Siri Remote capacitive circular outer-ring jog events are private to `AVPlayerViewController` (`UISwipeGestureRecognizer` / `AVPlayerBehavior` internals) and have no public UIKit/tvOS API for custom player hosts.

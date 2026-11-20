@@ -192,8 +192,8 @@
     .screen {
       position: absolute;
       inset: 0;
-      padding: 146px var(--safe-x) 84px var(--safe-x);
-      scroll-padding-top: 146px;
+      padding: 162px var(--safe-x) 84px var(--safe-x);
+      scroll-padding-top: 162px;
       scroll-padding-bottom: 84px;
       display: none;
       flex-direction: column;
@@ -472,14 +472,17 @@
           <path d="M21.8 4.2A12.2 12.2 0 1 0 27.8 21.4A10.2 10.2 0 0 1 21.8 4.2Z" fill="#C48C3A"/>
         </svg>
         <span class="brand-title">Luna</span>
-        <span class="room-pill"><span class="room-dot"></span>Kjellerstua · DV FEL 7.1.4</span>
+        <span class="room-pill"><span class="room-dot"></span>Stua · HDR10+ · 7.1.4</span>
       </div>
 
       <nav class="nav-dock" aria-label="Hovedmeny">
         <button class="nav-tab is-active" data-focusable="true" data-target-screen="home">Hjem</button>
         <button class="nav-tab" data-focusable="true" data-target-screen="catalog">Filmer</button>
-        <button class="nav-tab" data-focusable="true" data-target-screen="details">Detaljer</button>
-        <button class="nav-tab" data-focusable="true" data-target-screen="player">Avspiller</button>
+        <button class="nav-tab" data-focusable="true" data-target-screen="details">Serier</button>
+        <button class="nav-tab" data-focusable="true" data-target-screen="player" data-label="Bibliotek">Bibliotek</button>
+        <span style="width: 1px; height: 28px; background: rgba(255, 240, 222, 0.16); margin: 0 4px;"></span>
+        <button class="nav-tab" data-focusable="true" data-target-screen="catalog" data-label="Søk" aria-label="Søk">🔍</button>
+        <button class="nav-tab" data-focusable="true" data-target-screen="details" data-label="Innstillinger" aria-label="Innstillinger">⚙</button>
       </nav>
 
       <div class="utility-cluster">
@@ -710,14 +713,15 @@
 
     <!-- 4. PLAYER SCREEN -->
     <main id="screen-player" class="screen">
-      <section class="player-drawer focus-section" data-section="player-drawer" style="margin-top: 146px;">
-        <div style="display: flex; gap: 14px;">
+      <section class="player-drawer focus-section" data-section="player-drawer" style="margin-top: 162px;">
+        <div style="display: flex; gap: 14px; flex-wrap: wrap;">
           <button class="pill-btn primary-amber" data-focusable="true">Lyd og tekst</button>
-          <button class="pill-btn" data-focusable="true">Kilde (DV P7 FEL)</button>
+          <button class="pill-btn" data-focusable="true">Kilde (HDR10+ · 7.1.4)</button>
+          <button class="pill-btn" data-focusable="true">MetalFX: Auto (< 1080p 8-bit SDR)</button>
+          <button class="pill-btn" data-focusable="true" style="opacity: 0.52;">Kveldslys · Slå på undertekst</button>
           <button class="pill-btn" data-focusable="true">Kapitler (4)</button>
-          <button class="pill-btn" data-focusable="true">Teknisk info</button>
         </div>
-        <span class="badge tier-nvme">7.1.4 TrueHD Atmos · Kveldslys 75 %</span>
+        <span class="badge tier-nvme" style="white-space: nowrap; flex-shrink: 0;">7.1.4 TrueHD Atmos · QMS 60 Hz HDR</span>
       </section>
 
       <div class="subtitle-cue">Velkommen tilbake til Lumon. Avdelingen venter på dere.</div>
@@ -890,6 +894,8 @@
           if (currentScreen === 'player' || currentScreen === 'details') {
             switchScreen('home', true);
           } else {
+            const screenEl = document.getElementById(`screen-${currentScreen}`);
+            if (screenEl) screenEl.scrollTop = 0;
             const activeTab = document.querySelector(`.nav-tab[data-target-screen="${currentScreen}"]`);
             setFocus(activeTab);
           }

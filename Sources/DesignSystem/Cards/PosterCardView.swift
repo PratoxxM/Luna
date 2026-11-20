@@ -106,9 +106,10 @@ public struct PosterCardView: View {
                                     .foregroundStyle(LunaTheme.emerald)
                                     .padding(6)
                                     .background(LunaTheme.cinemaGlass, in: Circle())
-                            } else if showStorageBadge, let avail = card.availability,
-                                      avail.isPhysicalLocal || avail.isLocalVfs {
-                                Spacer(minLength: 4)
+                            }
+                            Spacer(minLength: 4)
+                            if showStorageBadge, let avail = card.availability,
+                               avail.isPhysicalLocal || avail.isLocalVfs {
                                 LunaTierMarkView(availability: avail)
                             }
                         }
