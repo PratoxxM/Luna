@@ -53,7 +53,15 @@ struct DetailSeasonsSectionView: View {
                     .padding(.vertical, 14)
                 }
                 .contentMargins(.zero, for: .scrollContent)
-                .scrollClipDisabled()
+                .mask(
+                    HStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 72)
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 52)
+                    }
+                )
                 .focusScope(seasonsFocusNamespace)
                 .focusSection()
                 .onAppear {

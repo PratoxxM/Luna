@@ -235,7 +235,8 @@ struct DetailHeroHeaderView: View {
             parts.append(genres.prefix(2).joined(separator: ", "))
         }
         if let seasons = item.seasons, !seasons.isEmpty {
-            parts.append(LunaCopy.seasonsCount(seasons.count))
+            let regularCount = seasons.filter { $0.seasonNumber > 0 }.count
+            parts.append(LunaCopy.seasonsCount(regularCount > 0 ? regularCount : seasons.count))
         } else if let runtime = item.formattedRuntime, !runtime.isEmpty {
             parts.append(runtime)
         }
@@ -297,11 +298,6 @@ private struct PrimaryPlayLabel: View {
                 .font(LunaTheme.Font.primaryPlayLabel)
                 .lineLimit(1)
                 .minimumScaleFactor(0.86)
-            if isWarmReady {
-                Circle()
-                    .fill(LunaTheme.canvas.opacity(0.60))
-                    .frame(width: 7, height: 7)
-            }
         }
         .foregroundStyle(LunaTheme.canvas)
         .transaction { $0.animation = nil }

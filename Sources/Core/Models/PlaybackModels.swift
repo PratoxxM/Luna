@@ -428,7 +428,7 @@ public struct PlayerDrawerSubtitleOption: Identifiable, Equatable, Sendable {
 
     public var humanSubtitleDescription: String {
         if isForced {
-            return "Vises kun ved fremmedspråk"
+            return "Kun ved fremmedspråk"
         }
         if isHearingImpaired {
             return "Tilrettelagt med lydtekst"

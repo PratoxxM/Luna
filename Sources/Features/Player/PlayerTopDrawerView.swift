@@ -211,7 +211,8 @@ struct PlayerDrawerOptionCardButton: View {
                         .multilineTextAlignment(.leading)
                 }
             }
-            .frame(minWidth: width - 52, maxWidth: width - 52, minHeight: 84, alignment: .topLeading)
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(minWidth: max(200, width - 80), maxWidth: 580, minHeight: 84, alignment: .topLeading)
             .padding(.horizontal, 26)
             .padding(.vertical, 22)
             .background(

@@ -216,7 +216,10 @@ public struct BackdropCardView: View {
             return card.cleanUpcomingSubtitle
         case .continueWatching:
             let base = card.cleanContinueSubtitle
-            if card.origin == "phone", let avail = card.availability, avail.isLocalNvme {
+            if card.origin == "phone",
+               !base.lowercased().contains("min igjen"),
+               let avail = card.availability,
+               avail.isLocalNvme {
                 let benefit = avail.resolvedBenefitLabel
                 return base.isEmpty ? benefit : "\(base) · \(benefit)"
             }

@@ -631,8 +631,6 @@ enum PreviewMockFixtures {
         [
             PlayerDrawerSubtitleOption(id: 10, languageCode: "swe", rawTitle: "Svensk", isForced: true),
             PlayerDrawerSubtitleOption(id: 11, languageCode: "nob", rawTitle: "Norsk"),
-            PlayerDrawerSubtitleOption(id: 12, languageCode: "ara", rawTitle: "Arabisk"),
-            PlayerDrawerSubtitleOption(id: 13, languageCode: "bul", rawTitle: "Bulgarsk"),
         ]
     }
 

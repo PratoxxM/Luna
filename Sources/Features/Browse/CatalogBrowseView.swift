@@ -73,6 +73,7 @@ struct CatalogBrowseView: View {
     @State private var reloadGeneration: UInt64 = 0
 
     @State private var selectedCard: TvMediaCard?
+    @FocusState private var focusedCardId: String?
 
     private let columns = Array(
         repeating: GridItem(.fixed(LunaTokens.Layout.posterW), spacing: LunaTokens.Layout.cardGap, alignment: .topLeading),
@@ -266,6 +267,7 @@ struct CatalogBrowseView: View {
                                     MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
                                 }
                             )
+                            .focused($focusedCardId, equals: card.id)
                             .contextMenu {
                                 StandardPosterContextMenuItems(
                                     card: card,
@@ -310,6 +312,7 @@ struct CatalogBrowseView: View {
         .scrollClipDisabled()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
+        .defaultFocus($focusedCardId, items.first?.id, priority: .userInitiated)
         .lunaRootScrollTopBarTracking(tab: rootNavigationTab, isEnabled: isRootTab)
         .overlay(alignment: .topLeading) {
             if let mutationErrorBanner {

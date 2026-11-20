@@ -114,6 +114,12 @@ struct LibraryHubView: View {
         .padding(.top, LunaTopBarView.contentTopPadding)
         .padding(.horizontal, LunaTheme.horizontalGutter)
         .ignoresSafeArea()
+        .defaultFocus($focusedSidebarSection, activeSection as LibrarySidebarSection?, priority: .userInitiated)
+        .onAppear {
+            if focusedSidebarSection == nil {
+                focusedSidebarSection = activeSection
+            }
+        }
         .overlay(alignment: .topTrailing) {
             if let mutationErrorBanner {
                 TransientErrorBanner(message: mutationErrorBanner)

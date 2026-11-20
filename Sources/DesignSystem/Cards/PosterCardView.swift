@@ -137,8 +137,12 @@ public struct PosterCardView: View {
                     isFocused: isFocused,
                     showRestingTopEdge: false
                 )
+                .scaleEffect((isFocused && !reduceMotion) ? 1.04 : 1.0)
+                .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
             }
-            .buttonStyle(.card)
+            .buttonStyle(LunaChromelessButtonStyle())
+            .contentShape(RoundedRectangle(cornerRadius: LunaTheme.posterRadius, style: .continuous))
+            .focusEffectDisabled(true)
             .lunaCardLampGlow(isFocused: isFocused)
             .focused($isFocused)
             .accessibilityLabel(card.title)

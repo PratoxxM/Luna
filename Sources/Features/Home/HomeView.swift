@@ -100,7 +100,7 @@ struct HomeView: View {
 
         ScrollViewReader { scrollProxy in
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 44) {
+                VStack(alignment: .leading, spacing: 44) {
                     if visibleRows.isEmpty && isInitialColdFetch {
                         HStack(spacing: 16) {
                             ProgressView()
@@ -173,7 +173,7 @@ struct HomeView: View {
                 }
                 if previewFocusPosterRow, let focusRowId {
                     Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 120_000_000)
+                        try? await Task.sleep(nanoseconds: 250_000_000)
                         scrollProxy.scrollTo(focusRowId, anchor: .center)
                         if let target = defaultFocusCardKey {
                             focusedCardKey = target

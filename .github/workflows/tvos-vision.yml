@@ -145,16 +145,22 @@ jobs:
           BUNDLE_ID="local.lunacore.luna"
 
           for SCREEN in home home-poster catalog library details settings player-audio player-source; do
-            echo "==> Launching ${BUNDLE_ID} --preview-screen ${SCREEN}..."
+            echo "==> Terminating prior instance and launching ${BUNDLE_ID} --preview-screen ${SCREEN}..."
+            xcrun simctl terminate "$TVOS_SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+            sleep 1
             if [ -n "$PREVIEW_FOCUS" ]; then
-              xcrun simctl launch --terminate-running-process "$TVOS_SIM_UDID" "$BUNDLE_ID" \
+              xcrun simctl launch "$TVOS_SIM_UDID" "$BUNDLE_ID" \
                 --preview-screen "$SCREEN" --preview-focus "$PREVIEW_FOCUS"
             else
-              xcrun simctl launch --terminate-running-process "$TVOS_SIM_UDID" "$BUNDLE_ID" \
+              xcrun simctl launch "$TVOS_SIM_UDID" "$BUNDLE_ID" \
                 --preview-screen "$SCREEN"
             fi
 
             sleep 5
+            if ! xcrun simctl spawn "$TVOS_SIM_UDID" launchctl list | grep -q "$BUNDLE_ID"; then
+              echo "::warning::${BUNDLE_ID} not active in launchctl for screen=${SCREEN}; checking DiagnosticReports..."
+              ls -lt ~/Library/Logs/DiagnosticReports/*Luna* 2>/dev/null | head -n 5 || true
+            fi
             OUT_FILE=".ci-screenshots/${SCREEN}.png"
             xcrun simctl io "$TVOS_SIM_UDID" screenshot "$OUT_FILE"
 

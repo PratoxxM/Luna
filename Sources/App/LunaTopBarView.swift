@@ -41,7 +41,7 @@ struct LunaTopBarView: View {
         .padding(.top, 46)
         .padding(.bottom, 16)
         .ignoresSafeArea(edges: [.top, .horizontal])
-        .defaultFocus($focusedTab, selectedTab as MainNavigationTab?, priority: .userInitiated)
+        .defaultFocus($focusedTab, selectedTab as MainNavigationTab?, priority: .automatic)
         .focusScope(topBarFocusNamespace)
         .focusSection()
         .onChange(of: focusedTab) { _, newFocus in
