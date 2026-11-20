@@ -42,7 +42,7 @@ struct MainNavigationShell: View {
                 comfort: sessionStore.comfort,
                 initialRequest: PreviewMockFixtures.playerLaunchRequest,
                 isPreviewMode: true,
-                previewFocusDirection: .down,
+                previewFocusDirection: previewConfiguration?.focusDirection ?? .down,
                 previewDrawerTab: drawerTab,
                 onDismiss: {}
             )
