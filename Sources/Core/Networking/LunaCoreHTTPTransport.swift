@@ -131,15 +131,91 @@ public struct LunaCoreClient: Sendable {
 
     // MARK: - URL, Header & Same-Origin Helpers
 
-    public func resolveArtworkURL(_ rawPathOrURL: String?) -> URL? {
+    public enum ArtworkTargetWidth: Sendable {
+        case preserve
+        case poster2x
+        case landscape2x
+        case hero4K
+
+        public var targetPixels: Int {
+            switch self {
+            case .preserve: return 0
+            case .poster2x: return 780
+            case .landscape2x: return 1280
+            case .hero4K: return 3840
+            }
+        }
+
+        public var tmdbSizeSegment: String {
+            switch self {
+            case .preserve: return ""
+            case .poster2x: return "w780"
+            case .landscape2x: return "w1280"
+            case .hero4K: return "original"
+            }
+        }
+    }
+
+    public func resolveArtworkURL(
+        _ rawPathOrURL: String?,
+        target: ArtworkTargetWidth = .preserve
+    ) -> URL? {
         guard let raw = rawPathOrURL?.trimmingCharacters(in: .whitespacesAndNewlines),
               !raw.isEmpty else {
             return nil
         }
-        if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
-            return URL(string: raw)
+        let baseResolved = (raw.hasPrefix("http://") || raw.hasPrefix("https://"))
+            ? URL(string: raw)
+            : buildAbsoluteURL(raw)
+        guard let url = baseResolved, target != .preserve else {
+            return baseResolved
         }
-        return buildAbsoluteURL(raw)
+        return Self.upgradeArtworkURL(url, target: target)
+    }
+
+    private static func upgradeArtworkURL(_ url: URL, target: ArtworkTargetWidth) -> URL {
+        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url
+        }
+        var changed = false
+
+        var segments = comps.path.components(separatedBy: "/")
+        if let pIdx = segments.firstIndex(of: "p"),
+           pIdx >= 1,
+           segments[pIdx - 1] == "t",
+           pIdx + 1 < segments.count {
+            let sizeSegment = segments[pIdx + 1]
+            if sizeSegment.hasPrefix("w"),
+               let existingW = Int(sizeSegment.dropFirst()),
+               existingW > 0,
+               existingW < target.targetPixels {
+                segments[pIdx + 1] = target.tmdbSizeSegment
+                comps.path = segments.joined(separator: "/")
+                changed = true
+            }
+        }
+
+        if let queryItems = comps.queryItems, !queryItems.isEmpty {
+            var updatedItems = queryItems
+            var queryChanged = false
+            for idx in updatedItems.indices {
+                let lowerName = updatedItems[idx].name.lowercased()
+                if (lowerName == "w" || lowerName == "width"),
+                   let rawVal = updatedItems[idx].value,
+                   let existingW = Int(rawVal),
+                   existingW > 0,
+                   existingW < target.targetPixels {
+                    updatedItems[idx].value = String(target.targetPixels)
+                    queryChanged = true
+                }
+            }
+            if queryChanged {
+                comps.queryItems = updatedItems
+                changed = true
+            }
+        }
+
+        return changed ? (comps.url ?? url) : url
     }
 
     public func buildAbsoluteURL(_ pathOrURL: String) -> URL? {

@@ -39,7 +39,7 @@ struct ShelfRowView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: LunaTokens.Layout.headerGap) {
             Text(row.title)
                 .font(LunaTheme.Font.sectionTitle)
                 .foregroundStyle(LunaTheme.linen)
@@ -94,7 +94,11 @@ struct ShelfRowView: View {
                         }
 
                         if row.hasMore == true {
-                            SeeAllShelfCardButton(width: LunaTokens.Layout.posterW, height: LunaTokens.Layout.backdropH) {
+                            SeeAllShelfCardButton(
+                                width: LunaTokens.Layout.posterW,
+                                height: LunaTokens.Layout.backdropH,
+                                cornerRadius: LunaTheme.cardRadius
+                            ) {
                                 onSeeAllRow(row)
                             }
                         }
@@ -124,7 +128,7 @@ struct ShelfRowView: View {
                                 Button {
                                     onSelectCard(card)
                                 } label: {
-                                    Label("Åpne detaljer", systemImage: "tv")
+                                    Label("Åpne detaljer", systemImage: "info.circle")
                                 }
 
                                 Button {
@@ -136,7 +140,11 @@ struct ShelfRowView: View {
                         }
 
                         if row.hasMore == true {
-                            SeeAllShelfCardButton(width: LunaTokens.Layout.posterW, height: LunaTokens.Layout.backdropH) {
+                            SeeAllShelfCardButton(
+                                width: LunaTokens.Layout.posterW,
+                                height: LunaTokens.Layout.backdropH,
+                                cornerRadius: LunaTheme.cardRadius
+                            ) {
                                 onSeeAllRow(row)
                             }
                         }
@@ -190,7 +198,11 @@ struct ShelfRowView: View {
                         }
 
                         if row.hasMore == true {
-                            SeeAllShelfCardButton(width: LunaTokens.Layout.posterW, height: LunaTokens.Layout.backdropH) {
+                            SeeAllShelfCardButton(
+                                width: LunaTokens.Layout.posterW,
+                                height: LunaTokens.Layout.backdropH,
+                                cornerRadius: LunaTheme.cardRadius
+                            ) {
                                 onSeeAllRow(row)
                             }
                         }
@@ -244,7 +256,11 @@ struct ShelfRowView: View {
                         }
 
                         if row.hasMore == true {
-                            SeeAllShelfCardButton(width: LunaTokens.Layout.posterW, height: LunaTokens.Layout.posterH) {
+                            SeeAllShelfCardButton(
+                                width: LunaTokens.Layout.posterW,
+                                height: LunaTokens.Layout.posterH,
+                                cornerRadius: LunaTheme.posterRadius
+                            ) {
                                 onSeeAllRow(row)
                             }
                         }
@@ -263,6 +279,7 @@ struct ShelfRowView: View {
 private struct SeeAllShelfCardButton: View {
     let width: CGFloat
     let height: CGFloat
+    let cornerRadius: CGFloat
     let action: () -> Void
 
     @FocusState private var isFocused: Bool
@@ -280,13 +297,13 @@ private struct SeeAllShelfCardButton: View {
             }
             .frame(width: width, height: height)
             .background(
-                RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(isFocused ? LunaTheme.surfaceElevated : LunaTheme.surface)
             )
-            .lunaFocusSurface(.secondaryPill, isFocused: isFocused, cornerRadius: LunaTheme.cardRadius)
+            .lunaFocusSurface(.card, isFocused: isFocused, cornerRadius: cornerRadius)
         }
         .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .focusEffectDisabled(true)
         .focused($isFocused)
     }

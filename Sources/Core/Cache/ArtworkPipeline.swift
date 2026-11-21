@@ -142,7 +142,7 @@ public actor ArtworkPipeline {
     }
 
     private nonisolated static let candidateCachedPixelSizes: [Int] = [
-        1920, 960, 896, 800, 750, 720, 640, 480, 220,
+        3840, 1920, 1280, 1120, 1040, 960, 900, 896, 800, 750, 720, 640, 480, 220,
     ]
 
     /// Looks up any already-decoded bitmap in RAM for `url` (checking `preferredMaxPixelSize` first,

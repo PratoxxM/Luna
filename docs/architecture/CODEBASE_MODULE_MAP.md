@@ -62,8 +62,8 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/DesignSystem/LunaInlineStateViews.swift` | Left-aligned `LunaLoadingRow`, `LunaEmptyState`, `LunaInlineError`, `LunaToast` & `PlayerStatusPill` | — | — |
 | `Sources/DesignSystem/LunaCopy.swift` | Norwegian pluralization, comma decimal formatter, room/tier labels & greetings | — | `DesignTokensAndCopyTests.swift` |
 | `Sources/DesignSystem/AmbientBackdropView.swift` | Static warm charcoal/espresso ambient glow backdrop (paused during playback) | — | `ThemeAndArtworkViewTests.swift` |
-| `Sources/DesignSystem/Cards/PosterCardView.swift` | Isolated `@FocusState` poster card (`280×420` shelf / `260×390` grid, resting grid titles, focus-only `LunaTierMarkView`) | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
-| `Sources/DesignSystem/Cards/BackdropCardView.swift` | Isolated `@FocusState` 520×293 16:9 card (internal titles, `Fra iPhone`/`I kveld` pill & progress bar) | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
+| `Sources/DesignSystem/Cards/PosterCardView.swift` | Isolated `@FocusState` poster card (`280×420` shelf / `260×390` grid, resting grid titles, focus-only `LunaTierDotView`) | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
+| `Sources/DesignSystem/Cards/BackdropCardView.swift` | Isolated `@FocusState` 520×293 16:9 card (`LunaArtBadge`, focus-only `LunaTierDotView` & progress bar) | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
 | `Sources/Features/Shared/MediaCardComponents.swift` | `TransientErrorBanner`, `MediaCardMutator` & shared context-menu mutations | `POST /api/tv/v1/{watchlist,watched,continue/remove,rows/:id/remove}` | `NavigationSettingsAndDeleteTests.swift` |
 | `Sources/Features/Shared/SourceCandidateRowView.swift` | Unified source release candidate row shared between `SourcePickerSheetView` & `PlayerQuickPanelView` | — | `ClientOriginAndBlurHashTests.swift` |
 | `Sources/Features/Onboarding/PairingOnboardingView.swift` | `_lunacore._tcp` auto-discovery & 6-digit pairing flow | `POST /api/tv/v1/pair/request`, `GET /pair/poll/:code` | `ClientOriginAndBlurHashTests.swift` |

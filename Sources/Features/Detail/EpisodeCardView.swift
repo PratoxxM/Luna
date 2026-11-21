@@ -1,9 +1,6 @@
 import SwiftUI
 
 struct EpisodeCardView: View {
-    private static let cardWidth: CGFloat = 420
-    private static let cardHeight: CGFloat = 236
-
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let episode: TvEpisodeCard
@@ -18,10 +15,13 @@ struct EpisodeCardView: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        let stillURL = client?.resolveArtworkURL(episode.stillUrl)
+        let cardWidth = LunaTokens.Layout.episodeW
+        let cardHeight = LunaTokens.Layout.episodeH
+        let stillURL = client?.resolveArtworkURL(episode.stillUrl, target: .landscape2x)
         let pct = min(100.0, max(0.0, episode.progress?.percent ?? 0))
         let upcoming = episode.isUpcoming == true
         let displayTitle = EpisodeTitleFormatter.episodeCardTitle(episode: episode, seriesTitle: seriesTitle)
+        let overviewText = (episode.overview ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
         VStack(alignment: .leading, spacing: 12) {
             Button(action: onPlay) {
@@ -31,11 +31,11 @@ struct EpisodeCardView: View {
                     CachedArtworkView(
                         url: stillURL,
                         client: client,
-                        maxPixelSize: 896,
+                        maxPixelSize: 960,
                         placeholderSymbol: upcoming ? "calendar" : "play.tv",
                         contentMode: .fill
                     )
-                    .frame(width: Self.cardWidth, height: Self.cardHeight)
+                    .frame(width: cardWidth, height: cardHeight)
                     .clipped()
                     .opacity(upcoming ? 0.65 : (isFocused ? 1.0 : LunaTokens.Layout.restPosterBrightness))
 
@@ -48,29 +48,26 @@ struct EpisodeCardView: View {
                     VStack {
                         HStack {
                             if upcoming {
-                                Text(episode.airDateBadge ?? "Kommer")
-                                    .font(LunaTheme.Font.badge)
-                                    .foregroundStyle(LunaTheme.linen)
-                                    .padding(.horizontal, 11)
-                                    .padding(.vertical, 5)
-                                    .background(LunaTheme.cinemaGlass, in: Capsule())
-                                    .overlay(Capsule().strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1))
+                                LunaArtBadge(label: episode.airDateBadge ?? "Kommer")
+                            } else if episode.watched {
+                                LunaArtBadge.watchedCheckmark()
+                            } else if isNextForYou {
+                                LunaArtBadge(label: "Neste")
                             }
 
                             Spacer()
                         }
-                        .padding(12)
+                        .padding(14)
 
                         Spacer()
 
-                        if (pct > 1 || episode.watched) && !upcoming {
-                            let trackWidth: CGFloat = Self.cardWidth - 28
-                            let effectivePct = episode.watched ? 100.0 : pct
+                        if pct > 2 && pct < 95 && !episode.watched && !upcoming {
+                            let trackWidth: CGFloat = cardWidth - 28
                             ZStack(alignment: .leading) {
                                 Capsule().fill(LunaTokens.Edge.progressTrack)
                                 Capsule()
                                     .fill(LunaTheme.amber)
-                                    .frame(width: trackWidth * CGFloat(effectivePct / 100.0))
+                                    .frame(width: trackWidth * CGFloat(pct / 100.0))
                             }
                             .frame(width: trackWidth, height: 6)
                             .padding(.horizontal, 14)
@@ -78,14 +75,12 @@ struct EpisodeCardView: View {
                         }
                     }
                 }
-                .frame(width: Self.cardWidth, height: Self.cardHeight)
+                .frame(width: cardWidth, height: cardHeight)
                 .lunaCardFocusFrame(
                     cornerRadius: LunaTheme.cardRadius,
                     isFocused: isFocused,
                     showRestingTopEdge: false
                 )
-                .scaleEffect((isFocused && !reduceMotion) ? 1.03 : 1.0)
-                .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
             }
             .buttonStyle(LunaChromelessButtonStyle())
             .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
@@ -129,30 +124,27 @@ struct EpisodeCardView: View {
 
                 Spacer(minLength: 6)
 
-                if episode.watched {
-                    Text("Sett")
-                        .font(LunaTheme.Font.caption)
-                        .foregroundStyle(LunaTheme.muted)
-                } else if isNextForYou && !upcoming {
-                    let rt = episode.formattedRuntime.map { "\($0) · " } ?? ""
-                    Text("\(rt)Neste for deg")
-                        .font(LunaTheme.Font.caption.monospacedDigit())
-                        .foregroundStyle(LunaTheme.moonlight)
-                } else if let runtime = episode.formattedRuntime {
+                if let runtime = episode.formattedRuntime {
                     Text(runtime)
                         .font(LunaTheme.Font.caption.monospacedDigit())
                         .foregroundStyle(LunaTheme.muted)
                 }
             }
-            .frame(width: Self.cardWidth)
+            .frame(width: cardWidth)
 
-            if let overview = episode.overview, !overview.isEmpty {
-                Text(overview)
-                    .font(LunaTheme.Font.caption)
-                    .foregroundStyle(LunaTheme.muted)
-                    .lineLimit(2)
-                    .frame(width: Self.cardWidth, alignment: .leading)
-            }
+            Text(overviewText.isEmpty ? " " : overviewText)
+                .font(LunaTheme.Font.caption)
+                .foregroundStyle(LunaTheme.muted)
+                .lineLimit(2)
+                .frame(width: cardWidth, minHeight: 58, maxHeight: 58, alignment: .topLeading)
+                .opacity((isFocused && !overviewText.isEmpty) ? 1.0 : 0.0)
+                .animation(
+                    reduceMotion
+                        ? .linear(duration: 0.01)
+                        : (isFocused ? LunaFocusStyle.focusFade.delay(0.06) : .easeOut(duration: 0.12)),
+                    value: isFocused
+                )
+                .allowsHitTesting(false)
         }
     }
 }

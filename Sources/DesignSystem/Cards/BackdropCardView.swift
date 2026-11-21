@@ -42,7 +42,7 @@ public struct BackdropCardView: View {
     }
 
     public var body: some View {
-        let artworkURL = client?.resolveArtworkURL(card.preferredLandscapePath)
+        let artworkURL = client?.resolveArtworkURL(card.preferredLandscapePath, target: .landscape2x)
         let pct = min(100.0, max(0.0, card.progress?.percent ?? 0))
 
         Button(action: onPrimaryAction) {
@@ -52,7 +52,7 @@ public struct BackdropCardView: View {
                 CachedArtworkView(
                     url: artworkURL,
                     client: client,
-                    maxPixelSize: 960,
+                    maxPixelSize: 1280,
                     blurHash: card.blurHash,
                     dominantColor: card.dominantColor,
                     placeholderSymbol: variant == .upcomingEpisode ? "calendar.badge.clock" : "play.tv",
@@ -75,19 +75,17 @@ public struct BackdropCardView: View {
                 VStack(spacing: 0) {
                     HStack(spacing: 8) {
                         if let badgeText = originBadgeText {
-                            originPill(label: badgeText, isPhone: card.origin == "phone")
+                            LunaArtBadge(
+                                label: badgeText,
+                                dotColor: card.origin == "phone" ? LunaTheme.amber : LunaTheme.moonlight
+                            )
                         } else if variant == .upcomingEpisode {
-                            upcomingDatePill
+                            LunaArtBadge(label: card.upcomingPillText)
                         }
 
                         Spacer(minLength: 4)
-
-                        if isFocused && showStorageBadge, let avail = card.availability,
-                           avail.isPhysicalLocal || avail.isLocalVfs {
-                            LunaTierMarkView(availability: avail)
-                        }
                     }
-                    .padding(18)
+                    .padding(14)
 
                     Spacer(minLength: 0)
 
@@ -95,35 +93,42 @@ public struct BackdropCardView: View {
                         HStack(alignment: .bottom, spacing: 14) {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(card.title)
-                                    .font(LunaTheme.Font.backdropTitle)
+                                    .font(LunaTheme.Font.cardTitle)
                                     .foregroundStyle(LunaTheme.linen)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
 
-                                Text(subtitleLine)
-                                    .font(LunaTheme.Font.backdropSubtitle)
-                                    .foregroundStyle(LunaTheme.moonlight)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
+                                HStack(spacing: 6) {
+                                    if isFocused && (showStorageBadge || variant == .continueWatching),
+                                       let avail = card.availability,
+                                       avail.isPhysicalLocal || avail.isLocalVfs {
+                                        LunaTierDotView(availability: avail)
+                                    }
+
+                                    Text(subtitleLine)
+                                        .font(LunaTheme.Font.subtitle)
+                                        .foregroundStyle(LunaTheme.moonlight)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
                             if variant != .upcomingEpisode {
                                 Image(systemName: "play.fill")
                                     .font(LunaTheme.Font.pillIcon)
-                                    .foregroundStyle(LunaTheme.canvas)
+                                    .foregroundStyle(LunaTokens.Text.onAccent)
                                     .frame(
                                         width: LunaTokens.Layout.playBadgeSize,
                                         height: LunaTokens.Layout.playBadgeSize
                                     )
                                     .background(LunaTheme.amber, in: Circle())
                                     .opacity(isFocused ? 1.0 : 0.0)
-                                    .scaleEffect(isFocused ? 1.0 : 0.84)
-                                    .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
+                                    .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusFade, value: isFocused)
                             }
                         }
 
-                        if pct > 0 {
+                        if pct > 2 && pct < 95 {
                             let trackWidth = max(0, width - 44)
                             ZStack(alignment: .leading) {
                                 Capsule().fill(LunaTokens.Edge.progressTrack)
@@ -135,7 +140,7 @@ public struct BackdropCardView: View {
                         }
                     }
                     .padding(.horizontal, 22)
-                    .padding(.bottom, pct > 0 ? 14 : 20)
+                    .padding(.bottom, (pct > 2 && pct < 95) ? 14 : 20)
                 }
             }
             .frame(width: width, height: height)
@@ -144,8 +149,6 @@ public struct BackdropCardView: View {
                 isFocused: isFocused,
                 showRestingTopEdge: false
             )
-            .scaleEffect((isFocused && !reduceMotion) ? 1.03 : 1.0)
-            .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
@@ -174,58 +177,12 @@ public struct BackdropCardView: View {
         return nil
     }
 
-    private func originPill(label: String, isPhone: Bool) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(isPhone ? LunaTheme.amber : LunaTheme.moonlight)
-                .frame(width: 9, height: 9)
-
-            Text(label)
-                .font(LunaTheme.Font.cardMicroLabel)
-                .foregroundStyle(LunaTheme.linen)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
-        .background(LunaTheme.cinemaGlass, in: Capsule())
-        .overlay(
-            Capsule().strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1)
-        )
-    }
-
-    private var upcomingDatePill: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "calendar")
-                .font(LunaTheme.Font.cardMicroIcon)
-                .foregroundStyle(LunaTheme.moonlight)
-            Text(card.upcomingPillText)
-                .font(LunaTheme.Font.cardMicroLabel)
-                .foregroundStyle(LunaTheme.linen)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(LunaTheme.cinemaGlass, in: Capsule())
-        .overlay(
-            Capsule()
-                .strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1)
-        )
-    }
-
     private var subtitleLine: String {
         switch variant {
         case .upcomingEpisode:
             return card.cleanUpcomingSubtitle
         case .continueWatching:
-            let base = card.cleanContinueSubtitle
-            if card.origin == "phone",
-               !base.lowercased().contains("min igjen"),
-               let avail = card.availability,
-               avail.isLocalNvme {
-                let benefit = avail.resolvedBenefitLabel
-                return base.isEmpty ? benefit : "\(base) · \(benefit)"
-            }
-            return base
+            return card.cleanContinueSubtitle
         case .standard:
             let meta = card.compactMetaLine
             if !meta.isEmpty {

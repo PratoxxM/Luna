@@ -188,8 +188,8 @@ final class PreviewMockURLProtocol: URLProtocol {
             return hit
         }
         let isBackdrop = slug.contains("backdrop")
-        let width = isBackdrop ? 400 : 240
-        let height = isBackdrop ? 225 : 360
+        let width = isBackdrop ? 960 : 560
+        let height = isBackdrop ? 540 : 840
         let topRGB: (Double, Double, Double)
         if slug.contains("navy") {
             topRGB = (0.10, 0.16, 0.27)

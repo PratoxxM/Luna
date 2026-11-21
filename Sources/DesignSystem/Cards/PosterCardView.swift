@@ -1,49 +1,8 @@
 import SwiftUI
 
-public struct LunaTierMarkView: View {
-    let availability: TvAvailabilityInfo
-
-    public init(availability: TvAvailabilityInfo) {
-        self.availability = availability
-    }
-
-    public var body: some View {
-        let color = tierColor
-        ZStack {
-            Circle()
-                .fill(LunaTheme.canvas.opacity(0.76))
-                .frame(width: 24, height: 24)
-                .overlay(
-                    Circle()
-                        .strokeBorder(LunaTheme.warmBorderBase.opacity(0.14), lineWidth: 0.5)
-                )
-
-            if availability.isLocalNvme {
-                Circle()
-                    .fill(color)
-                    .frame(width: 9, height: 9)
-                    .shadow(color: color.opacity(0.55), radius: 4, x: 0, y: 0)
-            } else if availability.isLocalArchive {
-                Circle()
-                    .strokeBorder(color, lineWidth: 1.6)
-                    .frame(width: 9, height: 9)
-            } else {
-                Image(systemName: "waveform")
-                    .font(LunaTheme.Font.tierBadge)
-                    .foregroundStyle(color)
-                    .scaleEffect(0.52)
-            }
-        }
-        .accessibilityLabel(availability.resolvedBenefitLabel)
-    }
-
-    private var tierColor: Color {
-        if availability.isLocalNvme { return LunaTheme.tierNvme }
-        if availability.isLocalArchive { return LunaTheme.tierArchive }
-        return LunaTheme.tierStream
-    }
-}
-
+/// Poster artwork card (`280×420` shelf / `260×390` grid).
+/// Shelves hide resting titles (`showRestingTitle: false`) for calm artwork rows,
+/// whereas catalog, library, and search grids display resting titles (`showRestingTitle: true`).
 public struct PosterCardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -80,9 +39,9 @@ public struct PosterCardView: View {
     }
 
     public var body: some View {
-        let posterURL = client?.resolveArtworkURL(card.preferredPosterPath)
+        let posterURL = client?.resolveArtworkURL(card.preferredPosterPath, target: .poster2x)
         let pct = min(100.0, max(0.0, card.progress?.percent ?? 0))
-        let captionHeight: CGFloat = showRestingTitle ? 58 : 62
+        let captionHeight: CGFloat = showRestingTitle ? 60 : 66
 
         VStack(alignment: .leading, spacing: 14) {
             Button(action: onSelect) {
@@ -92,7 +51,7 @@ public struct PosterCardView: View {
                     CachedArtworkView(
                         url: posterURL,
                         client: client,
-                        maxPixelSize: 750,
+                        maxPixelSize: 900,
                         blurHash: card.blurHash,
                         dominantColor: card.dominantColor,
                         placeholderSymbol: card.mediaType == "series" ? "tv" : "film",
@@ -105,20 +64,12 @@ public struct PosterCardView: View {
                     VStack {
                         HStack(alignment: .top, spacing: 6) {
                             if card.progress?.watched == true {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(LunaTheme.Font.cardMicroIcon)
-                                    .foregroundStyle(LunaTheme.emerald)
-                                    .padding(6)
-                                    .background(LunaTheme.cinemaGlass, in: Circle())
+                                LunaArtBadge.watchedCheckmark()
                             }
                             Spacer(minLength: 4)
-                            if isFocused && showStorageBadge, let avail = card.availability,
-                               avail.isPhysicalLocal || avail.isLocalVfs {
-                                LunaTierMarkView(availability: avail)
-                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
+                        .padding(14)
 
                         Spacer()
 
@@ -142,8 +93,6 @@ public struct PosterCardView: View {
                     isFocused: isFocused,
                     showRestingTopEdge: false
                 )
-                .scaleEffect((isFocused && !reduceMotion) ? 1.04 : 1.0)
-                .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
             }
             .buttonStyle(LunaChromelessButtonStyle())
             .contentShape(RoundedRectangle(cornerRadius: LunaTheme.posterRadius, style: .continuous))
@@ -157,17 +106,26 @@ public struct PosterCardView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(card.title)
-                    .font(showRestingTitle ? LunaTheme.Font.subtitle : LunaTheme.Font.posterTitle)
+                    .font(showRestingTitle ? LunaTheme.Font.subtitle : LunaTheme.Font.cardTitle)
                     .foregroundStyle(isFocused ? LunaTheme.linen : (showRestingTitle ? LunaTheme.moonlight : LunaTheme.linen))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .opacity((showRestingTitle || isFocused) ? 1.0 : 0.0)
 
-                Text(subtitleText)
-                    .font(showRestingTitle ? LunaTheme.Font.caption : LunaTheme.Font.posterSubtitle)
-                    .foregroundStyle(LunaTheme.cardSubtitleColor(isFocused: isFocused))
-                    .lineLimit(1)
-                    .opacity(isFocused ? 1.0 : 0.0)
+                HStack(spacing: 6) {
+                    if isFocused && showStorageBadge,
+                       let avail = card.availability,
+                       avail.isPhysicalLocal || avail.isLocalVfs {
+                        LunaTierDotView(availability: avail)
+                    }
+
+                    Text(subtitleText)
+                        .font(showRestingTitle ? LunaTheme.Font.caption : LunaTheme.Font.subtitle)
+                        .foregroundStyle(LunaTheme.cardSubtitleColor(isFocused: isFocused))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .opacity(isFocused ? 1.0 : 0.0)
             }
             .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: captionHeight, maxHeight: captionHeight, alignment: .topLeading)
             .animation(
