@@ -28,7 +28,7 @@ extension PlayerViewModel {
         userManuallySelectedSubtitle = false
         didApplyInitialSmartRule = false
         resolveStageKey = "searching_indexers"
-        resolveStageLabel = "Søker etter beste kilde for \(client.roomName)…"
+        resolveStageLabel = "Søker etter beste kilde…"
         resolvePercent = 16
         resolveHeadline = nil
         UIApplication.shared.isIdleTimerDisabled = true

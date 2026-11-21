@@ -326,22 +326,28 @@ struct SeriesFlowOverlays: View {
 
     private func skipIntroButton(_ chapter: PlaybackChapter) -> some View {
         let baseLabel = chapter.kind == .recap ? "Hopp over sammendrag" : "Hopp over intro"
-        let isFocused = (focusedPromptControl == .skipIntro)
-        return LunaPillButton(
-            isFocused ? baseLabel : "▲ \(baseLabel)",
-            systemImage: "forward.end.fill",
-            prominence: .glassPill
-        ) {
-            let target = max(chapter.startSeconds + 1.0, chapter.endSeconds - 0.15)
-            dismissedIntroChapterIDs.insert(chapter.id)
-            focusedPromptControl = nil
-            hasActivePrompt = false
-            onReturnFocusToCanvas()
-            Task {
-                await viewModel.engine.seek(to: target, exact: true)
+        return HStack(spacing: 10) {
+            Image(systemName: "chevron.up")
+                .font(LunaTheme.Font.caption)
+                .foregroundStyle(LunaTheme.muted)
+                .frame(width: 24)
+
+            LunaPillButton(
+                baseLabel,
+                systemImage: "forward.end.fill",
+                prominence: .glassPill
+            ) {
+                let target = max(chapter.startSeconds + 1.0, chapter.endSeconds - 0.15)
+                dismissedIntroChapterIDs.insert(chapter.id)
+                focusedPromptControl = nil
+                hasActivePrompt = false
+                onReturnFocusToCanvas()
+                Task {
+                    await viewModel.engine.seek(to: target, exact: true)
+                }
             }
+            .focused($focusedPromptControl, equals: .skipIntro)
         }
-        .focused($focusedPromptControl, equals: .skipIntro)
     }
 
     private func nextEpisodeCard(_ next: TvNextEpisodeSummary) -> some View {
@@ -356,7 +362,7 @@ struct SeriesFlowOverlays: View {
         return VStack(alignment: .leading, spacing: 12) {
             Text(epLabel)
                 .font(LunaTheme.Font.caption)
-                .foregroundStyle(LunaTheme.amber)
+                .foregroundStyle(LunaTheme.muted)
 
             if let cleanTitle, !cleanTitle.isEmpty {
                 Text(cleanTitle)
@@ -370,7 +376,7 @@ struct SeriesFlowOverlays: View {
                 LunaPillButton(
                     "Spill nå",
                     systemImage: "play.fill",
-                    prominence: .primaryAmber,
+                    prominence: .primary,
                     size: .compact
                 ) {
                     focusedPromptControl = nil
@@ -398,7 +404,8 @@ struct SeriesFlowOverlays: View {
         .lunaTopLightEdge(
             cornerRadius: LunaTokens.Radius.panel,
             topColor: LunaTokens.Edge.top3,
-            sideColor: LunaTokens.Edge.top1
+            sideColor: LunaTokens.Edge.top1,
+            lineWidth: LunaTokens.Layout.hairlineWidth
         )
         .shadow(
             color: roomAtmosphere.lampColor.opacity(0.14),
@@ -413,24 +420,30 @@ struct SeriesFlowOverlays: View {
 
     private func resumeBannerView(seconds: Double) -> some View {
         let timeText = TimelineScrubberLeafView.formatSeconds(seconds)
-        let isFocused = (focusedPromptControl == .restartFromBeginning)
         return HStack(spacing: 20) {
             Text("Fortsetter fra \(timeText)")
                 .font(LunaTheme.Font.subtitle)
                 .foregroundStyle(LunaTheme.linen)
 
-            LunaPillButton(
-                isFocused ? "Start på nytt" : "▲ Start på nytt",
-                systemImage: "arrow.counterclockwise",
-                prominence: .glassPill,
-                size: .compact
-            ) {
-                hideResumeBanner(returningFocus: true)
-                Task {
-                    await viewModel.transport.seek(to: 0, exact: true)
+            HStack(spacing: 8) {
+                Image(systemName: "chevron.up")
+                    .font(LunaTheme.Font.caption)
+                    .foregroundStyle(LunaTheme.muted)
+                    .frame(width: 20)
+
+                LunaPillButton(
+                    "Start på nytt",
+                    systemImage: "arrow.counterclockwise",
+                    prominence: .glassPill,
+                    size: .compact
+                ) {
+                    hideResumeBanner(returningFocus: true)
+                    Task {
+                        await viewModel.transport.seek(to: 0, exact: true)
+                    }
                 }
+                .focused($focusedPromptControl, equals: .restartFromBeginning)
             }
-            .focused($focusedPromptControl, equals: .restartFromBeginning)
         }
         .padding(.leading, 26)
         .padding(.trailing, 10)
@@ -439,7 +452,8 @@ struct SeriesFlowOverlays: View {
         .lunaTopLightEdge(
             cornerRadius: LunaTokens.Radius.pill,
             topColor: LunaTokens.Edge.top3,
-            sideColor: LunaTokens.Edge.top1
+            sideColor: LunaTokens.Edge.top1,
+            lineWidth: LunaTokens.Layout.hairlineWidth
         )
         .shadow(
             color: roomAtmosphere.lampColor.opacity(0.14),

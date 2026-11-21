@@ -69,23 +69,6 @@ struct PlayerBottomBarView: View {
         let isMovie = (titleDisplay.seriesLine == nil)
 
         VStack(spacing: 0) {
-            if viewModel.isSwitchingSource {
-                HStack(spacing: 10) {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                    Text("Bytter kilde…")
-                        .font(LunaTheme.Font.caption)
-                        .foregroundStyle(LunaTheme.moonlight)
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 9)
-                .background(LunaTheme.cinemaGlass, in: Capsule())
-                .overlay(Capsule().strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, LunaTheme.horizontalGutter)
-                .padding(.top, 42)
-            }
-
             Spacer()
 
             VStack(alignment: .leading, spacing: 14) {
@@ -126,20 +109,10 @@ struct PlayerBottomBarView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .allowsHitTesting(false)
 
-                    if let qualityBadge = viewModel.liveQualitySummaryBadge {
-                        Text(qualityBadge)
-                            .font(LunaTheme.Font.badge)
-                            .foregroundStyle(LunaTheme.moonlight)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .background(LunaTheme.surfaceRaised, in: Capsule())
-                            .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
-                            .allowsHitTesting(false)
-                    }
-
                     EndsAtLeafView(
                         engine: viewModel.engine,
                         duration: duration,
+                        qualitySummary: viewModel.liveQualitySummaryBadge,
                         previewTimeOverride: viewModel.previewPlayheadOverrideSeconds
                     )
                     .allowsHitTesting(false)
@@ -210,20 +183,11 @@ struct PlayerBottomBarView: View {
         HStack(spacing: 12) {
             ForEach(tabs) { tab in
                 let isOpenPopover = (activeQuickPanel == tab)
-                let passiveBadge: String? = {
-                    if isOpenPopover { return nil }
-                    if tab == .subtitles && viewModel.activeSubtitleTrackIndex != nil {
-                        return "•"
-                    }
-                    if tab == .picture && viewModel.isMetalFXActive {
-                        return "MetalFX"
-                    }
-                    return nil
-                }()
+                let showsSubtitlesDot = !isOpenPopover && tab == .subtitles && viewModel.activeSubtitleTrackIndex != nil
                 LunaPillButton(
                     tab.title,
                     systemImage: tab.systemImage,
-                    badgeText: passiveBadge,
+                    showsTrailingDot: showsSubtitlesDot,
                     isSelected: isOpenPopover,
                     prominence: .glassPill,
                     size: .compact
@@ -294,6 +258,7 @@ struct PlayerBottomBarView: View {
 private struct EndsAtLeafView: View {
     let engine: AetherEngine
     let duration: Double
+    var qualitySummary: String? = nil
     var previewTimeOverride: Double? = nil
 
     @State private var currentTime: Double = 0
@@ -308,12 +273,21 @@ private struct EndsAtLeafView: View {
 
     var body: some View {
         let effectiveCurrent = previewTimeOverride ?? currentTime
+        let endsAtText: String? = {
+            guard duration > 30 else { return nil }
+            let remaining = max(0, duration - effectiveCurrent)
+            let finishClock = Self.formatter.string(from: Date().addingTimeInterval(remaining))
+            return "Ferdig kl. \(finishClock)"
+        }()
+        let combined = [qualitySummary, endsAtText]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+
         Group {
-            if duration > 30 {
-                let remaining = max(0, duration - effectiveCurrent)
-                let finishClock = Self.formatter.string(from: Date().addingTimeInterval(remaining))
-                Text("Ferdig kl. \(finishClock)")
-                    .font(LunaTheme.Font.subtitle.monospacedDigit())
+            if !combined.isEmpty {
+                Text(combined)
+                    .font(LunaTheme.Font.caption.monospacedDigit())
                     .foregroundStyle(LunaTheme.muted)
                     .lineLimit(1)
             }
@@ -443,7 +417,6 @@ struct TimelineScrubberLeafView: View {
                         Circle()
                             .fill(isScrubbing ? LunaTheme.amber : LunaTheme.linen)
                             .frame(width: knobDiameter, height: knobDiameter)
-                            .shadow(color: isScrubbing ? LunaTheme.amber.opacity(0.55) : .clear, radius: 6, x: 0, y: 0)
                             .offset(x: max(0, min(totalWidth - knobDiameter, playheadX - knobDiameter * 0.5)))
                     }
                 }
@@ -494,7 +467,7 @@ struct TimelineScrubberLeafView: View {
                 Spacer()
 
                 if isScrubbing {
-                    Text("Trykk for å spille herfra · Meny avbryter")
+                    Text("Klikk for å spille herfra")
                         .font(LunaTheme.Font.caption)
                         .foregroundStyle(LunaTheme.muted)
                 }

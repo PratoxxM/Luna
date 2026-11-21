@@ -347,50 +347,14 @@ struct PlayerContainerView: View {
                         .zIndex(5.5)
                 }
 
-                if let banner = viewModel.transientBannerMessage {
-                    VStack {
-                        HStack(spacing: 10) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(LunaTheme.Font.pillIcon)
-                                .foregroundStyle(LunaTheme.warn)
-                            Text(banner)
-                                .font(LunaTheme.Font.subtitle)
-                                .foregroundStyle(LunaTheme.linen)
-                                .lineLimit(2)
-                        }
-                        .padding(.horizontal, 22)
-                        .padding(.vertical, 12)
-                        .background(LunaTheme.cinemaGlass, in: Capsule())
-                        .overlay(Capsule().strokeBorder(LunaTheme.warn.opacity(0.50), lineWidth: 1))
-                        .padding(.top, 42)
-                        Spacer()
-                    }
-                    .allowsHitTesting(false)
+                if let statusToast = activeTopStatusToast {
+                    PlayerStatusPill(
+                        message: statusToast.message,
+                        tone: statusToast.tone,
+                        showsSpinner: statusToast.showsSpinner
+                    )
                     .transition(.opacity)
                     .zIndex(5.6)
-                }
-
-                if let toast = viewModel.remoteCommandToastMessage {
-                    VStack {
-                        HStack(spacing: 10) {
-                            Circle()
-                                .fill(LunaTheme.emerald)
-                                .frame(width: 8, height: 8)
-                            Text(toast)
-                                .font(LunaTheme.Font.pillLabel)
-                                .foregroundStyle(LunaTheme.linen)
-                                .lineLimit(1)
-                        }
-                        .padding(.horizontal, 22)
-                        .padding(.vertical, 12)
-                        .background(LunaTheme.cinemaGlass, in: Capsule())
-                        .overlay(Capsule().strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1))
-                        .padding(.top, viewModel.transientBannerMessage == nil ? 42 : 102)
-                        Spacer()
-                    }
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-                    .zIndex(5.7)
                 }
             } else if let activeQuickPanel, viewModel.fatalError == nil {
                 // Recovery case: "Velg kilde" opened from fatalErrorOverlay before first frame was revealed
@@ -569,6 +533,22 @@ struct PlayerContainerView: View {
         }
     }
 
+    private var activeTopStatusToast: (message: String, tone: LunaToastTone, showsSpinner: Bool)? {
+        if viewModel.isSwitchingSource {
+            return ("Bytter kilde…", .ok, true)
+        }
+        if viewModel.playbackPhase == .rebuffering || viewModel.playbackPhase == .stalled {
+            return ("Bufrer…", .warn, true)
+        }
+        if let banner = viewModel.transientBannerMessage, !banner.isEmpty {
+            return (banner, .warn, false)
+        }
+        if let toast = viewModel.remoteCommandToastMessage, !toast.isEmpty {
+            return (toast, .ok, false)
+        }
+        return nil
+    }
+
     @ViewBuilder
     private func previewCinemaStage(
         client: LunaCoreClient?,
@@ -582,11 +562,11 @@ struct PlayerContainerView: View {
         )
 
         ZStack {
-            if let backdropURL = client?.resolveArtworkURL(initialRequest.backdropUrl) {
+            if let backdropURL = client?.resolveArtworkURL(initialRequest.backdropUrl, target: .hero4K) {
                 CachedArtworkView(
                     url: backdropURL,
                     client: client,
-                    maxPixelSize: 960,
+                    maxPixelSize: 3840,
                     placeholderSymbol: "film",
                     contentMode: .fill,
                     reuseAnyCachedSize: true

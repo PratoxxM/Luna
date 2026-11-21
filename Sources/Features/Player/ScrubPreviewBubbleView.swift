@@ -77,7 +77,8 @@ struct ScrubPreviewBubbleView: View {
         .lunaTopLightEdge(
             cornerRadius: LunaTokens.Radius.poster,
             topColor: LunaTokens.Edge.top3,
-            sideColor: LunaTokens.Edge.top1
+            sideColor: LunaTokens.Edge.top1,
+            lineWidth: LunaTokens.Layout.hairlineWidth
         )
         .allowsHitTesting(false)
     }
@@ -325,7 +326,7 @@ extension PlayerViewModel {
                         _ = await self.engine.showScrubPreview(atSeconds: requested, in: compView)
                     }
                 } else if self.engine.supportsCacheBackedStills {
-                    let still = await self.engine.scrubThumbnail(atSeconds: requested, maxWidth: 320)
+                    let still = await self.engine.scrubThumbnail(atSeconds: requested, maxWidth: 480)
                     guard !Task.isCancelled, self.isScrubbing else { return }
                     self.scrubState.previewImage = still
                 } else if self.scrubState.previewImage != nil {

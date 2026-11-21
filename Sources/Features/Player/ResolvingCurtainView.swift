@@ -40,7 +40,7 @@ struct ResolvingCurtainView: View {
                 CachedArtworkView(
                     url: backdropURL,
                     client: client,
-                    maxPixelSize: 960,
+                    maxPixelSize: 3840,
                     placeholderSymbol: "film",
                     contentMode: .fill,
                     reuseAnyCachedSize: true
@@ -79,7 +79,7 @@ struct ResolvingCurtainView: View {
                     CachedArtworkView(
                         url: logoURL,
                         client: client,
-                        maxPixelSize: 800,
+                        maxPixelSize: 1200,
                         contentMode: .fit,
                         reuseAnyCachedSize: true
                     )
@@ -99,7 +99,7 @@ struct ResolvingCurtainView: View {
                         }
                         if let mainTitle = curtainDisplay.mainLine {
                             Text(mainTitle)
-                                .font(LunaTheme.Font.curtainTitle)
+                                .font(LunaTheme.Font.titleSerif)
                                 .foregroundStyle(LunaTheme.linen)
                                 .multilineTextAlignment(.center)
                                 .lineLimit(2)
@@ -126,7 +126,7 @@ struct ResolvingCurtainView: View {
 
     private var resolvedBackdropURL: URL? {
         let raw = initialRequest.backdropUrl ?? viewModel.activeSession?.item.backdropUrl
-        return client?.resolveArtworkURL(raw)
+        return client?.resolveArtworkURL(raw, target: .hero4K)
     }
 
     private var resolvedLogoURL: URL? {
@@ -184,7 +184,6 @@ private struct ResolvingProgressClusterLeafView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 5)
                     .background(LunaTheme.surfaceRaised, in: Capsule())
-                    .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
             }
         }
     }

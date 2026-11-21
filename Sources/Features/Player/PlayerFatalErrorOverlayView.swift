@@ -20,7 +20,6 @@ struct CoalescedSeekFeedbackPillView: View {
         .padding(.horizontal, 28)
         .padding(.vertical, 16)
         .background(LunaTheme.cinemaGlass, in: Capsule())
-        .overlay(Capsule().strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1))
         .allowsHitTesting(false)
     }
 }
@@ -63,7 +62,7 @@ struct PlayerFatalErrorOverlayView: View {
                     .frame(maxWidth: 740)
 
                 HStack(spacing: 16) {
-                    LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise", prominence: .primaryAmber) {
+                    LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise", prominence: .primary) {
                         onRetry()
                     }
                     .focused($focusedButton, equals: .retry)
@@ -83,16 +82,17 @@ struct PlayerFatalErrorOverlayView: View {
                 }
                 .padding(.top, 8)
             }
-            .padding(48)
-            .frame(maxWidth: 860)
+            .padding(LunaTokens.Layout.sheetPadding)
+            .frame(maxWidth: LunaTokens.Layout.sheetNarrowW)
             .background(
                 RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
-                    .fill(LunaTheme.surface)
+                    .fill(LunaTokens.Surface.sheet)
             )
             .lunaTopLightEdge(
                 cornerRadius: LunaTokens.Radius.panel,
                 topColor: LunaTokens.Edge.top3,
-                sideColor: LunaTokens.Edge.top1
+                sideColor: LunaTokens.Edge.top1,
+                lineWidth: LunaTokens.Layout.hairlineWidth
             )
             .shadow(color: LunaTheme.pureBlack.opacity(0.65), radius: 36, x: 0, y: 18)
         }

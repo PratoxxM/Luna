@@ -16,7 +16,7 @@ struct NerdHUDView: View {
                 Circle()
                     .fill(LunaTheme.emerald)
                     .frame(width: 8, height: 8)
-                Text("Teknisk oversikt · \(viewModel.activeSession?.roomName ?? "TV")")
+                Text("Teknisk oversikt")
                     .font(LunaTheme.Font.badge)
                     .foregroundStyle(LunaTheme.linen)
             }
@@ -37,7 +37,7 @@ struct NerdHUDView: View {
         .padding(.vertical, 16)
         .frame(width: 580, alignment: .leading)
         .background(LunaTheme.cinemaGlass, in: RoundedRectangle(cornerRadius: LunaTokens.Radius.poster, style: .continuous))
-        .lunaTopLightEdge(cornerRadius: LunaTokens.Radius.poster)
+        .lunaTopLightEdge(cornerRadius: LunaTokens.Radius.poster, lineWidth: LunaTokens.Layout.hairlineWidth)
         .allowsHitTesting(false)
         .onReceive(engine.diagnostics.$liveTelemetry) { telemetry = $0 }
         .onReceive(engine.diagnostics.$sessionCacheStatus) { cacheStatus = $0 }

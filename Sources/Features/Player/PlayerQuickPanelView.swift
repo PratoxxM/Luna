@@ -48,8 +48,6 @@ public enum PlayerQuickPanelTab: String, CaseIterable, Identifiable, Sendable {
 /// Button-anchored Lampelys popover positioned directly above the triggering bottom-bar pill.
 /// Focus starts deterministically on the active (`✓`) item inside each list and closes back cleanly.
 struct PlayerQuickPanelView: View {
-    @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
-
     @ObservedObject var viewModel: PlayerViewModel
     @ObservedObject var comfort: ComfortPreferences
     let tab: PlayerQuickPanelTab
@@ -64,11 +62,10 @@ struct PlayerQuickPanelView: View {
 
     nonisolated static func panelWidth(for tab: PlayerQuickPanelTab) -> CGFloat {
         switch tab {
-        case .subtitles: return 580
-        case .audio: return 600
-        case .source: return 780
-        case .picture: return 670
-        case .chapters: return 600
+        case .source:
+            return LunaTokens.Layout.quickPanelWideW
+        case .subtitles, .audio, .picture, .chapters:
+            return LunaTokens.Layout.quickPanelNarrowW
         }
     }
 
@@ -135,12 +132,12 @@ struct PlayerQuickPanelView: View {
             panelHeader
 
             Rectangle()
-                .fill(LunaTheme.warmBorderSubtle)
-                .frame(height: 1)
+                .fill(LunaTokens.Edge.divider)
+                .frame(height: LunaTokens.Layout.hairlineWidth)
 
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
                         panelListContent
                     }
                     .padding(.vertical, 4)
@@ -175,17 +172,14 @@ struct PlayerQuickPanelView: View {
         .padding(.vertical, 22)
         .frame(width: panelWidth, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
                 .fill(LunaTheme.cinemaGlass)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(LunaTheme.warmBorderStrong, lineWidth: 1)
-        )
         .lunaTopLightEdge(
-            cornerRadius: 24,
+            cornerRadius: LunaTokens.Radius.panel,
             topColor: LunaTokens.Edge.top3,
-            sideColor: LunaTokens.Edge.top1
+            sideColor: LunaTokens.Edge.top1,
+            lineWidth: LunaTokens.Layout.hairlineWidth
         )
         .shadow(
             color: LunaTheme.pureBlack.opacity(0.68),
@@ -203,46 +197,10 @@ struct PlayerQuickPanelView: View {
     }
 
     private var panelHeader: some View {
-        HStack(spacing: 12) {
-            Image(systemName: tab.systemImage)
-                .font(LunaTheme.Font.pillIcon)
-                .foregroundStyle(LunaTheme.amber)
-
-            Text(tab.title)
-                .font(LunaTheme.Font.cardTitle)
-                .foregroundStyle(LunaTheme.linen)
-
-            Spacer(minLength: 12)
-
-            Text(headerSubtitle)
-                .font(LunaTheme.Font.caption)
-                .foregroundStyle(LunaTheme.muted)
-                .lineLimit(1)
-        }
-    }
-
-    private var headerSubtitle: String {
-        switch tab {
-        case .subtitles:
-            if let subId = viewModel.activeSubtitleTrackIndex,
-               let active = viewModel.drawerSubtitleOptions.first(where: { $0.id == subId }) {
-                return active.humanLanguageTitle
-            }
-            return "Av"
-        case .audio:
-            if let audId = viewModel.activeAudioTrackIndex,
-               let active = viewModel.drawerAudioOptions.first(where: { $0.id == audId }) {
-                return active.humanFormatSubtitle
-            }
-            return viewModel.audioEnhancement.displayTitle
-        case .source:
-            let room = (viewModel.activeSession?.roomName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return room.isEmpty ? "Velg kilde" : "Tilpasset \(room)"
-        case .picture:
-            return viewModel.metalFXStatusSubtitle
-        case .chapters:
-            return LunaCopy.chaptersHeader(viewModel.chapters.count)
-        }
+        Text(tab.title)
+            .font(LunaTheme.Font.cardTitle)
+            .foregroundStyle(LunaTheme.moonlight)
+            .lineLimit(1)
     }
 
     @ViewBuilder
@@ -265,11 +223,11 @@ struct PlayerQuickPanelView: View {
 
     @ViewBuilder
     private var subtitlesList: some View {
-        QuickPanelRowButton(
+        LunaListRow(
             title: "Av",
-            subtitle: "Ingen undertekster",
             isSelected: viewModel.activeSubtitleTrackIndex == nil,
-            isFocused: focusedItemID == "sub-off"
+            dimUnfocusedTitle: true,
+            externalIsFocused: focusedItemID == "sub-off"
         ) {
             viewModel.clearSubtitleManually()
             onClose(false)
@@ -281,11 +239,12 @@ struct PlayerQuickPanelView: View {
         ForEach(viewModel.drawerSubtitleOptions) { sub in
             let rowID = "sub-\(sub.id)"
             let selected = viewModel.activeSubtitleTrackIndex == sub.id
-            QuickPanelRowButton(
+            LunaListRow(
                 title: sub.humanLanguageTitle,
                 subtitle: sub.humanSubtitleDescription,
                 isSelected: selected,
-                isFocused: focusedItemID == rowID
+                dimUnfocusedTitle: true,
+                externalIsFocused: focusedItemID == rowID
             ) {
                 viewModel.selectSubtitleManually(sub.id)
                 onClose(false)
@@ -295,9 +254,7 @@ struct PlayerQuickPanelView: View {
             .prefersDefaultFocus(preferredActiveItemID == rowID, in: panelFocusNamespace)
         }
 
-        Rectangle()
-            .fill(LunaTheme.warmBorderSubtle)
-            .frame(height: 1)
+        LunaListDivider()
             .padding(.vertical, 4)
 
         if let lockReason = viewModel.kveldslysLockReason {
@@ -377,11 +334,12 @@ struct PlayerQuickPanelView: View {
         ForEach(viewModel.drawerAudioOptions) { track in
             let rowID = "aud-\(track.id)"
             let selected = viewModel.activeAudioTrackIndex == track.id
-            QuickPanelRowButton(
+            LunaListRow(
                 title: track.humanLanguageTitle,
                 subtitle: track.humanFormatSubtitle,
                 isSelected: selected,
-                isFocused: focusedItemID == rowID
+                dimUnfocusedTitle: true,
+                externalIsFocused: focusedItemID == rowID
             ) {
                 viewModel.selectAudioTrack(track.id)
                 onClose(false)
@@ -391,18 +349,17 @@ struct PlayerQuickPanelView: View {
             .prefersDefaultFocus(preferredActiveItemID == rowID, in: panelFocusNamespace)
         }
 
-        Rectangle()
-            .fill(LunaTheme.warmBorderSubtle)
-            .frame(height: 1)
+        LunaListDivider()
             .padding(.vertical, 4)
 
         ForEach(AudioEnhancementMode.allCases) { mode in
             let rowID = "aud-mode-\(mode.rawValue)"
-            QuickPanelRowButton(
+            LunaListRow(
                 title: mode.displayTitle,
                 subtitle: mode.subtitle,
                 isSelected: viewModel.audioEnhancement == mode,
-                isFocused: focusedItemID == rowID
+                dimUnfocusedTitle: true,
+                externalIsFocused: focusedItemID == rowID
             ) {
                 viewModel.setAudioEnhancement(mode)
             }
@@ -447,16 +404,10 @@ struct PlayerQuickPanelView: View {
     @ViewBuilder
     private var sourceList: some View {
         let activeCandidateId = viewModel.activeSession?.selectedCandidate.candidateId
-        let room = viewModel.activeSession?.roomName ?? ""
 
         if viewModel.isLoadingAlternatives && viewModel.alternatives.isEmpty {
-            HStack(spacing: 12) {
-                ProgressView()
-                Text("Henter tilgjengelige kilder…")
-                    .font(LunaTheme.Font.subtitle)
-                    .foregroundStyle(LunaTheme.moonlight)
-            }
-            .padding(20)
+            LunaLoadingRow(message: "Henter tilgjengelige kilder…")
+                .padding(.horizontal, 12)
         } else if viewModel.alternatives.isEmpty {
             Text("Ingen alternative kilder funnet for denne tittelen.")
                 .font(LunaTheme.Font.subtitle)
@@ -470,11 +421,12 @@ struct PlayerQuickPanelView: View {
                 let rowID = "src-\(cand.candidateId)"
                 SourceCandidateRowView(
                     candidate: cand,
-                    roomName: room,
+                    roomName: "",
                     isRecommended: idx == 0,
                     isSelected: isCurrent,
                     activeStatusLabel: "Spilles nå",
-                    isFocused: focusedItemID == rowID
+                    isFocused: focusedItemID == rowID,
+                    dimUnfocusedTitle: true
                 ) {
                     if !isCurrent {
                         viewModel.triggerSourceSwitch(to: cand.candidateId)
@@ -494,11 +446,12 @@ struct PlayerQuickPanelView: View {
     private var pictureList: some View {
         ForEach(LowResUpscaleMode.allCases) { mode in
             let rowID = "pic-metalfx-\(mode.rawValue)"
-            QuickPanelRowButton(
+            LunaListRow(
                 title: "MetalFX: \(mode.displayTitle)",
                 subtitle: mode.shortDescription,
                 isSelected: comfort.lowResUpscaleMode == mode,
-                isFocused: focusedItemID == rowID
+                dimUnfocusedTitle: true,
+                externalIsFocused: focusedItemID == rowID
             ) {
                 viewModel.setMetalFXModeLive(mode)
             }
@@ -507,16 +460,15 @@ struct PlayerQuickPanelView: View {
             .prefersDefaultFocus(preferredActiveItemID == rowID, in: panelFocusNamespace)
         }
 
-        Rectangle()
-            .fill(LunaTheme.warmBorderSubtle)
-            .frame(height: 1)
+        LunaListDivider()
             .padding(.vertical, 4)
 
-        QuickPanelRowButton(
-            title: "Teknisk info (HUD)",
-            subtitle: comfort.showNerdHUD ? "Vises øverst til venstre under avspilling" : "Skjult",
-            isSelected: comfort.showNerdHUD,
-            isFocused: focusedItemID == "pic-hud"
+        LunaListRow(
+            title: "Teknisk oversikt",
+            trailingText: comfort.showNerdHUD ? "På" : "Av",
+            trailingTextProminent: comfort.showNerdHUD,
+            dimUnfocusedTitle: true,
+            externalIsFocused: focusedItemID == "pic-hud"
         ) {
             comfort.showNerdHUD.toggle()
         }
@@ -539,12 +491,13 @@ struct PlayerQuickPanelView: View {
         ForEach(viewModel.chapters) { ch in
             let rowID = "ch-\(ch.id)"
             let isCurrent = ch.id == activeChapterID
-            QuickPanelRowButton(
+            LunaListRow(
                 title: ch.title,
                 subtitle: chapterSubtitle(ch, isActive: isCurrent),
-                badgeText: TimelineScrubberLeafView.formatSeconds(ch.startSeconds),
+                trailingText: TimelineScrubberLeafView.formatSeconds(ch.startSeconds),
                 isSelected: isCurrent,
-                isFocused: focusedItemID == rowID
+                dimUnfocusedTitle: true,
+                externalIsFocused: focusedItemID == rowID
             ) {
                 viewModel.seekToChapter(ch)
                 onClose(false)
@@ -594,83 +547,5 @@ struct PlayerQuickPanelView: View {
     private func chapterSubtitle(_ chapter: PlaybackChapter, isActive: Bool) -> String? {
         if isActive { return "Spilles nå" }
         return chapter.kind.badgeLabel
-    }
-}
-
-private struct QuickPanelRowButton: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
-
-    let title: String
-    var subtitle: String? = nil
-    var badgeText: String? = nil
-    let isSelected: Bool
-    let isFocused: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(LunaTheme.Font.cardTitle)
-                        .foregroundStyle(LunaTheme.linen)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-
-                    if let subtitle, !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(LunaTheme.Font.caption)
-                            .foregroundStyle(isFocused ? LunaTheme.moonlight : LunaTheme.muted)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                if let badgeText, !badgeText.isEmpty {
-                    Text(badgeText)
-                        .font(LunaTheme.Font.badge.monospacedDigit())
-                        .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .background(LunaTheme.surfaceRaised, in: Capsule())
-                        .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
-                }
-
-                if isSelected {
-                    Text("✓")
-                        .font(LunaTheme.Font.cardTitle)
-                        .foregroundStyle(LunaTheme.amber)
-                }
-            }
-            .transaction { $0.animation = nil }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isFocused ? LunaTheme.surfaceSelected : (isSelected ? LunaTheme.surfaceRaised : Color.clear))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(
-                        isFocused
-                            ? LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity)
-                            : (isSelected ? LunaTokens.Accent.border : Color.clear),
-                        lineWidth: isFocused ? LunaFocusStyle.borderWidth : 1.0
-                    )
-            )
-            .shadow(
-                color: isFocused ? roomAtmosphere.lampColor.opacity(roomAtmosphere.lampStrength * 0.7) : .clear,
-                radius: isFocused ? 20 : 0,
-                x: 0,
-                y: isFocused ? 6 : 0
-            )
-            .scaleEffect(isFocused ? 1.015 : 1.0)
-            .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
-        }
-        .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .focusEffectDisabled(true)
     }
 }
