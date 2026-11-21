@@ -171,7 +171,7 @@ final class ThemeAndArtworkViewTests: XCTestCase {
             accent: .amber
         )
         try assertRGB(selectedSecondaryIcon, r: 245, g: 240, b: 232)
-        XCTAssertEqual(try rgbaComponents(selectedSecondaryBorder).a, 0.45, accuracy: 0.015)
+        XCTAssertEqual(try rgbaComponents(selectedSecondaryBorder).a, 0.18, accuracy: 0.015)
 
         let watchedButton = LunaPillButton(
             "Sett",
@@ -196,8 +196,7 @@ final class ThemeAndArtworkViewTests: XCTestCase {
             accent: .emerald
         )
         try assertRGB(watchedIcon, r: 94, g: 191, b: 142)
-        let wb = try rgbaComponents(watchedBorder)
-        XCTAssertGreaterThan(wb.g, wb.r, "Sett selected border must tint emerald, not brass")
+        XCTAssertEqual(try rgbaComponents(watchedBorder).a, 0.18, accuracy: 0.015)
 
         let destructiveAction = LunaPillButton(
             "Nullstill tilkobling",
@@ -226,11 +225,25 @@ final class ThemeAndArtworkViewTests: XCTestCase {
             prominence: .glassPill,
             accent: .amber
         )
-        try assertRGB(secondaryFocusedLabel, r: 245, g: 240, b: 232)
+        try assertRGB(secondaryFocusedLabel, r: 10, g: 9, b: 8)
+        let primaryRestingIcon = LunaPillButton.resolveIconForeground(
+            isFocused: false,
+            isSelected: false,
+            prominence: .primary,
+            accent: .amber
+        )
+        let primaryRestingLabel = LunaPillButton.resolveLabelForeground(
+            isFocused: false,
+            isSelected: false,
+            prominence: .primary,
+            accent: .amber
+        )
+        try assertRGB(primaryRestingIcon, r: 196, g: 140, b: 58)
+        try assertRGB(primaryRestingLabel, r: 245, g: 240, b: 232)
         let primaryFocusedLabel = LunaPillButton.resolveLabelForeground(
             isFocused: true,
             isSelected: false,
-            prominence: .primaryAmber,
+            prominence: .primary,
             accent: .amber
         )
         try assertRGB(primaryFocusedLabel, r: 10, g: 9, b: 8)

@@ -26,6 +26,7 @@ Because this repository is **public on GitHub**, these rules are hard invariants
 ## 4. Where to Look First
 
 - **Full module-to-endpoint-to-test index (enforced 1:1 by `ops/bin/luna-check`)**: [`docs/architecture/CODEBASE_MODULE_MAP.md`](docs/architecture/CODEBASE_MODULE_MAP.md)
+- **Canonical Lampelys 10-foot tvOS UI/UX specification**: [`docs/LUNA_TVOS_LAMPELYS_REVIEW.md`](docs/LUNA_TVOS_LAMPELYS_REVIEW.md)
 - **Canonical `AetherEngine` (`7.71.0`) API signatures (never guess signatures)**: [`docs/aether-engine-api.md`](docs/aether-engine-api.md)
 - **App lifecycle, `--preview-screen` launch mode & single `@MainActor` engine**: `Sources/App/LunaApp.swift`, `Sources/App/PreviewLaunchConfiguration.swift`, `Sources/App/PreviewMockFixtures.swift`, `Sources/App/MainNavigationShell.swift`, `Sources/App/LunaTopBarView.swift`
 - **Discovery, pairing & config**: `Sources/Core/Discovery/BonjourServerBrowser.swift`, `Sources/Core/Config/ServerConfiguration.swift`, `Sources/Core/Config/SideloadSafeStorage.swift`, `Sources/Features/Onboarding/PairingOnboardingView.swift`

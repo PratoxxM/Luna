@@ -7,7 +7,7 @@ final class DesignTokensAndCopyTests: XCTestCase {
     func testTokensChecksumAndTypographyScaleFloor() {
         XCTAssertEqual(
             LunaTokens.tokensSha256,
-            "3014a71f18dcd62007e1db646dbf7726a48599441fe6a171d6b8cc99561ae0d5"
+            "1807f61acaf00ec33d6df43bea3b2446aaf22d2efd584435a68db99e7ab535fa"
         )
         XCTAssertGreaterThanOrEqual(LunaTokens.Typography.badge, 22.0)
         XCTAssertGreaterThanOrEqual(LunaTokens.Typography.caption, 22.0)
@@ -22,6 +22,7 @@ final class DesignTokensAndCopyTests: XCTestCase {
         XCTAssertEqual(LunaTokens.Layout.backdropH, 293.0)
 
         let _ = LunaTheme.Font.heroSerif
+        let _ = LunaTheme.Font.titleSerif
         let _ = LunaTheme.Font.pageTitle
         let _ = LunaTheme.Font.sectionTitle
         let _ = LunaTheme.Font.cardTitle
@@ -65,12 +66,11 @@ final class DesignTokensAndCopyTests: XCTestCase {
     func testFocusStyleSpringAndSurfaceModifier() {
         XCTAssertEqual(LunaFocusStyle.springResponse, 0.32, accuracy: 0.001)
         XCTAssertEqual(LunaFocusStyle.springDamping, 0.86, accuracy: 0.001)
-        XCTAssertEqual(LunaFocusStyle.borderWidth, 1.5, accuracy: 0.001)
-        XCTAssertEqual(LunaFocusStyle.borderOpacity, 0.70, accuracy: 0.001)
-        XCTAssertEqual(LunaFocusStyle.scaleEffect(for: .card, isFocused: true), 1.0)
-        XCTAssertEqual(LunaFocusStyle.scaleEffect(for: .listRow, isFocused: true), 1.0)
-        XCTAssertEqual(LunaFocusStyle.scaleEffect(for: .secondaryPill, isFocused: true), 1.03, accuracy: 0.001)
-        XCTAssertEqual(LunaFocusStyle.scaleEffect(for: .primaryPlay, isFocused: true), 1.04, accuracy: 0.001)
+        XCTAssertEqual(LunaFocusStyle.borderWidth, 2.0, accuracy: 0.001)
+        XCTAssertEqual(LunaFocusStyle.borderOpacity, 0.85, accuracy: 0.001)
+        XCTAssertEqual(LunaFocusStyle.scaleEffect(for: .card, isFocused: true), 1.05, accuracy: 0.001)
+        XCTAssertEqual(LunaFocusStyle.scaleEffect(for: .listRow, isFocused: true), 1.0, accuracy: 0.001)
+        XCTAssertEqual(LunaFocusStyle.scaleEffect(for: .control, isFocused: true), 1.04, accuracy: 0.001)
 
         let _ = Color.clear.lunaFocusSurface(.card, isFocused: true)
         let warnIcon = LunaPillButton.resolveIconForeground(

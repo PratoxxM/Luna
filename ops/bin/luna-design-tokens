@@ -111,12 +111,17 @@ def render_swift(tokens: dict, sha256: str) -> str:
     lines.extend(["    }", ""])
 
     # Motion
+    tv_motion = tv.get("motion", {})
+    debounce_ms = int(tv_motion.get("focusSelectDebounceMs", 180))
+    debounce_ns = debounce_ms * 1_000_000
     lines.extend([
         "    public enum Motion {",
         f"        public static let focusSpringResponse: Double = {motion.get('tvFocusSpringResponse', 0.32)}",
         f"        public static let focusSpringDamping: Double = {motion.get('tvFocusSpringDamping', 0.86)}",
         f"        public static let focusFadeSeconds: Double = {float(motion.get('tvFocusFadeMs', 180)) / 1000.0}",
         f"        public static let pressDuration: Double = {motion.get('tvPressDuration', 0.12)}",
+        f"        public static let focusSelectDebounceMs: Int = {debounce_ms}",
+        f"        public static let focusSelectDebounceNanoseconds: UInt64 = {debounce_ns}",
         "    }",
         "}",
         "",

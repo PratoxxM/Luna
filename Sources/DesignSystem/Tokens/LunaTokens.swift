@@ -1,11 +1,11 @@
-// Generated from design/tokens.json (sha256: 3014a71f18dcd62007e1db646dbf7726a48599441fe6a171d6b8cc99561ae0d5) — DO NOT EDIT MANUALLY.
+// Generated from design/tokens.json (sha256: 1807f61acaf00ec33d6df43bea3b2446aaf22d2efd584435a68db99e7ab535fa) — DO NOT EDIT MANUALLY.
 // Regenerate via: ./ops/bin/luna-design-tokens --sync
 
 import CoreGraphics
 import SwiftUI
 
 public enum LunaTokens {
-    public static let tokensSha256 = "3014a71f18dcd62007e1db646dbf7726a48599441fe6a171d6b8cc99561ae0d5"
+    public static let tokensSha256 = "1807f61acaf00ec33d6df43bea3b2446aaf22d2efd584435a68db99e7ab535fa"
 
     public enum Surface {
         public static let canvas = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0)
@@ -110,10 +110,11 @@ public enum LunaTokens {
     }
 
     public enum Typography {
-        public static let heroSerif: CGFloat = 52.0
-        public static let pageTitle: CGFloat = 42.0
+        public static let heroSerif: CGFloat = 64.0
+        public static let titleSerif: CGFloat = 46.0
+        public static let pageTitle: CGFloat = 40.0
         public static let sectionTitle: CGFloat = 34.0
-        public static let cardTitle: CGFloat = 30.0
+        public static let cardTitle: CGFloat = 29.0
         public static let body: CGFloat = 29.0
         public static let subtitle: CGFloat = 25.0
         public static let caption: CGFloat = 23.0
@@ -130,17 +131,42 @@ public enum LunaTokens {
 
     public enum Layout {
         public static let gutter: CGFloat = 90.0
+        public static let safeTop: CGFloat = 60.0
+        public static let safeBottom: CGFloat = 60.0
+        public static let contentTop: CGFloat = 162.0
+        public static let subpageTop: CGFloat = 60.0
+        public static let sectionGap: CGFloat = 32.0
+        public static let headerGap: CGFloat = 16.0
+        public static let blockGap: CGFloat = 24.0
+        public static let gridRowGap: CGFloat = 32.0
         public static let posterW: CGFloat = 280.0
         public static let posterH: CGFloat = 420.0
         public static let gridPosterW: CGFloat = 260.0
         public static let gridPosterH: CGFloat = 390.0
         public static let backdropW: CGFloat = 520.0
         public static let backdropH: CGFloat = 293.0
+        public static let episodeW: CGFloat = 420.0
+        public static let episodeH: CGFloat = 236.0
         public static let cardGap: CGFloat = 40.0
         public static let gridCardGap: CGFloat = 36.0
         public static let playBadgeSize: CGFloat = 48.0
-        public static let focusBorderWidth: CGFloat = 1.5
-        public static let focusBorderOpacity: CGFloat = 0.7
+        public static let controlH: CGFloat = 56.0
+        public static let compactControlH: CGFloat = 48.0
+        public static let iconButton: CGFloat = 56.0
+        public static let listRowPadX: CGFloat = 24.0
+        public static let listRowPadY: CGFloat = 16.0
+        public static let listRowMinH: CGFloat = 72.0
+        public static let sheetPadding: CGFloat = 48.0
+        public static let sheetNarrowW: CGFloat = 880.0
+        public static let sheetWideW: CGFloat = 1240.0
+        public static let quickPanelW: CGFloat = 640.0
+        public static let quickPanelWideW: CGFloat = 820.0
+        public static let hairlineWidth: CGFloat = 0.5
+        public static let focusBorderWidth: CGFloat = 2.0
+        public static let focusBorderOpacity: CGFloat = 0.85
+        public static let focusScaleCard: CGFloat = 1.05
+        public static let focusScaleControl: CGFloat = 1.04
+        public static let focusScaleRow: CGFloat = 1.0
         public static let focusGlowBlur: CGFloat = 30.0
         public static let focusGlowOffsetY: CGFloat = 12.0
         public static let restPosterBrightness: CGFloat = 0.9
@@ -151,5 +177,7 @@ public enum LunaTokens {
         public static let focusSpringDamping: Double = 0.86
         public static let focusFadeSeconds: Double = 0.18
         public static let pressDuration: Double = 0.12
+        public static let focusSelectDebounceMs: Int = 180
+        public static let focusSelectDebounceNanoseconds: UInt64 = 180000000
     }
 }

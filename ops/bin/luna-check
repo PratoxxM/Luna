@@ -200,6 +200,8 @@ for sf in sorted((root / "Sources").rglob("*.swift")):
             typo_sizes_checked += 1
             if pt < 22.0:
                 errors.append(f"TYPO_FLOOR {rel}: font size {pt} pt is below 22.0 pt tvOS floor")
+        for _ in re.finditer(r"size:\s*LunaTokens\.Typography\.[A-Za-z0-9_]+", text):
+            typo_sizes_checked += 1
     else:
         if re.search(r"Font\.system\s*\(", text) or re.search(r"\.font\(\s*\.system\s*\(", text):
             errors.append(f"TYPO_FLOOR {rel}: direct .system(...) font outside LunaThemeTypography.swift")

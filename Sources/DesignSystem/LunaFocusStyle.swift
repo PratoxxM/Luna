@@ -2,16 +2,21 @@ import SwiftUI
 
 public enum LunaFocusKind: Sendable {
     case card
-    case secondaryPill
-    case primaryPlay
+    case control
     case listRow
+
+    @available(*, deprecated, renamed: "control")
+    public static let secondaryPill: Self = .control
+
+    @available(*, deprecated, renamed: "control")
+    public static let primaryPlay: Self = .control
 }
 
 public enum LunaFocusStyle {
     public static let springResponse: Double = LunaTokens.Motion.focusSpringResponse
     public static let springDamping: Double = LunaTokens.Motion.focusSpringDamping
     public static let borderWidth: CGFloat = LunaTokens.Layout.focusBorderWidth
-    public static let borderOpacity: Double = LunaTokens.Layout.focusBorderOpacity
+    public static let borderOpacity: Double = Double(LunaTokens.Layout.focusBorderOpacity)
     public static let glowBlur: CGFloat = LunaTokens.Layout.focusGlowBlur
     public static let glowOffsetY: CGFloat = LunaTokens.Layout.focusGlowOffsetY
     public static let fadeSeconds: Double = LunaTokens.Motion.focusFadeSeconds
@@ -28,19 +33,21 @@ public enum LunaFocusStyle {
     public nonisolated static func scaleEffect(for kind: LunaFocusKind, isFocused: Bool) -> CGFloat {
         guard isFocused else { return 1.0 }
         switch kind {
-        case .card, .listRow:
-            return 1.0
-        case .secondaryPill:
-            return 1.03
-        case .primaryPlay:
-            return 1.04
+        case .card:
+            return LunaTokens.Layout.focusScaleCard
+        case .control:
+            return LunaTokens.Layout.focusScaleControl
+        case .listRow:
+            return LunaTokens.Layout.focusScaleRow
         }
     }
 
-    public nonisolated static func borderColor(for kind: LunaFocusKind, isFocused: Bool, accentColor: Color = LunaTheme.amber) -> Color {
-        guard isFocused else {
-            return .clear
-        }
+    public nonisolated static func borderColor(
+        for kind: LunaFocusKind,
+        isFocused: Bool,
+        accentColor: Color = LunaTheme.amber
+    ) -> Color {
+        guard isFocused else { return .clear }
         return accentColor.opacity(borderOpacity)
     }
 }
@@ -84,6 +91,7 @@ public struct LunaFocusSurfaceModifier: ViewModifier {
     }
 
     public func body(content: Content) -> some View {
+        let isDestructive = customAccent && accentColor == LunaTheme.coral
         let resolvedGlow = customAccent ? accentColor : roomAtmosphere.lampColor
         let resolvedStrength = customAccent ? LunaTokens.Glow.lampStrength : roomAtmosphere.lampStrength
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -94,40 +102,47 @@ public struct LunaFocusSurfaceModifier: ViewModifier {
             accentColor: borderBase
         )
         let markerColor = customAccent ? accentColor : LunaTheme.amber
-        let glowColor: Color = isFocused ? resolvedGlow.opacity(resolvedStrength) : .clear
-        let scale = LunaFocusStyle.scaleEffect(for: kind, isFocused: isFocused)
+
+        let glowColor: Color = {
+            guard isFocused else { return .clear }
+            switch kind {
+            case .listRow:
+                return .clear
+            case .control:
+                return isDestructive ? .clear : resolvedGlow.opacity(resolvedStrength)
+            case .card:
+                return resolvedGlow.opacity(resolvedStrength)
+            }
+        }()
+
+        let scale = reduceMotion ? 1.0 : LunaFocusStyle.scaleEffect(for: kind, isFocused: isFocused)
 
         content
             .overlay(
                 Group {
                     if isFocused {
-                        if kind == .listRow {
+                        switch kind {
+                        case .listRow:
                             HStack {
                                 Capsule()
                                     .fill(markerColor)
                                     .frame(width: LunaFocusStyle.listMarkerWidth)
-                                    .padding(.vertical, 10)
+                                    .padding(.vertical, 12)
                                 Spacer(minLength: 0)
                             }
-                            .overlay(
+                        case .control:
+                            if isDestructive {
                                 shape.strokeBorder(
-                                    LunaTheme.focusGoldBorder.opacity(0.45),
-                                    lineWidth: 1.0
+                                    LunaTheme.coral.opacity(LunaFocusStyle.borderOpacity),
+                                    lineWidth: LunaFocusStyle.borderWidth
                                 )
-                            )
-                        } else if kind == .primaryPlay {
+                            }
+                        case .card:
                             shape.strokeBorder(
-                                LunaTheme.topLightEdgeGradient(topColor: LunaTheme.warmBorderBase.opacity(0.26)),
-                                lineWidth: 1.0
+                                activeBorderColor,
+                                lineWidth: LunaFocusStyle.borderWidth
                             )
-                        } else {
-                            shape.strokeBorder(activeBorderColor, lineWidth: LunaFocusStyle.borderWidth)
                         }
-                    } else if kind == .primaryPlay {
-                        shape.strokeBorder(
-                            LunaTheme.topLightEdgeGradient(topColor: LunaTheme.warmBorderBase.opacity(0.16)),
-                            lineWidth: 1.0
-                        )
                     }
                 }
                 .allowsHitTesting(false)
@@ -135,17 +150,17 @@ public struct LunaFocusSurfaceModifier: ViewModifier {
             )
             .shadow(
                 color: glowColor,
-                radius: isFocused ? LunaFocusStyle.glowBlur : 0,
+                radius: glowColor == .clear ? 0 : LunaFocusStyle.glowBlur,
                 x: 0,
-                y: isFocused ? LunaFocusStyle.glowOffsetY : 0
+                y: glowColor == .clear ? 0 : LunaFocusStyle.glowOffsetY
             )
             .scaleEffect(scale)
             .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
     }
 }
 
-/// Inner focus frame applied to `.buttonStyle(.card)` labels: zero resting border on posters
-/// (so posters truly ignite on focus) and `1.5 pt` 70% gold frame when focused.
+/// Inner focus frame applied to card labels: zero resting border on posters/backdrops,
+/// crisp `2.0 pt` 85% gold frame on focus, and unified `1.05x` card scale.
 @MainActor
 private struct LunaCardFocusFrameModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -156,6 +171,7 @@ private struct LunaCardFocusFrameModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let scale = reduceMotion ? 1.0 : LunaFocusStyle.scaleEffect(for: .card, isFocused: isFocused)
 
         content
             .clipShape(shape)
@@ -169,18 +185,19 @@ private struct LunaCardFocusFrameModifier: ViewModifier {
                     } else if showRestingTopEdge {
                         shape.strokeBorder(
                             LunaTheme.topLightEdgeGradient(topColor: LunaTokens.Edge.top2),
-                            lineWidth: 1.0
+                            lineWidth: LunaTokens.Layout.hairlineWidth
                         )
                     }
                 }
                 .allowsHitTesting(false)
                 .transaction { $0.animation = nil }
             )
+            .scaleEffect(scale)
             .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
     }
 }
 
-/// Outer warm lamp glow placed outside `.buttonStyle(.card)` so tvOS's card mask never clips the under-glow.
+/// Outer warm lamp glow placed outside card clipping masks so tvOS never clips the under-glow.
 @MainActor
 private struct LunaCardLampGlowModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
