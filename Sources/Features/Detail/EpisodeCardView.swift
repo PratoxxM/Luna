@@ -136,7 +136,7 @@ struct EpisodeCardView: View {
                 .font(LunaTheme.Font.caption)
                 .foregroundStyle(LunaTheme.muted)
                 .lineLimit(2)
-                .frame(width: cardWidth, minHeight: 58, maxHeight: 58, alignment: .topLeading)
+                .frame(width: cardWidth, height: 58, alignment: .topLeading)
                 .opacity((isFocused && !overviewText.isEmpty) ? 1.0 : 0.0)
                 .animation(
                     reduceMotion
