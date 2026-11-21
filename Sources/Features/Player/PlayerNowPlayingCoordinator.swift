@@ -31,7 +31,7 @@ enum PlayerNowPlayingCoordinator {
         let baseInfo = makeBaseInfo(for: session)
         engine.setVideoNowPlayingInfo(baseInfo)
 
-        if let next = session.nextEpisode {
+        if session.nextEpisode != nil {
             engine.setNowPlayingTrackCommands(
                 next: { [weak viewModel] in
                     guard let vm = viewModel,
@@ -42,7 +42,6 @@ enum PlayerNowPlayingCoordinator {
                 },
                 previous: nil
             )
-            _ = next
         } else {
             engine.setNowPlayingTrackCommands(next: nil, previous: nil)
         }

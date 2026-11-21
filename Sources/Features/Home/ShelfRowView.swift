@@ -3,7 +3,9 @@ import SwiftUI
 struct ShelfRowView: View {
     let row: TvShelfRow
     let isDefaultFocusRow: Bool
-    var focusedCardKey: FocusState<String?>.Binding
+    let mountedTracker: MountedEntryCardTracker
+    let entryCardKey: String?
+    let entryFocusNonce: Int
     let focusNamespace: Namespace.ID
     let client: LunaCoreClient?
 
@@ -39,240 +41,136 @@ struct ShelfRowView: View {
     }
 
     var body: some View {
+        let isContinue = row.rowStyle == "continue_backdrop"
+        let isBackdrop = isContinue || row.rowStyle == "backdrop"
+        let seeAllHeight = isBackdrop ? LunaTokens.Layout.backdropH : LunaTokens.Layout.posterH
+        let seeAllRadius = isBackdrop ? LunaTheme.cardRadius : LunaTheme.posterRadius
+        let removeTitle = rowRemoveActionTitle
+
         VStack(alignment: .leading, spacing: LunaTokens.Layout.headerGap) {
             Text(row.title)
                 .font(LunaTheme.Font.sectionTitle)
                 .foregroundStyle(LunaTheme.linen)
                 .padding(.horizontal, LunaTheme.horizontalGutter)
 
-            if row.rowStyle == "continue_backdrop" {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
-                        ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
-                            BackdropCardView(
-                                card: card,
-                                client: client,
-                                variant: .continueWatching,
-                                width: LunaTokens.Layout.backdropW,
-                                onPrimaryAction: {
-                                    onPlayContinueCard(card)
-                                }
-                            )
-                            .focused(focusedCardKey, equals: "\(row.rowId)#\(card.itemId)")
-                            .prefersDefaultFocus(isDefaultFocusRow && idx == 0, in: focusNamespace)
-                            .contextMenu {
-                                Button {
-                                    onPlayContinueCard(card)
-                                } label: {
-                                    Label("Spill av", systemImage: "play.fill")
-                                }
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
+                    ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
+                        let cardKey = "\(row.rowId)#\(card.itemId)"
+                        let directNonce = cardKey == entryCardKey ? entryFocusNonce : 0
 
-                                Button {
-                                    onSelectCard(card)
-                                } label: {
-                                    Label("Åpne detaljer", systemImage: "info.circle")
-                                }
-
-                                Button {
-                                    onPickSourceForCard(card)
-                                } label: {
-                                    Label("Velg kilde…", systemImage: "arrow.triangle.2.circlepath")
-                                }
-
-                                Button {
-                                    onMarkWatched(card)
-                                } label: {
-                                    Label("Marker som sett", systemImage: "checkmark.circle")
-                                }
-
-                                Button {
-                                    onRemoveFromOngoing(card)
-                                } label: {
-                                    Label("Fjern fra pågående", systemImage: "minus.circle")
-                                }
-                            }
-                        }
-
-                        if row.hasMore == true {
-                            SeeAllShelfCardButton(
-                                width: LunaTokens.Layout.posterW,
-                                height: LunaTokens.Layout.backdropH,
-                                cornerRadius: LunaTheme.cardRadius
-                            ) {
-                                onSeeAllRow(row)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 10)
-                }
-                .contentMargins(.zero, for: .scrollContent)
-                .scrollClipDisabled()
-                .focusSection()
-            } else if row.rowStyle == "upcoming_backdrop" {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
-                        ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
-                            BackdropCardView(
-                                card: card,
-                                client: client,
-                                variant: .upcomingEpisode,
-                                width: LunaTokens.Layout.backdropW,
-                                onPrimaryAction: {
-                                    onSelectCard(card)
-                                }
-                            )
-                            .focused(focusedCardKey, equals: "\(row.rowId)#\(card.itemId)")
-                            .prefersDefaultFocus(isDefaultFocusRow && idx == 0, in: focusNamespace)
-                            .contextMenu {
-                                Button {
-                                    onSelectCard(card)
-                                } label: {
-                                    Label("Åpne detaljer", systemImage: "info.circle")
-                                }
-
-                                Button {
-                                    onRemoveFromOngoing(card)
-                                } label: {
-                                    Label("Fjern fra pågående", systemImage: "minus.circle")
-                                }
-                            }
-                        }
-
-                        if row.hasMore == true {
-                            SeeAllShelfCardButton(
-                                width: LunaTokens.Layout.posterW,
-                                height: LunaTokens.Layout.backdropH,
-                                cornerRadius: LunaTheme.cardRadius
-                            ) {
-                                onSeeAllRow(row)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 10)
-                }
-                .contentMargins(.zero, for: .scrollContent)
-                .scrollClipDisabled()
-                .focusSection()
-            } else if row.rowStyle == "backdrop" {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
-                        ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
-                            BackdropCardView(
-                                card: card,
-                                client: client,
-                                variant: .standard,
-                                width: LunaTokens.Layout.backdropW,
-                                showStorageBadge: true,
-                                onPrimaryAction: {
-                                    onSelectCard(card)
-                                },
-                                onPlayShortcut: {
-                                    onPlayContinueCard(card)
-                                }
-                            )
-                            .focused(focusedCardKey, equals: "\(row.rowId)#\(card.itemId)")
-                            .prefersDefaultFocus(isDefaultFocusRow && idx == 0, in: focusNamespace)
-                            .contextMenu {
-                                StandardPosterContextMenuItems(
+                        Group {
+                            if isContinue {
+                                BackdropCardView(
                                     card: card,
-                                    onPlay: {
-                                        onPlayContinueCard(card)
-                                    },
-                                    onOpenDetails: {
-                                        onSelectCard(card)
-                                    },
-                                    onToggleWatched: {
-                                        onMarkWatched(card)
-                                    },
-                                    onToggleWatchlist: {
-                                        onToggleWatchlist(card)
-                                    },
-                                    removeActionTitle: rowRemoveActionTitle,
-                                    onRemoveFromContainer: rowRemoveActionTitle == nil ? nil : {
-                                        triggerRemoveAction(for: card)
-                                    }
+                                    client: client,
+                                    variant: .continueWatching,
+                                    width: LunaTokens.Layout.backdropW,
+                                    focusRequestNonce: directNonce,
+                                    onPrimaryAction: { onPlayContinueCard(card) }
                                 )
-                            }
-                        }
-
-                        if row.hasMore == true {
-                            SeeAllShelfCardButton(
-                                width: LunaTokens.Layout.posterW,
-                                height: LunaTokens.Layout.backdropH,
-                                cornerRadius: LunaTheme.cardRadius
-                            ) {
-                                onSeeAllRow(row)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 10)
-                }
-                .contentMargins(.zero, for: .scrollContent)
-                .scrollClipDisabled()
-                .focusSection()
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
-                        ForEach(Array(row.items.enumerated()), id: \.element.id) { idx, card in
-                            PosterCardView(
-                                card: card,
-                                client: client,
-                                width: LunaTokens.Layout.posterW,
-                                showStorageBadge: true,
-                                showRestingTitle: false,
-                                onSelect: {
-                                    onSelectCard(card)
-                                },
-                                onPlayShortcut: {
-                                    onPlayContinueCard(card)
+                                .contextMenu {
+                                    continueContextMenu(for: card)
                                 }
-                            )
-                            .focused(focusedCardKey, equals: "\(row.rowId)#\(card.itemId)")
-                            .prefersDefaultFocus(isDefaultFocusRow && idx == 0, in: focusNamespace)
-                            .contextMenu {
-                                StandardPosterContextMenuItems(
+                            } else if isBackdrop {
+                                BackdropCardView(
                                     card: card,
-                                    onPlay: {
-                                        onPlayContinueCard(card)
-                                    },
-                                    onOpenDetails: {
-                                        onSelectCard(card)
-                                    },
-                                    onToggleWatched: {
-                                        onMarkWatched(card)
-                                    },
-                                    onToggleWatchlist: {
-                                        onToggleWatchlist(card)
-                                    },
-                                    removeActionTitle: rowRemoveActionTitle,
-                                    onRemoveFromContainer: rowRemoveActionTitle == nil ? nil : {
-                                        triggerRemoveAction(for: card)
-                                    }
+                                    client: client,
+                                    variant: .standard,
+                                    width: LunaTokens.Layout.backdropW,
+                                    showStorageBadge: true,
+                                    focusRequestNonce: directNonce,
+                                    onPrimaryAction: { onSelectCard(card) },
+                                    onPlayShortcut: { onPlayContinueCard(card) }
                                 )
+                                .contextMenu {
+                                    standardContextMenu(for: card, removeTitle: removeTitle)
+                                }
+                            } else {
+                                PosterCardView(
+                                    card: card,
+                                    client: client,
+                                    width: LunaTokens.Layout.posterW,
+                                    showStorageBadge: true,
+                                    showRestingTitle: false,
+                                    focusRequestNonce: directNonce,
+                                    onSelect: { onSelectCard(card) },
+                                    onPlayShortcut: { onPlayContinueCard(card) }
+                                )
+                                .contextMenu {
+                                    standardContextMenu(for: card, removeTitle: removeTitle)
+                                }
                             }
                         }
+                        .lunaTrackMountedCard(id: cardKey, in: mountedTracker)
+                        .prefersDefaultFocus(isDefaultFocusRow && idx == 0, in: focusNamespace)
+                    }
 
-                        if row.hasMore == true {
-                            SeeAllShelfCardButton(
-                                width: LunaTokens.Layout.posterW,
-                                height: LunaTokens.Layout.posterH,
-                                cornerRadius: LunaTheme.posterRadius
-                            ) {
-                                onSeeAllRow(row)
-                            }
+                    if row.hasMore == true {
+                        SeeAllShelfCardButton(
+                            width: LunaTokens.Layout.posterW,
+                            height: seeAllHeight,
+                            cornerRadius: seeAllRadius
+                        ) {
+                            onSeeAllRow(row)
                         }
                     }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 10)
                 }
-                .contentMargins(.zero, for: .scrollContent)
-                .scrollClipDisabled()
-                .focusSection()
+                .padding(.horizontal, LunaTheme.horizontalGutter)
+                .padding(.vertical, 10)
             }
+            .contentMargins(.zero, for: .scrollContent)
+            .scrollClipDisabled()
+            .focusSection()
         }
+    }
+
+    @ViewBuilder
+    private func continueContextMenu(for card: TvMediaCard) -> some View {
+        Button {
+            onPlayContinueCard(card)
+        } label: {
+            Label("Spill av", systemImage: "play.fill")
+        }
+
+        Button {
+            onSelectCard(card)
+        } label: {
+            Label("Åpne detaljer", systemImage: "info.circle")
+        }
+
+        Button {
+            onPickSourceForCard(card)
+        } label: {
+            Label("Velg kilde…", systemImage: "arrow.triangle.2.circlepath")
+        }
+
+        Button {
+            onMarkWatched(card)
+        } label: {
+            Label("Marker som sett", systemImage: "checkmark.circle")
+        }
+
+        Button {
+            onRemoveFromOngoing(card)
+        } label: {
+            Label("Fjern fra pågående", systemImage: "minus.circle")
+        }
+    }
+
+    @ViewBuilder
+    private func standardContextMenu(for card: TvMediaCard, removeTitle: String?) -> some View {
+        StandardPosterContextMenuItems(
+            card: card,
+            onPlay: { onPlayContinueCard(card) },
+            onOpenDetails: { onSelectCard(card) },
+            onToggleWatched: { onMarkWatched(card) },
+            onToggleWatchlist: { onToggleWatchlist(card) },
+            removeActionTitle: removeTitle,
+            onRemoveFromContainer: removeTitle == nil ? nil : {
+                triggerRemoveAction(for: card)
+            }
+        )
     }
 }
 
@@ -302,9 +200,7 @@ private struct SeeAllShelfCardButton: View {
             )
             .lunaFocusSurface(.card, isFocused: isFocused, cornerRadius: cornerRadius)
         }
-        .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .focusEffectDisabled(true)
+        .lunaChromelessButton(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .focused($isFocused)
     }
 }

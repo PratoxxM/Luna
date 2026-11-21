@@ -163,16 +163,7 @@ extension PlayerViewModel {
         }
         options.declaredDurationSeconds = cfg.declaredDurationSeconds ?? session.stream.declaredDurationSeconds
 
-        switch comfort.lowResUpscaleMode {
-        case .off:
-            options.upscalesLowResolutionVideo = false
-        case .auto:
-            options.upscalesLowResolutionVideo = true
-            options.upscaleScaler = .automatic
-        case .animeLineArt:
-            options.upscalesLowResolutionVideo = true
-            options.upscaleScaler = .lineArt
-        }
+        Self.applyLowResUpscaleMode(comfort.lowResUpscaleMode, to: &options)
 
         let extSubs: [ExternalSubtitleTrack] = (session.tracks?.externalSubtitles ?? []).compactMap { sub in
             guard let fullURL = client.buildAbsoluteURL(sub.url) else { return nil }
@@ -190,6 +181,19 @@ extension PlayerViewModel {
         options.externalSubtitles = extSubs
 
         return options
+    }
+
+    nonisolated static func applyLowResUpscaleMode(_ mode: LowResUpscaleMode, to options: inout LoadOptions) {
+        switch mode {
+        case .off:
+            options.upscalesLowResolutionVideo = false
+        case .auto:
+            options.upscalesLowResolutionVideo = true
+            options.upscaleScaler = .automatic
+        case .animeLineArt:
+            options.upscalesLowResolutionVideo = true
+            options.upscaleScaler = .lineArt
+        }
     }
 
     private static func mapSpeakerLayout(_ raw: String?) -> SpatialSpeakerLayout {

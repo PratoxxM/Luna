@@ -37,7 +37,7 @@ internal enum CustomRowContextPolicy {
 
 /// Full-grid explorer for custom MediaLogg shelves or "Se alle" row links.
 struct CustomRowBrowseView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(AppSessionStore.self) private var sessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
 
     let title: String
@@ -55,17 +55,19 @@ struct CustomRowBrowseView: View {
     @State private var errorMessage: String?
     @State private var mutationErrorBanner: String?
     @State private var selectedCard: TvMediaCard?
-    @State private var lastSeenRefreshNonce: Int = -1
-    @State private var mutationBannerTask: Task<Void, Never>?
+    @State private var retryNonce: Int = 0
+    @State private var suppressNextRefreshReload: Bool = false
 
     private let pageSize = 36
-    private let columns = Array(
-        repeating: GridItem(.fixed(LunaTokens.Layout.gridPosterW), spacing: LunaTokens.Layout.gridCardGap, alignment: .topLeading),
-        count: 6
-    )
+    private let columns = LunaTheme.posterGridColumns
 
     var body: some View {
         let client = sessionStore.makeClient()
+        let removeTitle = CustomRowContextPolicy.removeActionTitle(
+            explicitFlag: isOngoingList,
+            rowId: effectiveRowId,
+            sourceKind: rowSourceKind
+        )
 
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: LunaTokens.Layout.blockGap) {
@@ -79,7 +81,7 @@ struct CustomRowBrowseView: View {
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else if let errorMessage, items.isEmpty {
                     LunaInlineError(message: errorMessage) {
-                        Task { await loadInitial() }
+                        retryNonce &+= 1
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else if items.isEmpty {
@@ -87,7 +89,8 @@ struct CustomRowBrowseView: View {
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: LunaTokens.Layout.gridRowGap) {
-                        ForEach(items) { card in
+                        let prefetchThreshold = max(0, items.count - 6)
+                        ForEach(Array(items.enumerated()), id: \.element.id) { idx, card in
                             PosterCardView(
                                 card: card,
                                 client: client,
@@ -116,22 +119,14 @@ struct CustomRowBrowseView: View {
                                     onToggleWatchlist: {
                                         Task { await toggleCustomWatchlist(card) }
                                     },
-                                    removeActionTitle: CustomRowContextPolicy.removeActionTitle(
-                                        explicitFlag: isOngoingList,
-                                        rowId: effectiveRowId,
-                                        sourceKind: rowSourceKind
-                                    ),
-                                    onRemoveFromContainer: CustomRowContextPolicy.removeActionTitle(
-                                        explicitFlag: isOngoingList,
-                                        rowId: effectiveRowId,
-                                        sourceKind: rowSourceKind
-                                    ) == nil ? nil : {
+                                    removeActionTitle: removeTitle,
+                                    onRemoveFromContainer: removeTitle == nil ? nil : {
                                         Task { await removeCardFromCurrentList(card) }
                                     }
                                 )
                             }
                             .onAppear {
-                                if card.id == items.last?.id && hasMore && !isLoadingMore {
+                                if idx >= prefetchThreshold && hasMore && !isLoadingMore {
                                     Task { await loadMore() }
                                 }
                             }
@@ -155,7 +150,7 @@ struct CustomRowBrowseView: View {
         .contentMargins(.zero, for: .scrollContent)
         .scrollClipDisabled()
         .ignoresSafeArea()
-        .lunaBottomToast(message: mutationErrorBanner, tone: .danger)
+        .lunaBottomToast(message: $mutationErrorBanner, tone: .danger)
         .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: sessionStore.activePlaybackTarget != nil))
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in
@@ -164,17 +159,14 @@ struct CustomRowBrowseView: View {
         .onAppear {
             subpageVisibility.enterSubpage(subpageToken)
         }
-        .task {
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
+        .task(id: "\(pathOrRowId)#\(sessionStore.homeRefreshNonce)#\(retryNonce)") {
+            if suppressNextRefreshReload {
+                suppressNextRefreshReload = false
+                return
+            }
             await loadInitial()
         }
-        .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
-            guard newNonce != lastSeenRefreshNonce else { return }
-            lastSeenRefreshNonce = newNonce
-            Task { await loadInitial() }
-        }
         .onDisappear {
-            mutationBannerTask?.cancel()
             if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
                 hasPushedChildDestination: selectedCard != nil,
                 hasActivePlayback: sessionStore.activePlaybackTarget != nil
@@ -224,13 +216,7 @@ struct CustomRowBrowseView: View {
     }
 
     private func showMutationError(_ error: Error) {
-        mutationBannerTask?.cancel()
         mutationErrorBanner = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
-        mutationBannerTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
-            guard !Task.isCancelled else { return }
-            mutationErrorBanner = nil
-        }
     }
 
     private func toggleCustomWatchlist(_ card: TvMediaCard) async {
@@ -240,7 +226,7 @@ struct CustomRowBrowseView: View {
         }
         do {
             if try await MediaCardMutator.setWatchlist(for: card, listed: nextVal, sessionStore: sessionStore) {
-                lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+                suppressNextRefreshReload = true
                 sessionStore.notifyContentMutated()
             }
         } catch {
@@ -276,7 +262,7 @@ struct CustomRowBrowseView: View {
             }
             if ok {
                 items.removeAll { $0.id == card.id }
-                lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+                suppressNextRefreshReload = true
                 sessionStore.notifyContentMutated()
             }
         } catch {
@@ -294,7 +280,7 @@ struct CustomRowBrowseView: View {
         }
         do {
             if try await MediaCardMutator.toggleWatched(for: card, watched: nextVal, sessionStore: sessionStore) {
-                lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
+                suppressNextRefreshReload = true
                 sessionStore.notifyContentMutated()
             }
         } catch {

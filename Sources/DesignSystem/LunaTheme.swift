@@ -47,14 +47,6 @@ public enum LunaRoomAtmosphere: String, CaseIterable, Equatable, Sendable {
         }
     }
 
-    public var ambientTintColor: Color {
-        switch self {
-        case .cinema: return LunaTokens.Room.cinemaTint
-        case .living: return LunaTokens.Room.livingTint
-        case .neutral: return LunaTheme.surface
-        }
-    }
-
     public var ambientOpacity: Double {
         switch self {
         case .cinema: return LunaTokens.Room.cinemaAmbientOpacity
@@ -82,8 +74,6 @@ public enum LunaTheme {
     public static let pureBlack = LunaTokens.Surface.pureBlack
     /// Calm matte espresso surface (`#14110F`) for cards, panels, and shelves.
     public static let surface = LunaTokens.Surface.lv1
-    /// Slightly softer matte espresso (`#181412`) for subtle filter & genre chips.
-    public static let surfaceSubtle = LunaTokens.Surface.subtle
     /// Elevated matte espresso (`#1E1916`) for resting secondary buttons & grouped Settings rows.
     public static let surfaceRaised = LunaTokens.Surface.lv2
     /// Warm roasted espresso (`#2A231E`) for active/selected secondary controls without competing with «Spill av».
@@ -114,12 +104,10 @@ public enum LunaTheme {
     /// Warm terracotta (`#D96B52`) reserved for destructive/error actions & alerts.
     public static let coral = LunaTokens.Status.danger
     public static let danger = LunaTokens.Status.danger
-    public static let statusInfo = LunaTokens.Status.info
 
     /// Storage tier colors shared across iPhone & tvOS.
     public static let tierNvme = LunaTokens.Tier.nvme
     public static let tierArchive = LunaTokens.Tier.archive
-    public static let tierStream = LunaTokens.Tier.stream
 
     /// Base warm cream border tint (`#FFF4E6`) used at 10–18% opacity for 1 pt matte hairlines.
     public static let warmBorderBase = Color(red: 255.0 / 255.0, green: 244.0 / 255.0, blue: 230.0 / 255.0)
@@ -129,7 +117,6 @@ public enum LunaTheme {
 
     /// Calm antique bronze Siri Remote focus fill (`#C48C3A -> #9E6E27`) reserved for primary actions.
     public static let focusGoldTop = amber
-    public static let focusGoldBottom = amberDeep
     public static let focusGoldBorder = LunaTokens.Accent.line
     /// Subtle warm bronze highlight reserved for focused `PrimaryPlayButton` («Spill av»).
     public static let playFocusTop = LunaTokens.Accent.playFocusTop
@@ -137,14 +124,10 @@ public enum LunaTheme {
     public static let horizontalGutter: CGFloat = LunaTokens.Layout.gutter
     public static let posterRadius: CGFloat = LunaTokens.Radius.poster
     public static let cardRadius: CGFloat = LunaTokens.Radius.card
-
-    public static var focusGoldGradient: LinearGradient {
-        LinearGradient(
-            colors: [focusGoldTop, focusGoldBottom],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
+    public static let posterGridColumns: [GridItem] = Array(
+        repeating: GridItem(.fixed(LunaTokens.Layout.gridPosterW), spacing: LunaTokens.Layout.gridCardGap, alignment: .topLeading),
+        count: 6
+    )
 
     public static var playFocusGradient: LinearGradient {
         LinearGradient(
@@ -176,10 +159,6 @@ public enum LunaTheme {
             startPoint: .top,
             endPoint: .bottom
         )
-    }
-
-    public static func cardBorderColor(isFocused: Bool) -> Color {
-        isFocused ? focusGoldBorder.opacity(LunaTokens.Layout.focusBorderOpacity) : .clear
     }
 
     public static func cardTitleColor(isFocused: Bool) -> Color {

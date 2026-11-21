@@ -124,15 +124,6 @@ public enum LunaCopy: Sendable {
         )
     }
 
-    public enum Home {
-        public static let continueTitle = "Fortsett"
-    }
-
-    public nonisolated static func formatCompactEpisodeCode(season: Int?, episode: Int?) -> String? {
-        guard let season, let episode, season > 0, episode > 0 else { return nil }
-        return "S\(season) E\(episode)"
-    }
-
     public nonisolated static func localizedSeasonTitle(_ rawName: String?, seasonNumber: Int) -> String {
         let trimmed = (rawName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = trimmed.lowercased()
@@ -271,22 +262,6 @@ public enum LunaCopy: Sendable {
         if norm == "archive" { return "Fra arkivet" }
         if norm == "local" { return "Lokalt" }
         return "Strømmes ved start"
-    }
-
-    public nonisolated static func tierShortLabel(tier: String?, source: String? = nil, state: String? = nil) -> String {
-        if state == "upcoming" { return "Kommer" }
-        let normTier = (tier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let normSource = (source ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if normTier == "ssd" || normTier == "nvme" || normSource == "ssd" || normSource == "nvme" {
-            return "På NVMe"
-        }
-        if normTier == "archive" || normSource == "archive" {
-            return "I Arkiv"
-        }
-        if normTier == "local" || normSource == "local" {
-            return "Lokalt"
-        }
-        return "Strøm"
     }
 
     public nonisolated static func friendlyErrorMessage(

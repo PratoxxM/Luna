@@ -64,9 +64,7 @@ extension PlayerViewModel {
     func handleScenePhaseChange(_ phase: ScenePhase) {
         if phase == .active {
             isForegroundActive = true
-            Task { @MainActor [weak self] in
-                await self?.attemptForegroundRecoveryIfNeeded()
-            }
+            attemptForegroundRecoveryIfNeeded()
         } else if phase == .inactive || phase == .background {
             if phase == .background {
                 cancelPendingPausedRestoreResume()
@@ -86,7 +84,7 @@ extension PlayerViewModel {
         }
     }
 
-    func attemptForegroundRecoveryIfNeeded() async {
+    func attemptForegroundRecoveryIfNeeded() {
         guard isForegroundActive else { return }
         guard Self.shouldAttemptForegroundVideoRestore(
             needsForegroundVideoRestore: transport.needsForegroundVideoRestore,
@@ -109,7 +107,6 @@ extension PlayerViewModel {
         isRestoringFromBackground = true
         hasFirstFrameReadyForDisplay = false
         firstFrameFallbackUnlocked = false
-        resolveStageKey = "reconnecting"
         resolveStageLabel = "Gjenoppretter avspilling…"
         resolvePercent = 90
         updateIdleTimer(for: playbackPhase)

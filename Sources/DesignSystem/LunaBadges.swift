@@ -10,14 +10,12 @@ public struct LunaArtBadge: View {
 
     public init(
         label: String,
-        systemImage: String? = nil,
-        dotColor: Color? = nil,
-        iconColor: Color = LunaTheme.linen
+        dotColor: Color? = nil
     ) {
         self.label = label
-        self.systemImage = systemImage
+        self.systemImage = nil
         self.dotColor = dotColor
-        self.iconColor = iconColor
+        self.iconColor = LunaTheme.linen
     }
 
     private init(systemImage: String, iconColor: Color) {
@@ -45,11 +43,6 @@ public struct LunaArtBadge: View {
                         .fill(dotColor)
                         .frame(width: 8, height: 8)
                 }
-                if let systemImage {
-                    Image(systemName: systemImage)
-                        .font(LunaTheme.Font.badge)
-                        .foregroundStyle(iconColor)
-                }
                 Text(label)
                     .font(LunaTheme.Font.badge)
                     .foregroundStyle(LunaTheme.linen)
@@ -58,6 +51,33 @@ public struct LunaArtBadge: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(LunaTokens.Surface.badgeScrim, in: Capsule())
+        }
+    }
+}
+
+/// Shared `6 pt` Lampelys playback progress capsule (`2% < pct < 95%`) across poster, backdrop & episode cards.
+public struct LunaCardProgressBar: View {
+    let percent: Double
+    let trackWidth: CGFloat
+
+    public init(percent: Double?, trackWidth: CGFloat) {
+        self.percent = min(100.0, max(0.0, percent ?? 0))
+        self.trackWidth = max(0, trackWidth)
+    }
+
+    public var isVisible: Bool {
+        percent > 2 && percent < 95
+    }
+
+    public var body: some View {
+        if isVisible {
+            ZStack(alignment: .leading) {
+                Capsule().fill(LunaTokens.Edge.progressTrack)
+                Capsule()
+                    .fill(LunaTheme.amber)
+                    .frame(width: trackWidth * CGFloat(percent / 100.0))
+            }
+            .frame(width: trackWidth, height: 6)
         }
     }
 }
@@ -115,9 +135,7 @@ public struct LunaIconButton: View {
                 externalFocus: isDirectFocused
             )
         }
-        .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(Circle())
-        .focusEffectDisabled(true)
+        .lunaChromelessButton(Circle())
         .focused($isDirectFocused)
         .accessibilityLabel(accessibilityLabel)
     }

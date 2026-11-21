@@ -37,7 +37,7 @@ struct SettingsView: View {
     nonisolated static let keepDisplayModeExplanationText =
         "Av (standard) gir jevne 60 Hz-menyer umiddelbart etter avspilling. På unngår HDMI-skifte ut av spilleren på denne TV-en, men låser menyene til 24 Hz etter 24p-film frem til du forlater appen."
 
-    @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(AppSessionStore.self) private var sessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
     @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
     @Environment(\.lunaContentEntryFocusNonce) private var contentEntryFocusNonce
@@ -48,7 +48,6 @@ struct SettingsView: View {
     @State private var cacheClearedNotice: Bool = false
     @State private var showReconnectDialog: Bool = false
     @State private var modalToken = UUID()
-    @State private var entryFocusRetryTask: Task<Void, Never>?
     @FocusState private var focusedCategory: SettingsCategory?
     @Namespace private var settingsSidebarNamespace
 
@@ -137,32 +136,15 @@ struct SettingsView: View {
                 subpageVisibility.leaveModal(modalToken)
             }
         }
-        .onChange(of: contentEntryFocusNonce) { _, _ in
-            guard isActiveTab else { return }
-            focusSidebarCategoryEntry()
-        }
+        .lunaEntryFocusTarget(
+            nonce: contentEntryFocusNonce,
+            isActive: isActiveTab,
+            focus: $focusedCategory,
+            target: { selectedCategory }
+        )
         .onDisappear {
-            entryFocusRetryTask?.cancel()
-            entryFocusRetryTask = nil
             if !showReconnectDialog {
                 subpageVisibility.leaveModal(modalToken)
-            }
-        }
-    }
-
-    private func focusSidebarCategoryEntry() {
-        entryFocusRetryTask?.cancel()
-        let targetCategory = selectedCategory
-        focusedCategory = targetCategory
-        entryFocusRetryTask = Task { @MainActor in
-            for delayNs: UInt64 in [16_000_000, 48_000_000] {
-                try? await Task.sleep(nanoseconds: delayNs)
-                guard !Task.isCancelled, isActiveTab else { return }
-                if focusedCategory == nil {
-                    focusedCategory = targetCategory
-                } else {
-                    return
-                }
             }
         }
     }
@@ -201,8 +183,6 @@ private struct SettingsCategoryRowButton: View {
     var focusedCategory: FocusState<SettingsCategory?>.Binding
     let action: () -> Void
 
-    @State private var focusTask: Task<Void, Never>?
-
     private var isFocused: Bool {
         focusedCategory.wrappedValue == category
     }
@@ -232,23 +212,45 @@ private struct SettingsCategoryRowButton: View {
             )
             .lunaFocusSurface(.listRow, isFocused: isFocused, cornerRadius: LunaTokens.Radius.card)
         }
-        .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous))
-        .focusEffectDisabled(true)
+        .lunaChromelessButton(RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous))
         .focused(focusedCategory, equals: category)
-        .onChange(of: isFocused) { _, focused in
-            focusTask?.cancel()
-            focusTask = nil
-            guard focused, !isSelected else { return }
-            focusTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: LunaTokens.Motion.focusSelectDebounceNanoseconds)
-                guard !Task.isCancelled, isFocused else { return }
-                action()
+        .task(id: isFocused) {
+            guard isFocused, !isSelected else { return }
+            try? await Task.sleep(nanoseconds: LunaTokens.Motion.focusSelectDebounceNanoseconds)
+            guard !Task.isCancelled, isFocused, !isSelected else { return }
+            action()
+        }
+    }
+}
+
+struct SettingsSectionPanel<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: LunaTokens.Layout.headerGap) {
+            LunaSectionHeader(title: title)
+
+            LunaListGroup {
+                content()
             }
         }
-        .onDisappear {
-            focusTask?.cancel()
-            focusTask = nil
+    }
+}
+
+struct SettingsToggleRowButton: View {
+    let title: String
+    var subtitle: String? = nil
+    @Binding var isOn: Bool
+
+    var body: some View {
+        LunaListRow(
+            title: title,
+            subtitle: subtitle,
+            trailingText: isOn ? "På" : "Av",
+            trailingTextProminent: isOn
+        ) {
+            isOn.toggle()
         }
     }
 }

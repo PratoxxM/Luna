@@ -1,7 +1,12 @@
 import SwiftUI
 
 struct LibraryHubView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
+    private enum LibraryFallbackFocus: Hashable {
+        case retry
+        case empty
+    }
+
+    @Environment(AppSessionStore.self) private var sessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
     @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
     @Environment(\.lunaContentEntryFocusNonce) private var contentEntryFocusNonce
@@ -21,17 +26,18 @@ struct LibraryHubView: View {
     @State private var errorMessage: String?
     @State private var mutationErrorBanner: String?
     @State private var lastSeenRefreshNonce: Int = -1
-    @State private var mutationBannerTask: Task<Void, Never>?
 
     @State private var selectedCard: TvMediaCard?
     @State private var pendingDeleteTarget: TvDeleteRequestTarget?
     @State private var modalToken = UUID()
     @State private var reloadTask: Task<Void, Never>?
     @State private var reloadGeneration: UInt64 = 0
-    @State private var entryFocusRetryTask: Task<Void, Never>?
+    @State private var mountedTracker = MountedEntryCardTracker()
+    @State private var entryCardID: String?
+    @State private var cardFocusNonce: Int = 0
 
     @FocusState private var focusedFilterPill: LibraryFilterSection?
-    @FocusState private var focusedCardId: String?
+    @FocusState private var fallbackFocus: LibraryFallbackFocus?
     @Namespace private var filterFocusNamespace
 
     init(isActiveTab: Bool = true, onSelectTab: ((MainNavigationTab) -> Void)? = nil) {
@@ -40,10 +46,7 @@ struct LibraryHubView: View {
     }
 
     private let pageSize = 36
-    private let columns = Array(
-        repeating: GridItem(.fixed(LunaTokens.Layout.gridPosterW), spacing: LunaTokens.Layout.gridCardGap, alignment: .topLeading),
-        count: 6
-    )
+    private let columns = LunaTheme.posterGridColumns
 
     private var queryKey: String {
         "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(activeSection.rawValue)#\(activeSection.apiMediaType)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
@@ -84,7 +87,7 @@ struct LibraryHubView: View {
                     .focusSection()
                     .onMoveCommand { direction in
                         if direction == .down {
-                            focusFirstLibraryContentItem()
+                            focusFirstLibraryContentItem(scrollProxy: scrollProxy)
                         }
                     }
 
@@ -95,7 +98,7 @@ struct LibraryHubView: View {
                             LunaInlineError(message: errorMessage) {
                                 scheduleReloadLibrary(forceNetwork: true)
                             }
-                            .focused($focusedCardId, equals: "__library_retry__")
+                            .focused($fallbackFocus, equals: .retry)
                         } else {
                             sectionGrid(client: client)
                                 .focusSection()
@@ -117,12 +120,15 @@ struct LibraryHubView: View {
                     scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
                 }
             }
-            .onChange(of: contentEntryFocusNonce) { _, _ in
-                guard isActiveTab else { return }
-                focusLibraryEntryPill(scrollProxy: scrollProxy)
-            }
+            .lunaEntryFocusTarget(
+                nonce: contentEntryFocusNonce,
+                isActive: isActiveTab,
+                focus: $focusedFilterPill,
+                target: { activeSection },
+                onTrigger: { scrollProxy.scrollTo("luna-scroll-top", anchor: .top) }
+            )
         }
-        .lunaBottomToast(message: mutationErrorBanner, tone: .danger)
+        .lunaBottomToast(message: $mutationErrorBanner, tone: .danger)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
@@ -138,7 +144,7 @@ struct LibraryHubView: View {
                     pendingDeleteTarget = nil
                 }
             )
-            .environmentObject(sessionStore)
+            .environment(sessionStore)
             .preferredColorScheme(.dark)
         }
         .onChange(of: pendingDeleteTarget != nil) { _, isShowingModal in
@@ -169,16 +175,13 @@ struct LibraryHubView: View {
                 lastValidatedAt: cached?.fetchedAt ?? .distantPast,
                 cachedRefreshNonce: cached?.refreshNonce ?? lastSeenRefreshNonce,
                 currentRefreshNonce: sessionStore.homeRefreshNonce,
-                freshnessInterval: DeviceHardwareCapabilities.isHighMemoryDevice ? 600 : TabContentFreshnessPolicy.defaultFreshnessInterval
+                freshnessInterval: TabContentFreshnessPolicy.effectiveFreshnessInterval
             )
             guard !isFresh else { return }
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
             scheduleReloadLibrary(forceNetwork: true)
         }
         .onDisappear {
-            entryFocusRetryTask?.cancel()
-            entryFocusRetryTask = nil
-            mutationBannerTask?.cancel()
             reloadTask?.cancel()
             reloadTask = nil
             if pendingDeleteTarget == nil {
@@ -187,34 +190,22 @@ struct LibraryHubView: View {
         }
     }
 
-    private func focusLibraryEntryPill(scrollProxy: ScrollViewProxy) {
-        entryFocusRetryTask?.cancel()
-        let targetPill = activeSection
-        scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
-        focusedFilterPill = targetPill
-        entryFocusRetryTask = Task { @MainActor in
-            for delayNs: UInt64 in [16_000_000, 48_000_000] {
-                try? await Task.sleep(nanoseconds: delayNs)
-                guard !Task.isCancelled, isActiveTab else { return }
-                if focusedFilterPill == nil {
-                    focusedFilterPill = targetPill
-                } else {
-                    return
-                }
-            }
-        }
-    }
-
-    private func focusFirstLibraryContentItem() {
+    private func focusFirstLibraryContentItem(scrollProxy: ScrollViewProxy) {
         let activeItems: [TvMediaCard] = activeSection == .watchlist
             ? (libraryPayload?.watchlist ?? [])
             : localItems
-        if let firstID = activeItems.first?.id {
-            focusedCardId = firstID
+        if !activeItems.isEmpty {
+            if !mountedTracker.hasAnyMounted, let firstID = activeItems.first?.id {
+                scrollProxy.scrollTo(firstID, anchor: .top)
+            }
+            if let resolvedID = mountedTracker.resolveEntryID(orderedIDs: activeItems.map(\.id)) {
+                entryCardID = resolvedID
+                cardFocusNonce &+= 1
+            }
         } else if errorMessage != nil && libraryPayload == nil {
-            focusedCardId = "__library_retry__"
+            fallbackFocus = .retry
         } else if onSelectTab != nil {
-            focusedCardId = "__library_empty__"
+            fallbackFocus = .empty
         }
     }
 
@@ -228,13 +219,15 @@ struct LibraryHubView: View {
             emptyStateCard
         } else {
             LazyVGrid(columns: columns, alignment: .leading, spacing: LunaTokens.Layout.gridRowGap) {
-                ForEach(activeItems) { card in
+                let prefetchThreshold = max(0, localItems.count - 6)
+                ForEach(Array(activeItems.enumerated()), id: \.element.id) { idx, card in
                     PosterCardView(
                         card: card,
                         client: client,
                         width: LunaTokens.Layout.gridPosterW,
                         showStorageBadge: true,
                         showRestingTitle: true,
+                        focusRequestNonce: card.id == entryCardID ? cardFocusNonce : 0,
                         onSelect: {
                             selectedCard = card
                         },
@@ -243,7 +236,7 @@ struct LibraryHubView: View {
                         }
                     )
                     .id(card.id)
-                    .focused($focusedCardId, equals: card.id)
+                    .lunaTrackMountedCard(id: card.id, in: mountedTracker)
                     .contextMenu {
                         StandardPosterContextMenuItems(
                             card: card,
@@ -274,7 +267,7 @@ struct LibraryHubView: View {
                     }
                     .onAppear {
                         if activeSection != .watchlist,
-                           card.id == localItems.last?.id,
+                           idx >= prefetchThreshold,
                            localHasMore,
                            !isLoadingMoreLocal {
                             Task { await loadMoreLocalItems() }
@@ -306,7 +299,7 @@ struct LibraryHubView: View {
             }
         )
         if buttonTitle != nil {
-            view.focused($focusedCardId, equals: "__library_empty__")
+            view.focused($fallbackFocus, equals: .empty)
         } else {
             view
         }
@@ -370,7 +363,7 @@ struct LibraryHubView: View {
                    lastValidatedAt: cached.fetchedAt,
                    cachedRefreshNonce: cached.refreshNonce,
                    currentRefreshNonce: currentNonce,
-                   freshnessInterval: DeviceHardwareCapabilities.isHighMemoryDevice ? 600 : TabContentFreshnessPolicy.defaultFreshnessInterval
+                   freshnessInterval: TabContentFreshnessPolicy.effectiveFreshnessInterval
                ) {
                 errorMessage = nil
                 return
@@ -440,13 +433,7 @@ struct LibraryHubView: View {
     }
 
     private func showMutationError(_ error: Error) {
-        mutationBannerTask?.cancel()
         mutationErrorBanner = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
-        mutationBannerTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
-            guard !Task.isCancelled else { return }
-            mutationErrorBanner = nil
-        }
     }
 
     private func markLocalMutationAndReload() async {

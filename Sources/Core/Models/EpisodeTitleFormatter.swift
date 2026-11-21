@@ -114,7 +114,6 @@ public enum EpisodeTitleFormatter: Sendable {
         var effectiveTargetCode = targetCode
         if let stripped = stripLeadingEpisodeCodePrefix(
             from: candidate,
-            seriesTitle: cleanSeries,
             season: season,
             episode: episode,
             episodeCode: targetCode
@@ -139,7 +138,6 @@ public enum EpisodeTitleFormatter: Sendable {
                 candidate,
                 seriesName: cleanSeries,
                 code: effectiveTargetCode,
-                season: effectiveSeason,
                 episode: effectiveEpisode
             ) {
                 return nil
@@ -150,7 +148,6 @@ public enum EpisodeTitleFormatter: Sendable {
             candidate,
             seriesName: "Serie",
             code: effectiveTargetCode,
-            season: effectiveSeason,
             episode: effectiveEpisode
         ) {
             return nil
@@ -158,7 +155,6 @@ public enum EpisodeTitleFormatter: Sendable {
 
         if isGenericEpisodePlaceholder(
             candidate,
-            season: effectiveSeason,
             episode: effectiveEpisode,
             targetCode: effectiveTargetCode
         ) {
@@ -460,7 +456,6 @@ public enum EpisodeTitleFormatter: Sendable {
 
     private static func isGenericEpisodePlaceholder(
         _ candidate: String,
-        season: Int?,
         episode: Int?,
         targetCode: String?
     ) -> Bool {
@@ -516,7 +511,6 @@ public enum EpisodeTitleFormatter: Sendable {
             }
         }
 
-        _ = season
         return false
     }
 
@@ -524,7 +518,6 @@ public enum EpisodeTitleFormatter: Sendable {
         _ candidate: String,
         seriesName: String,
         code: String?,
-        season: Int?,
         episode: Int?
     ) -> Bool {
         let lowerCand = candidate.lowercased()
@@ -547,12 +540,11 @@ public enum EpisodeTitleFormatter: Sendable {
             tail = String(tail.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
         }
         guard !tail.isEmpty else { return false }
-        return isGenericEpisodePlaceholder(tail, season: season, episode: episode, targetCode: code)
+        return isGenericEpisodePlaceholder(tail, episode: episode, targetCode: code)
     }
 
     private static func stripLeadingEpisodeCodePrefix(
         from candidate: String,
-        seriesTitle: String?,
         season: Int?,
         episode: Int?,
         episodeCode: String?
@@ -617,13 +609,12 @@ public enum EpisodeTitleFormatter: Sendable {
                 if parsedCode != nil {
                     return (trimmedRem, parsedCode)
                 }
-                if isGenericEpisodePlaceholder(trimmedRem, season: season, episode: episode, targetCode: episodeCode) {
+                if isGenericEpisodePlaceholder(trimmedRem, episode: episode, targetCode: episodeCode) {
                     return ("", parsedCode)
                 }
             }
         }
 
-        _ = seriesTitle
         return nil
     }
 }

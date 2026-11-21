@@ -1,14 +1,16 @@
 import Foundation
 import CoreGraphics
+import Observation
 import AetherBridge
 
 /// Isolated high-frequency scrubbing state so touch-surface updates during
 /// 60–120 Hz Siri Remote panning only invalidate `TimelineScrubberLeafView`.
 @MainActor
-final class PlayerScrubState: ObservableObject {
-    @Published var targetSeconds: Double = 0
-    @Published var originSeconds: Double = 0
-    @Published var previewImage: CGImage?
+@Observable
+final class PlayerScrubState {
+    var targetSeconds: Double = 0
+    var originSeconds: Double = 0
+    var previewImage: CGImage?
 }
 
 /// Protocol abstraction for `AetherEngine` transport operations so lifecycle,

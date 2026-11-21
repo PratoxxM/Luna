@@ -347,8 +347,8 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
         for category in SettingsCategory.allCases {
             let settingsHost = UIHostingController(
                 rootView: SettingsView(initialCategory: category)
-                    .environmentObject(store)
-                    .environmentObject(store.comfort)
+                    .environment(store)
+                    .environment(store.comfort)
             )
             window.rootViewController = settingsHost
             window.layoutIfNeeded()
@@ -382,7 +382,7 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
         }
 
         let rootView = HomeView()
-            .environmentObject(store)
+            .environment(store)
             .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: false))
         let rootHost = UIHostingController(rootView: rootView)
         rootHost.additionalSafeAreaInsets = UIEdgeInsets(top: 60, left: 80, bottom: 60, right: 80)
@@ -398,10 +398,10 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
         try assertCanvasUIColor(rootHost.view.backgroundColor)
 
         let pushedViews: [AnyView] = [
-            AnyView(MediaDetailView(mediaType: "movie", itemId: "movie:tmdb:550", initialTitle: "Fight Club").environmentObject(store)),
-            AnyView(CustomRowBrowseView(title: "Nordic Noir", pathOrRowId: "/api/tv/v1/rows/custom:nordic-noir").environmentObject(store)),
-            AnyView(CatalogBrowseView(mediaType: "movie", initialGenre: nil, isRootTab: false).environmentObject(store)),
-            AnyView(SearchView(initialQuery: "dune", isRootTab: false).environmentObject(store)),
+            AnyView(MediaDetailView(mediaType: "movie", itemId: "movie:tmdb:550", initialTitle: "Fight Club").environment(store)),
+            AnyView(CustomRowBrowseView(title: "Nordic Noir", pathOrRowId: "/api/tv/v1/rows/custom:nordic-noir").environment(store)),
+            AnyView(CatalogBrowseView(mediaType: "movie", initialGenre: nil, isRootTab: false).environment(store)),
+            AnyView(SearchView(initialQuery: "dune", isRootTab: false).environment(store)),
         ]
 
         for pushed in pushedViews {
@@ -431,7 +431,8 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
 
         let shellHost = UIHostingController(
             rootView: MainNavigationShell(engine: engine)
-                .environmentObject(store)
+                .environment(store)
+                .environment(store.comfort)
         )
         shellHost.additionalSafeAreaInsets = UIEdgeInsets(top: 60, left: 80, bottom: 60, right: 80)
         window.rootViewController = shellHost

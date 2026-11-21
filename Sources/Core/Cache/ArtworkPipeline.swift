@@ -398,7 +398,7 @@ public actor ArtworkPipeline {
         }.value
     }
 
-    public nonisolated static func diskUsageBytes() -> Int64 {
+    private nonisolated static func diskUsageBytes() -> Int64 {
         let dir = imageCacheDirectoryURL
         guard let urls = try? FileManager.default.contentsOfDirectory(
             at: dir,

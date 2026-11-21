@@ -1,12 +1,15 @@
 import SwiftUI
 
 struct SettingsAdvancedSectionView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
-    @EnvironmentObject private var comfort: ComfortPreferences
+    @Environment(AppSessionStore.self) private var sessionStore
+    @Environment(ComfortPreferences.self) private var comfort
 
     var body: some View {
+        @Bindable var sessionStore = sessionStore
+        @Bindable var comfort = comfort
+
         SettingsSectionPanel(title: "Avansert") {
-            SettingsControlRow(
+            LunaControlRow(
                 title: "Dolby Vision Dual-Layer (P7 FEL)",
                 axis: .vertical
             ) {
@@ -24,9 +27,9 @@ struct SettingsAdvancedSectionView: View {
                 }
             }
 
-            SettingsSectionDivider()
+            LunaListDivider()
 
-            SettingsControlRow(
+            LunaControlRow(
                 title: "Høyttaleroppsett og objektlyd",
                 subtitle: "Auto 7.1.4 anbefales · Stereo for TV-høyttalere"
             ) {
@@ -44,14 +47,14 @@ struct SettingsAdvancedSectionView: View {
                 }
             }
 
-            SettingsSectionDivider()
+            LunaListDivider()
 
-            SettingsControlRow(
+            LunaControlRow(
                 title: "Fast lydsynk for denne Apple TV-en (HDMI / eARC)",
                 subtitle: "Negativ verdi sender lyden tidligere",
                 axis: .vertical
             ) {
-                let currentDelayLabel = comfort.formattedAudioDelayLabel.replacingOccurrences(of: "-", with: "−")
+                let currentDelayLabel = ComfortPreferences.displayAudioDelayMs(comfort.audioDelayMs)
                 HStack(spacing: 10) {
                     LunaPillButton("−25 ms", prominence: .glassPill, size: .compact) {
                         comfort.adjustAudioDelay(byMs: -25)
@@ -76,14 +79,14 @@ struct SettingsAdvancedSectionView: View {
                 }
             }
 
-            SettingsSectionDivider()
+            LunaListDivider()
 
             SettingsToggleRowButton(
                 title: "Vis teknisk oversikt i spilleren",
                 isOn: $comfort.showNerdHUD
             )
 
-            SettingsSectionDivider()
+            LunaListDivider()
 
             SettingsToggleRowButton(
                 title: "Tillat selvsignert TLS-sertifikat på lokalnett",

@@ -1,3 +1,4 @@
+import Observation
 import SwiftUI
 import AetherBridge
 
@@ -52,9 +53,7 @@ public enum HDRSubtitlePreset: String, CaseIterable, Identifiable, Sendable {
     /// multiplying black outline pixels `(0, 0, 0, α)` yields `(0, 0, 0, α)` (100 % jet black),
     /// while bright white glyph fills `(1, 1, 1, α)` dim smoothly to warm white.
     public func bitmapMultiplyColor(isHDR: Bool) -> Color {
-        guard isHDR else { return .white }
-        let c = hdrRGB
-        return Color(red: c.r, green: c.g, blue: c.b)
+        foregroundColor(isHDR: isHDR)
     }
 }
 
@@ -240,7 +239,8 @@ public enum LowResUpscaleMode: String, CaseIterable, Identifiable, Sendable {
 }
 
 @MainActor
-public final class ComfortPreferences: ObservableObject {
+@Observable
+public final class ComfortPreferences {
     public static let audioDelayRangeMs: ClosedRange<Int> = -2000...2000
 
     public static func clampAudioDelayMs(_ rawMs: Int) -> Int {
@@ -251,7 +251,11 @@ public final class ComfortPreferences: ObservableObject {
         ms == 0 ? "0 ms" : String(format: "%+d ms", ms)
     }
 
-    @Published public var hdrSubtitlePreset: HDRSubtitlePreset {
+    public static func displayAudioDelayMs(_ ms: Int) -> String {
+        formatAudioDelayMs(ms).replacingOccurrences(of: "-", with: "−")
+    }
+
+    public var hdrSubtitlePreset: HDRSubtitlePreset {
         didSet {
             guard oldValue != hdrSubtitlePreset else { return }
             defaults.set(hdrSubtitlePreset.rawValue, forKey: SideloadSafeStorage.hdrSubtitlePresetKey)
@@ -259,7 +263,7 @@ public final class ComfortPreferences: ObservableObject {
         }
     }
 
-    @Published public var subtitleFontSize: SubtitleFontSizePreset {
+    public var subtitleFontSize: SubtitleFontSizePreset {
         didSet {
             guard oldValue != subtitleFontSize else { return }
             defaults.set(subtitleFontSize.scaleFactor, forKey: SideloadSafeStorage.subtitleFontScaleKey)
@@ -267,7 +271,7 @@ public final class ComfortPreferences: ObservableObject {
         }
     }
 
-    @Published public var subtitleBoxOpacity: SubtitleBoxOpacityPreset {
+    public var subtitleBoxOpacity: SubtitleBoxOpacityPreset {
         didSet {
             guard oldValue != subtitleBoxOpacity else { return }
             defaults.set(subtitleBoxOpacity.rawValue, forKey: SideloadSafeStorage.subtitleBoxOpacityKey)
@@ -275,7 +279,7 @@ public final class ComfortPreferences: ObservableObject {
         }
     }
 
-    @Published public var dualLayerOverride: DualLayerOverrideMode {
+    public var dualLayerOverride: DualLayerOverrideMode {
         didSet {
             guard oldValue != dualLayerOverride else { return }
             defaults.set(dualLayerOverride.rawValue, forKey: SideloadSafeStorage.dualLayerOverrideKey)
@@ -283,7 +287,7 @@ public final class ComfortPreferences: ObservableObject {
         }
     }
 
-    @Published public var speakerLayoutOverride: SpeakerLayoutOverrideMode {
+    public var speakerLayoutOverride: SpeakerLayoutOverrideMode {
         didSet {
             guard oldValue != speakerLayoutOverride else { return }
             defaults.set(speakerLayoutOverride.rawValue, forKey: SideloadSafeStorage.speakerLayoutOverrideKey)
@@ -291,7 +295,7 @@ public final class ComfortPreferences: ObservableObject {
         }
     }
 
-    @Published public var autoPlayNextEpisode: Bool {
+    public var autoPlayNextEpisode: Bool {
         didSet {
             guard oldValue != autoPlayNextEpisode else { return }
             defaults.set(autoPlayNextEpisode, forKey: SideloadSafeStorage.autoPlayNextEpisodeKey)
@@ -299,7 +303,7 @@ public final class ComfortPreferences: ObservableObject {
         }
     }
 
-    @Published public var smartNordicSubtitleRule: Bool {
+    public var smartNordicSubtitleRule: Bool {
         didSet {
             guard oldValue != smartNordicSubtitleRule else { return }
             defaults.set(smartNordicSubtitleRule, forKey: SideloadSafeStorage.smartNordicSubtitleRuleKey)
@@ -307,14 +311,14 @@ public final class ComfortPreferences: ObservableObject {
         }
     }
 
-    @Published public var showNerdHUD: Bool {
+    public var showNerdHUD: Bool {
         didSet {
             guard oldValue != showNerdHUD else { return }
             defaults.set(showNerdHUD, forKey: SideloadSafeStorage.showNerdHUDKey)
         }
     }
 
-    @Published public var menuDisplayMode: MenuDisplayMode {
+    public var menuDisplayMode: MenuDisplayMode {
         didSet {
             guard oldValue != menuDisplayMode else { return }
             defaults.set(menuDisplayMode.rawValue, forKey: SideloadSafeStorage.menuDisplayModeKey)
@@ -333,14 +337,14 @@ public final class ComfortPreferences: ObservableObject {
         set { menuDisplayMode = newValue ? .sdr60Hz : .preserveExactMatch }
     }
 
-    @Published public var lowResUpscaleMode: LowResUpscaleMode {
+    public var lowResUpscaleMode: LowResUpscaleMode {
         didSet {
             guard oldValue != lowResUpscaleMode else { return }
             defaults.set(lowResUpscaleMode.rawValue, forKey: SideloadSafeStorage.lowResUpscaleModeKey)
         }
     }
 
-    @Published public var audioDelayMs: Int {
+    public var audioDelayMs: Int {
         didSet {
             let clamped = Self.clampAudioDelayMs(audioDelayMs)
             if clamped != audioDelayMs {
@@ -352,10 +356,10 @@ public final class ComfortPreferences: ObservableObject {
         }
     }
 
-    public var onSyncRequested: ((TvDeviceOverrides) -> Void)?
+    @ObservationIgnored public var onSyncRequested: ((TvDeviceOverrides) -> Void)?
 
-    private let defaults: UserDefaults
-    private var suppressSync: Bool = false
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private var suppressSync: Bool = false
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults

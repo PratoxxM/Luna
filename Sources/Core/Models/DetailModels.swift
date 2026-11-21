@@ -183,20 +183,6 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
         self.studio = studio
     }
 
-    public var studioOrNetworkKicker: String? {
-        for raw in [network, studio] {
-            if let cleaned = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !cleaned.isEmpty {
-                return cleaned
-            }
-        }
-        if let orig = originalTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !orig.isEmpty,
-           orig.caseInsensitiveCompare(title) != .orderedSame {
-            return orig
-        }
-        return nil
-    }
-
     public var isMonitoredFlag: Bool {
         monitored ?? false
     }

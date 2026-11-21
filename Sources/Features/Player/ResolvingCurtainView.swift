@@ -1,15 +1,16 @@
+import Observation
 import SwiftUI
 
 /// Isolated startup & WebSocket resolution progress state observed exclusively by
 /// `ResolvingProgressClusterLeafView` so progress ticks never re-render `PlayerContainerView`
 /// or `ResolvingCurtainView`'s backdrop/logo hierarchy.
 @MainActor
-final class PlayerStartupState: ObservableObject {
-    @Published var resolveStageKey: String = "searching"
-    @Published var resolveStageLabel: String = "Klargjør avspilling…"
-    @Published var resolvePercent: Int = 12
-    @Published var resolveHeadline: String?
-    @Published private(set) var engineStartupPercentBucket: Int = 50
+@Observable
+final class PlayerStartupState {
+    var resolveStageLabel: String = "Klargjør avspilling…"
+    var resolvePercent: Int = 12
+    var resolveHeadline: String?
+    private(set) var engineStartupPercentBucket: Int = 50
 
     var engineStartupFraction: Double {
         Double(engineStartupPercentBucket) / 100.0
@@ -28,11 +29,13 @@ final class PlayerStartupState: ObservableObject {
 /// `hasFirstFrameReadyForDisplay == true && isAwaitingDisplaySwitch == false`,
 /// reusing already-cached detail/shelf backdrops with zero 4K Gaussian blur passes.
 struct ResolvingCurtainView: View {
-    @ObservedObject var viewModel: PlayerViewModel
+    let viewModel: PlayerViewModel
     let initialRequest: PlaybackLaunchRequest
     let client: LunaCoreClient?
 
     var body: some View {
+        let display = curtainDisplay
+
         ZStack {
             LunaTheme.pureBlack.ignoresSafeArea()
 
@@ -45,6 +48,7 @@ struct ResolvingCurtainView: View {
                     contentMode: .fill,
                     reuseAnyCachedSize: true
                 )
+                .equatable()
                 .ignoresSafeArea()
                 .opacity(0.22)
             }
@@ -83,21 +87,22 @@ struct ResolvingCurtainView: View {
                         contentMode: .fit,
                         reuseAnyCachedSize: true
                     )
+                    .equatable()
                     .frame(maxWidth: 520, maxHeight: 140)
 
-                    if let episodeContext = curtainDisplay.mainLine {
+                    if let episodeContext = display.mainLine {
                         Text(episodeContext)
                             .font(LunaTheme.Font.cardTitle)
                             .foregroundStyle(LunaTheme.moonlight)
                     }
                 } else {
                     VStack(spacing: 8) {
-                        if let series = curtainDisplay.seriesLine {
+                        if let series = display.seriesLine {
                             Text(series)
                                 .font(LunaTheme.Font.cardTitle)
                                 .foregroundStyle(LunaTheme.moonlight)
                         }
-                        if let mainTitle = curtainDisplay.mainLine {
+                        if let mainTitle = display.mainLine {
                             Text(mainTitle)
                                 .font(LunaTheme.Font.titleSerif)
                                 .foregroundStyle(LunaTheme.linen)
@@ -148,7 +153,7 @@ struct ResolvingCurtainView: View {
 }
 
 private struct ResolvingProgressClusterLeafView: View {
-    @ObservedObject var startupState: PlayerStartupState
+    let startupState: PlayerStartupState
     let isResolving: Bool
     let hasFirstFrameReadyForDisplay: Bool
     let isAwaitingDisplaySwitch: Bool
@@ -163,7 +168,7 @@ private struct ResolvingProgressClusterLeafView: View {
         VStack(spacing: 14) {
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(LunaTheme.warmBorderBase.opacity(0.14))
+                    .fill(LunaTheme.warmBorder)
 
                 Capsule()
                     .fill(LunaTheme.primaryAmberGradient)

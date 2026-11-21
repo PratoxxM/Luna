@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MediaDetailView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(AppSessionStore.self) private var sessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
     @Environment(\.dismiss) private var dismiss
 
@@ -9,7 +9,7 @@ struct MediaDetailView: View {
     let itemId: String
     let initialTitle: String
 
-    @StateObject private var viewModel: MediaDetailViewModel
+    @State private var viewModel: MediaDetailViewModel
     @State private var subpageToken = UUID()
     @State private var modalToken = UUID()
     @State private var pendingMoreAction: PendingMoreSheetAction?
@@ -29,8 +29,8 @@ struct MediaDetailView: View {
         self.mediaType = mediaType
         self.itemId = itemId
         self.initialTitle = initialTitle
-        _viewModel = StateObject(
-            wrappedValue: MediaDetailViewModel(
+        _viewModel = State(
+            initialValue: MediaDetailViewModel(
                 mediaType: mediaType,
                 itemId: itemId,
                 initialTitle: initialTitle
@@ -43,6 +43,8 @@ struct MediaDetailView: View {
     }
 
     var body: some View {
+        @Bindable var viewModel = viewModel
+
         ZStack(alignment: .topLeading) {
             LunaTheme.canvas.ignoresSafeArea()
 
@@ -53,24 +55,16 @@ struct MediaDetailView: View {
                             item: detail,
                             client: viewModel.client,
                             primaryPlayTitle: viewModel.heroPrimaryPlayTitle(detail),
-                            isPreResolvedReady: viewModel.isPreResolvedReady,
                             horizontalGutter: detailGutter,
                             focusNamespace: detailFocusNamespace,
-                            hasLocalEpisodes: viewModel.hasLocalEpisodes,
                             onPlay: {
                                 viewModel.launchPrimaryPlayback()
                             },
                             onToggleWatchlist: {
                                 Task { await viewModel.toggleWatchlist() }
                             },
-                            onToggleMonitor: {
-                                Task { await viewModel.toggleMonitor() }
-                            },
                             onPickSource: {
                                 viewModel.openPrimarySourcePicker()
-                            },
-                            onDeleteTitle: {
-                                viewModel.requestDeleteTitle()
                             },
                             onOpenMore: {
                                 viewModel.showMoreSheet = true
@@ -98,9 +92,6 @@ struct MediaDetailView: View {
                                 onToggleEpisodeWatched: { ep in
                                     Task { await viewModel.toggleEpisodeWatched(ep) }
                                 },
-                                onDeleteSeason: { seasonNum in
-                                    viewModel.requestDeleteSeason(seasonNum)
-                                },
                                 onDeleteEpisode: { ep in
                                     viewModel.requestDeleteEpisode(ep)
                                 }
@@ -125,7 +116,7 @@ struct MediaDetailView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .ignoresSafeArea()
         }
-        .lunaBottomToast(message: viewModel.mutationErrorBanner, tone: .danger)
+        .lunaBottomToast(message: $viewModel.mutationErrorBanner, tone: .danger)
         .lunaNavigationContainerBackdrop(mode: .probeOnly)
         .focusScope(detailFocusNamespace)
         .toolbar(.hidden, for: .tabBar)
@@ -146,7 +137,7 @@ struct MediaDetailView: View {
                     viewModel.pendingDeleteTarget = nil
                 }
             )
-            .environmentObject(sessionStore)
+            .environment(sessionStore)
             .preferredColorScheme(.dark)
         }
         .sheet(item: $viewModel.sourcePickerContext) { ctx in
@@ -159,8 +150,8 @@ struct MediaDetailView: View {
                     viewModel.sourcePickerContext = nil
                 }
             )
-            .environmentObject(sessionStore)
-            .environmentObject(sessionStore.comfort)
+            .environment(sessionStore)
+            .environment(sessionStore.comfort)
             .preferredColorScheme(.dark)
         }
         .sheet(isPresented: $viewModel.showMoreSheet, onDismiss: {
@@ -180,14 +171,12 @@ struct MediaDetailView: View {
             }
         }) {
             if let detail = viewModel.detail {
-                let seasonHasLocal = viewModel.episodes.contains {
-                    $0.availability?.isPhysicalLocal == true || $0.availability?.isLocalVfs == true
-                }
+                let hasLocalEpisodes = viewModel.hasLocalEpisodes
                 DetailMoreSheetView(
                     item: detail,
-                    hasLocalEpisodes: viewModel.hasLocalEpisodes,
+                    hasLocalEpisodes: hasLocalEpisodes,
                     selectedSeasonNumber: detail.mediaType == "series" ? viewModel.selectedSeasonNumber : nil,
-                    canDeleteSelectedSeason: detail.mediaType == "series" && seasonHasLocal,
+                    canDeleteSelectedSeason: detail.mediaType == "series" && hasLocalEpisodes,
                     canReadOverview: detail.preferredOverview != nil,
                     watchedActionTitle: moreWatchedActionTitle(detail),
                     onReadOverview: {

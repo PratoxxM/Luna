@@ -24,12 +24,10 @@ public extension LunaTheme {
             ("primaryPlayLabel", 28.0),
             ("tabIcon", 24.0),
             ("pillIcon", 22.0),
-            ("compactPillIcon", 22.0),
             ("primaryPlayIcon", 24.0),
             ("listRowIcon", 24.0),
             ("microChevron", LunaTokens.Typography.badge),
             ("cardPlaceholderIcon", 36.0),
-            ("sheetHeaderIcon", 40.0),
             ("largeStatusIcon", 52.0),
             ("pairingCode", 88.0),
         ]
@@ -153,13 +151,6 @@ public extension LunaTheme {
             )
         }
 
-        public static var compactPillIcon: SwiftUI.Font {
-            .system(
-                size: 22,
-                weight: .semibold
-            )
-        }
-
         public static var primaryPlayIcon: SwiftUI.Font {
             .system(
                 size: 24,
@@ -185,13 +176,6 @@ public extension LunaTheme {
             .system(
                 size: 36,
                 weight: .medium
-            )
-        }
-
-        public static var sheetHeaderIcon: SwiftUI.Font {
-            .system(
-                size: 40,
-                weight: .semibold
             )
         }
 

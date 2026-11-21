@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DetailDeleteSheetView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(AppSessionStore.self) private var sessionStore
 
     private enum DeleteSheetFocus: Hashable {
         case cancel

@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Observation
 
 public struct DiscoveredLunaCoreServer: Identifiable, Equatable, Sendable {
     public let id: String
@@ -13,18 +14,19 @@ public struct DiscoveredLunaCoreServer: Identifiable, Equatable, Sendable {
 }
 
 @MainActor
-public final class BonjourServerBrowser: ObservableObject {
-    @Published public private(set) var servers: [DiscoveredLunaCoreServer] = []
-    @Published public private(set) var isSearching: Bool = false
+@Observable
+public final class BonjourServerBrowser {
+    public private(set) var servers: [DiscoveredLunaCoreServer] = []
+    public private(set) var isSearching: Bool = false
 
-    private var browser: NWBrowser?
-    private var nextBrowserToken: UInt64 = 0
-    private var currentBrowserToken: UInt64?
-    private var activeResolvers: [String: NWConnection] = [:]
-    private var nextResolverToken: UInt64 = 0
-    private var resolverTokens: [String: UInt64] = [:]
-    private var resolveTimeouts: [String: Task<Void, Never>] = [:]
-    internal let resolveTimeoutNanoseconds: UInt64
+    @ObservationIgnored private var browser: NWBrowser?
+    @ObservationIgnored private var nextBrowserToken: UInt64 = 0
+    @ObservationIgnored private var currentBrowserToken: UInt64?
+    @ObservationIgnored private var activeResolvers: [String: NWConnection] = [:]
+    @ObservationIgnored private var nextResolverToken: UInt64 = 0
+    @ObservationIgnored private var resolverTokens: [String: UInt64] = [:]
+    @ObservationIgnored private var resolveTimeouts: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored internal let resolveTimeoutNanoseconds: UInt64
 
     public init(resolveTimeoutNanoseconds: UInt64 = 8_000_000_000) {
         self.resolveTimeoutNanoseconds = resolveTimeoutNanoseconds

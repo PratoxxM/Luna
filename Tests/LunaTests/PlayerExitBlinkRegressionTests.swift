@@ -257,4 +257,45 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
         optOutVm.teardownAndStop()
         XCTAssertEqual(optOutTransport.events, ["stop(false,true)"])
     }
+
+    @MainActor
+    func testPlayerViewModelDeallocatesCleanlyWithoutRetainCyclesAndSupportsDeferredBind() throws {
+        let suite = "luna.test.vm.deinit.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let engine = try AetherEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+        let comfort = ComfortPreferences(defaults: defaults)
+
+        weak var weakUnboundVM: PlayerViewModel?
+        do {
+            let unbound = PlayerViewModel(engine: engine, comfort: comfort, bindOnInit: false)
+            XCTAssertTrue(unbound.cancellables.isEmpty)
+            weakUnboundVM = unbound
+        }
+        XCTAssertNil(weakUnboundVM, "Unbound @State init instance must deallocate immediately")
+
+        weak var weakBoundVM: PlayerViewModel?
+        weak var weakDismissedVM: PlayerViewModel?
+        do {
+            let bound = PlayerViewModel(engine: engine, comfort: comfort)
+            XCTAssertFalse(bound.cancellables.isEmpty)
+            weakBoundVM = bound
+
+            let dismissed = PlayerViewModel(engine: engine, comfort: comfort)
+            XCTAssertFalse(dismissed.cancellables.isEmpty)
+            dismissed.prepareForDismissal()
+            dismissed.teardownAndStop()
+            weakDismissedVM = dismissed
+        }
+        XCTAssertNil(weakBoundVM, "All [weak self] Combine sinks in PlayerEnginePublishers must release PlayerViewModel without retain cycles")
+        XCTAssertNil(weakDismissedVM, "Dismissed PlayerViewModel must deallocate cleanly")
+    }
 }

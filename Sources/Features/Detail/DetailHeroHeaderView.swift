@@ -4,16 +4,12 @@ struct DetailHeroHeaderView: View {
     let item: TvItemDetail
     let client: LunaCoreClient?
     let primaryPlayTitle: String
-    let isPreResolvedReady: Bool
     var horizontalGutter: CGFloat = LunaTheme.horizontalGutter
     let focusNamespace: Namespace.ID
 
-    var hasLocalEpisodes: Bool = false
     let onPlay: () -> Void
     let onToggleWatchlist: () -> Void
-    var onToggleMonitor: () -> Void = {}
     var onPickSource: () -> Void = {}
-    var onDeleteTitle: (() -> Void)? = nil
     var onOpenMore: (() -> Void)? = nil
 
     private var heroMinHeight: CGFloat {
@@ -148,6 +144,7 @@ struct DetailHeroHeaderView: View {
                             placeholderSymbol: "film.stack",
                             contentMode: .fill
                         )
+                        .equatable()
                         .frame(width: geo.size.width * 0.76, height: geo.size.height, alignment: .center)
                         .clipped()
                     } else if let fallbackPosterURL {
@@ -160,6 +157,7 @@ struct DetailHeroHeaderView: View {
                             placeholderSymbol: "film.stack",
                             contentMode: .fill
                         )
+                        .equatable()
                         .frame(width: geo.size.width * 0.76, height: geo.size.height)
                         .opacity(0.22)
                         .clipped()

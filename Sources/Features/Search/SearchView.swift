@@ -1,17 +1,13 @@
 import SwiftUI
 
 struct SearchView: View {
-    private enum SearchFocusTarget: Hashable {
-        case queryField
-        case clearQuery
+    private enum SearchControlFocus: Hashable {
         case recent(String)
-        case clearHistory
-        case card(String)
         case retry
         case emptyReset
     }
 
-    @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(AppSessionStore.self) private var sessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
     @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
     @Environment(\.lunaContentEntryFocusNonce) private var contentEntryFocusNonce
@@ -31,16 +27,19 @@ struct SearchView: View {
     @State private var recentSearches: [String] = []
     @State private var selectedCard: TvMediaCard?
     @State private var lastCompletedQuery: String = ""
-    @State private var searchTask: Task<Void, Never>?
-    @State private var bannerClearTask: Task<Void, Never>?
-    @State private var entryFocusRetryTask: Task<Void, Never>?
+    @State private var didConsumeInitialQuery: Bool = false
+    @State private var searchRetryNonce: Int = 0
+    @State private var lastHandledRetryNonce: Int = 0
+    @State private var queryFocusNonce: Int = 0
 
-    @FocusState private var searchFocus: SearchFocusTarget?
+    @State private var mountedTracker = MountedEntryCardTracker()
+    @State private var entryCardID: String?
+    @State private var cardFocusNonce: Int = 0
 
-    private let columns = Array(
-        repeating: GridItem(.fixed(LunaTokens.Layout.gridPosterW), spacing: LunaTokens.Layout.gridCardGap, alignment: .topLeading),
-        count: 6
-    )
+    @FocusState private var isQueryFieldFocused: Bool
+    @FocusState private var controlFocus: SearchControlFocus?
+
+    private let columns = LunaTheme.posterGridColumns
 
     init(initialQuery: String = "", isRootTab: Bool = false, isActiveTab: Bool = true) {
         self.initialQuery = initialQuery
@@ -76,10 +75,11 @@ struct SearchView: View {
                             TextField("Film, serie eller person", text: $query)
                                 .font(LunaTheme.Font.body)
                                 .foregroundStyle(LunaTheme.linen)
-                                .focused($searchFocus, equals: .queryField)
+                                .focused($isQueryFieldFocused)
+                                .lunaRequestDirectFocus(nonce: queryFocusNonce, isFocused: $isQueryFieldFocused)
                                 .onMoveCommand { direction in
                                     if direction == .down {
-                                        focusFirstResultOrHistory(trimmedQuery: trimmedQuery)
+                                        focusFirstResultOrHistory(trimmedQuery: trimmedQuery, scrollProxy: scrollProxy)
                                     }
                                 }
                         }
@@ -87,22 +87,21 @@ struct SearchView: View {
                         .padding(.vertical, 14)
                         .background(
                             RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
-                                .fill(searchFocus == .queryField ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
+                                .fill(isQueryFieldFocused ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
                                 .strokeBorder(
-                                    searchFocus == .queryField ? Color.clear : LunaTheme.warmBorder,
+                                    isQueryFieldFocused ? Color.clear : LunaTheme.warmBorder,
                                     lineWidth: LunaTokens.Layout.hairlineWidth
                                 )
                         )
-                        .lunaFocusSurface(.listRow, isFocused: searchFocus == .queryField, cornerRadius: LunaTokens.Radius.card)
+                        .lunaFocusSurface(.listRow, isFocused: isQueryFieldFocused, cornerRadius: LunaTokens.Radius.card)
 
                         if !query.isEmpty {
                             LunaIconButton(systemImage: "xmark", accessibilityLabel: "Tøm søk") {
                                 query = ""
                             }
-                            .focused($searchFocus, equals: .clearQuery)
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -115,7 +114,6 @@ struct SearchView: View {
                                     LunaPillButton("Tøm", prominence: .subtleChip, size: .compact) {
                                         clearRecentSearches()
                                     }
-                                    .focused($searchFocus, equals: .clearHistory)
                                 }
                                 .padding(.horizontal, LunaTheme.horizontalGutter)
 
@@ -125,7 +123,7 @@ struct SearchView: View {
                                             LunaPillButton(term, prominence: .glassPill, size: .compact) {
                                                 query = term
                                             }
-                                            .focused($searchFocus, equals: .recent(term))
+                                            .focused($controlFocus, equals: .recent(term))
                                         }
                                     }
                                     .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -155,9 +153,9 @@ struct SearchView: View {
                                 .padding(.horizontal, LunaTheme.horizontalGutter)
                         } else if let errorMessage, results.isEmpty {
                             LunaInlineError(message: errorMessage) {
-                                triggerSearch(trimmedQuery, debounceNanoseconds: 0)
+                                searchRetryNonce &+= 1
                             }
-                            .focused($searchFocus, equals: .retry)
+                            .focused($controlFocus, equals: .retry)
                             .padding(.horizontal, LunaTheme.horizontalGutter)
                             .padding(.top, 12)
                         } else if !isSearching && results.isEmpty {
@@ -169,7 +167,7 @@ struct SearchView: View {
                             ) {
                                 query = ""
                             }
-                            .focused($searchFocus, equals: .emptyReset)
+                            .focused($controlFocus, equals: .emptyReset)
                             .padding(.horizontal, LunaTheme.horizontalGutter)
                             .padding(.top, 48)
                         } else {
@@ -181,6 +179,7 @@ struct SearchView: View {
                                         width: LunaTokens.Layout.gridPosterW,
                                         showStorageBadge: true,
                                         showRestingTitle: true,
+                                        focusRequestNonce: card.id == entryCardID ? cardFocusNonce : 0,
                                         onSelect: {
                                             selectedCard = card
                                         },
@@ -189,7 +188,7 @@ struct SearchView: View {
                                         }
                                     )
                                     .id(card.id)
-                                    .focused($searchFocus, equals: .card(card.id))
+                                    .lunaTrackMountedCard(id: card.id, in: mountedTracker)
                                     .contextMenu {
                                         StandardPosterContextMenuItems(
                                             card: card,
@@ -211,6 +210,7 @@ struct SearchView: View {
                             }
                             .padding(.horizontal, LunaTheme.horizontalGutter)
                             .padding(.bottom, 72)
+                            .focusSection()
                         }
                     }
                 }
@@ -230,35 +230,28 @@ struct SearchView: View {
             }
             .onChange(of: contentEntryFocusNonce) { _, _ in
                 guard isRootTab, isActiveTab else { return }
-                focusSearchQueryField(scrollProxy: scrollProxy)
+                scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
+                queryFocusNonce &+= 1
             }
         }
-        .lunaBottomToast(message: mutationErrorBanner, tone: .danger)
+        .lunaBottomToast(message: $mutationErrorBanner, tone: .danger)
         .focusSection()
         .lunaNavigationContainerBackdrop(
             isEnabled: !isRootTab,
-            mode: .ambient(isPaused: sessionStore.activePlaybackTarget != nil)
+            mode: .ambient(isPaused: !isRootTab && sessionStore.activePlaybackTarget != nil)
         )
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
         }
         .onAppear {
+            loadRecentSearches()
             if !isRootTab {
                 subpageVisibility.enterSubpage(subpageToken)
             }
         }
-        .task(id: initialQuery) {
-            loadRecentSearches()
-            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.count >= 2, trimmed != lastCompletedQuery || results.isEmpty {
-                triggerSearch(trimmed, debounceNanoseconds: 0)
-            }
-        }
-        .onChange(of: query) { _, newValue in
-            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard trimmed.count >= 2 else {
-                searchTask?.cancel()
+        .task(id: "\(trimmedQuery)#\(searchRetryNonce)") {
+            guard trimmedQuery.count >= 2 else {
                 results = []
                 localCount = 0
                 lastCompletedQuery = ""
@@ -266,13 +259,25 @@ struct SearchView: View {
                 isSearching = false
                 return
             }
-            triggerSearch(trimmed, debounceNanoseconds: 180_000_000)
+
+            let initialTrimmed = initialQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isRetry = searchRetryNonce != lastHandledRetryNonce
+            if isRetry {
+                lastHandledRetryNonce = searchRetryNonce
+            }
+            let skipDebounce = (!didConsumeInitialQuery && !initialTrimmed.isEmpty && trimmedQuery == initialTrimmed) || isRetry
+            didConsumeInitialQuery = true
+
+            if !skipDebounce {
+                try? await Task.sleep(nanoseconds: 180_000_000)
+            }
+            guard !Task.isCancelled else { return }
+            if !isRetry && trimmedQuery == lastCompletedQuery && !results.isEmpty && errorMessage == nil {
+                return
+            }
+            await executeSearch(trimmed: trimmedQuery)
         }
         .onDisappear {
-            entryFocusRetryTask?.cancel()
-            entryFocusRetryTask = nil
-            searchTask?.cancel()
-            bannerClearTask?.cancel()
             if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
                 isRootTab: isRootTab,
                 hasPushedChildDestination: selectedCard != nil,
@@ -283,69 +288,52 @@ struct SearchView: View {
         }
     }
 
-    private func focusSearchQueryField(scrollProxy: ScrollViewProxy) {
-        entryFocusRetryTask?.cancel()
-        scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
-        searchFocus = .queryField
-        entryFocusRetryTask = Task { @MainActor in
-            for delayNs: UInt64 in [16_000_000, 48_000_000] {
-                try? await Task.sleep(nanoseconds: delayNs)
-                guard !Task.isCancelled, isRootTab, isActiveTab else { return }
-                if searchFocus == nil {
-                    searchFocus = .queryField
-                } else {
-                    return
-                }
-            }
-        }
-    }
-
-    private func focusFirstResultOrHistory(trimmedQuery: String) {
+    private func focusFirstResultOrHistory(trimmedQuery: String, scrollProxy: ScrollViewProxy) {
         if trimmedQuery.count < 2 {
             if let firstRecent = recentSearches.first {
-                searchFocus = .recent(firstRecent)
+                controlFocus = .recent(firstRecent)
             }
-        } else if let firstCard = results.first {
-            searchFocus = .card(firstCard.id)
+        } else if !results.isEmpty {
+            if !mountedTracker.hasAnyMounted, let firstID = results.first?.id {
+                scrollProxy.scrollTo(firstID, anchor: .top)
+            }
+            if let resolvedID = mountedTracker.resolveEntryID(orderedIDs: results.map(\.id)) {
+                entryCardID = resolvedID
+                cardFocusNonce &+= 1
+            }
         } else if errorMessage != nil {
-            searchFocus = .retry
+            controlFocus = .retry
         } else if !isSearching {
-            searchFocus = .emptyReset
+            controlFocus = .emptyReset
         }
     }
 
-    private func triggerSearch(_ trimmed: String, debounceNanoseconds: UInt64) {
-        searchTask?.cancel()
-        searchTask = Task { @MainActor in
-            if debounceNanoseconds > 0 {
-                try? await Task.sleep(nanoseconds: debounceNanoseconds)
-            }
-            guard !Task.isCancelled, let client = sessionStore.makeClient() else { return }
-            isSearching = true
-            errorMessage = nil
+    private func executeSearch(trimmed: String) async {
+        guard let client = sessionStore.makeClient() else { return }
+        isSearching = true
+        errorMessage = nil
 
-            do {
-                let res = try await client.searchFull(query: trimmed, limit: 30)
-                guard !Task.isCancelled else { return }
-                results = res.items
-                localCount = res.localCount ?? 0
-                lastCompletedQuery = trimmed
-                if !res.items.isEmpty {
-                    recordRecentSearch(trimmed)
-                }
-            } catch is CancellationError {
-                return
-            } catch LunaCoreError.unauthorized {
-                guard !Task.isCancelled else { return }
-                sessionStore.unpairDevice()
-            } catch {
-                guard !Task.isCancelled else { return }
-                errorMessage = LunaCopy.friendlyErrorMessage(error)
+        do {
+            let res = try await client.searchFull(query: trimmed, limit: 30)
+            guard !Task.isCancelled else { return }
+            results = res.items
+            localCount = res.localCount ?? 0
+            lastCompletedQuery = trimmed
+            if !res.items.isEmpty {
+                recordRecentSearch(trimmed)
             }
+        } catch is CancellationError {
+            return
+        } catch LunaCoreError.unauthorized {
+            guard !Task.isCancelled else { return }
+            sessionStore.unpairDevice()
+        } catch {
+            guard !Task.isCancelled else { return }
+            errorMessage = LunaCopy.friendlyErrorMessage(error)
+        }
 
-            if !Task.isCancelled {
-                isSearching = false
-            }
+        if !Task.isCancelled {
+            isSearching = false
         }
     }
 
@@ -371,13 +359,7 @@ struct SearchView: View {
     }
 
     private func showMutationError(_ error: Error) {
-        bannerClearTask?.cancel()
         mutationErrorBanner = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
-        bannerClearTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
-            guard !Task.isCancelled else { return }
-            mutationErrorBanner = nil
-        }
     }
 
     private func toggleWatchlist(_ card: TvMediaCard) async {

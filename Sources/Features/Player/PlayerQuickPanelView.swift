@@ -48,8 +48,8 @@ public enum PlayerQuickPanelTab: String, CaseIterable, Identifiable, Sendable {
 /// Button-anchored Lampelys popover positioned directly above the triggering bottom-bar pill.
 /// Focus starts deterministically on the active (`✓`) item inside each list and closes back cleanly.
 struct PlayerQuickPanelView: View {
-    @ObservedObject var viewModel: PlayerViewModel
-    @ObservedObject var comfort: ComfortPreferences
+    let viewModel: PlayerViewModel
+    let comfort: ComfortPreferences
     let tab: PlayerQuickPanelTab
     var triggerFrame: CGRect? = nil
     let onClose: (_ returnFocusToPill: Bool) -> Void
@@ -57,7 +57,6 @@ struct PlayerQuickPanelView: View {
     @FocusState private var focusedItemID: String?
     @State private var chapterSnapshotTime: Double = 0
     @State private var contentHeight: CGFloat = 280
-    @State private var focusRetryTask: Task<Void, Never>?
     @Namespace private var panelFocusNamespace
 
     private static let topScrollFadeHeight: CGFloat = 12
@@ -186,15 +185,23 @@ struct PlayerQuickPanelView: View {
                 }
                 .onAppear {
                     chapterSnapshotTime = max(0, viewModel.engine.currentTime)
-                    focusPreferredActiveItem(proxy: proxy)
                 }
                 .onChange(of: tab) { _, _ in
                     chapterSnapshotTime = max(0, viewModel.engine.currentTime)
-                    focusPreferredActiveItem(proxy: proxy)
                 }
-                .onChange(of: viewModel.alternatives.map(\.id)) { _, _ in
-                    if tab == .source {
-                        focusPreferredActiveItem(proxy: proxy)
+                .task(id: "\(tab.rawValue)#\(tab == .source ? viewModel.alternatives.count : 0)#\(viewModel.activeSession?.sessionId ?? "")") {
+                    let targetID = preferredActiveItemID
+                    proxy.scrollTo(targetID)
+                    focusedItemID = targetID
+                    for delayNs: UInt64 in [16_000_000, 48_000_000] {
+                        try? await Task.sleep(nanoseconds: delayNs)
+                        guard !Task.isCancelled else { return }
+                        proxy.scrollTo(targetID)
+                        if focusedItemID != targetID {
+                            focusedItemID = targetID
+                        } else {
+                            return
+                        }
                     }
                 }
             }
@@ -204,28 +211,20 @@ struct PlayerQuickPanelView: View {
         .padding(.horizontal, 26)
         .padding(.vertical, 20)
         .frame(width: panelWidth, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
-                .fill(LunaTheme.cinemaGlass)
-        )
-        .lunaTopLightEdge(
-            cornerRadius: LunaTokens.Radius.panel,
-            topColor: LunaTokens.Edge.top3,
-            sideColor: LunaTokens.Edge.top1,
-            lineWidth: LunaTokens.Layout.hairlineWidth
-        )
-        .shadow(
-            color: LunaTheme.pureBlack.opacity(0.68),
-            radius: 34,
-            x: 0,
-            y: 16
+        .lunaCinemaGlassSurface(
+            shadowColor: LunaTheme.pureBlack.opacity(0.68),
+            shadowRadius: 34,
+            shadowY: 16
         )
         .padding(.leading, leadingX)
         .padding(.bottom, 248)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        .onDisappear {
-            focusRetryTask?.cancel()
-            focusRetryTask = nil
+        .task(id: tab) {
+            guard tab == .source,
+                  viewModel.alternativesSessionId != viewModel.activeSession?.sessionId || viewModel.alternatives.isEmpty else {
+                return
+            }
+            await viewModel.loadAlternatives()
         }
     }
 
@@ -328,36 +327,16 @@ struct PlayerQuickPanelView: View {
             .focusSection()
         }
 
-        HStack(spacing: 10) {
-            Text("Tekstsynk")
-                .font(LunaTheme.Font.caption)
-                .foregroundStyle(LunaTheme.muted)
-
-            Spacer(minLength: 8)
-
-            LunaPillButton("−0,1 s", prominence: .glassPill, size: .compact) {
-                viewModel.adjustSubtitleDelay(by: -0.1)
-            }
-            .focused($focusedItemID, equals: "sub-sync-minus")
-
-            LunaPillButton(
-                formatSubtitleDelay(viewModel.subtitleDelaySeconds),
-                isSelected: true,
-                prominence: .glassPill,
-                size: .compact
-            ) {
-                viewModel.resetSubtitleDelay()
-            }
-            .focused($focusedItemID, equals: "sub-sync-zero")
-
-            LunaPillButton("+0,1 s", prominence: .glassPill, size: .compact) {
-                viewModel.adjustSubtitleDelay(by: 0.1)
-            }
-            .focused($focusedItemID, equals: "sub-sync-plus")
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 4)
-        .focusSection()
+        syncDelayStepperRow(
+            title: "Tekstsynk",
+            minusLabel: "−0,1 s",
+            centerLabel: formatSubtitleDelay(viewModel.subtitleDelaySeconds),
+            plusLabel: "+0,1 s",
+            focusPrefix: "sub-sync",
+            onMinus: { viewModel.adjustSubtitleDelay(by: -0.1) },
+            onReset: { viewModel.resetSubtitleDelay() },
+            onPlus: { viewModel.adjustSubtitleDelay(by: 0.1) }
+        )
     }
 
     // MARK: - Lyd
@@ -400,36 +379,16 @@ struct PlayerQuickPanelView: View {
             .focused($focusedItemID, equals: rowID)
         }
 
-        HStack(spacing: 10) {
-            Text("Lydsynk")
-                .font(LunaTheme.Font.caption)
-                .foregroundStyle(LunaTheme.muted)
-
-            Spacer(minLength: 8)
-
-            LunaPillButton("−25 ms", prominence: .glassPill, size: .compact) {
-                viewModel.adjustAudioDelay(byMs: -25)
-            }
-            .focused($focusedItemID, equals: "aud-sync-minus")
-
-            LunaPillButton(
-                ComfortPreferences.formatAudioDelayMs(viewModel.audioDelayMs).replacingOccurrences(of: "-", with: "−"),
-                isSelected: true,
-                prominence: .glassPill,
-                size: .compact
-            ) {
-                viewModel.resetAudioDelay()
-            }
-            .focused($focusedItemID, equals: "aud-sync-zero")
-
-            LunaPillButton("+25 ms", prominence: .glassPill, size: .compact) {
-                viewModel.adjustAudioDelay(byMs: 25)
-            }
-            .focused($focusedItemID, equals: "aud-sync-plus")
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 4)
-        .focusSection()
+        syncDelayStepperRow(
+            title: "Lydsynk",
+            minusLabel: "−25 ms",
+            centerLabel: ComfortPreferences.displayAudioDelayMs(viewModel.audioDelayMs),
+            plusLabel: "+25 ms",
+            focusPrefix: "aud-sync",
+            onMinus: { viewModel.adjustAudioDelay(byMs: -25) },
+            onReset: { viewModel.resetAudioDelay() },
+            onPlus: { viewModel.adjustAudioDelay(byMs: 25) }
+        )
     }
 
     // MARK: - Kilde
@@ -543,23 +502,35 @@ struct PlayerQuickPanelView: View {
 
     // MARK: - Helpers
 
-    private func focusPreferredActiveItem(proxy: ScrollViewProxy) {
-        focusRetryTask?.cancel()
-        let targetID = preferredActiveItemID
-        proxy.scrollTo(targetID)
-        focusedItemID = targetID
-        focusRetryTask = Task { @MainActor in
-            for delayNs: UInt64 in [16_000_000, 48_000_000] {
-                try? await Task.sleep(nanoseconds: delayNs)
-                guard !Task.isCancelled else { return }
-                proxy.scrollTo(targetID)
-                if focusedItemID != targetID {
-                    focusedItemID = targetID
-                } else {
-                    return
-                }
-            }
+    private func syncDelayStepperRow(
+        title: String,
+        minusLabel: String,
+        centerLabel: String,
+        plusLabel: String,
+        focusPrefix: String,
+        onMinus: @escaping () -> Void,
+        onReset: @escaping () -> Void,
+        onPlus: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(LunaTheme.Font.caption)
+                .foregroundStyle(LunaTheme.muted)
+
+            Spacer(minLength: 8)
+
+            LunaPillButton(minusLabel, prominence: .glassPill, size: .compact, action: onMinus)
+                .focused($focusedItemID, equals: "\(focusPrefix)-minus")
+
+            LunaPillButton(centerLabel, isSelected: true, prominence: .glassPill, size: .compact, action: onReset)
+                .focused($focusedItemID, equals: "\(focusPrefix)-zero")
+
+            LunaPillButton(plusLabel, prominence: .glassPill, size: .compact, action: onPlus)
+                .focused($focusedItemID, equals: "\(focusPrefix)-plus")
         }
+        .padding(.horizontal, 12)
+        .padding(.top, 4)
+        .focusSection()
     }
 
     private func compactNightLightLabel(_ preset: HDRSubtitlePreset) -> String {

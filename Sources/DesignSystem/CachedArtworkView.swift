@@ -3,10 +3,14 @@ import SwiftUI
 
 // MARK: - Off-Main-Thread Cached Artwork View (Zero 1-Frame Stale Reuse Flash)
 
-public struct CachedArtworkView: View {
-    private struct TaggedCGImage {
+public struct CachedArtworkView: View, Equatable {
+    private struct TaggedCGImage: Equatable {
         let key: String
         let image: CGImage
+
+        static func == (lhs: TaggedCGImage, rhs: TaggedCGImage) -> Bool {
+            lhs.key == rhs.key && lhs.image === rhs.image
+        }
     }
 
     let url: URL?
@@ -18,8 +22,8 @@ public struct CachedArtworkView: View {
     let contentMode: ContentMode
     let reuseAnyCachedSize: Bool
 
-    @State private var loadedArtwork: TaggedCGImage?
-    @State private var decodedBlur: TaggedCGImage?
+    @State private var loadedArtwork: TaggedCGImage? = nil
+    @State private var decodedBlur: TaggedCGImage? = nil
 
     public init(
         url: URL?,
@@ -39,24 +43,18 @@ public struct CachedArtworkView: View {
         self.placeholderSymbol = placeholderSymbol
         self.contentMode = contentMode
         self.reuseAnyCachedSize = reuseAnyCachedSize
+    }
 
-        let expectedImgKey = Self.imageSlotKey(url: url, maxPixelSize: maxPixelSize, reuseAnyCachedSize: reuseAnyCachedSize)
-        if let url, let expectedImgKey, let hit = Self.lookupMemoryImage(
-            url: url,
-            maxPixelSize: maxPixelSize,
-            reuseAnyCachedSize: reuseAnyCachedSize
-        ) {
-            _loadedArtwork = State(initialValue: TaggedCGImage(key: expectedImgKey, image: hit))
-        } else {
-            _loadedArtwork = State(initialValue: nil)
-        }
-
-        let cleanBlur = Self.normalizedBlurKey(blurHash)
-        if let cleanBlur, let blurHit = BlurHashDecoder.cachedImage(cleanBlur, width: 32, height: 24) {
-            _decodedBlur = State(initialValue: TaggedCGImage(key: cleanBlur, image: blurHit))
-        } else {
-            _decodedBlur = State(initialValue: nil)
-        }
+    public nonisolated static func == (lhs: CachedArtworkView, rhs: CachedArtworkView) -> Bool {
+        lhs.url == rhs.url &&
+            lhs.maxPixelSize == rhs.maxPixelSize &&
+            lhs.blurHash == rhs.blurHash &&
+            lhs.dominantColor == rhs.dominantColor &&
+            lhs.placeholderSymbol == rhs.placeholderSymbol &&
+            lhs.contentMode == rhs.contentMode &&
+            lhs.reuseAnyCachedSize == rhs.reuseAnyCachedSize &&
+            lhs.client?.baseURL == rhs.client?.baseURL &&
+            lhs.client?.deviceToken == rhs.client?.deviceToken
     }
 
     /// Pure key-verified resolver ensuring recycled `LazyVGrid` / `LazyHStack` cells never flash
@@ -139,7 +137,9 @@ public struct CachedArtworkView: View {
             }
 
             guard let url, let targetImageKey = currentImageKey else {
-                loadedArtwork = nil
+                if loadedArtwork != nil {
+                    loadedArtwork = nil
+                }
                 if let targetBlurKey, decodedBlur?.key != targetBlurKey, contentMode != .fit {
                     if let blurImg = await BlurHashDecoder.decodeAsync(targetBlurKey, width: 32, height: 24),
                        !Task.isCancelled {
@@ -160,7 +160,9 @@ public struct CachedArtworkView: View {
                 return
             }
 
-            loadedArtwork = nil
+            if loadedArtwork != nil {
+                loadedArtwork = nil
+            }
             if let targetBlurKey, decodedBlur?.key != targetBlurKey, contentMode != .fit {
                 if let blurImg = await BlurHashDecoder.decodeAsync(targetBlurKey, width: 32, height: 24),
                    !Task.isCancelled {
@@ -178,7 +180,7 @@ public struct CachedArtworkView: View {
                 withAnimation(.easeOut(duration: 0.18)) {
                     loadedArtwork = TaggedCGImage(key: targetImageKey, image: fetched)
                 }
-            } else {
+            } else if loadedArtwork != nil {
                 loadedArtwork = nil
             }
         }

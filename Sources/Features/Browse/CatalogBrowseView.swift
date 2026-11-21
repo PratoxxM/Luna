@@ -11,22 +11,25 @@ internal struct CatalogBrowseSnapshot {
 }
 
 @MainActor
-internal final class CatalogBrowseMemoryCache {
-    static let shared = CatalogBrowseMemoryCache()
-    private let maxEntries = DeviceHardwareCapabilities.isHighMemoryDevice ? 48 : 16
-    private var entries: [String: CatalogBrowseSnapshot] = [:]
+internal final class BoundedLRUMemoryCache<Value> {
+    private let maxEntries: Int
+    private var entries: [String: Value] = [:]
     private var order: [String] = []
+
+    init(maxEntries: Int) {
+        self.maxEntries = max(1, maxEntries)
+    }
 
     var entryCount: Int { entries.count }
 
-    func snapshot(for key: String) -> CatalogBrowseSnapshot? {
+    func snapshot(for key: String) -> Value? {
         guard let hit = entries[key] else { return nil }
         order.removeAll { $0 == key }
         order.append(key)
         return hit
     }
 
-    func store(_ snapshot: CatalogBrowseSnapshot, for key: String) {
+    func store(_ snapshot: Value, for key: String) {
         entries[key] = snapshot
         order.removeAll { $0 == key }
         order.append(key)
@@ -42,8 +45,20 @@ internal final class CatalogBrowseMemoryCache {
     }
 }
 
+internal enum CatalogBrowseMemoryCache {
+    @MainActor
+    static let shared = BoundedLRUMemoryCache<CatalogBrowseSnapshot>(
+        maxEntries: DeviceHardwareCapabilities.isHighMemoryDevice ? 48 : 16
+    )
+}
+
 struct CatalogBrowseView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
+    private enum CatalogFallbackFocus: Hashable {
+        case retry
+        case emptyReset
+    }
+
+    @Environment(AppSessionStore.self) private var sessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
     @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
     @Environment(\.lunaContentEntryFocusNonce) private var contentEntryFocusNonce
@@ -70,19 +85,18 @@ struct CatalogBrowseView: View {
     @State private var errorMessage: String?
     @State private var mutationErrorBanner: String?
     @State private var lastSeenRefreshNonce: Int = -1
-    @State private var mutationBannerTask: Task<Void, Never>?
     @State private var reloadTask: Task<Void, Never>?
     @State private var reloadGeneration: UInt64 = 0
-    @State private var entryFocusRetryTask: Task<Void, Never>?
 
     @State private var selectedCard: TvMediaCard?
+    @State private var mountedTracker = MountedEntryCardTracker()
+    @State private var entryCardID: String?
+    @State private var cardFocusNonce: Int = 0
     @FocusState private var focusedFilterId: String?
-    @FocusState private var focusedCardId: String?
+    @FocusState private var fallbackFocus: CatalogFallbackFocus?
+    @Namespace private var catalogGridNamespace
 
-    private let columns = Array(
-        repeating: GridItem(.fixed(LunaTokens.Layout.gridPosterW), spacing: LunaTokens.Layout.gridCardGap, alignment: .topLeading),
-        count: 6
-    )
+    private let columns = LunaTheme.posterGridColumns
 
     private var sortOptions: [(id: String, label: String)] {
         let base: [(id: String, label: String)] = [
@@ -237,12 +251,18 @@ struct CatalogBrowseView: View {
                 .focusSection()
                 .onMoveCommand { direction in
                     if direction == .down {
-                        if let firstCardID = items.first?.id {
-                            focusedCardId = firstCardID
-                        } else if errorMessage != nil && items.isEmpty {
-                            focusedCardId = "__catalog_retry__"
+                        if !items.isEmpty {
+                            if !mountedTracker.hasAnyMounted, let firstID = items.first?.id {
+                                scrollProxy.scrollTo(firstID, anchor: .top)
+                            }
+                            if let resolvedID = mountedTracker.resolveEntryID(orderedIDs: items.map(\.id)) {
+                                entryCardID = resolvedID
+                                cardFocusNonce &+= 1
+                            }
+                        } else if errorMessage != nil {
+                            fallbackFocus = .retry
                         } else if localOnly || unwatchedOnly || selectedGenreSlug != nil {
-                            focusedCardId = "__catalog_empty_reset__"
+                            fallbackFocus = .emptyReset
                         }
                     }
                 }
@@ -255,7 +275,7 @@ struct CatalogBrowseView: View {
                     LunaInlineError(message: errorMessage) {
                         scheduleReloadFirstPage(forceNetwork: true)
                     }
-                    .focused($focusedCardId, equals: "__catalog_retry__")
+                    .focused($fallbackFocus, equals: .retry)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else if items.isEmpty {
                     let hasFilters = localOnly || unwatchedOnly || selectedGenreSlug != nil
@@ -274,19 +294,21 @@ struct CatalogBrowseView: View {
                     .padding(.horizontal, LunaTheme.horizontalGutter)
 
                     if hasFilters {
-                        emptyView.focused($focusedCardId, equals: "__catalog_empty_reset__")
+                        emptyView.focused($fallbackFocus, equals: .emptyReset)
                     } else {
                         emptyView
                     }
                 } else {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: LunaTokens.Layout.gridRowGap) {
-                        ForEach(items) { card in
+                        let prefetchThreshold = max(0, items.count - 6)
+                        ForEach(Array(items.enumerated()), id: \.element.id) { idx, card in
                             PosterCardView(
                                 card: card,
                                 client: client,
                                 width: LunaTokens.Layout.gridPosterW,
                                 showStorageBadge: true,
                                 showRestingTitle: true,
+                                focusRequestNonce: card.id == entryCardID ? cardFocusNonce : 0,
                                 onSelect: {
                                     selectedCard = card
                                 },
@@ -295,7 +317,8 @@ struct CatalogBrowseView: View {
                                 }
                             )
                             .id(card.id)
-                            .focused($focusedCardId, equals: card.id)
+                            .lunaTrackMountedCard(id: card.id, in: mountedTracker)
+                            .prefersDefaultFocus(!isRootTab && idx == 0, in: catalogGridNamespace)
                             .contextMenu {
                                 StandardPosterContextMenuItems(
                                     card: card,
@@ -314,7 +337,7 @@ struct CatalogBrowseView: View {
                                 )
                             }
                             .onAppear {
-                                if card.id == items.last?.id && hasMore && !isLoadingMore {
+                                if idx >= prefetchThreshold && hasMore && !isLoadingMore {
                                     Task { await loadNextPage() }
                                 }
                             }
@@ -322,6 +345,7 @@ struct CatalogBrowseView: View {
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.bottom, 32)
+                    .focusSection()
 
                     if isLoadingMore {
                         HStack {
@@ -341,11 +365,7 @@ struct CatalogBrowseView: View {
         .scrollClipDisabled()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
-        .defaultFocus(
-            $focusedCardId,
-            isRootTab ? nil : items.first?.id,
-            priority: isRootTab ? .automatic : .userInitiated
-        )
+        .focusScope(catalogGridNamespace)
         .lunaRootScrollTopBarTracking(tab: rootNavigationTab, isEnabled: isRootTab)
         .onChange(of: scrollToTopNonce) { _, _ in
             guard isRootTab, isActiveTab else { return }
@@ -353,15 +373,18 @@ struct CatalogBrowseView: View {
                 scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
             }
         }
-        .onChange(of: contentEntryFocusNonce) { _, _ in
-            guard isRootTab, isActiveTab else { return }
-            focusEntryFilterTarget(scrollProxy: scrollProxy)
-        }
-        .lunaBottomToast(message: mutationErrorBanner, tone: .danger)
+        .lunaEntryFocusTarget(
+            nonce: contentEntryFocusNonce,
+            isActive: isRootTab && isActiveTab,
+            focus: $focusedFilterId,
+            target: { "sort-\(selectedSort)" },
+            onTrigger: { scrollProxy.scrollTo("luna-scroll-top", anchor: .top) }
+        )
+        .lunaBottomToast(message: $mutationErrorBanner, tone: .danger)
         .focusSection()
         .lunaNavigationContainerBackdrop(
             isEnabled: !isRootTab,
-            mode: .ambient(isPaused: sessionStore.activePlaybackTarget != nil)
+            mode: .ambient(isPaused: !isRootTab && sessionStore.activePlaybackTarget != nil)
         )
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in
@@ -370,6 +393,16 @@ struct CatalogBrowseView: View {
         .onAppear {
             if !isRootTab {
                 subpageVisibility.enterSubpage(subpageToken)
+                if let firstID = items.first?.id {
+                    entryCardID = firstID
+                    cardFocusNonce &+= 1
+                }
+            }
+        }
+        .onChange(of: items.first?.id) { oldFirst, newFirst in
+            if !isRootTab, oldFirst == nil, let newFirst {
+                entryCardID = newFirst
+                cardFocusNonce &+= 1
             }
         }
         .task(id: reloadTriggerKey) {
@@ -393,16 +426,13 @@ struct CatalogBrowseView: View {
                 lastValidatedAt: cached?.fetchedAt ?? .distantPast,
                 cachedRefreshNonce: cached?.refreshNonce ?? lastSeenRefreshNonce,
                 currentRefreshNonce: sessionStore.homeRefreshNonce,
-                freshnessInterval: DeviceHardwareCapabilities.isHighMemoryDevice ? 600 : TabContentFreshnessPolicy.defaultFreshnessInterval
+                freshnessInterval: TabContentFreshnessPolicy.effectiveFreshnessInterval
             )
             guard !isFresh else { return }
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
             scheduleReloadFirstPage(forceNetwork: true)
         }
         .onDisappear {
-            entryFocusRetryTask?.cancel()
-            entryFocusRetryTask = nil
-            mutationBannerTask?.cancel()
             reloadTask?.cancel()
             reloadTask = nil
             if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
@@ -413,24 +443,6 @@ struct CatalogBrowseView: View {
                 subpageVisibility.leaveSubpage(subpageToken)
             }
         }
-        }
-    }
-
-    private func focusEntryFilterTarget(scrollProxy: ScrollViewProxy) {
-        entryFocusRetryTask?.cancel()
-        let targetID = "sort-\(selectedSort)"
-        scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
-        focusedFilterId = targetID
-        entryFocusRetryTask = Task { @MainActor in
-            for delayNs: UInt64 in [16_000_000, 48_000_000] {
-                try? await Task.sleep(nanoseconds: delayNs)
-                guard !Task.isCancelled, isRootTab, isActiveTab else { return }
-                if focusedFilterId == nil {
-                    focusedFilterId = targetID
-                } else {
-                    return
-                }
-            }
         }
     }
 
@@ -485,7 +497,7 @@ struct CatalogBrowseView: View {
                    lastValidatedAt: cached.fetchedAt,
                    cachedRefreshNonce: cached.refreshNonce,
                    currentRefreshNonce: currentNonce,
-                   freshnessInterval: DeviceHardwareCapabilities.isHighMemoryDevice ? 600 : TabContentFreshnessPolicy.defaultFreshnessInterval
+                   freshnessInterval: TabContentFreshnessPolicy.effectiveFreshnessInterval
                ) {
                 errorMessage = nil
                 isLoading = false
@@ -561,13 +573,7 @@ struct CatalogBrowseView: View {
     }
 
     private func showMutationError(_ error: Error) {
-        mutationBannerTask?.cancel()
         mutationErrorBanner = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
-        mutationBannerTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
-            guard !Task.isCancelled else { return }
-            mutationErrorBanner = nil
-        }
     }
 
     private func toggleWatchlist(_ card: TvMediaCard) async {

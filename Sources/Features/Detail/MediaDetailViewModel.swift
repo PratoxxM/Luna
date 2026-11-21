@@ -1,5 +1,5 @@
-import Combine
 import Foundation
+import Observation
 
 @MainActor
 protocol MediaDetailSessionContext: AnyObject {
@@ -24,38 +24,36 @@ extension AppSessionStore: MediaDetailSessionContext {
 }
 
 @MainActor
-final class MediaDetailViewModel: ObservableObject {
+@Observable
+final class MediaDetailViewModel {
     let mediaType: String
     let itemId: String
     let initialTitle: String
 
-    @Published private(set) var client: LunaCoreClient?
-    @Published var detail: TvItemDetail?
-    @Published var selectedSeasonNumber: Int = 1
-    @Published var episodes: [TvEpisodeCard] = []
-    @Published var isLoading: Bool = true
-    @Published var isLoadingEpisodes: Bool = false
-    @Published var errorMessage: String?
-    @Published var mutationErrorBanner: String?
-    @Published var pendingSeriesWatchedItem: TvItemDetail?
-    @Published var pendingDeleteTarget: TvDeleteRequestTarget?
-    @Published var sourcePickerContext: SourcePickerContext?
-    @Published var showMoreSheet: Bool = false
-    @Published var showFullOverviewSheet: Bool = false
-    @Published private(set) var isPreResolvedReady: Bool = false
+    private(set) var client: LunaCoreClient?
+    var detail: TvItemDetail?
+    var selectedSeasonNumber: Int = 1
+    var episodes: [TvEpisodeCard] = []
+    var isLoading: Bool = true
+    var isLoadingEpisodes: Bool = false
+    var errorMessage: String?
+    var mutationErrorBanner: String?
+    var pendingSeriesWatchedItem: TvItemDetail?
+    var pendingDeleteTarget: TvDeleteRequestTarget?
+    var sourcePickerContext: SourcePickerContext?
+    var showMoreSheet: Bool = false
+    var showFullOverviewSheet: Bool = false
 
     let preResolve: DetailPreResolveController
 
-    weak var sessionContext: (any MediaDetailSessionContext)?
-    var lastSeenRefreshNonce: Int = -1
-    var bannerClearTask: Task<Void, Never>?
-    var postPlaybackReloadFallbackTask: Task<Void, Never>?
-    var detailLoadTask: Task<Void, Never>?
-    var detailLoadGeneration: UInt64 = 0
-    var seasonLoadGeneration: UInt64 = 0
-    var loadedScopeKey: String?
-    var awaitingPostPlaybackRefresh: Bool = false
-    private var preResolveCancellable: AnyCancellable?
+    @ObservationIgnored weak var sessionContext: (any MediaDetailSessionContext)?
+    @ObservationIgnored var lastSeenRefreshNonce: Int = -1
+    @ObservationIgnored var postPlaybackReloadFallbackTask: Task<Void, Never>?
+    @ObservationIgnored var detailLoadTask: Task<Void, Never>?
+    @ObservationIgnored var detailLoadGeneration: UInt64 = 0
+    @ObservationIgnored var seasonLoadGeneration: UInt64 = 0
+    @ObservationIgnored var loadedScopeKey: String?
+    @ObservationIgnored var awaitingPostPlaybackRefresh: Bool = false
 
     init(
         mediaType: String,
@@ -67,10 +65,6 @@ final class MediaDetailViewModel: ObservableObject {
         self.itemId = itemId
         self.initialTitle = initialTitle
         self.preResolve = preResolve
-        self.preResolveCancellable = preResolve.$isPreResolvedReady
-            .sink { [weak self] ready in
-                self?.isPreResolvedReady = ready
-            }
     }
 
     var isShowingModal: Bool {
@@ -176,7 +170,6 @@ final class MediaDetailViewModel: ObservableObject {
         if let sessionContext {
             self.sessionContext = sessionContext
         }
-        bannerClearTask?.cancel()
         postPlaybackReloadFallbackTask?.cancel()
         postPlaybackReloadFallbackTask = nil
         detailLoadTask?.cancel()

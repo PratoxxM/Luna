@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct EpisodeCardView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     let episode: TvEpisodeCard
     var seriesTitle: String? = nil
     var isNextForYou: Bool = false
@@ -35,6 +33,7 @@ struct EpisodeCardView: View {
                         placeholderSymbol: upcoming ? "calendar" : "play.tv",
                         contentMode: .fill
                     )
+                    .equatable()
                     .frame(width: cardWidth, height: cardHeight)
                     .clipped()
                     .opacity(upcoming ? 0.65 : (isFocused ? 1.0 : LunaTokens.Layout.restPosterBrightness))
@@ -62,29 +61,19 @@ struct EpisodeCardView: View {
                         Spacer()
 
                         if pct > 2 && pct < 95 && !episode.watched && !upcoming {
-                            let trackWidth: CGFloat = cardWidth - 28
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(LunaTokens.Edge.progressTrack)
-                                Capsule()
-                                    .fill(LunaTheme.amber)
-                                    .frame(width: trackWidth * CGFloat(pct / 100.0))
-                            }
-                            .frame(width: trackWidth, height: 6)
-                            .padding(.horizontal, 14)
-                            .padding(.bottom, 10)
+                            LunaCardProgressBar(percent: pct, trackWidth: cardWidth - 28)
+                                .padding(.horizontal, 14)
+                                .padding(.bottom, 10)
                         }
                     }
                 }
                 .frame(width: cardWidth, height: cardHeight)
                 .lunaCardFocusFrame(
                     cornerRadius: LunaTheme.cardRadius,
-                    isFocused: isFocused,
-                    showRestingTopEdge: false
+                    isFocused: isFocused
                 )
             }
-            .buttonStyle(LunaChromelessButtonStyle())
-            .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
-            .focusEffectDisabled(true)
+            .lunaChromelessButton(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
             .lunaCardLampGlow(isFocused: isFocused)
             .focused($isFocused)
             .accessibilityLabel(displayTitle)
@@ -137,14 +126,7 @@ struct EpisodeCardView: View {
                 .foregroundStyle(LunaTheme.muted)
                 .lineLimit(2)
                 .frame(width: cardWidth, height: 58, alignment: .topLeading)
-                .opacity((isFocused && !overviewText.isEmpty) ? 1.0 : 0.0)
-                .animation(
-                    reduceMotion
-                        ? .linear(duration: 0.01)
-                        : (isFocused ? LunaFocusStyle.focusFade.delay(0.06) : .easeOut(duration: 0.12)),
-                    value: isFocused
-                )
-                .allowsHitTesting(false)
+                .lunaFocusCaptionReveal(isVisible: !overviewText.isEmpty, isFocused: isFocused)
         }
     }
 }

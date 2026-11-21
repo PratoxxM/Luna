@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import SwiftUI
 
 public struct SourcePickerContext: Identifiable, Equatable, Hashable, Sendable {
@@ -96,16 +97,17 @@ internal protocol SourcePickerSessionClient: Sendable {
 extension LunaCoreClient: SourcePickerSessionClient {}
 
 @MainActor
-internal final class SourcePickerViewModel: ObservableObject {
-    @Published private(set) var candidates: [TvCandidateInfo] = []
-    @Published private(set) var activeCandidateId: String?
-    @Published private(set) var resolvedPrepareToken: String?
-    @Published private(set) var existingTokenFailed: Bool = false
-    @Published private(set) var createdOrphanSessionId: String?
-    @Published private(set) var didSelectCandidate: Bool = false
-    @Published private(set) var isLoading: Bool = true
-    @Published private(set) var errorMessage: String?
-    private(set) var isDismissed: Bool = false
+@Observable
+internal final class SourcePickerViewModel {
+    private(set) var candidates: [TvCandidateInfo] = []
+    private(set) var activeCandidateId: String?
+    @ObservationIgnored private(set) var resolvedPrepareToken: String?
+    @ObservationIgnored private(set) var existingTokenFailed: Bool = false
+    @ObservationIgnored private(set) var createdOrphanSessionId: String?
+    @ObservationIgnored private(set) var didSelectCandidate: Bool = false
+    private(set) var isLoading: Bool = true
+    private(set) var errorMessage: String?
+    @ObservationIgnored private(set) var isDismissed: Bool = false
 
     func handleAppear() {
         isDismissed = false
@@ -275,13 +277,13 @@ internal final class SourcePickerViewModel: ObservableObject {
 }
 
 struct SourcePickerSheetView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(AppSessionStore.self) private var sessionStore
 
     let context: SourcePickerContext
     let onSelectCandidate: (TvCandidateInfo, String?) -> Void
     let onCancel: () -> Void
 
-    @StateObject private var viewModel = SourcePickerViewModel()
+    @State private var viewModel = SourcePickerViewModel()
     @State private var reloadAttempt: Int = 0
     @FocusState private var focusedCandidateID: String?
     @Namespace private var sourcePickerFocusNamespace
@@ -359,7 +361,7 @@ struct SourcePickerSheetView: View {
                 focusedCandidateID = defaultID
             }
         }
-        .onChange(of: viewModel.candidates.map(\.id)) { _, _ in
+        .onChange(of: viewModel.candidates) { _, _ in
             if let defaultID {
                 focusedCandidateID = defaultID
             }

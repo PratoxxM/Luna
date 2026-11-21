@@ -36,7 +36,7 @@ struct QuickActionAnchorFramesKey: PreferenceKey {
 /// Evening-cinema transport OSD with bottom quick-action strip (`Tekst · Lyd · Kilde · Bilde · Kapitler`).
 /// Leaf timeline & chapter/clock observers remain isolated so 10 Hz engine ticks never re-render the strip.
 struct PlayerBottomBarView: View {
-    @ObservedObject var viewModel: PlayerViewModel
+    let viewModel: PlayerViewModel
     let fallbackRequest: PlaybackLaunchRequest
     var activeQuickPanel: PlayerQuickPanelTab? = nil
     var suppressFloatingNextPill: Bool = false
@@ -50,7 +50,7 @@ struct PlayerBottomBarView: View {
     var onReturnFocusToCanvas: () -> Void = {}
 
     @FocusState private var focusedAction: PlayerBottomBarAction?
-    @State private var focusRetryTask: Task<Void, Never>?
+    @State private var activeFocusNonce: Int = 0
     @Namespace private var bottomBarFocusNamespace
 
     private var isPaused: Bool {
@@ -66,7 +66,8 @@ struct PlayerBottomBarView: View {
 
     var body: some View {
         let duration = viewModel.effectiveDurationSeconds
-        let isMovie = (titleDisplay.seriesLine == nil)
+        let titles = titleDisplay
+        let isMovie = (titles.seriesLine == nil)
 
         VStack(spacing: 0) {
             Spacer()
@@ -74,7 +75,7 @@ struct PlayerBottomBarView: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .lastTextBaseline, spacing: 24) {
                     VStack(alignment: .leading, spacing: 6) {
-                        if let seriesLine = titleDisplay.seriesLine {
+                        if let seriesLine = titles.seriesLine {
                             HStack(spacing: 8) {
                                 Text(seriesLine)
                                     .font(LunaTheme.Font.subtitle)
@@ -99,7 +100,7 @@ struct PlayerBottomBarView: View {
                                     .foregroundStyle(LunaTheme.pauseWarmLine)
                             }
 
-                            Text(titleDisplay.titleLine)
+                            Text(titles.titleLine)
                                 .font(LunaTheme.Font.sectionTitle)
                                 .foregroundStyle(LunaTheme.linen)
                                 .lineLimit(1)
@@ -152,18 +153,23 @@ struct PlayerBottomBarView: View {
         }
         .onAppear {
             if focusRequestNonce > 0 && activeQuickPanel == nil {
-                applyRequestedActionFocus()
+                activeFocusNonce = focusRequestNonce
             }
         }
-        .onChange(of: focusRequestNonce) { _, _ in
+        .onChange(of: focusRequestNonce) { _, newNonce in
             guard activeQuickPanel == nil else { return }
-            applyRequestedActionFocus()
+            activeFocusNonce = newNonce
         }
         .onChange(of: clearFocusNonce) { _, _ in
-            focusRetryTask?.cancel()
-            focusRetryTask = nil
+            activeFocusNonce = 0
             focusedAction = nil
         }
+        .lunaEntryFocusTarget(
+            nonce: activeFocusNonce,
+            isActive: activeQuickPanel == nil,
+            focus: $focusedAction,
+            target: { requestedAction }
+        )
         .onChange(of: focusedAction) { _, newValue in
             onFocusPresenceChanged(newValue != nil)
             if newValue != nil {
@@ -171,8 +177,7 @@ struct PlayerBottomBarView: View {
             }
         }
         .onDisappear {
-            focusRetryTask?.cancel()
-            focusRetryTask = nil
+            activeFocusNonce = 0
             onFocusPresenceChanged(false)
         }
     }
@@ -227,33 +232,15 @@ struct PlayerBottomBarView: View {
         .disabled(activeQuickPanel != nil)
         .onMoveCommand { direction in
             if direction == .up {
-                focusRetryTask?.cancel()
-                focusRetryTask = nil
+                activeFocusNonce = 0
                 focusedAction = nil
                 onReturnFocusToCanvas()
             }
         }
     }
-
-    private func applyRequestedActionFocus() {
-        focusRetryTask?.cancel()
-        let target = requestedAction
-        focusedAction = target
-        focusRetryTask = Task { @MainActor in
-            for delayNs: UInt64 in [16_000_000, 48_000_000] {
-                try? await Task.sleep(nanoseconds: delayNs)
-                guard !Task.isCancelled, activeQuickPanel == nil else { return }
-                if focusedAction == nil {
-                    focusedAction = target
-                } else {
-                    return
-                }
-            }
-        }
-    }
 }
 
-// MARK: - Isolated & Bucketed Clock Leaf Views
+// MARK: - Isolated & 0 Hz Steady-State Clock Leaf Views
 
 private struct EndsAtLeafView: View {
     let engine: AetherEngine
@@ -261,8 +248,7 @@ private struct EndsAtLeafView: View {
     var qualitySummary: String? = nil
     var previewTimeOverride: Double? = nil
 
-    @State private var currentTime: Double = 0
-    @State private var lastTimeBucket: Int = -1
+    @State private var endsAtText: String?
 
     private static let formatter: DateFormatter = {
         let f = DateFormatter()
@@ -272,13 +258,6 @@ private struct EndsAtLeafView: View {
     }()
 
     var body: some View {
-        let effectiveCurrent = previewTimeOverride ?? currentTime
-        let endsAtText: String? = {
-            guard duration > 30 else { return nil }
-            let remaining = max(0, duration - effectiveCurrent)
-            let finishClock = Self.formatter.string(from: Date().addingTimeInterval(remaining))
-            return "Ferdig kl. \(finishClock)"
-        }()
         let combined = [qualitySummary, endsAtText]
             .compactMap { $0 }
             .filter { !$0.isEmpty }
@@ -292,12 +271,30 @@ private struct EndsAtLeafView: View {
                     .lineLimit(1)
             }
         }
+        .onAppear {
+            refreshEndsAt(for: previewTimeOverride ?? max(0, engine.currentTime))
+        }
+        .onChange(of: duration) { _, _ in
+            refreshEndsAt(for: previewTimeOverride ?? max(0, engine.currentTime))
+        }
+        .onChange(of: previewTimeOverride) { _, nextOverride in
+            refreshEndsAt(for: nextOverride ?? max(0, engine.currentTime))
+        }
         .onReceive(engine.clock.$currentTime) { t in
-            let bucket = Int(max(0, t) / 5.0)
-            if bucket != lastTimeBucket {
-                lastTimeBucket = bucket
-                currentTime = t
-            }
+            guard previewTimeOverride == nil else { return }
+            refreshEndsAt(for: t)
+        }
+    }
+
+    private func refreshEndsAt(for currentSeconds: Double) {
+        let nextText: String? = {
+            guard duration > 30 else { return nil }
+            let remaining = max(0, duration - max(0, currentSeconds))
+            let finishClock = Self.formatter.string(from: Date().addingTimeInterval(remaining))
+            return "Ferdig kl. \(finishClock)"
+        }()
+        if endsAtText != nextText {
+            endsAtText = nextText
         }
     }
 }
@@ -308,13 +305,12 @@ private struct ActiveChapterLabelLeafView: View {
     let prefix: String
     var previewTimeOverride: Double? = nil
 
-    @State private var currentTime: Double = 0
+    @State private var activeTitle: String?
 
     var body: some View {
-        let effectiveCurrent = previewTimeOverride ?? currentTime
         Group {
-            if let active = chapters.first(where: { effectiveCurrent >= $0.startSeconds && effectiveCurrent < $0.endSeconds }) {
-                Text("\(prefix)\(active.title)")
+            if let activeTitle {
+                Text("\(prefix)\(activeTitle)")
                     .font(LunaTheme.Font.subtitle)
                     .foregroundStyle(LunaTheme.muted)
                     .lineLimit(1)
@@ -324,18 +320,32 @@ private struct ActiveChapterLabelLeafView: View {
                     .frame(width: 1, height: 1)
             }
         }
+        .onAppear {
+            refreshActiveTitle(for: previewTimeOverride ?? max(0, engine.currentTime))
+        }
+        .onChange(of: chapters) { _, _ in
+            refreshActiveTitle(for: previewTimeOverride ?? max(0, engine.currentTime))
+        }
+        .onChange(of: previewTimeOverride) { _, nextOverride in
+            refreshActiveTitle(for: nextOverride ?? max(0, engine.currentTime))
+        }
         .onReceive(engine.clock.$currentTime) { t in
-            guard !chapters.isEmpty else { return }
-            if abs(t - currentTime) >= 0.5 || t < 1.0 {
-                currentTime = t
-            }
+            guard previewTimeOverride == nil, !chapters.isEmpty else { return }
+            refreshActiveTitle(for: t)
+        }
+    }
+
+    private func refreshActiveTitle(for timeSeconds: Double) {
+        let nextTitle = chapters.first(where: { timeSeconds >= $0.startSeconds && timeSeconds < $0.endSeconds })?.title
+        if activeTitle != nextTitle {
+            activeTitle = nextTitle
         }
     }
 }
 
 struct TimelineScrubberLeafView: View {
-    @ObservedObject var viewModel: PlayerViewModel
-    @ObservedObject var scrubState: PlayerScrubState
+    let viewModel: PlayerViewModel
+    let scrubState: PlayerScrubState
     let engine: AetherEngine
     let duration: Double
     let isPaused: Bool
@@ -376,10 +386,10 @@ struct TimelineScrubberLeafView: View {
 
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(LunaTheme.warmBorderBase.opacity(0.16))
+                        .fill(LunaTokens.Edge.miniProgressTrack)
 
                     Capsule()
-                        .fill(LunaTheme.warmBorderBase.opacity(0.28))
+                        .fill(LunaTokens.Edge.grabber)
                         .frame(width: totalWidth * CGFloat(bufferRatio))
 
                     Capsule()

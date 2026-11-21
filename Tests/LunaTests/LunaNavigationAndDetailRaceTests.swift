@@ -517,4 +517,36 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
             )
         )
     }
+
+    @MainActor
+    func testMountedEntryCardTrackerResolvesFirstVisibleCardWhenScrolledOffTop() {
+        let tracker = MountedEntryCardTracker()
+        let ids = (0..<30).map { "movie:tmdb:\(1000 + $0)" }
+
+        XCTAssertFalse(tracker.hasAnyMounted)
+        XCTAssertEqual(tracker.resolveEntryID(orderedIDs: ids), ids[0])
+        XCTAssertNil(tracker.resolveEntryID(orderedIDs: []))
+
+        for i in 0..<12 {
+            tracker.markAppeared(ids[i])
+        }
+        XCTAssertTrue(tracker.hasAnyMounted)
+        XCTAssertEqual(tracker.resolveEntryID(orderedIDs: ids), ids[0])
+
+        // Simulate scrolling deep into LazyVGrid / LazyHStack where cards 0...17 unmount
+        for i in 0..<18 {
+            tracker.markDisappeared(ids[i])
+        }
+        for i in 18..<30 {
+            tracker.markAppeared(ids[i])
+        }
+        XCTAssertEqual(
+            tracker.resolveEntryID(orderedIDs: ids),
+            ids[18],
+            "Down navigation must target the first currently mounted card when index 0 is unmounted"
+        )
+
+        tracker.markAppeared(ids[6])
+        XCTAssertEqual(tracker.resolveEntryID(orderedIDs: ids), ids[6])
+    }
 }

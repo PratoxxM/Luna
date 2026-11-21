@@ -1,26 +1,24 @@
 import Foundation
+import Observation
 import UIKit
 import Combine
 import AetherBridge
 
 @MainActor
-final class PlayerViewModel: ObservableObject {
+@Observable
+final class PlayerViewModel {
     // Resolve & First-Frame Reveal State
-    @Published var isResolving: Bool = true
+    var isResolving: Bool = true
     let startupState = PlayerStartupState()
-    @Published var fatalError: String?
-    @Published var transientBannerMessage: String?
-    @Published var remoteCommandToastMessage: String?
+    var fatalError: String?
+    var transientBannerMessage: String?
+    var remoteCommandToastMessage: String?
 
-    @Published var hasFirstFrameReadyForDisplay: Bool = false
-    @Published var isAwaitingDisplaySwitch: Bool = false
-    @Published var firstFrameFallbackUnlocked: Bool = false
-    @Published var isRestoringFromBackground: Bool = false
+    var hasFirstFrameReadyForDisplay: Bool = false
+    var isAwaitingDisplaySwitch: Bool = false
+    var firstFrameFallbackUnlocked: Bool = false
+    var isRestoringFromBackground: Bool = false
 
-    var resolveStageKey: String {
-        get { startupState.resolveStageKey }
-        set { if startupState.resolveStageKey != newValue { startupState.resolveStageKey = newValue } }
-    }
     var resolveStageLabel: String {
         get { startupState.resolveStageLabel }
         set { if startupState.resolveStageLabel != newValue { startupState.resolveStageLabel = newValue } }
@@ -35,43 +33,48 @@ final class PlayerViewModel: ObservableObject {
     }
 
     // Session, Sources & Next Episode
-    @Published var currentRequest: PlaybackLaunchRequest?
-    @Published var activeSession: TvPlaybackSession?
-    @Published var alternatives: [TvCandidateInfo] = []
-    @Published private(set) var alternativesSessionId: String?
-    @Published var isLoadingAlternatives: Bool = false
-    @Published var isSwitchingSource: Bool = false
-    @Published var nextEpisodePrewarmReady: Bool = false
-    @Published var lastVfsTelemetry: TvVfsTelemetry?
+    var currentRequest: PlaybackLaunchRequest?
+    var activeSession: TvPlaybackSession?
+    var alternatives: [TvCandidateInfo] = []
+    private(set) var alternativesSessionId: String?
+    var isLoadingAlternatives: Bool = false
+    var isSwitchingSource: Bool = false
+    var lastVfsTelemetry: TvVfsTelemetry?
 
     // Playback, Tracks & Chapters
-    @Published var playbackPhase: PlaybackPhase = .idle
-    @Published var durationSeconds: Double = 0
-    @Published var videoFormat: VideoFormat = .sdr
-    @Published var sourceDVProfile: Int?
-    @Published var dolbyVisionConversion: DolbyVisionConversion?
-    @Published var videoRoute: VideoRoute = .none
-    @Published var audioDelivery: AudioDelivery = .none
-    @Published var sourceVideoCodecName: String?
-    @Published var sourceVideoWidth: Int32 = 0
-    @Published var sourceVideoHeight: Int32 = 0
-    @Published var sourceVideoFrameRate: Double?
-    @Published var activeVideoDecoder: String?
-    @Published var activeAudioDecoder: String?
-    @Published var activeUpscale: UpscaleStatus?
+    var playbackPhase: PlaybackPhase = .idle
+    var durationSeconds: Double = 0
+    var videoFormat: VideoFormat = .sdr
+    var sourceDVProfile: Int?
+    var dolbyVisionConversion: DolbyVisionConversion?
+    var videoRoute: VideoRoute = .none
+    var audioDelivery: AudioDelivery = .none
+    var sourceVideoCodecName: String?
+    var sourceVideoWidth: Int32 = 0
+    var sourceVideoHeight: Int32 = 0
+    var sourceVideoFrameRate: Double?
+    var activeVideoDecoder: String?
+    var activeAudioDecoder: String?
+    var activeUpscale: UpscaleStatus?
 
-    @Published var audioTracks: [TrackInfo] = []
-    @Published var activeAudioTrackIndex: Int?
-    @Published var audioDelayMs: Int
-    var audioDelaySeconds: Double { Double(audioDelayMs) / 1000.0 }
-    @Published var audioEnhancement: AudioEnhancementMode = .reference
+    var audioTracks: [TrackInfo] = []
+    var activeAudioTrackIndex: Int?
+    var audioDelayMs: Int {
+        get { comfort.audioDelayMs }
+        set {
+            if comfort.audioDelayMs != newValue {
+                comfort.audioDelayMs = newValue
+            }
+        }
+    }
+    var audioEnhancement: AudioEnhancementMode = .reference
 
-    @Published var subtitleTracks: [TrackInfo] = []
-    @Published var activeSubtitleTrackIndex: Int?
-    @Published var subtitleDelaySeconds: Double = 0
+    var subtitleTracks: [TrackInfo] = []
+    var activeSubtitleTrackIndex: Int?
+    var subtitleDelaySeconds: Double = 0
 
-    @Published var previewAudioOptions: [PlayerDrawerAudioOption] = []
-    @Published var previewSubtitleOptions: [PlayerDrawerSubtitleOption] = []
+    var previewAudioOptions: [PlayerDrawerAudioOption] = []
+    var previewSubtitleOptions: [PlayerDrawerSubtitleOption] = []
 
     var drawerAudioOptions: [PlayerDrawerAudioOption] {
         if !previewAudioOptions.isEmpty {
@@ -109,13 +112,13 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    @Published var chapters: [PlaybackChapter] = []
-    @Published var previewPlayheadOverrideSeconds: Double?
+    var chapters: [PlaybackChapter] = []
+    var previewPlayheadOverrideSeconds: Double?
 
     // Tactile Coalesced Seeking & Continuous Siri Remote Touch Scrubbing
-    @Published var coalescedSeekDelta: Double = 0
-    @Published var coalescedSeekPreviewTarget: Double?
-    @Published var isScrubbing: Bool = false
+    var coalescedSeekDelta: Double = 0
+    var coalescedSeekPreviewTarget: Double?
+    var isScrubbing: Bool = false
     let scrubState = PlayerScrubState()
 
     let engine: AetherEngine
@@ -123,59 +126,68 @@ final class PlayerViewModel: ObservableObject {
     let transport: any PlayerTransportControlling
     let audioActivator: any NativeAudioActivating
 
-    var wasPlayingBeforeScrub: Bool = false
-    var pendingScrubPreviewTarget: Double?
-    var scrubPreviewLoopTask: Task<Void, Never>?
-    weak var compositorPreviewView: AetherScrubPreviewView?
+    @ObservationIgnored var wasPlayingBeforeScrub: Bool = false
+    @ObservationIgnored var pendingScrubPreviewTarget: Double?
+    @ObservationIgnored var scrubPreviewLoopTask: Task<Void, Never>?
+    @ObservationIgnored weak var compositorPreviewView: AetherScrubPreviewView?
 
-    var resolveTask: Task<Void, Never>?
-    var heartbeatTask: Task<Void, Never>?
-    var firstFrameFallbackTask: Task<Void, Never>?
-    var transientBannerTask: Task<Void, Never>?
-    var remoteCommandToastTask: Task<Void, Never>?
-    var nowPlayingArtworkTask: Task<Void, Never>?
-    var engineChapters: [ChapterInfo] = []
-    var registeredStreamToken: String?
-    var activeClient: LunaCoreClient?
-    var userManuallySelectedSubtitle: Bool = false
-    var didApplyInitialSmartRule: Bool = false
+    @ObservationIgnored var resolveTask: Task<Void, Never>?
+    @ObservationIgnored var heartbeatTask: Task<Void, Never>?
+    @ObservationIgnored var firstFrameFallbackTask: Task<Void, Never>?
+    @ObservationIgnored var transientBannerTask: Task<Void, Never>?
+    @ObservationIgnored var remoteCommandToastTask: Task<Void, Never>?
+    @ObservationIgnored var nowPlayingArtworkTask: Task<Void, Never>?
+    @ObservationIgnored var engineChapters: [ChapterInfo] = []
+    @ObservationIgnored var registeredStreamToken: String?
+    @ObservationIgnored var activeClient: LunaCoreClient?
+    @ObservationIgnored var userManuallySelectedSubtitle: Bool = false
+    @ObservationIgnored var didApplyInitialSmartRule: Bool = false
+    @ObservationIgnored var didBindEnginePublishers: Bool = false
 
-    var cancellables = Set<AnyCancellable>()
-    var coalescedSeekTask: Task<Void, Never>?
-    var chapterSeekTask: Task<Void, Never>?
-    var smartRuleTask: Task<Void, Never>?
-    var switchSourceTask: Task<Void, Never>?
-    var audioDelayCommitTask: Task<Void, Never>?
-    var upscaleReloadTask: Task<Void, Never>?
-    var foregroundRestoreTask: Task<Void, Never>?
-    private(set) var pausedRestoreResumeTask: Task<Void, Never>?
-    private var pausedRestoreResumeToken: UInt64 = 0
-    var scrubCommitTask: Task<Void, Never>?
-    var scrubCommitToken: UInt64 = 0
-    var ringHoldLoopTask: Task<Void, Never>?
-    private var didTeardown: Bool = false
-    var engineOwnerToken: UInt64 = 0
-    var isDismissing: Bool = false
-    var pendingStopSnapshot: PendingStopSnapshot?
-    var lastObservedPhase: PlaybackPhase = .idle
-    var isForegroundActive: Bool = true
-    var lastForegroundPlaybackWasPlaying: Bool = false
-    var userDesiredPlayingDuringRestore: Bool?
-    var needsNativeAudioActivationAfterPausedRestore: Bool = false
-    var lastReportedServerState: String?
-    var onUnauthorized: (() -> Void)?
+    @ObservationIgnored var cancellables = Set<AnyCancellable>()
+    @ObservationIgnored var coalescedSeekTask: Task<Void, Never>?
+    @ObservationIgnored var chapterSeekTask: Task<Void, Never>?
+    @ObservationIgnored var smartRuleTask: Task<Void, Never>?
+    @ObservationIgnored var switchSourceTask: Task<Void, Never>?
+    @ObservationIgnored var audioDelayCommitTask: Task<Void, Never>?
+    @ObservationIgnored var upscaleReloadTask: Task<Void, Never>?
+    @ObservationIgnored var foregroundRestoreTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var pausedRestoreResumeTask: Task<Void, Never>?
+    @ObservationIgnored private var pausedRestoreResumeToken: UInt64 = 0
+    @ObservationIgnored var scrubCommitTask: Task<Void, Never>?
+    @ObservationIgnored var scrubCommitToken: UInt64 = 0
+    @ObservationIgnored var ringHoldLoopTask: Task<Void, Never>?
+    @ObservationIgnored private var didTeardown: Bool = false
+    @ObservationIgnored var engineOwnerToken: UInt64 = 0
+    @ObservationIgnored var isDismissing: Bool = false
+    @ObservationIgnored var pendingStopSnapshot: PendingStopSnapshot?
+    @ObservationIgnored var lastObservedPhase: PlaybackPhase = .idle
+    @ObservationIgnored var isForegroundActive: Bool = true
+    @ObservationIgnored var lastForegroundPlaybackWasPlaying: Bool = false
+    @ObservationIgnored var userDesiredPlayingDuringRestore: Bool?
+    @ObservationIgnored var needsNativeAudioActivationAfterPausedRestore: Bool = false
+    @ObservationIgnored var lastReportedServerState: String?
+    @ObservationIgnored var onUnauthorized: (() -> Void)?
 
     init(
         engine: AetherEngine,
         comfort: ComfortPreferences,
         transport: (any PlayerTransportControlling)? = nil,
-        audioActivator: any NativeAudioActivating = DefaultNativeAudioActivator()
+        audioActivator: any NativeAudioActivating = DefaultNativeAudioActivator(),
+        bindOnInit: Bool = true
     ) {
         self.engine = engine
         self.comfort = comfort
         self.transport = transport ?? AetherEngineTransport(engine: engine)
         self.audioActivator = audioActivator
-        self.audioDelayMs = comfort.audioDelayMs
+        if bindOnInit {
+            bindEnginePublishersIfNeeded()
+        }
+    }
+
+    func bindEnginePublishersIfNeeded() {
+        guard !didBindEnginePublishers else { return }
+        didBindEnginePublishers = true
         bindEnginePublishers()
     }
 
@@ -211,6 +223,7 @@ final class PlayerViewModel: ObservableObject {
         subtitleOptions: [PlayerDrawerSubtitleOption] = PreviewMockFixtures.previewSubtitleOptions,
         candidates: [TvCandidateInfo] = PreviewMockFixtures.previewCandidates
     ) {
+        bindEnginePublishersIfNeeded()
         currentRequest = request
         activeSession = session
         activeClient = client
@@ -248,6 +261,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func start(request: PlaybackLaunchRequest, client: LunaCoreClient?) {
+        bindEnginePublishersIfNeeded()
         engineOwnerToken = PlayerAudioSessionCoordinator.shared.claimEngineOwnership()
         PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
         cancelPendingPausedRestoreResume()
@@ -320,7 +334,6 @@ final class PlayerViewModel: ObservableObject {
         currentRequest = req
         alternatives = []
         alternativesSessionId = nil
-        nextEpisodePrewarmReady = false
         userManuallySelectedSubtitle = false
         didApplyInitialSmartRule = false
         resolveHeadline = nil
@@ -510,16 +523,20 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func seekToChapter(_ chapter: PlaybackChapter) {
+        seekToPosition(chapter.startSeconds, exact: true)
+    }
+
+    func seekToPosition(_ rawTargetSeconds: Double, exact: Bool = true) {
         guard !isResolving else { return }
         coalescedSeekTask?.cancel()
         coalescedSeekTask = nil
         coalescedSeekDelta = 0
         coalescedSeekPreviewTarget = nil
         chapterSeekTask?.cancel()
-        let targetSeconds = max(0, chapter.startSeconds)
+        let targetSeconds = max(0, rawTargetSeconds)
         chapterSeekTask = Task { @MainActor [weak self] in
             guard !Task.isCancelled, let self else { return }
-            await self.transport.seek(to: targetSeconds, exact: true)
+            await self.transport.seek(to: targetSeconds, exact: exact)
             if !Task.isCancelled {
                 self.chapterSeekTask = nil
             }
@@ -542,6 +559,7 @@ final class PlayerViewModel: ObservableObject {
         let snapshot = pendingStopSnapshot ?? captureStopSnapshot()
         pendingStopSnapshot = nil
         cancellables.removeAll()
+        didBindEnginePublishers = false
 
         if PlayerAudioSessionCoordinator.shared.isCurrentEngineOwner(engineOwnerToken) {
             PlayerNowPlayingCoordinator.clear(engine: engine)
@@ -589,11 +607,14 @@ final class PlayerViewModel: ObservableObject {
 
     func rebuildMergedChapters() {
         let probeCh = activeSession?.chapters ?? activeSession?.tracks?.chapters ?? []
-        chapters = PlaybackChapter.merge(
+        let merged = PlaybackChapter.merge(
             probeChapters: probeCh,
             engineChapters: engineChapters,
             mediaDuration: effectiveDurationSeconds
         )
+        if chapters != merged {
+            chapters = merged
+        }
     }
 
     func updateIdleTimer(for phase: PlaybackPhase) {

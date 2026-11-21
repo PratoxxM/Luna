@@ -1,7 +1,7 @@
-import Combine
 import CoreGraphics
 import Foundation
 import MediaPlayer
+import Observation
 import XCTest
 @testable import Luna
 
@@ -361,23 +361,51 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
         let comfort = ComfortPreferences(defaults: defaults)
         let vm = PlayerViewModel(engine: engine, comfort: comfort)
 
-        var vmInvalidations = 0
-        var startupInvalidations = 0
-        let c1 = vm.objectWillChange.sink { _ in vmInvalidations += 1 }
-        let c2 = vm.startupState.objectWillChange.sink { _ in startupInvalidations += 1 }
-        defer {
-            c1.cancel()
-            c2.cancel()
+        final class CounterBox: @unchecked Sendable {
+            var count = 0
+        }
+        let vmBox = CounterBox()
+        withObservationTracking {
+            _ = vm.isResolving
+            _ = vm.playbackPhase
+            _ = vm.hasFirstFrameReadyForDisplay
+        } onChange: {
+            vmBox.count += 1
         }
 
+        let startupBox = CounterBox()
+        func armStartupObserver() {
+            withObservationTracking {
+                _ = vm.startupState.resolvePercent
+                _ = vm.startupState.resolveStageLabel
+                _ = vm.startupState.resolveHeadline
+                _ = vm.startupState.engineStartupPercentBucket
+            } onChange: {
+                startupBox.count += 1
+            }
+        }
+
+        armStartupObserver()
         vm.resolvePercent = 45
+        XCTAssertEqual(startupBox.count, 1)
+
+        armStartupObserver()
         vm.resolveStageLabel = "Buffrer segmenter…"
+        XCTAssertEqual(startupBox.count, 2)
+
+        armStartupObserver()
         vm.resolveHeadline = "4K DV P7 FEL · NVMe"
+        XCTAssertEqual(startupBox.count, 3)
+
+        armStartupObserver()
         vm.startupState.updateEngineStartupFraction(0.642)
+        XCTAssertEqual(startupBox.count, 4)
+
+        armStartupObserver()
         vm.startupState.updateEngineStartupFraction(0.644)
 
-        XCTAssertEqual(vmInvalidations, 0, "Startup progress ticks must not invalidate PlayerViewModel")
-        XCTAssertEqual(startupInvalidations, 4)
+        XCTAssertEqual(vmBox.count, 0, "Startup progress ticks must not invalidate PlayerViewModel")
+        XCTAssertEqual(startupBox.count, 4)
         XCTAssertEqual(vm.startupState.engineStartupPercentBucket, 64)
         XCTAssertEqual(vm.startupState.engineStartupFraction, 0.64, accuracy: 0.001)
     }

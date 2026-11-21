@@ -56,10 +56,6 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
             return false
         }
     }
-
-    public var isHomeScreen: Bool {
-        self == .home || self == .homePoster
-    }
 }
 
 public enum PreviewFocusDirection: String, CaseIterable, Equatable, Sendable {

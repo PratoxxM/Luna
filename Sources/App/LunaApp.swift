@@ -4,7 +4,7 @@ import AetherBridge
 @main
 struct LunaApp: App {
     private let previewConfiguration: PreviewLaunchConfiguration?
-    @StateObject private var sessionStore: AppSessionStore
+    @State private var sessionStore: AppSessionStore
 
     /// Long-lived AetherEngine instance shared across all playback sessions
     /// so HDMI display criteria and audio session controllers are never torn
@@ -38,13 +38,12 @@ struct LunaApp: App {
         let parsedPreview = PreviewLaunchConfiguration.current
         self.previewConfiguration = parsedPreview
         if let parsedPreview {
-            _sessionStore = StateObject(wrappedValue: AppSessionStore(previewConfiguration: parsedPreview))
+            _sessionStore = State(initialValue: AppSessionStore(previewConfiguration: parsedPreview))
         } else {
-            _sessionStore = StateObject(wrappedValue: AppSessionStore())
+            _sessionStore = State(initialValue: AppSessionStore())
             Task.detached(priority: .utility) {
                 _ = await AetherEngine.prewarmDualLayerDolbyVision()
                 try? await Task.sleep(nanoseconds: 10_000_000_000)
-                guard !Task.isCancelled else { return }
                 await ArtworkPipeline.shared.trimDiskCacheIfNeeded()
             }
         }
@@ -62,7 +61,8 @@ struct LunaApp: App {
                     PairingOnboardingView()
                 }
             }
-            .environmentObject(sessionStore)
+            .environment(sessionStore)
+            .environment(sessionStore.comfort)
             .preferredColorScheme(.dark)
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name("UIApplicationDidReceiveMemoryWarningNotification"))) { _ in
                 CatalogBrowseMemoryCache.shared.clear()

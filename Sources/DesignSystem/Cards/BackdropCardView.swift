@@ -14,6 +14,7 @@ public struct BackdropCardView: View {
     let variant: BackdropCardVariant
     let width: CGFloat
     let showStorageBadge: Bool
+    let focusRequestNonce: Int
     let onPrimaryAction: () -> Void
     let onPlayShortcut: (() -> Void)?
 
@@ -25,6 +26,7 @@ public struct BackdropCardView: View {
         variant: BackdropCardVariant,
         width: CGFloat = LunaTokens.Layout.backdropW,
         showStorageBadge: Bool = false,
+        focusRequestNonce: Int = 0,
         onPrimaryAction: @escaping () -> Void,
         onPlayShortcut: (() -> Void)? = nil
     ) {
@@ -33,6 +35,7 @@ public struct BackdropCardView: View {
         self.variant = variant
         self.width = width
         self.showStorageBadge = showStorageBadge
+        self.focusRequestNonce = focusRequestNonce
         self.onPrimaryAction = onPrimaryAction
         self.onPlayShortcut = onPlayShortcut
     }
@@ -43,7 +46,7 @@ public struct BackdropCardView: View {
 
     public var body: some View {
         let artworkURL = client?.resolveArtworkURL(card.preferredLandscapePath, target: .landscape2x)
-        let pct = min(100.0, max(0.0, card.progress?.percent ?? 0))
+        let progressBar = LunaCardProgressBar(percent: card.progress?.percent, trackWidth: width - 44)
 
         Button(action: onPrimaryAction) {
             ZStack {
@@ -58,6 +61,7 @@ public struct BackdropCardView: View {
                     placeholderSymbol: variant == .upcomingEpisode ? "calendar.badge.clock" : "play.tv",
                     contentMode: .fill
                 )
+                .equatable()
                 .frame(width: width, height: height)
                 .opacity(isFocused ? 1.0 : LunaTokens.Layout.restPosterBrightness)
                 .clipped()
@@ -101,7 +105,7 @@ public struct BackdropCardView: View {
                                 HStack(spacing: 6) {
                                     if isFocused && (showStorageBadge || variant == .continueWatching),
                                        let avail = card.availability,
-                                       avail.isPhysicalLocal || avail.isLocalVfs {
+                                       avail.isPhysicalLocal {
                                         LunaTierDotView(availability: avail)
                                     }
 
@@ -128,33 +132,22 @@ public struct BackdropCardView: View {
                             }
                         }
 
-                        if pct > 2 && pct < 95 {
-                            let trackWidth = max(0, width - 44)
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(LunaTokens.Edge.progressTrack)
-                                Capsule()
-                                    .fill(LunaTheme.amber)
-                                    .frame(width: trackWidth * CGFloat(pct / 100.0))
-                            }
-                            .frame(width: trackWidth, height: 6)
-                        }
+                        progressBar
                     }
                     .padding(.horizontal, 22)
-                    .padding(.bottom, (pct > 2 && pct < 95) ? 14 : 20)
+                    .padding(.bottom, progressBar.isVisible ? 14 : 20)
                 }
             }
             .frame(width: width, height: height)
             .lunaCardFocusFrame(
                 cornerRadius: LunaTheme.cardRadius,
-                isFocused: isFocused,
-                showRestingTopEdge: false
+                isFocused: isFocused
             )
         }
-        .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
-        .focusEffectDisabled(true)
+        .lunaChromelessButton(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
         .lunaCardLampGlow(isFocused: isFocused)
         .focused($isFocused)
+        .lunaRequestDirectFocus(nonce: focusRequestNonce, isFocused: $isFocused)
         .accessibilityLabel(card.title)
         .onPlayPauseCommand {
             if variant == .continueWatching {

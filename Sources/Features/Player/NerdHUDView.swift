@@ -5,7 +5,7 @@ import AetherBridge
 /// in a leaf view so telemetry ticks never re-render the video player shell.
 struct NerdHUDView: View {
     let engine: AetherEngine
-    @ObservedObject var viewModel: PlayerViewModel
+    let viewModel: PlayerViewModel
 
     @State private var telemetry: LiveTelemetry?
     @State private var cacheStatus: SessionCacheStatus = .inactive
@@ -36,11 +36,18 @@ struct NerdHUDView: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
         .frame(width: 580, alignment: .leading)
-        .background(LunaTheme.cinemaGlass, in: RoundedRectangle(cornerRadius: LunaTokens.Radius.poster, style: .continuous))
-        .lunaTopLightEdge(cornerRadius: LunaTokens.Radius.poster, lineWidth: LunaTokens.Layout.hairlineWidth)
+        .lunaCinemaGlassSurface(
+            cornerRadius: LunaTokens.Radius.poster,
+            topEdgeColor: LunaTokens.Edge.top2,
+            sideEdgeColor: .clear
+        )
         .allowsHitTesting(false)
         .onReceive(engine.diagnostics.$liveTelemetry) { telemetry = $0 }
-        .onReceive(engine.diagnostics.$sessionCacheStatus) { cacheStatus = $0 }
+        .onReceive(engine.diagnostics.$sessionCacheStatus) { nextStatus in
+            if cacheStatus != nextStatus {
+                cacheStatus = nextStatus
+            }
+        }
     }
 
     private var videoSummary: String {
@@ -86,7 +93,7 @@ struct NerdHUDView: View {
 
     private var audioSummary: String {
         let aDec = viewModel.activeAudioDecoder ?? viewModel.audioDelivery.rawValue
-        let delaySuffix = viewModel.audioDelayMs == 0 ? "" : " · \(ComfortPreferences.formatAudioDelayMs(viewModel.audioDelayMs))"
+        let delaySuffix = viewModel.audioDelayMs == 0 ? "" : " · \(ComfortPreferences.displayAudioDelayMs(viewModel.audioDelayMs))"
         return "\(viewModel.audioFormatBadge) (\(aDec))\(delaySuffix)"
     }
 

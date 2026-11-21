@@ -32,12 +32,12 @@ enum DetailReloadPolicy: Sendable {
 /// Coordinates debounced 180ms `/api/tv/v1/playback/prepare` + strict NVMe/VFS-only
 /// 8 MiB `AetherEngine.prewarm` on detail views without waking mechanical archive drives.
 @MainActor
-final class DetailPreResolveController: ObservableObject {
-    @Published private(set) var preparedToken: String?
-    @Published private(set) var preparedSessionId: String?
-    @Published private(set) var preparedForItemId: String?
-    @Published private(set) var preparedStartPosition: Double?
-    @Published private(set) var isPreResolvedReady: Bool = false
+final class DetailPreResolveController {
+    private(set) var preparedToken: String?
+    private(set) var preparedSessionId: String?
+    private(set) var preparedForItemId: String?
+    private(set) var preparedStartPosition: Double?
+    private(set) var isPreResolvedReady: Bool = false
 
     private var prewarmedStreamToken: String?
     private var preResolveTask: Task<Void, Never>?
@@ -58,13 +58,6 @@ final class DetailPreResolveController: ObservableObject {
         let existingStart = max(0, preparedStartPosition ?? 0)
         let requestedStart = max(0, requestedStartPosition ?? 0)
         return abs(existingStart - requestedStart) <= 1.0
-    }
-
-    func matchingToken(for itemId: String) -> String? {
-        guard preparedForItemId == itemId, let tok = preparedToken, !tok.isEmpty else {
-            return nil
-        }
-        return tok
     }
 
     func matchingToken(for itemId: String, startPosition: Double?) -> String? {

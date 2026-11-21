@@ -3,13 +3,27 @@ import Combine
 import AetherBridge
 
 extension PlayerViewModel {
+    private func bindEquatable<P: Publisher>(
+        _ publisher: P,
+        to keyPath: ReferenceWritableKeyPath<PlayerViewModel, P.Output>
+    ) where P.Failure == Never, P.Output: Equatable {
+        publisher
+            .sink { [weak self] value in
+                guard let self, self[keyPath: keyPath] != value else { return }
+                self[keyPath: keyPath] = value
+            }
+            .store(in: &cancellables)
+    }
+
     func bindEnginePublishers() {
         engine.$playbackPhase
             .sink { [weak self] phase in
                 guard let self else { return }
                 let previousPhase = self.lastObservedPhase
                 self.lastObservedPhase = phase
-                self.playbackPhase = phase
+                if self.playbackPhase != phase {
+                    self.playbackPhase = phase
+                }
                 self.updateIdleTimer(for: phase)
                 if self.isForegroundActive,
                    !self.isRestoringFromBackground,
@@ -63,8 +77,8 @@ extension PlayerViewModel {
             }
             .store(in: &cancellables)
 
-        engine.$hasFirstFrameReadyForDisplay.assign(to: &$hasFirstFrameReadyForDisplay)
-        engine.$isAwaitingDisplaySwitch.assign(to: &$isAwaitingDisplaySwitch)
+        bindEquatable(engine.$hasFirstFrameReadyForDisplay, to: \.hasFirstFrameReadyForDisplay)
+        bindEquatable(engine.$isAwaitingDisplaySwitch, to: \.isAwaitingDisplaySwitch)
         engine.$startupProgress
             .sink { [weak self] progress in
                 self?.startupState.updateEngineStartupFraction(progress?.fraction)
@@ -73,7 +87,7 @@ extension PlayerViewModel {
 
         engine.$duration
             .sink { [weak self] dur in
-                guard let self else { return }
+                guard let self, self.durationSeconds != dur else { return }
                 self.durationSeconds = dur
                 self.rebuildMergedChapters()
             }
@@ -81,51 +95,49 @@ extension PlayerViewModel {
 
         engine.$mediaChapters
             .sink { [weak self] ch in
-                guard let self else { return }
+                guard let self, self.engineChapters != ch else { return }
                 self.engineChapters = ch
                 self.rebuildMergedChapters()
             }
             .store(in: &cancellables)
 
-        engine.$videoFormat.assign(to: &$videoFormat)
-        engine.$sourceDVProfile.assign(to: &$sourceDVProfile)
-        engine.$dolbyVisionConversion.assign(to: &$dolbyVisionConversion)
-        engine.$videoRoute.assign(to: &$videoRoute)
-        engine.$audioDelivery.assign(to: &$audioDelivery)
-        engine.$sourceVideoCodecName.assign(to: &$sourceVideoCodecName)
-        engine.$sourceVideoWidth.assign(to: &$sourceVideoWidth)
-        engine.$sourceVideoHeight.assign(to: &$sourceVideoHeight)
-        engine.$sourceVideoFrameRate.assign(to: &$sourceVideoFrameRate)
-        engine.$activeVideoDecoder.assign(to: &$activeVideoDecoder)
-        engine.$activeAudioDecoder.assign(to: &$activeAudioDecoder)
-        engine.$activeUpscale.assign(to: &$activeUpscale)
+        bindEquatable(engine.$videoFormat, to: \.videoFormat)
+        bindEquatable(engine.$sourceDVProfile, to: \.sourceDVProfile)
+        bindEquatable(engine.$dolbyVisionConversion, to: \.dolbyVisionConversion)
+        bindEquatable(engine.$videoRoute, to: \.videoRoute)
+        bindEquatable(engine.$audioDelivery, to: \.audioDelivery)
+        bindEquatable(engine.$sourceVideoCodecName, to: \.sourceVideoCodecName)
+        bindEquatable(engine.$sourceVideoWidth, to: \.sourceVideoWidth)
+        bindEquatable(engine.$sourceVideoHeight, to: \.sourceVideoHeight)
+        bindEquatable(engine.$sourceVideoFrameRate, to: \.sourceVideoFrameRate)
+        bindEquatable(engine.$activeVideoDecoder, to: \.activeVideoDecoder)
+        bindEquatable(engine.$activeAudioDecoder, to: \.activeAudioDecoder)
+        bindEquatable(engine.$activeUpscale, to: \.activeUpscale)
 
         engine.$audioTracks
             .sink { [weak self] tracks in
                 guard let self else { return }
-                self.audioTracks = tracks
+                if self.audioTracks != tracks {
+                    self.audioTracks = tracks
+                }
                 if self.comfort.smartNordicSubtitleRule && !self.userManuallySelectedSubtitle && !self.subtitleTracks.isEmpty {
                     self.applySmartSubtitleRule()
                 }
             }
             .store(in: &cancellables)
-        engine.$activeAudioTrackIndex.assign(to: &$activeAudioTrackIndex)
+        bindEquatable(engine.$activeAudioTrackIndex, to: \.activeAudioTrackIndex)
+
         engine.$subtitleTracks
             .sink { [weak self] tracks in
                 guard let self else { return }
-                self.subtitleTracks = tracks
+                if self.subtitleTracks != tracks {
+                    self.subtitleTracks = tracks
+                }
                 if self.comfort.smartNordicSubtitleRule && !self.userManuallySelectedSubtitle && !tracks.isEmpty {
                     self.applySmartSubtitleRule()
                 }
             }
             .store(in: &cancellables)
-        engine.$activeSubtitleTrackIndex.assign(to: &$activeSubtitleTrackIndex)
-
-        comfort.$audioDelayMs
-            .sink { [weak self] updatedMs in
-                guard let self, self.audioDelayMs != updatedMs else { return }
-                self.audioDelayMs = updatedMs
-            }
-            .store(in: &cancellables)
+        bindEquatable(engine.$activeSubtitleTrackIndex, to: \.activeSubtitleTrackIndex)
     }
 }

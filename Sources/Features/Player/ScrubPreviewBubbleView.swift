@@ -70,16 +70,7 @@ struct ScrubPreviewBubbleView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
         .frame(width: preferredWidth)
-        .background(
-            RoundedRectangle(cornerRadius: LunaTokens.Radius.poster, style: .continuous)
-                .fill(LunaTheme.cinemaGlass)
-        )
-        .lunaTopLightEdge(
-            cornerRadius: LunaTokens.Radius.poster,
-            topColor: LunaTokens.Edge.top3,
-            sideColor: LunaTokens.Edge.top1,
-            lineWidth: LunaTokens.Layout.hairlineWidth
-        )
+        .lunaCinemaGlassSurface(cornerRadius: LunaTokens.Radius.poster)
         .allowsHitTesting(false)
     }
 
@@ -165,11 +156,7 @@ extension PlayerViewModel {
     }
 
     func stepTouchScrub(by deltaSeconds: Double) {
-        guard isScrubbing else { return }
-        let dur = max(1, effectiveDurationSeconds)
-        let clamped = min(max(0, scrubState.targetSeconds + deltaSeconds), max(0, dur - 0.5))
-        scrubState.targetSeconds = clamped
-        enqueueScrubPreview(at: clamped)
+        updateTouchScrub(deltaSeconds: deltaSeconds)
     }
 
     func beginRingHoldScrub(direction: Int) {
@@ -328,7 +315,9 @@ extension PlayerViewModel {
                 } else if self.engine.supportsCacheBackedStills {
                     let still = await self.engine.scrubThumbnail(atSeconds: requested, maxWidth: 480)
                     guard !Task.isCancelled, self.isScrubbing else { return }
-                    self.scrubState.previewImage = still
+                    if self.scrubState.previewImage !== still {
+                        self.scrubState.previewImage = still
+                    }
                 } else if self.scrubState.previewImage != nil {
                     self.scrubState.previewImage = nil
                 }

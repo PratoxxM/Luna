@@ -24,14 +24,14 @@ public enum LunaButtonAccent: Sendable {
     case emerald
     case warn
     case coral
+}
 
-    public var color: Color {
-        switch self {
-        case .amber: return LunaTheme.amber
-        case .emerald: return LunaTheme.emerald
-        case .warn: return LunaTheme.warn
-        case .coral: return LunaTheme.coral
-        }
+public extension View {
+    func lunaChromelessButton<S: Shape>(_ shape: S) -> some View {
+        self
+            .buttonStyle(LunaChromelessButtonStyle())
+            .contentShape(shape)
+            .focusEffectDisabled(true)
     }
 }
 
@@ -159,17 +159,13 @@ public struct LunaPillButton: View {
                 externalFocus: isDirectFocused
             )
         }
-        .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(Capsule())
-        .focusEffectDisabled(true)
+        .lunaChromelessButton(Capsule())
         .focused($isDirectFocused)
     }
 }
 
 private struct LunaPillLabel: View {
     @Environment(\.isFocused) private var isFocused
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
 
     let title: String
     let systemImage: String?
@@ -192,7 +188,6 @@ private struct LunaPillLabel: View {
     var body: some View {
         let isCompact = size == .compact
         let minHeight = isCompact ? LunaTokens.Layout.compactControlH : LunaTokens.Layout.controlH
-        let scale = reduceMotion ? 1.0 : LunaFocusStyle.scaleEffect(for: .control, isFocused: effectiveFocused)
 
         HStack(spacing: isCompact ? 8 : 10) {
             if let systemImage {
@@ -226,27 +221,27 @@ private struct LunaPillLabel: View {
         .frame(minHeight: minHeight)
         .background(backgroundView)
         .overlay(
-            Capsule()
-                .strokeBorder(borderColor, lineWidth: borderWidth)
-                .transaction { $0.animation = nil }
+            Group {
+                if !isDestructiveFocus {
+                    Capsule()
+                        .strokeBorder(borderColor, lineWidth: LunaTokens.Layout.hairlineWidth)
+                        .transaction { $0.animation = nil }
+                }
+            }
         )
-        .shadow(
-            color: (effectiveFocused && !isDestructiveFocus)
-                ? roomAtmosphere.lampColor.opacity(roomAtmosphere.lampStrength)
-                : .clear,
-            radius: (effectiveFocused && !isDestructiveFocus) ? LunaFocusStyle.glowBlur : 0,
-            x: 0,
-            y: (effectiveFocused && !isDestructiveFocus) ? LunaFocusStyle.glowOffsetY : 0
+        .lunaFocusSurface(
+            .control,
+            isFocused: effectiveFocused,
+            cornerRadius: LunaTokens.Radius.pill,
+            accentColor: isDestructiveFocus ? LunaTheme.coral : LunaTheme.amber
         )
-        .scaleEffect(scale)
-        .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: effectiveFocused)
     }
 
     private func iconFont(isCompact: Bool) -> SwiftUI.Font {
         if prominence == .primary && !isCompact {
             return LunaTheme.Font.primaryPlayIcon
         }
-        return isCompact ? LunaTheme.Font.compactPillIcon : LunaTheme.Font.pillIcon
+        return LunaTheme.Font.pillIcon
     }
 
     private func labelFont(isCompact: Bool) -> SwiftUI.Font {
@@ -326,17 +321,13 @@ private struct LunaPillLabel: View {
         )
     }
 
-    private var borderWidth: CGFloat {
-        isDestructiveFocus ? LunaFocusStyle.borderWidth : LunaTokens.Layout.hairlineWidth
-    }
-
     private var badgeBackground: Color {
         if effectiveFocused && !isDestructiveFocus {
             return LunaTokens.Text.onAccent.opacity(0.16)
         }
         if effectiveFocused || isSelected {
-            return LunaTheme.warmBorderBase.opacity(0.14)
+            return LunaTheme.warmBorder
         }
-        return LunaTheme.warmBorderBase.opacity(0.10)
+        return LunaTheme.warmBorderSubtle
     }
 }

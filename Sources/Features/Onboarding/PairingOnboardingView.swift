@@ -1,14 +1,13 @@
 import SwiftUI
 
 struct PairingOnboardingView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
-    @StateObject private var bonjour = BonjourServerBrowser()
+    @Environment(AppSessionStore.self) private var sessionStore
+    @State private var bonjour = BonjourServerBrowser()
 
     @State private var manualURLInput: String = ""
     @State private var showManualInput: Bool = false
     @State private var selectedBaseURL: URL?
     @State private var pairingInfo: TvPairingRequestResponse?
-    @State private var statusMessage: String = "Søker etter LunaCore på lokalnettet…"
     @State private var errorMessage: String?
     @State private var isRequestingCode: Bool = false
     @State private var isCodeExpired: Bool = false
@@ -71,7 +70,7 @@ struct PairingOnboardingView: View {
             if bonjour.servers.isEmpty {
                 HStack(spacing: 16) {
                     ProgressView()
-                    Text(statusMessage)
+                    Text("Søker etter LunaCore på lokalnettet…")
                         .font(LunaTheme.Font.cardTitle)
                         .foregroundStyle(LunaTheme.moonlight)
                 }

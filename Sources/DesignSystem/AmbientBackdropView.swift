@@ -3,32 +3,27 @@ import UIKit
 
 extension LunaTheme {
     /// Exact `#0A0908` UIKit color matching `LunaTheme.canvas` for `UINavigationController` / `UIHostingController`.
-    public nonisolated static var canvasUIColor: UIColor {
-        UIColor(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0, alpha: 1.0)
-    }
+    public nonisolated static let canvasUIColor = UIColor(
+        red: 10.0 / 255.0,
+        green: 9.0 / 255.0,
+        blue: 8.0 / 255.0,
+        alpha: 1.0
+    )
 }
 
 /// Static, calm LunaCore menu canvas: near-black warm charcoal (`#0A0908`) with a subtle
 /// top warm candlelight shimmer — zero shifting poster colors or BlurHash crossfades during scrolling,
 /// and paused down to a single flat layer whenever full-screen video playback is active.
 public struct AmbientBackdropView: View {
-    @Environment(\.lunaRoomAtmosphere) private var environmentAtmosphere
+    @Environment(\.lunaRoomAtmosphere) private var room
 
     public var isPaused: Bool
-    public var atmosphere: LunaRoomAtmosphere?
 
-    public init(isPaused: Bool = false, atmosphere: LunaRoomAtmosphere? = nil) {
+    public init(isPaused: Bool = false) {
         self.isPaused = isPaused
-        self.atmosphere = atmosphere
-    }
-
-    private var activeAtmosphere: LunaRoomAtmosphere {
-        atmosphere ?? environmentAtmosphere
     }
 
     public var body: some View {
-        let room = activeAtmosphere
-
         ZStack {
             LunaTheme.canvas
 
@@ -154,6 +149,7 @@ internal final class NonFocusableBackdropProbeView: UIView {
 
 internal final class BackdropInstallerViewController: UIViewController {
     private var backdropColor: UIColor
+    private weak var lastInstalledWindow: UIWindow?
 
     init(backgroundColor: UIColor) {
         self.backdropColor = backgroundColor
@@ -193,15 +189,19 @@ internal final class BackdropInstallerViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        installContainerBackdrops()
+        if viewIfLoaded?.window !== lastInstalledWindow {
+            installContainerBackdrops()
+        }
     }
 
-    func applyBackdropColor(_ color: UIColor) {
+    func applyBackdropColorIfNeeded(_ color: UIColor) {
+        guard backdropColor != color || viewIfLoaded?.window !== lastInstalledWindow else { return }
         backdropColor = color
         installContainerBackdrops()
     }
 
     private func installContainerBackdrops() {
+        lastInstalledWindow = viewIfLoaded?.window
         UIKitNavigationBackdropApplier.apply(from: self, color: backdropColor)
     }
 }
@@ -214,7 +214,7 @@ internal struct NavigationContainerBackdropProbe: UIViewControllerRepresentable 
     }
 
     func updateUIViewController(_ uiViewController: BackdropInstallerViewController, context: Context) {
-        uiViewController.applyBackdropColor(backgroundColor)
+        uiViewController.applyBackdropColorIfNeeded(backgroundColor)
     }
 }
 

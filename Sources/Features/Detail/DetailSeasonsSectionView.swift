@@ -13,7 +13,6 @@ struct DetailSeasonsSectionView: View {
     let onPlayEpisode: (TvEpisodeCard) -> Void
     let onPickEpisodeSource: (TvEpisodeCard) -> Void
     let onToggleEpisodeWatched: (TvEpisodeCard) -> Void
-    var onDeleteSeason: (Int) -> Void = { _ in }
     let onDeleteEpisode: (TvEpisodeCard) -> Void
 
     @State private var showSeasonPickerSheet: Bool = false
@@ -99,6 +98,7 @@ struct DetailSeasonsSectionView: View {
                 LunaLoadingRow(message: "Henter episoder…")
                     .padding(.horizontal, detailGutter)
             } else {
+                let nextTargetID = nextEpisodeTargetID
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
@@ -106,7 +106,7 @@ struct DetailSeasonsSectionView: View {
                                 EpisodeCardView(
                                     episode: ep,
                                     seriesTitle: detail.title,
-                                    isNextForYou: ep.id == nextEpisodeTargetID,
+                                    isNextForYou: ep.id == nextTargetID,
                                     client: client,
                                     onPlay: { onPlayEpisode(ep) },
                                     onPickSource: { onPickEpisodeSource(ep) },
@@ -114,7 +114,7 @@ struct DetailSeasonsSectionView: View {
                                     onRequestDelete: { onDeleteEpisode(ep) }
                                 )
                                 .id(ep.id)
-                                .prefersDefaultFocus(ep.id == nextEpisodeTargetID, in: episodesFocusNamespace)
+                                .prefersDefaultFocus(ep.id == nextTargetID, in: episodesFocusNamespace)
                             }
                         }
                         .padding(.horizontal, detailGutter)
@@ -127,7 +127,7 @@ struct DetailSeasonsSectionView: View {
                     .onAppear {
                         scrollToTargetEpisode(proxy: proxy)
                     }
-                    .onChange(of: episodes.map(\.id)) { _, _ in
+                    .onChange(of: episodes) { _, _ in
                         scrollToTargetEpisode(proxy: proxy)
                     }
                 }

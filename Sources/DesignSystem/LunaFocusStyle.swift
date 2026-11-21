@@ -24,6 +24,16 @@ public enum LunaFocusStyle {
         .easeOut(duration: fadeSeconds)
     }
 
+    public nonisolated static func spring(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .linear(duration: 0.01) : focusSpring
+    }
+
+    public nonisolated static func captionRevealAnimation(isFocused: Bool, reduceMotion: Bool) -> Animation {
+        reduceMotion
+            ? .linear(duration: 0.01)
+            : (isFocused ? focusFade.delay(0.06) : .easeOut(duration: 0.12))
+    }
+
     public nonisolated static func scaleEffect(for kind: LunaFocusKind, isFocused: Bool) -> CGFloat {
         guard isFocused else { return 1.0 }
         switch kind {
@@ -67,21 +77,7 @@ public struct LunaFocusSurfaceModifier: ViewModifier {
         self.isFocused = isFocused
         self.cornerRadius = cornerRadius
         self.accentColor = accentColor
-        self.customAccent = false
-    }
-
-    internal init(
-        kind: LunaFocusKind,
-        isFocused: Bool,
-        cornerRadius: CGFloat,
-        accentColor: Color,
-        useRoomAtmosphere: Bool
-    ) {
-        self.kind = kind
-        self.isFocused = isFocused
-        self.cornerRadius = cornerRadius
-        self.accentColor = accentColor
-        self.customAccent = !useRoomAtmosphere
+        self.customAccent = accentColor != LunaTheme.amber
     }
 
     public func body(content: Content) -> some View {
@@ -149,7 +145,7 @@ public struct LunaFocusSurfaceModifier: ViewModifier {
                 y: glowColor == .clear ? 0 : LunaFocusStyle.glowOffsetY
             )
             .scaleEffect(scale)
-            .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
+            .animation(LunaFocusStyle.spring(reduceMotion: reduceMotion), value: isFocused)
     }
 }
 
@@ -161,7 +157,6 @@ private struct LunaCardFocusFrameModifier: ViewModifier {
 
     let cornerRadius: CGFloat
     let isFocused: Bool
-    let showRestingTopEdge: Bool
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -176,18 +171,13 @@ private struct LunaCardFocusFrameModifier: ViewModifier {
                             LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity),
                             lineWidth: LunaFocusStyle.borderWidth
                         )
-                    } else if showRestingTopEdge {
-                        shape.strokeBorder(
-                            LunaTheme.topLightEdgeGradient(topColor: LunaTokens.Edge.top2),
-                            lineWidth: LunaTokens.Layout.hairlineWidth
-                        )
                     }
                 }
                 .allowsHitTesting(false)
                 .transaction { $0.animation = nil }
             )
             .scaleEffect(scale)
-            .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
+            .animation(LunaFocusStyle.spring(reduceMotion: reduceMotion), value: isFocused)
     }
 }
 
@@ -207,7 +197,55 @@ private struct LunaCardLampGlowModifier: ViewModifier {
                 x: 0,
                 y: isFocused ? LunaFocusStyle.glowOffsetY : 0
             )
-            .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
+            .animation(LunaFocusStyle.spring(reduceMotion: reduceMotion), value: isFocused)
+    }
+}
+
+@MainActor
+private struct LunaFocusCaptionRevealModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let isVisible: Bool
+    let isFocused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isVisible ? 1.0 : 0.0)
+            .animation(
+                LunaFocusStyle.captionRevealAnimation(isFocused: isFocused, reduceMotion: reduceMotion),
+                value: isFocused
+            )
+            .allowsHitTesting(false)
+    }
+}
+
+/// Lightweight non-observable tracker of currently mounted `LazyVGrid` / `LazyHStack` card IDs.
+/// Updating `mountedIDs` in `.onAppear` / `.onDisappear` triggers zero SwiftUI view invalidations,
+/// while guaranteeing downward entry focus from `LunaTopBarView` or filter bars lands on the first
+/// currently mounted card even when `index == 0` has scrolled offscreen and unmounted.
+@MainActor
+public final class MountedEntryCardTracker {
+    public private(set) var mountedIDs: Set<String> = []
+
+    public init() {}
+
+    public var hasAnyMounted: Bool {
+        !mountedIDs.isEmpty
+    }
+
+    public func markAppeared(_ id: String) {
+        mountedIDs.insert(id)
+    }
+
+    public func markDisappeared(_ id: String) {
+        mountedIDs.remove(id)
+    }
+
+    public func resolveEntryID(orderedIDs: [String]) -> String? {
+        if let firstMounted = orderedIDs.first(where: { mountedIDs.contains($0) }) {
+            return firstMounted
+        }
+        return orderedIDs.first
     }
 }
 
@@ -223,27 +261,75 @@ public extension View {
                 kind: kind,
                 isFocused: isFocused,
                 cornerRadius: cornerRadius,
-                accentColor: accentColor,
-                useRoomAtmosphere: accentColor == LunaTheme.amber
+                accentColor: accentColor
             )
         )
     }
 
     func lunaCardFocusFrame(
         cornerRadius: CGFloat = LunaTokens.Radius.card,
-        isFocused: Bool,
-        showRestingTopEdge: Bool = false
+        isFocused: Bool
     ) -> some View {
-        modifier(
-            LunaCardFocusFrameModifier(
-                cornerRadius: cornerRadius,
-                isFocused: isFocused,
-                showRestingTopEdge: showRestingTopEdge
-            )
-        )
+        modifier(LunaCardFocusFrameModifier(cornerRadius: cornerRadius, isFocused: isFocused))
     }
 
     func lunaCardLampGlow(isFocused: Bool) -> some View {
         modifier(LunaCardLampGlowModifier(isFocused: isFocused))
+    }
+
+    func lunaFocusCaptionReveal(isVisible: Bool, isFocused: Bool) -> some View {
+        modifier(LunaFocusCaptionRevealModifier(isVisible: isVisible, isFocused: isFocused))
+    }
+
+    @MainActor
+    func lunaTrackMountedCard(id: String, in tracker: MountedEntryCardTracker) -> some View {
+        self
+            .onAppear { tracker.markAppeared(id) }
+            .onDisappear { tracker.markDisappeared(id) }
+    }
+
+    @MainActor
+    func lunaRequestDirectFocus(
+        nonce: Int,
+        isFocused: FocusState<Bool>.Binding
+    ) -> some View {
+        task(id: nonce) {
+            guard nonce > 0 else { return }
+            isFocused.wrappedValue = true
+            for delayNs: UInt64 in [16_000_000, 48_000_000] {
+                try? await Task.sleep(nanoseconds: delayNs)
+                guard !Task.isCancelled else { return }
+                if !isFocused.wrappedValue {
+                    isFocused.wrappedValue = true
+                } else {
+                    return
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func lunaEntryFocusTarget<Value: Hashable>(
+        nonce: Int,
+        isActive: Bool = true,
+        focus: FocusState<Value?>.Binding,
+        target: @escaping @MainActor () -> Value?,
+        onTrigger: (@MainActor () -> Void)? = nil
+    ) -> some View {
+        task(id: nonce) {
+            guard nonce > 0, isActive else { return }
+            onTrigger?()
+            guard let resolvedTarget = target() else { return }
+            focus.wrappedValue = resolvedTarget
+            for delayNs: UInt64 in [16_000_000, 48_000_000] {
+                try? await Task.sleep(nanoseconds: delayNs)
+                guard !Task.isCancelled, isActive else { return }
+                if focus.wrappedValue == nil {
+                    focus.wrappedValue = resolvedTarget
+                } else {
+                    return
+                }
+            }
+        }
     }
 }

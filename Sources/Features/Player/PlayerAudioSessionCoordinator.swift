@@ -192,22 +192,6 @@ final class PlayerAudioSessionCoordinator {
     }
 
     func scheduleDeferredDisplayCriteriaReset(
-        engine: AetherEngine,
-        delayNanoseconds: UInt64 = defaultDisplayCriteriaResetDelayNs
-    ) {
-        scheduleDeferredDisplayCriteriaReset(
-            delayNanoseconds: delayNanoseconds,
-            shouldExecute: { [weak engine] in
-                guard let engine else { return false }
-                return Self.shouldExecuteDeferredDisplayCriteriaReset(engineState: engine.state)
-            },
-            performReset: { [weak engine] in
-                engine?.stop(resetDisplayCriteria: true)
-            }
-        )
-    }
-
-    func scheduleDeferredDisplayCriteriaReset(
         delayNanoseconds: UInt64 = defaultDisplayCriteriaResetDelayNs,
         shouldExecute: @escaping @MainActor () -> Bool,
         performReset: @escaping @MainActor () -> Void

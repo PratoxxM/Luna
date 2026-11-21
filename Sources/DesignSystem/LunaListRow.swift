@@ -242,9 +242,7 @@ public struct LunaListRow: View {
                 directFocused: isDirectFocused
             )
         }
-        .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .focusEffectDisabled(true)
+        .lunaChromelessButton(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .focused($isDirectFocused)
     }
 }

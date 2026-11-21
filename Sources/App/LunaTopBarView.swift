@@ -1,11 +1,19 @@
 import SwiftUI
 import UIKit
 
+@MainActor
+private final class TopBarFocusStateBox {
+    var wasBarFocused: Bool = false
+    var lastHighlightedTab: MainNavigationTab
+
+    init(initialTab: MainNavigationTab) {
+        self.lastHighlightedTab = initialTab
+    }
+}
+
 struct LunaTopBarView: View {
     static let contentTopPadding: CGFloat = LunaTokens.Layout.contentTop
     static let focusDebounceNanoseconds: UInt64 = LunaTokens.Motion.focusSelectDebounceNanoseconds
-
-    @Environment(\.lunaRoomAtmosphere) private var environmentAtmosphere
 
     @Binding var selectedTab: MainNavigationTab
     var roomName: String? = nil
@@ -15,10 +23,8 @@ struct LunaTopBarView: View {
     var onRequestDownwardContentFocus: (MainNavigationTab) -> Void = { _ in }
 
     @FocusState private var focusedTab: MainNavigationTab?
-    @State private var wasBarFocused: Bool = false
-    @State private var lastHighlightedTab: MainNavigationTab
-    @State private var tabDebounceTask: Task<Void, Never>?
-    @State private var focusRetryTask: Task<Void, Never>?
+    @State private var stateBox: TopBarFocusStateBox
+    @State private var activeRedirectToken: Int = 0
     @Namespace private var topBarFocusNamespace
 
     init(
@@ -35,7 +41,7 @@ struct LunaTopBarView: View {
         self.isUpwardBridgeEnabled = isUpwardBridgeEnabled
         self.onFocusPresenceChanged = onFocusPresenceChanged
         self.onRequestDownwardContentFocus = onRequestDownwardContentFocus
-        self._lastHighlightedTab = State(initialValue: selectedTab.wrappedValue)
+        self._stateBox = State(initialValue: TopBarFocusStateBox(initialTab: selectedTab.wrappedValue))
     }
 
     var body: some View {
@@ -97,69 +103,28 @@ struct LunaTopBarView: View {
         }
         .ignoresSafeArea(edges: [.top, .horizontal])
         .onChange(of: selectedTab) { _, newTab in
-            lastHighlightedTab = newTab
+            stateBox.lastHighlightedTab = newTab
         }
         .onChange(of: focusedTab) { _, newFocus in
             onFocusPresenceChanged(newFocus != nil)
-            guard let newTab = newFocus else {
-                wasBarFocused = false
-                tabDebounceTask?.cancel()
-                tabDebounceTask = nil
-                return
-            }
-            wasBarFocused = true
-            lastHighlightedTab = newTab
-            tabDebounceTask?.cancel()
-            guard selectedTab != newTab else {
-                tabDebounceTask = nil
-                return
-            }
-            let debounceNs = Self.focusDebounceNanoseconds
-            tabDebounceTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: debounceNs)
-                guard !Task.isCancelled, wasBarFocused, focusedTab == newTab else { return }
-                if selectedTab != newTab {
-                    selectedTab = newTab
-                }
+            if let newTab = newFocus {
+                stateBox.wasBarFocused = true
+                stateBox.lastHighlightedTab = newTab
+            } else {
+                stateBox.wasBarFocused = false
             }
         }
-        .onChange(of: focusRequestNonce) { _, _ in
-            redirectFocusToSelectedTab()
+        .task(id: focusedTab) {
+            guard let newTab = focusedTab, selectedTab != newTab else { return }
+            try? await Task.sleep(nanoseconds: Self.focusDebounceNanoseconds)
+            guard !Task.isCancelled, stateBox.wasBarFocused, focusedTab == newTab else { return }
+            if selectedTab != newTab {
+                selectedTab = newTab
+            }
         }
-        .onAppear {
-            wasBarFocused = (focusedTab != nil)
-            lastHighlightedTab = focusedTab ?? selectedTab
-            onFocusPresenceChanged(focusedTab != nil)
-        }
-        .onDisappear {
-            wasBarFocused = false
-            tabDebounceTask?.cancel()
-            tabDebounceTask = nil
-            focusRetryTask?.cancel()
-            focusRetryTask = nil
-        }
-    }
-
-    private func routeDownwardToContent() {
-        tabDebounceTask?.cancel()
-        tabDebounceTask = nil
-        let target = focusedTab ?? lastHighlightedTab
-        if selectedTab != target {
-            selectedTab = target
-        }
-        focusedTab = nil
-        wasBarFocused = false
-        onRequestDownwardContentFocus(target)
-    }
-
-    private func redirectFocusToSelectedTab() {
-        tabDebounceTask?.cancel()
-        tabDebounceTask = nil
-        focusRetryTask?.cancel()
-        let target = selectedTab
-        focusedTab = target
-        lastHighlightedTab = target
-        focusRetryTask = Task { @MainActor in
+        .task(id: activeRedirectToken) {
+            guard activeRedirectToken > 0 else { return }
+            let target = selectedTab
             for delayNs: UInt64 in [16_000_000, 44_000_000, 72_000_000] {
                 try? await Task.sleep(nanoseconds: delayNs)
                 guard !Task.isCancelled, selectedTab == target else { return }
@@ -170,6 +135,36 @@ struct LunaTopBarView: View {
                 }
             }
         }
+        .onChange(of: focusRequestNonce) { _, _ in
+            redirectFocusToSelectedTab()
+        }
+        .onAppear {
+            stateBox.wasBarFocused = (focusedTab != nil)
+            stateBox.lastHighlightedTab = focusedTab ?? selectedTab
+            onFocusPresenceChanged(focusedTab != nil)
+        }
+        .onDisappear {
+            stateBox.wasBarFocused = false
+            activeRedirectToken = 0
+        }
+    }
+
+    private func routeDownwardToContent() {
+        activeRedirectToken = 0
+        let target = focusedTab ?? stateBox.lastHighlightedTab
+        if selectedTab != target {
+            selectedTab = target
+        }
+        focusedTab = nil
+        stateBox.wasBarFocused = false
+        onRequestDownwardContentFocus(target)
+    }
+
+    private func redirectFocusToSelectedTab() {
+        let target = selectedTab
+        focusedTab = target
+        stateBox.lastHighlightedTab = target
+        activeRedirectToken &+= 1
     }
 
     @ViewBuilder
@@ -181,12 +176,10 @@ struct LunaTopBarView: View {
             isBarFocused: focusedTab != nil,
             isIconOnly: isIconOnly
         ) {
-            tabDebounceTask?.cancel()
-            tabDebounceTask = nil
             if selectedTab != tab {
                 selectedTab = tab
             }
-            lastHighlightedTab = tab
+            stateBox.lastHighlightedTab = tab
             focusedTab = tab
         }
         .focused($focusedTab, equals: tab)
@@ -213,9 +206,6 @@ struct LunaTopBarView: View {
 }
 
 struct TopBarTabPillButton: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
-
     let tab: MainNavigationTab
     let isActive: Bool
     let isFocused: Bool
@@ -317,9 +307,7 @@ struct TopBarTabPillButton: View {
             }
             .lunaFocusSurface(.control, isFocused: isFocused, cornerRadius: LunaTokens.Radius.pill)
         }
-        .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(Capsule())
-        .focusEffectDisabled(true)
+        .lunaChromelessButton(Capsule())
         .accessibilityLabel(tab.title)
     }
 }
@@ -351,6 +339,8 @@ private final class TopBarFocusBridgeUIView: UIView {
     var cooldownSeconds: TimeInterval = 0.12
     var onRedirect: (() -> Void)?
     private var isBouncing: Bool = false
+    private var redirectTask: Task<Void, Never>?
+    private var cooldownTask: Task<Void, Never>?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -362,6 +352,17 @@ private final class TopBarFocusBridgeUIView: UIView {
         super.init(coder: coder)
         backgroundColor = .clear
         isOpaque = false
+    }
+
+    override func willMove(toWindow newWindow: UIWindow?) {
+        super.willMove(toWindow: newWindow)
+        if newWindow == nil {
+            redirectTask?.cancel()
+            redirectTask = nil
+            cooldownTask?.cancel()
+            cooldownTask = nil
+            isBouncing = false
+        }
     }
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
@@ -376,10 +377,17 @@ private final class TopBarFocusBridgeUIView: UIView {
         super.didUpdateFocus(in: context, with: coordinator)
         guard context.nextFocusedView === self else { return }
         isBouncing = true
-        DispatchQueue.main.async { [weak self] in
+        redirectTask?.cancel()
+        cooldownTask?.cancel()
+        redirectTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
             self?.onRedirect?()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + cooldownSeconds) { [weak self] in
+        let cooldownNs = UInt64(max(0, cooldownSeconds) * 1_000_000_000)
+        cooldownTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: cooldownNs)
+            guard !Task.isCancelled else { return }
             self?.isBouncing = false
         }
     }

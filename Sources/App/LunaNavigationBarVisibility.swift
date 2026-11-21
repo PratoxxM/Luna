@@ -1,3 +1,4 @@
+import Observation
 import SwiftUI
 
 public enum MainNavigationTab: String, CaseIterable, Identifiable, Hashable, Sendable {
@@ -86,6 +87,10 @@ public enum SubpageVisibilityPolicy {
 public enum TabContentFreshnessPolicy {
     public nonisolated static let defaultFreshnessInterval: TimeInterval = 120
 
+    public nonisolated static var effectiveFreshnessInterval: TimeInterval {
+        DeviceHardwareCapabilities.isHighMemoryDevice ? 600 : defaultFreshnessInterval
+    }
+
     public nonisolated static func isCacheFresh(
         hasCachedContent: Bool,
         lastValidatedAt: Date,
@@ -102,21 +107,22 @@ public enum TabContentFreshnessPolicy {
 }
 
 @MainActor
-final class LunaNavigationBarVisibility: ObservableObject {
+@Observable
+final class LunaNavigationBarVisibility {
     nonisolated static let menuFocusBounceGraceSeconds: TimeInterval = 0.14
 
-    @Published private(set) var activeSubpageTokens: Set<UUID> = []
-    @Published private(set) var activeModalTokens: Set<UUID> = []
-    @Published private(set) var isCollapsedByScroll: Bool = false
-    @Published private(set) var isTopBarFocused: Bool = false
-    @Published private(set) var focusRequestNonce: Int = 0
-    @Published private(set) var scrollToTopNonce: Int = 0
-    @Published private(set) var contentEntryFocusNonce: Int = 0
-
-    private var scrollZonesByTab: [MainNavigationTab: ScrollTopZone] = [:]
-    private var activeTab: MainNavigationTab = .home
-    private var menuRevealGraceUntil: Date = .distantPast
+    private(set) var activeSubpageTokens: Set<UUID> = []
+    private(set) var activeModalTokens: Set<UUID> = []
+    private(set) var isCollapsedByScroll: Bool = false
+    private(set) var isTopBarFocused: Bool = false
+    private(set) var focusRequestNonce: Int = 0
+    private(set) var scrollToTopNonce: Int = 0
+    private(set) var contentEntryFocusNonce: Int = 0
     private(set) var pendingMenuBypassExit: Bool = false
+
+    @ObservationIgnored private var scrollZonesByTab: [MainNavigationTab: ScrollTopZone] = [:]
+    @ObservationIgnored private var activeTab: MainNavigationTab = .home
+    @ObservationIgnored private var menuRevealGraceUntil: Date = .distantPast
 
     var isSubpageActive: Bool {
         !activeSubpageTokens.isEmpty

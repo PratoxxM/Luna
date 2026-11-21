@@ -45,8 +45,6 @@ public struct LunaSheetContainer<Content: View>: View {
     }
 
     public var body: some View {
-        let shape = RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
-
         ZStack {
             LunaTheme.canvas.ignoresSafeArea()
 
@@ -81,18 +79,65 @@ public struct LunaSheetContainer<Content: View>: View {
             }
             .padding(LunaTokens.Layout.sheetPadding)
             .frame(maxWidth: width.maxWidth, maxHeight: maxHeight, alignment: .topLeading)
-            .background(shape.fill(LunaTokens.Surface.sheet))
-            .lunaTopLightEdge(
-                cornerRadius: LunaTokens.Radius.panel,
-                topColor: LunaTokens.Edge.top3,
-                sideColor: LunaTokens.Edge.top1,
-                lineWidth: LunaTokens.Layout.hairlineWidth
-            )
+            .lunaCinemaGlassSurface(fill: LunaTokens.Surface.sheet)
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.vertical, LunaTokens.Layout.safeBottom)
         }
         .onExitCommand {
             onClose?()
         }
+    }
+}
+
+private struct LunaCinemaGlassSurfaceModifier: ViewModifier {
+    let fill: Color
+    let cornerRadius: CGFloat
+    let topEdgeColor: Color
+    let sideEdgeColor: Color
+    let shadowColor: Color?
+    let shadowRadius: CGFloat
+    let shadowY: CGFloat
+
+    func body(content: Content) -> some View {
+        let base = content
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(fill)
+            )
+            .lunaTopLightEdge(
+                cornerRadius: cornerRadius,
+                topColor: topEdgeColor,
+                sideColor: sideEdgeColor,
+                lineWidth: LunaTokens.Layout.hairlineWidth
+            )
+        if let shadowColor {
+            base.shadow(color: shadowColor, radius: shadowRadius, x: 0, y: shadowY)
+        } else {
+            base
+        }
+    }
+}
+
+public extension View {
+    func lunaCinemaGlassSurface(
+        fill: Color = LunaTheme.cinemaGlass,
+        cornerRadius: CGFloat = LunaTokens.Radius.panel,
+        topEdgeColor: Color = LunaTokens.Edge.top3,
+        sideEdgeColor: Color = LunaTokens.Edge.top1,
+        shadowColor: Color? = nil,
+        shadowRadius: CGFloat = 0,
+        shadowY: CGFloat = 0
+    ) -> some View {
+        modifier(
+            LunaCinemaGlassSurfaceModifier(
+                fill: fill,
+                cornerRadius: cornerRadius,
+                topEdgeColor: topEdgeColor,
+                sideEdgeColor: sideEdgeColor,
+                shadowColor: shadowColor,
+                shadowRadius: shadowRadius,
+                shadowY: shadowY
+            )
+        )
     }
 }

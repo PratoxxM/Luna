@@ -2,7 +2,7 @@ import SwiftUI
 import AetherBridge
 
 struct SettingsServerDiagnosticsSectionView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(AppSessionStore.self) private var sessionStore
 
     let cacheBytes: Int64
     @Binding var cacheClearedNotice: Bool
@@ -12,22 +12,22 @@ struct SettingsServerDiagnosticsSectionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: LunaTokens.Layout.sectionGap) {
             SettingsSectionPanel(title: "Om denne Apple TV-en") {
-                SettingsInfoRow(
+                LunaInfoRow(
                     title: "App og motor",
                     value: "Luna \(AppSessionStore.currentAppVersionDisplayString()) · AetherEngine \(AetherBridgeInfo.pinnedAetherEngineVersion)"
                 )
-                SettingsSectionDivider()
-                SettingsInfoRow(
+                LunaListDivider()
+                LunaInfoRow(
                     title: "Apple TV-maskinvare",
                     value: "\(DeviceHardwareCapabilities.physicalMemoryGB) GB RAM · Maskinvare-AV1: \(DeviceHardwareCapabilities.supportsHardwareAV1 ? "Støttet" : "Ikke støttet")"
                 )
-                SettingsSectionDivider()
-                SettingsInfoRow(
+                LunaListDivider()
+                LunaInfoRow(
                     title: "LunaCore-server",
                     value: sessionStore.serverBaseURL?.absoluteString ?? "Ikke tilkoblet"
                 )
-                SettingsSectionDivider()
-                SettingsInfoRow(title: "Bilde- og kataloghurtigbuffer", value: formattedCacheSize)
+                LunaListDivider()
+                LunaInfoRow(title: "Bilde- og kataloghurtigbuffer", value: formattedCacheSize)
             }
 
             SettingsSectionPanel(title: "Vedlikehold") {
@@ -51,7 +51,7 @@ struct SettingsServerDiagnosticsSectionView: View {
                     }
                 }
 
-                SettingsSectionDivider()
+                LunaListDivider()
 
                 LunaListRow(
                     title: "Koble til på nytt…",

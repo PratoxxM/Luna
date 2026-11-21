@@ -9,36 +9,11 @@ internal struct LibraryBrowseSnapshot {
     var refreshNonce: Int
 }
 
-@MainActor
-internal final class LibraryBrowseMemoryCache {
-    static let shared = LibraryBrowseMemoryCache()
-    private let maxEntries = DeviceHardwareCapabilities.isHighMemoryDevice ? 32 : 12
-    private var entries: [String: LibraryBrowseSnapshot] = [:]
-    private var order: [String] = []
-
-    var entryCount: Int { entries.count }
-
-    func snapshot(for key: String) -> LibraryBrowseSnapshot? {
-        guard let hit = entries[key] else { return nil }
-        order.removeAll { $0 == key }
-        order.append(key)
-        return hit
-    }
-
-    func store(_ snapshot: LibraryBrowseSnapshot, for key: String) {
-        entries[key] = snapshot
-        order.removeAll { $0 == key }
-        order.append(key)
-        while order.count > maxEntries {
-            let evicted = order.removeFirst()
-            entries.removeValue(forKey: evicted)
-        }
-    }
-
-    func clear() {
-        entries.removeAll()
-        order.removeAll()
-    }
+internal enum LibraryBrowseMemoryCache {
+    @MainActor
+    static let shared = BoundedLRUMemoryCache<LibraryBrowseSnapshot>(
+        maxEntries: DeviceHardwareCapabilities.isHighMemoryDevice ? 32 : 12
+    )
 }
 
 public enum LibraryFilterSection: String, CaseIterable, Identifiable, Sendable {

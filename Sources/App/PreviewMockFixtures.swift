@@ -464,10 +464,6 @@ enum PreviewMockFixtures {
         )
     }
 
-    static var libraryResponse: TvLibraryResponse {
-        libraryResponse(mediaType: "movie")
-    }
-
     static var luksusfellenSeason28Episodes: [TvEpisodeCard] {
         [
             TvEpisodeCard(

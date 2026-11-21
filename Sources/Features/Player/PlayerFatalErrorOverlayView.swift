@@ -84,17 +84,12 @@ struct PlayerFatalErrorOverlayView: View {
             }
             .padding(LunaTokens.Layout.sheetPadding)
             .frame(maxWidth: LunaTokens.Layout.sheetNarrowW)
-            .background(
-                RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
-                    .fill(LunaTokens.Surface.sheet)
+            .lunaCinemaGlassSurface(
+                fill: LunaTokens.Surface.sheet,
+                shadowColor: LunaTheme.pureBlack.opacity(0.65),
+                shadowRadius: 36,
+                shadowY: 18
             )
-            .lunaTopLightEdge(
-                cornerRadius: LunaTokens.Radius.panel,
-                topColor: LunaTokens.Edge.top3,
-                sideColor: LunaTokens.Edge.top1,
-                lineWidth: LunaTokens.Layout.hairlineWidth
-            )
-            .shadow(color: LunaTheme.pureBlack.opacity(0.65), radius: 36, x: 0, y: 18)
         }
         .focusScope(errorFocusNamespace)
         .onAppear {

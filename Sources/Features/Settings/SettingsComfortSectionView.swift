@@ -2,8 +2,8 @@ import SwiftUI
 import AetherBridge
 
 struct SettingsRoomDisplaySectionView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
-    @EnvironmentObject private var comfort: ComfortPreferences
+    @Environment(AppSessionStore.self) private var sessionStore
+    @Environment(ComfortPreferences.self) private var comfort
 
     let caps: DisplayCapabilities
 
@@ -23,7 +23,7 @@ struct SettingsRoomDisplaySectionView: View {
                     roomName: room.roomName,
                     serverLabel: room.equipmentLabel
                 )
-                SettingsRoomRowButton(
+                LunaListRow(
                     title: room.label ?? fallbackPreset?.displayTitle ?? room.roomName,
                     subtitle: room.description ?? eqLabel,
                     isSelected: isSelected
@@ -34,10 +34,10 @@ struct SettingsRoomDisplaySectionView: View {
                     )
                 }
 
-                SettingsSectionDivider()
+                LunaListDivider()
             }
 
-            SettingsControlRow(
+            LunaControlRow(
                 title: "MetalFX 4K-oppskalering",
                 subtitle: comfort.lowResUpscaleMode.shortDescription,
                 axis: .vertical
@@ -56,9 +56,9 @@ struct SettingsRoomDisplaySectionView: View {
                 }
             }
 
-            SettingsSectionDivider()
+            LunaListDivider()
 
-            SettingsControlRow(
+            LunaControlRow(
                 title: "Skjermmodus i meny etter film",
                 subtitle: comfort.menuDisplayMode.shortDescription,
                 axis: .vertical
@@ -77,9 +77,9 @@ struct SettingsRoomDisplaySectionView: View {
                 }
             }
 
-            SettingsSectionDivider()
+            LunaListDivider()
 
-            SettingsInfoRow(title: "Skjermen støtter", value: activeVideoModeSummary)
+            LunaInfoRow(title: "Skjermen støtter", value: activeVideoModeSummary)
         }
     }
 
@@ -97,11 +97,13 @@ struct SettingsRoomDisplaySectionView: View {
 }
 
 struct SettingsSubtitlesSectionView: View {
-    @EnvironmentObject private var comfort: ComfortPreferences
+    @Environment(ComfortPreferences.self) private var comfort
 
     var body: some View {
+        @Bindable var comfort = comfort
+
         SettingsSectionPanel(title: "Undertekster") {
-            SettingsControlRow(
+            LunaControlRow(
                 title: "Kveldslys",
                 subtitle: "\(comfort.hdrSubtitlePreset.settingsDescription) · Gjelder HDR og Dolby Vision",
                 axis: .vertical
@@ -120,9 +122,9 @@ struct SettingsSubtitlesSectionView: View {
                 }
             }
 
-            SettingsSectionDivider()
+            LunaListDivider()
 
-            SettingsControlRow(title: "Tekststørrelse", axis: .horizontal) {
+            LunaControlRow(title: "Tekststørrelse", axis: .horizontal) {
                 HStack(spacing: 10) {
                     ForEach(SubtitleFontSizePreset.allCases) { sz in
                         LunaPillButton(
@@ -137,9 +139,9 @@ struct SettingsSubtitlesSectionView: View {
                 }
             }
 
-            SettingsSectionDivider()
+            LunaListDivider()
 
-            SettingsControlRow(title: "Bakgrunn bak tekst", axis: .horizontal) {
+            LunaControlRow(title: "Bakgrunn bak tekst", axis: .horizontal) {
                 HStack(spacing: 10) {
                     ForEach(SubtitleBoxOpacityPreset.allCases) { box in
                         LunaPillButton(
@@ -154,7 +156,7 @@ struct SettingsSubtitlesSectionView: View {
                 }
             }
 
-            SettingsSectionDivider()
+            LunaListDivider()
 
             SettingsToggleRowButton(
                 title: "Smarte språkregler",
@@ -166,18 +168,20 @@ struct SettingsSubtitlesSectionView: View {
 }
 
 struct SettingsPlaybackSectionView: View {
-    @EnvironmentObject private var comfort: ComfortPreferences
+    @Environment(ComfortPreferences.self) private var comfort
 
     var body: some View {
+        @Bindable var comfort = comfort
+
         SettingsSectionPanel(title: "Avspilling") {
             SettingsToggleRowButton(
                 title: "Spill neste episode automatisk",
                 isOn: $comfort.autoPlayNextEpisode
             )
 
-            SettingsSectionDivider()
+            LunaListDivider()
 
-            SettingsInfoRow(
+            LunaInfoRow(
                 title: "Siri Remote-spoling",
                 value: "Kun ved pause · adaptiv · hold ring"
             )

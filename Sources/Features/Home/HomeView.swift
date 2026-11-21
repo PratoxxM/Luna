@@ -16,7 +16,7 @@ internal enum HomeRefreshPolicy {
 }
 
 struct HomeView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(AppSessionStore.self) private var sessionStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
     @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
@@ -39,12 +39,12 @@ struct HomeView: View {
     @State private var selectedSeeAllRow: TvShelfRow?
     @State private var sourcePickerContext: SourcePickerContext?
     @State private var modalToken = UUID()
-    @State private var mutationBannerTask: Task<Void, Never>?
     @State private var reloadTask: Task<Void, Never>?
     @State private var reloadGeneration: UInt64 = 0
-    @State private var entryFocusRetryTask: Task<Void, Never>?
 
-    @FocusState private var focusedCardKey: String?
+    @State private var mountedTracker = MountedEntryCardTracker()
+    @State private var entryCardKey: String?
+    @State private var entryFocusNonce: Int = 0
     @FocusState private var isRetryButtonFocused: Bool
     @Namespace private var homeFocusNamespace
 
@@ -54,13 +54,6 @@ struct HomeView: View {
 
     nonisolated static func prepareVisibleRows(from payload: TvHomeResponse?) -> [TvShelfRow] {
         CatalogShelfIndexer.prepareVisibleRows(from: payload)
-    }
-
-    nonisolated static func prioritizeContinueCards(
-        _ items: [TvMediaCard],
-        preparedFromPhone: TvMediaCard?
-    ) -> [TvMediaCard] {
-        CatalogShelfIndexer.prioritizeContinueCards(items, preparedFromPhone: preparedFromPhone)
     }
 
     init(
@@ -83,27 +76,22 @@ struct HomeView: View {
         _cachedEtag = State(initialValue: snap?.etag)
     }
 
-    private var visibleRows: [TvShelfRow] {
-        Self.prepareVisibleRows(from: homePayload)
-    }
-
-    private var targetDefaultRow: TvShelfRow? {
+    private func resolveDefaultRow(in rows: [TvShelfRow]) -> TvShelfRow? {
         if previewFocusPosterRow,
-           let posterRow = visibleRows.first(where: { $0.rowStyle == "poster" && !$0.items.isEmpty }) {
+           let posterRow = rows.first(where: { $0.rowStyle == "poster" && !$0.items.isEmpty }) {
             return posterRow
         }
-        return visibleRows.first(where: { !$0.items.isEmpty })
-    }
-
-    private var defaultFocusCardKey: String? {
-        guard let row = targetDefaultRow, let card = row.items.first else { return nil }
-        return "\(row.rowId)#\(card.itemId)"
+        return rows.first(where: { !$0.items.isEmpty })
     }
 
     var body: some View {
         let client = sessionStore.makeClient()
-        let focusTargetKey = defaultFocusCardKey
-        let focusRowId = targetDefaultRow?.rowId
+        let rows = Self.prepareVisibleRows(from: homePayload)
+        let defaultRow = resolveDefaultRow(in: rows)
+        let focusRowId = defaultRow?.rowId
+        let focusTargetKey = defaultRow.flatMap { row in
+            row.items.first.map { "\(row.rowId)#\($0.itemId)" }
+        }
 
         ScrollViewReader { scrollProxy in
             ScrollView(.vertical, showsIndicators: false) {
@@ -112,12 +100,12 @@ struct HomeView: View {
                         .frame(height: 0)
                         .id("luna-scroll-top")
 
-                    if visibleRows.isEmpty && isInitialColdFetch {
+                    if rows.isEmpty && isInitialColdFetch {
                         LunaLoadingRow(message: "Henter innhold…")
                             .padding(.horizontal, LunaTheme.horizontalGutter)
                     }
 
-                    if let errorMessage, visibleRows.isEmpty {
+                    if let errorMessage, rows.isEmpty {
                         LunaInlineError(message: errorMessage) {
                             scheduleRevalidateHome(forceUnconditional: true)
                         }
@@ -125,11 +113,13 @@ struct HomeView: View {
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                     }
 
-                    ForEach(Array(visibleRows.enumerated()), id: \.element.id) { _, row in
+                    ForEach(rows) { row in
                         ShelfRowView(
                             row: row,
                             isDefaultFocusRow: row.rowId == focusRowId,
-                            focusedCardKey: $focusedCardKey,
+                            mountedTracker: mountedTracker,
+                            entryCardKey: entryCardKey,
+                            entryFocusNonce: entryFocusNonce,
                             focusNamespace: homeFocusNamespace,
                             client: client,
                             onSelectCard: { card in
@@ -170,22 +160,25 @@ struct HomeView: View {
             .lunaRootScrollTopBarTracking(tab: .home)
             .onAppear {
                 if (allowInitialColdFocus || previewFocusPosterRow), let focusTargetKey {
-                    focusedCardKey = focusTargetKey
+                    entryCardKey = focusTargetKey
+                    entryFocusNonce &+= 1
                 }
-                if previewFocusPosterRow, let focusRowId {
-                    Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 250_000_000)
-                        scrollProxy.scrollTo(focusRowId, anchor: .center)
-                        if let target = defaultFocusCardKey {
-                            focusedCardKey = target
-                        }
-                    }
+            }
+            .task(id: previewFocusPosterRow ? focusRowId : nil) {
+                guard previewFocusPosterRow, let focusRowId else { return }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
+                scrollProxy.scrollTo(focusRowId, anchor: .center)
+                if let focusTargetKey {
+                    entryCardKey = focusTargetKey
+                    entryFocusNonce &+= 1
                 }
             }
             .onChange(of: focusTargetKey) { _, nextKey in
                 if previewFocusPosterRow, let nextKey, let focusRowId {
                     scrollProxy.scrollTo(focusRowId, anchor: .center)
-                    focusedCardKey = nextKey
+                    entryCardKey = nextKey
+                    entryFocusNonce &+= 1
                 }
             }
             .onChange(of: scrollToTopNonce) { _, _ in
@@ -196,15 +189,10 @@ struct HomeView: View {
             }
             .onChange(of: contentEntryFocusNonce) { _, _ in
                 guard isActiveTab else { return }
-                focusLeftmostHomeTarget(scrollProxy: scrollProxy)
+                focusLeftmostHomeTarget(rows: rows, scrollProxy: scrollProxy)
             }
         }
-        .lunaBottomToast(message: mutationErrorMessage, tone: .danger)
-        .defaultFocus(
-            $focusedCardKey,
-            (allowInitialColdFocus || previewFocusPosterRow) ? focusTargetKey : nil,
-            priority: (allowInitialColdFocus || previewFocusPosterRow) ? .userInitiated : .automatic
-        )
+        .lunaBottomToast(message: $mutationErrorMessage, tone: .danger)
         .focusSection()
         .focusScope(homeFocusNamespace)
         .navigationDestination(item: $selectedCard) { card in
@@ -253,8 +241,7 @@ struct HomeView: View {
                     sourcePickerContext = nil
                 }
             )
-            .environmentObject(sessionStore)
-            .environmentObject(sessionStore.comfort)
+            .environment(sessionStore)
             .preferredColorScheme(.dark)
         }
         .task(id: "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)") {
@@ -266,7 +253,7 @@ struct HomeView: View {
                    lastValidatedAt: lastValidatedAt,
                    cachedRefreshNonce: lastSeenRefreshNonce,
                    currentRefreshNonce: sessionStore.homeRefreshNonce,
-                   freshnessInterval: DeviceHardwareCapabilities.isHighMemoryDevice ? 600 : TabContentFreshnessPolicy.defaultFreshnessInterval
+                   freshnessInterval: TabContentFreshnessPolicy.effectiveFreshnessInterval
                ) {
                 return
             }
@@ -296,7 +283,7 @@ struct HomeView: View {
                 lastValidatedAt: lastValidatedAt,
                 cachedRefreshNonce: lastSeenRefreshNonce,
                 currentRefreshNonce: sessionStore.homeRefreshNonce,
-                freshnessInterval: DeviceHardwareCapabilities.isHighMemoryDevice ? 600 : TabContentFreshnessPolicy.defaultFreshnessInterval
+                freshnessInterval: TabContentFreshnessPolicy.effectiveFreshnessInterval
             )
             if !isFresh {
                 lastSeenRefreshNonce = sessionStore.homeRefreshNonce
@@ -316,9 +303,6 @@ struct HomeView: View {
             scheduleRevalidateHome(forceUnconditional: false)
         }
         .onDisappear {
-            entryFocusRetryTask?.cancel()
-            entryFocusRetryTask = nil
-            mutationBannerTask?.cancel()
             reloadTask?.cancel()
             reloadTask = nil
             if sourcePickerContext == nil {
@@ -327,25 +311,15 @@ struct HomeView: View {
         }
     }
 
-    private func focusLeftmostHomeTarget(scrollProxy: ScrollViewProxy) {
-        entryFocusRetryTask?.cancel()
-        if let firstRow = visibleRows.first(where: { !$0.items.isEmpty }),
-           let firstCard = firstRow.items.first {
-            let targetKey = "\(firstRow.rowId)#\(firstCard.itemId)"
+    private func focusLeftmostHomeTarget(rows: [TvShelfRow], scrollProxy: ScrollViewProxy) {
+        if let firstRow = rows.first(where: { !$0.items.isEmpty }) {
+            let orderedKeys = firstRow.items.map { "\(firstRow.rowId)#\($0.itemId)" }
             scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
-            focusedCardKey = targetKey
-            entryFocusRetryTask = Task { @MainActor in
-                for delayNs: UInt64 in [16_000_000, 48_000_000] {
-                    try? await Task.sleep(nanoseconds: delayNs)
-                    guard !Task.isCancelled, isActiveTab else { return }
-                    if focusedCardKey == nil {
-                        focusedCardKey = targetKey
-                    } else {
-                        return
-                    }
-                }
+            if let resolvedKey = mountedTracker.resolveEntryID(orderedIDs: orderedKeys) {
+                entryCardKey = resolvedKey
+                entryFocusNonce &+= 1
             }
-        } else if errorMessage != nil && visibleRows.isEmpty {
+        } else if errorMessage != nil && rows.isEmpty {
             isRetryButtonFocused = true
         }
     }
@@ -454,13 +428,7 @@ struct HomeView: View {
     }
 
     private func showMutationError(_ error: Error) {
-        mutationBannerTask?.cancel()
         mutationErrorMessage = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
-        mutationBannerTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
-            guard !Task.isCancelled else { return }
-            mutationErrorMessage = nil
-        }
     }
 
     private func markLocalMutationAndRevalidate() async {

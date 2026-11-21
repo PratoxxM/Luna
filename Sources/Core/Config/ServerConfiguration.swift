@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import UIKit
 import AetherBridge
 
@@ -12,13 +13,6 @@ public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable 
         switch self {
         case .dvFel714: return "Kjellerstua"
         case .hdr10512: return "Stua"
-        }
-    }
-
-    public var shortBadgeLabel: String {
-        switch self {
-        case .dvFel714: return "DV FEL · 7.1.4"
-        case .hdr10512: return "HDR10+ · 7.1.4"
         }
     }
 
@@ -55,21 +49,19 @@ public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable 
 }
 
 @MainActor
-public final class AppSessionStore: ObservableObject {
-    @Published public private(set) var serverBaseURL: URL?
-    @Published public private(set) var deviceToken: String?
+@Observable
+public final class AppSessionStore {
+    public private(set) var serverBaseURL: URL?
+    public private(set) var deviceToken: String?
     public let deviceID: String
-    @Published public var deviceName: String
-    @Published public var roomName: String
-    @Published public var hardwareProfile: String
-    @Published public var serverEquipmentLabel: String? = nil
-    @Published public var serverAtmosphere: String? = nil
-    @Published public var deviceOverrides: TvDeviceOverrides? = nil
-    @Published public private(set) var availableRooms: [TvRoomDefinition] = HardwareProfilePreset.fallbackRooms
-    @Published public private(set) var homeRefreshNonce: Int = 0
+    public var roomName: String
+    public var hardwareProfile: String
+    public var serverAtmosphere: String? = nil
+    public private(set) var availableRooms: [TvRoomDefinition] = HardwareProfilePreset.fallbackRooms
+    public private(set) var homeRefreshNonce: Int = 0
     public let comfort: ComfortPreferences
 
-    @Published public var allowSelfSignedLanTLS: Bool {
+    public var allowSelfSignedLanTLS: Bool {
         didSet {
             defaults.set(allowSelfSignedLanTLS, forKey: SideloadSafeStorage.allowSelfSignedLanTLSKey)
             LunaCoreSessionPool.shared.invalidateAll()
@@ -78,16 +70,17 @@ public final class AppSessionStore: ObservableObject {
         }
     }
 
-    @Published public var activePlaybackTarget: PlaybackLaunchRequest? = nil
+    public var activePlaybackTarget: PlaybackLaunchRequest? = nil
 
-    private let defaults: UserDefaults
-    private let cachedAppVersion: String
-    private let cachedOSVersion: String
-    private var cachedClient: LunaCoreClient?
-    private var overrideSyncTask: Task<Void, Never>?
-    private var profileSyncTask: Task<Void, Never>?
-    private var didSyncCapabilitiesThisLaunch: Bool = false
-    internal private(set) var appliedTLSConfiguredHost: String?
+    @ObservationIgnored private var deviceName: String
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let cachedAppVersion: String
+    @ObservationIgnored private let cachedOSVersion: String
+    @ObservationIgnored private var cachedClient: LunaCoreClient?
+    @ObservationIgnored private var overrideSyncTask: Task<Void, Never>?
+    @ObservationIgnored private var profileSyncTask: Task<Void, Never>?
+    @ObservationIgnored private var didSyncCapabilitiesThisLaunch: Bool = false
+    @ObservationIgnored internal private(set) var appliedTLSConfiguredHost: String?
 
     public var isPaired: Bool {
         serverBaseURL != nil && !(deviceToken ?? "").isEmpty
@@ -95,22 +88,6 @@ public final class AppSessionStore: ObservableObject {
 
     public var effectiveHardwareProfile: String {
         hardwareProfile
-    }
-
-    public var activePreset: HardwareProfilePreset {
-        HardwareProfilePreset(rawValue: effectiveHardwareProfile) ?? .dvFel714
-    }
-
-    public var effectiveEquipmentLabel: String {
-        let matchedRoom = availableRooms.first {
-            $0.roomName == roomName && $0.hardwareProfile == effectiveHardwareProfile
-        } ?? availableRooms.first { $0.hardwareProfile == effectiveHardwareProfile }
-        let preferredLabel = serverEquipmentLabel ?? matchedRoom?.equipmentLabel
-        return LunaCopy.roomEquipmentLabel(
-            hardwareProfile: effectiveHardwareProfile,
-            roomName: roomName,
-            serverLabel: preferredLabel
-        )
     }
 
     public var effectiveRoomAtmosphere: LunaRoomAtmosphere {
@@ -149,7 +126,6 @@ public final class AppSessionStore: ObservableObject {
         self.roomName = defaults.string(forKey: SideloadSafeStorage.roomNameKey) ?? "Kjellerstua"
         self.hardwareProfile = defaults.string(forKey: SideloadSafeStorage.hardwareProfileKey) ?? HardwareProfilePreset.dvFel714.rawValue
         defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
-        self.deviceOverrides = nil
         self.activePlaybackTarget = nil
         self.allowSelfSignedLanTLS = defaults.object(forKey: SideloadSafeStorage.allowSelfSignedLanTLSKey) as? Bool ?? true
 
@@ -175,9 +151,7 @@ public final class AppSessionStore: ObservableObject {
         self.deviceName = "Apple TV 4K"
         self.roomName = "Stua"
         self.hardwareProfile = HardwareProfilePreset.hdr10512.rawValue
-        self.serverEquipmentLabel = LunaCopy.roomEquipmentLabel(hardwareProfile: HardwareProfilePreset.hdr10512.rawValue)
         self.serverAtmosphere = "living"
-        self.deviceOverrides = nil
         self.activePlaybackTarget = nil
         self.allowSelfSignedLanTLS = true
         self.cachedClient = PreviewMockFixtures.makeClient()
@@ -202,7 +176,6 @@ public final class AppSessionStore: ObservableObject {
     }
 
     private func scheduleOverridesSync(_ overrides: TvDeviceOverrides) {
-        self.deviceOverrides = overrides
         overrideSyncTask?.cancel()
         overrideSyncTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 350_000_000)
@@ -249,9 +222,7 @@ public final class AppSessionStore: ObservableObject {
         self.deviceName = pairedDevice.deviceName
         self.roomName = pairedDevice.roomName
         self.hardwareProfile = pairedDevice.hardwareProfile
-        self.serverEquipmentLabel = pairedDevice.equipmentLabel
         self.serverAtmosphere = pairedDevice.atmosphere
-        self.deviceOverrides = pairedDevice.overrides
         self.comfort.adoptServerOverrides(pairedDevice.overrides)
         self.didSyncCapabilitiesThisLaunch = pairedDevice.capabilities == DeviceHardwareCapabilities.asTvCapabilities
 
@@ -281,16 +252,10 @@ public final class AppSessionStore: ObservableObject {
             defaults.set(device.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
             clientInputsChanged = true
         }
-        if device.equipmentLabel != serverEquipmentLabel {
-            self.serverEquipmentLabel = device.equipmentLabel
-        }
         if device.atmosphere != serverAtmosphere {
             self.serverAtmosphere = device.atmosphere
         }
         if overrideSyncTask == nil {
-            if device.overrides != deviceOverrides {
-                self.deviceOverrides = device.overrides
-            }
             self.comfort.adoptServerOverrides(device.overrides)
         }
         if let defaultRooms, !defaultRooms.isEmpty, defaultRooms != availableRooms {
@@ -316,7 +281,6 @@ public final class AppSessionStore: ObservableObject {
         let matchedRoom = availableRooms.first {
             $0.roomName == roomName && $0.hardwareProfile == hardwareProfile
         } ?? availableRooms.first { $0.hardwareProfile == hardwareProfile }
-        self.serverEquipmentLabel = matchedRoom?.equipmentLabel
         self.serverAtmosphere = matchedRoom?.atmosphere
         defaults.set(roomName, forKey: SideloadSafeStorage.roomNameKey)
         defaults.set(hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
@@ -365,14 +329,6 @@ public final class AppSessionStore: ObservableObject {
         SideloadSafeStorage.currentAppVersionString(infoDictionary: infoDictionary)
     }
 
-    public nonisolated static func currentBuildNumberString() -> String? {
-        SideloadSafeStorage.currentBuildNumberString()
-    }
-
-    public nonisolated static func currentBuildNumberString(infoDictionary: [String: Any]?) -> String? {
-        SideloadSafeStorage.currentBuildNumberString(infoDictionary: infoDictionary)
-    }
-
     public nonisolated static func currentAppVersionDisplayString() -> String {
         SideloadSafeStorage.currentAppVersionDisplayString()
     }
@@ -398,7 +354,6 @@ public final class AppSessionStore: ObservableObject {
         DiskSWRStore.clearMemory()
         Task { await DiskSWRStore.clearAllAsync() }
         deviceToken = nil
-        serverEquipmentLabel = nil
         serverAtmosphere = nil
         availableRooms = HardwareProfilePreset.fallbackRooms
         activePlaybackTarget = nil
@@ -455,12 +410,11 @@ public final class AppSessionStore: ObservableObject {
         configuredHost: String?,
         allowSelfSignedLanTLS: Bool
     ) -> Bool {
-        guard allowSelfSignedLanTLS else { return false }
-        let normalized = host.lowercased()
-        if let configuredHost = configuredHost?.lowercased(), normalized == configuredHost {
-            return true
-        }
-        return normalized.hasSuffix(".local")
+        LanURLSessionDelegate.shouldTrustServer(
+            host,
+            configuredHost: configuredHost,
+            allowSelfSignedLanTLS: allowSelfSignedLanTLS
+        )
     }
 
     private func applyEngineTLSPolicy() {

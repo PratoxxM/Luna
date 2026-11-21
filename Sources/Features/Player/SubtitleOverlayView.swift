@@ -41,13 +41,12 @@ internal enum SubtitleOverlayLayout {
 ///    dimming bright white letter fills in dark HDR/DV scenes.
 struct SubtitleOverlayView: View {
     let engine: AetherEngine
-    @ObservedObject var comfort: ComfortPreferences
+    let comfort: ComfortPreferences
     var isBottomBarVisible: Bool = false
     var isQuickPanelOpen: Bool = false
     var isNerdHUDVisible: Bool = false
 
     @State private var clockBox = SubtitleClockBox()
-    @State private var cues: [SubtitleCue] = []
     @State private var visibleCues: [SubtitleCue] = []
     @State private var tracks: [TrackInfo] = []
     @State private var activeTrackID: Int?
@@ -98,16 +97,28 @@ struct SubtitleOverlayView: View {
             recomputeVisibleCues(at: time)
         }
         .onReceive(engine.$subtitleCues) { nextCues in
-            cues = nextCues
+            clockBox.cues = nextCues
             recomputeVisibleCues(at: clockBox.lastSourceTime, cueSource: nextCues)
         }
-        .onReceive(engine.$subtitleTracks) { tracks = $0 }
-        .onReceive(engine.$activeSubtitleTrackIndex) { activeTrackID = $0 }
-        .onReceive(engine.$videoFormat) { videoFormat = $0 }
+        .onReceive(engine.$subtitleTracks) { nextTracks in
+            if tracks != nextTracks {
+                tracks = nextTracks
+            }
+        }
+        .onReceive(engine.$activeSubtitleTrackIndex) { nextID in
+            if activeTrackID != nextID {
+                activeTrackID = nextID
+            }
+        }
+        .onReceive(engine.$videoFormat) { nextFormat in
+            if videoFormat != nextFormat {
+                videoFormat = nextFormat
+            }
+        }
     }
 
     private func recomputeVisibleCues(at sourceTime: Double, cueSource: [SubtitleCue]? = nil) {
-        let activeCues = cueSource ?? cues
+        let activeCues = cueSource ?? clockBox.cues
         let effectiveTime = sourceTime - engine.softwareSubtitleDelaySeconds
         let next = activeCues.filter { $0.startTime <= effectiveTime && effectiveTime < $0.endTime }
         let changed = next.count != visibleCues.count || zip(next, visibleCues).contains(where: { $0.id != $1.id })
@@ -241,14 +252,14 @@ struct SubtitleOverlayView: View {
     ) -> some View {
         content
             .multilineTextAlignment(.center)
-            .shadow(color: .black.opacity(0.96), radius: 2, x: 0, y: 1)
-            .shadow(color: .black.opacity(0.92), radius: 6, x: 0, y: 2)
+            .shadow(color: LunaTheme.pureBlack.opacity(0.96), radius: 2, x: 0, y: 1)
+            .shadow(color: LunaTheme.pureBlack.opacity(0.92), radius: 6, x: 0, y: 2)
             .padding(.horizontal, boxAlpha > 0 ? 26 : 12)
             .padding(.vertical, boxAlpha > 0 ? 10 : 4)
             .background {
                 if boxAlpha > 0 {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.black.opacity(boxAlpha))
+                        .fill(LunaTheme.pureBlack.opacity(boxAlpha))
                 }
             }
     }
@@ -324,4 +335,5 @@ struct SubtitleOverlayView: View {
 @MainActor
 private final class SubtitleClockBox {
     var lastSourceTime: Double = 0
+    var cues: [SubtitleCue] = []
 }

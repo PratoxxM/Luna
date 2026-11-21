@@ -24,10 +24,8 @@ extension PlayerViewModel {
         transientBannerMessage = nil
         isResolving = true
         firstFrameFallbackUnlocked = false
-        nextEpisodePrewarmReady = false
         userManuallySelectedSubtitle = false
         didApplyInitialSmartRule = false
-        resolveStageKey = "searching_indexers"
         resolveStageLabel = "Søker etter beste kilde…"
         resolvePercent = 16
         resolveHeadline = nil
@@ -56,7 +54,6 @@ extension PlayerViewModel {
                 throw LunaCoreError.serverMessage(status, startRes.error ?? "Uventet svar ved klargjøring av strøm.")
             }
 
-            resolveStageKey = "awaiting_first_frame"
             resolveStageLabel = "Tilpasser skjerm og starter avspilling…"
             resolvePercent = 95
             if !isReplacement {
@@ -94,7 +91,6 @@ extension PlayerViewModel {
         resetScrubStateOnSessionChange()
         let currentPos = max(0, transport.currentTime)
         isSwitchingSource = true
-        resolveStageKey = "switching"
         resolveStageLabel = "Bytter kilde sømløst på samme tidskode…"
         resolvePercent = 70
 
@@ -133,7 +129,6 @@ extension PlayerViewModel {
         guard !isSwitchingSource, !isResolving else { return }
         resetScrubStateOnSessionChange()
         isSwitchingSource = true
-        resolveStageKey = "switching"
         resolveStageLabel = "Bytter kilde valgt fra iPhone…"
         resolvePercent = 75
         do {
@@ -258,9 +253,6 @@ extension PlayerViewModel {
     }
 
     func applyResolveProgressEvent(_ event: TvResolveSocketEvent) {
-        if let stage = event.stage, !stage.isEmpty {
-            resolveStageKey = stage
-        }
         if let pct = event.percent {
             resolvePercent = pct
         }
@@ -401,12 +393,7 @@ extension PlayerViewModel {
                 completed: completed ? true : nil
             )
             lastReportedServerState = stateString
-            if let ready = hb.nextEpisodePrewarmReady {
-                nextEpisodePrewarmReady = ready
-            } else if hb.nextEpisodePrewarmStarted == true {
-                nextEpisodePrewarmReady = true
-            }
-            if let vfs = hb.vfsTelemetry {
+            if let vfs = hb.vfsTelemetry, lastVfsTelemetry != vfs {
                 lastVfsTelemetry = vfs
             }
             if overrideState == nil,
@@ -561,6 +548,7 @@ extension PlayerViewModel {
         pendingStopSnapshot = captureStopSnapshot()
         // Disconnect Combine sinks first so pausing does not publish `.paused` and flash the bottom bar.
         cancellables.removeAll()
+        didBindEnginePublishers = false
 
         if PlayerAudioSessionCoordinator.shared.isCurrentEngineOwner(engineOwnerToken) {
             if Self.shouldPauseEngineOnDismiss(engineState: transport.state, playbackPhase: playbackPhase) {

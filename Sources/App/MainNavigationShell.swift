@@ -1,16 +1,16 @@
 import SwiftUI
-import Combine
 import AetherBridge
 
 struct MainNavigationShell: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
+    @Environment(AppSessionStore.self) private var sessionStore
     @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var navBarVisibility = LunaNavigationBarVisibility()
+    @State private var navBarVisibility = LunaNavigationBarVisibility()
 
     let engine: AetherEngine
     let previewConfiguration: PreviewLaunchConfiguration?
     @State private var selectedTab: MainNavigationTab
     @State private var lastBootstrapRefreshAt: Date = .distantPast
+    @State private var bootstrapRefreshNonce: Int = 0
     @State private var allowColdHomeCardFocus: Bool
 
     init(
@@ -69,8 +69,8 @@ struct MainNavigationShell: View {
                 onDismiss: {}
             )
             .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
-            .environmentObject(sessionStore)
-            .environmentObject(sessionStore.comfort)
+            .environment(sessionStore)
+            .environment(sessionStore.comfort)
             .preferredColorScheme(.dark)
         } else if previewConfiguration?.screen == .details {
             NavigationStack {
@@ -83,21 +83,20 @@ struct MainNavigationShell: View {
             .ignoresSafeArea()
             .environment(\.lunaSubpageVisibility, navBarVisibility.sink)
             .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
-            .environmentObject(sessionStore.comfort)
+            .environment(sessionStore.comfort)
         } else {
             mainTabbedShell
         }
     }
 
     private var mainTabbedShell: some View {
+        @Bindable var sessionStore = sessionStore
         let isPlaybackActive = sessionStore.activePlaybackTarget != nil
         let hideTopBar = navBarVisibility.isTopBarHidden
         let interceptMenu = navBarVisibility.shouldInterceptMenuPress(hasActivePlayback: isPlaybackActive)
         let focusPosterPreview = previewConfiguration?.screen == .homePoster
 
         return ZStack(alignment: .topLeading) {
-            AmbientBackdropView(isPaused: isPlaybackActive)
-
             TabView(selection: $selectedTab) {
                 NavigationStack {
                     HomeView(
@@ -234,7 +233,7 @@ struct MainNavigationShell: View {
         .environment(\.lunaScrollToTopNonce, navBarVisibility.scrollToTopNonce)
         .environment(\.lunaContentEntryFocusNonce, navBarVisibility.contentEntryFocusNonce)
         .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
-        .environmentObject(sessionStore.comfort)
+        .environment(sessionStore.comfort)
         .onChange(of: selectedTab) { _, newTab in
             allowColdHomeCardFocus = false
             navBarVisibility.syncActiveTab(newTab)
@@ -252,14 +251,18 @@ struct MainNavigationShell: View {
                 }
             )
             .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
-            .environmentObject(sessionStore)
-            .environmentObject(sessionStore.comfort)
+            .environment(sessionStore)
+            .environment(sessionStore.comfort)
             .preferredColorScheme(.dark)
         }
         .task {
             if previewConfiguration?.focusDirection == .up {
                 navBarVisibility.handleMenuPressToRevealTopBar()
             }
+            await refreshBootstrapProfile()
+        }
+        .task(id: bootstrapRefreshNonce) {
+            guard bootstrapRefreshNonce > 0 else { return }
             await refreshBootstrapProfile()
         }
         .onChange(of: scenePhase) { _, phase in
@@ -277,9 +280,9 @@ struct MainNavigationShell: View {
                   Date().timeIntervalSince(lastBootstrapRefreshAt) >= 30 else {
                 return
             }
-            Task { await refreshBootstrapProfile() }
+            bootstrapRefreshNonce &+= 1
         }
-        .onReceive(sessionStore.comfort.$menuDisplayMode.dropFirst()) { mode in
+        .onChange(of: sessionStore.comfort.menuDisplayMode) { _, mode in
             if mode == .sdr60Hz && sessionStore.activePlaybackTarget == nil {
                 PlayerAudioSessionCoordinator.shared.flushDeferredDisplayCriteriaResetIfIdle(engine: engine)
             }

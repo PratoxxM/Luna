@@ -17,7 +17,6 @@ struct SiriRemoteTouchSurface: UIViewRepresentable {
     let onLightTouch: () -> Void
     let onScrubBegan: () -> Void
     let onScrubChanged: (_ deltaSeconds: Double) -> Void
-    let onScrubTouchLifted: () -> Void
     let onSelectClick: () -> Void
     let onLeftClick: () -> Void
     let onRightClick: () -> Void
@@ -42,7 +41,6 @@ struct SiriRemoteTouchSurface: UIViewRepresentable {
         view.onLightTouch = onLightTouch
         view.onScrubBegan = onScrubBegan
         view.onScrubChanged = onScrubChanged
-        view.onScrubTouchLifted = onScrubTouchLifted
         view.onSelectClick = onSelectClick
         view.onLeftClick = onLeftClick
         view.onRightClick = onRightClick
@@ -60,7 +58,6 @@ final class TouchCaptureUIView: UIView {
     var onLightTouch: (() -> Void)?
     var onScrubBegan: (() -> Void)?
     var onScrubChanged: ((_ deltaSeconds: Double) -> Void)?
-    var onScrubTouchLifted: (() -> Void)?
     var onSelectClick: (() -> Void)?
     var onLeftClick: (() -> Void)?
     var onRightClick: (() -> Void)?
@@ -200,9 +197,6 @@ final class TouchCaptureUIView: UIView {
             }
 
         case .ended, .cancelled, .failed:
-            if panAxis == .horizontalScrub && !didCommitDuringCurrentPan {
-                onScrubTouchLifted?()
-            }
             panAxis = .undecided
             prevPanDx = 0
             smoothedSpeedNorm = 0

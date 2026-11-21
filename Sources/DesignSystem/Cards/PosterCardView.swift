@@ -4,13 +4,12 @@ import SwiftUI
 /// Shelves hide resting titles (`showRestingTitle: false`) for calm artwork rows,
 /// whereas catalog, library, and search grids display resting titles (`showRestingTitle: true`).
 public struct PosterCardView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     let card: TvMediaCard
     let client: LunaCoreClient?
     let width: CGFloat
     let showStorageBadge: Bool
     let showRestingTitle: Bool
+    let focusRequestNonce: Int
     let onSelect: () -> Void
     let onPlayShortcut: (() -> Void)?
 
@@ -22,6 +21,7 @@ public struct PosterCardView: View {
         width: CGFloat = LunaTokens.Layout.posterW,
         showStorageBadge: Bool = false,
         showRestingTitle: Bool = false,
+        focusRequestNonce: Int = 0,
         onSelect: @escaping () -> Void,
         onPlayShortcut: (() -> Void)? = nil
     ) {
@@ -30,6 +30,7 @@ public struct PosterCardView: View {
         self.width = width
         self.showStorageBadge = showStorageBadge
         self.showRestingTitle = showRestingTitle
+        self.focusRequestNonce = focusRequestNonce
         self.onSelect = onSelect
         self.onPlayShortcut = onPlayShortcut
     }
@@ -40,8 +41,8 @@ public struct PosterCardView: View {
 
     public var body: some View {
         let posterURL = client?.resolveArtworkURL(card.preferredPosterPath, target: .poster2x)
-        let pct = min(100.0, max(0.0, card.progress?.percent ?? 0))
         let captionHeight: CGFloat = showRestingTitle ? 60 : 66
+        let showCaption = showRestingTitle || isFocused
 
         VStack(alignment: .leading, spacing: 14) {
             Button(action: onSelect) {
@@ -57,6 +58,7 @@ public struct PosterCardView: View {
                         placeholderSymbol: card.mediaType == "series" ? "tv" : "film",
                         contentMode: .fill
                     )
+                    .equatable()
                     .frame(width: width, height: height)
                     .opacity(isFocused ? 1.0 : LunaTokens.Layout.restPosterBrightness)
                     .clipped()
@@ -73,45 +75,32 @@ public struct PosterCardView: View {
 
                         Spacer()
 
-                        if pct > 2 && pct < 95 {
-                            let trackWidth = max(0, width - 28)
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(LunaTokens.Edge.progressTrack)
-                                Capsule()
-                                    .fill(LunaTheme.amber)
-                                    .frame(width: trackWidth * CGFloat(pct / 100.0))
-                            }
-                            .frame(width: trackWidth, height: 6)
+                        LunaCardProgressBar(percent: card.progress?.percent, trackWidth: width - 28)
                             .padding(.horizontal, 14)
                             .padding(.bottom, 12)
-                        }
                     }
                 }
                 .frame(width: width, height: height)
                 .lunaCardFocusFrame(
                     cornerRadius: LunaTheme.posterRadius,
-                    isFocused: isFocused,
-                    showRestingTopEdge: false
+                    isFocused: isFocused
                 )
             }
-            .buttonStyle(LunaChromelessButtonStyle())
-            .contentShape(RoundedRectangle(cornerRadius: LunaTheme.posterRadius, style: .continuous))
-            .focusEffectDisabled(true)
+            .lunaChromelessButton(RoundedRectangle(cornerRadius: LunaTheme.posterRadius, style: .continuous))
             .lunaCardLampGlow(isFocused: isFocused)
             .focused($isFocused)
+            .lunaRequestDirectFocus(nonce: focusRequestNonce, isFocused: $isFocused)
             .accessibilityLabel(card.title)
             .onPlayPauseCommand {
                 onPlayShortcut?()
             }
 
-            let showCaption = showRestingTitle || isFocused
             VStack(alignment: .leading, spacing: 3) {
                 Text(card.title)
                     .font(showRestingTitle ? LunaTheme.Font.subtitle : LunaTheme.Font.cardTitle)
                     .foregroundStyle(isFocused ? LunaTheme.linen : (showRestingTitle ? LunaTheme.moonlight : LunaTheme.linen))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .opacity(showCaption ? 1.0 : 0.0)
 
                 HStack(spacing: 6) {
                     if showCaption && showStorageBadge,
@@ -127,16 +116,9 @@ public struct PosterCardView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
-                .opacity(showCaption ? 1.0 : 0.0)
             }
             .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: captionHeight, maxHeight: captionHeight, alignment: .topLeading)
-            .animation(
-                reduceMotion
-                    ? .linear(duration: 0.01)
-                    : (isFocused ? LunaFocusStyle.focusFade.delay(0.06) : .easeOut(duration: 0.12)),
-                value: isFocused
-            )
-            .allowsHitTesting(false)
+            .lunaFocusCaptionReveal(isVisible: showCaption, isFocused: isFocused)
         }
     }
 

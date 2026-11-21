@@ -160,6 +160,20 @@ public extension View {
             }
         }
     }
+
+    func lunaBottomToast(
+        message: Binding<String?>,
+        tone: LunaToastTone = .danger,
+        autoClearNanoseconds: UInt64 = 4_000_000_000
+    ) -> some View {
+        lunaBottomToast(message: message.wrappedValue, tone: tone)
+            .task(id: message.wrappedValue) {
+                guard let active = message.wrappedValue, !active.isEmpty else { return }
+                try? await Task.sleep(nanoseconds: autoClearNanoseconds)
+                guard !Task.isCancelled, message.wrappedValue == active else { return }
+                message.wrappedValue = nil
+            }
+    }
 }
 
 /// Unified top-center HDR-comfortable player status capsule replacing competing banner/toast overlays.
