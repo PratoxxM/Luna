@@ -233,7 +233,7 @@ All fokusvisning går gjennom `LunaFocusStyle` / `lunaFocusSurface`. Ingen visni
 | --- | --- | --- |
 | `LunaArtBadge` (ny, på kunst) | Kapsel, fyll `Surface.badgeScrim`, **ingen kant**, `badge` 22 semibold `linen`, innmarg 12 × 6, valgfri 8 pt prikk eller ett ikon. Øverst til venstre, 14 pt fra kant. **Maks én per kort** | `originPill`, `upcomingDatePill`, episode-«Kommer», sett-hake på glass |
 | Sett | `LunaArtBadge` med bare `checkmark` i `emerald` | Hake på `cinemaGlass`-sirkel og 100 %-fremdrift på episoder |
-| Lagringsnivå | 8 pt prikk (`tierNvme` fylt / `tierArchive` ring / ingen for strøm) **foran undertekstlinjen**, bare ved fokus. Ingen skive på kunsten | `LunaTierMarkView` oppå kunst |
+| Lagringsnivå | 8 pt prikk (`tierNvme` fylt / `tierArchive` ring / ingen for strøm) **foran undertekstlinjen** (ved fokus på hyller, og synlig sammen med hviletittel i rutenett som Bibliotek). Ingen skive på kunsten | `LunaTierMarkView` oppå kunst |
 | Formater (4K, Dolby Vision, HDR10+, Atmos) | Ren tekst i `subtitle` `muted`, skilt med « · », maks tre, i formatlinjen på detaljsiden og i OSD-hodet | Innrammede versal-badges, kvalitetspille i OSD |
 | Fremdrift | 6 pt kapsel, spor `Edge.progressTrack`, fyll `amber`, 14 pt fra kant. **Vises bare når 2 % < p < 95 %** på alle korttyper | Tre ulike terskler (`> 2`, `> 0`, `> 1 \|\| watched`) |
 
@@ -246,7 +246,7 @@ All fokusvisning går gjennom `LunaFocusStyle` / `lunaFocusSurface`. Ingen visni
 ### 2.9 Ark og paneler
 
 - **Ark (`LunaSheetContainer`, ny):** lerret, sentrert nivå 1-ark, `sheetPadding` 48, bredde `sheetNarrowW` (Mer, Slett, Handling, Feil) eller `sheetWideW` (Velg kilde, Velg sesong). Hodet er `pageTitle` pluss maks én metalinje (`subtitle` `muted`, uten romnavn), og deretter innhold direkte uten skillelinje. Radene inne i arket er en `LunaListGroup` uten egen bakgrunn, slik at radene ligger flatt på arkflaten. `onExitCommand` lukker.
-- **Hurtigpanel i spiller:** nivå 1-glass, r24, toppkant + skygge, **ingen 1 pt kant**, bredde 640/820. Hodet er bare tittelen (`cardTitle`), uten ikon og uten gjentatt valgt verdi. Grupper i panelet skilles med en `caption`-etikett i `muted` («Kveldslys», «Tekstsynk»), ikke med en ny flate.
+- **Hurtigpanel i spiller:** nivå 1-glass, r24, toppkant + skygge, **ingen 1 pt kant**, bredde 740/920. Hodet er bare tittelen (`cardTitle`), uten ikon og uten gjentatt valgt verdi. Grupper i panelet skilles med en `caption`-etikett i `muted` («Kveldslys», «Tekstsynk»), ikke med en ny flate.
 
 ### 2.10 Tilstander
 
@@ -271,7 +271,7 @@ All fokusvisning går gjennom `LunaFocusStyle` / `lunaFocusSurface`. Ingen visni
     "episodeW": 420, "episodeH": 236, "controlH": 56, "compactControlH": 48, "iconButton": 56,
     "listRowPadX": 24, "listRowPadY": 16, "listRowMinH": 72,
     "sheetPadding": 48, "sheetNarrowW": 880, "sheetWideW": 1240,
-    "quickPanelW": 640, "quickPanelWideW": 820
+    "quickPanelW": 740, "quickPanelWideW": 920
   },
   "motion": { "focusSelectDebounceMs": 180 }
 }
@@ -475,7 +475,7 @@ Hver fase er én commit. Verifikasjonssløyfen i AGENTS.md §7 kjøres per fase 
 2. **Gull = fokus:** ingen ufokusert kontroll har `playFocusGradient`- eller `primaryAmberGradient`-fyll. `amber` brukes bare til fokus, primærikon, valgt-hake, fremdrift og scrubbing.
 3. **Én ramme:** ingen `strokeBorder` på flater i hvile i `Sources/Features/**`, unntatt primærens hårstrek og tekstfeltet.
 4. **Typografi:** ≤ 9 tekstroller + ikonroller i `allFixedPointSizes`. Ingen `.uppercased()` eller `.tracking(` på synlig tekst.
-5. **Størrelser:** to arkbredder (880/1240) og to panelbredder (640/820). Alle vertikale avstander kommer fra `sectionGap`/`headerGap`/`blockGap`/`gridRowGap`.
+5. **Størrelser:** to arkbredder (880/1240) og to panelbredder (740/920). Alle vertikale avstander kommer fra `sectionGap`/`headerGap`/`blockGap`/`gridRowGap`.
 6. **Romnavn:** `sessionStore.roomName` og `activeSession?.roomName` forekommer i `Text(...)` bare i toppbaren og romvelgeren.
 7. **Fokusflyt:** tabellen i §4 holder på alle seks faner. Ingen etikett endrer tekst ved fokus. Det finnes ingen tom tilstand uten fokusmål.
 8. **Porter:** `./ops/bin/luna-check` og `./scripts/test-core.sh` er grønne. Preview-sandkassen (1920 × 1080, `?guides=1`) og de fire `tvos-vision`-renderne (`home`, `catalog`, `details`, `player`) er inspisert visuelt. Ingen fokusert kant klipper mot 90/60-guidene.

@@ -519,8 +519,8 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
     @MainActor
     func testQuickPanelAnchoringAndCollisionFreeSubtitlePlacement() {
         // 1. Popover widths & button-anchored leading-X clamping inside 1920x1080 90 pt gutters
-        XCTAssertEqual(PlayerQuickPanelView.panelWidth(for: .subtitles), 640)
-        XCTAssertEqual(PlayerQuickPanelView.panelWidth(for: .source), 820)
+        XCTAssertEqual(PlayerQuickPanelView.panelWidth(for: .subtitles), 740)
+        XCTAssertEqual(PlayerQuickPanelView.panelWidth(for: .source), 920)
 
         let sourceTrigger = CGRect(x: 412, y: 950, width: 130, height: 48)
         XCTAssertEqual(
@@ -531,7 +531,7 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
         let farRightTrigger = CGRect(x: 1700, y: 950, width: 120, height: 48)
         XCTAssertEqual(
             PlayerQuickPanelView.resolvedPanelLeadingX(triggerFrame: farRightTrigger, tab: .source),
-            1010,
+            910,
             accuracy: 0.1
         )
         XCTAssertGreaterThan(

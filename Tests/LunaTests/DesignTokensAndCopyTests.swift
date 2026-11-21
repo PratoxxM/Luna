@@ -7,7 +7,7 @@ final class DesignTokensAndCopyTests: XCTestCase {
     func testTokensChecksumAndTypographyScaleFloor() {
         XCTAssertEqual(
             LunaTokens.tokensSha256,
-            "1807f61acaf00ec33d6df43bea3b2446aaf22d2efd584435a68db99e7ab535fa"
+            "93300ad9c5c654cdeb77827205f72d1145440d93680ccca63ccac8ba3530bc6f"
         )
         XCTAssertGreaterThanOrEqual(LunaTokens.Typography.badge, 22.0)
         XCTAssertGreaterThanOrEqual(LunaTokens.Typography.caption, 22.0)

@@ -233,8 +233,8 @@ public enum LowResUpscaleMode: String, CaseIterable, Identifiable, Sendable {
     public var shortDescription: String {
         switch self {
         case .off: return "Standard tvOS-skalering uten MetalFX."
-        case .auto: return "MetalFX for SD/720p/1080p 8-bit SDR. 4K og HDR/DV bruker nativ skalering."
-        case .animeLineArt: return "Linjekunst-skalerer for animasjon og anime i ≤ 1080p 8-bit SDR."
+        case .auto: return "Kun ≤ 1080p 8-bit SDR · 4K og HDR forblir urørt."
+        case .animeLineArt: return "Linjekunst-skalerer for animasjon i ≤ 1080p SDR."
         }
     }
 }

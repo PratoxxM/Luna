@@ -144,6 +144,7 @@ struct PlayerContainerView: View {
                     isQuickPanelOpen: isQuickPanelOpen,
                     isNerdHUDVisible: comfort.showNerdHUD
                 )
+                .opacity(activeQuickPanel == nil || activeQuickPanel == .subtitles ? 1 : 0)
                 .ignoresSafeArea()
                 .zIndex(1)
             }
@@ -584,20 +585,22 @@ struct PlayerContainerView: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            VStack {
-                if !placement.relocateToTop {
-                    Spacer()
-                }
-                Text("Velkommen tilbake til Lumon. Avdelingen venter på dere.")
-                    .font(LunaTheme.Font.subtitleCue(size: comfort.subtitleFontSize.pointSize))
-                    .foregroundStyle(comfort.hdrSubtitlePreset.foregroundColor(isHDR: true))
-                    .multilineTextAlignment(.center)
-                    .shadow(color: .black.opacity(0.96), radius: 3, x: 0, y: 2)
-                    .padding(.horizontal, 120)
-                    .padding(.top, placement.relocateToTop ? placement.topInset : 0)
-                    .padding(.bottom, placement.relocateToTop ? 0 : placement.bottomInset)
-                if placement.relocateToTop {
-                    Spacer()
+            if activeQuickPanel == nil || activeQuickPanel == .subtitles {
+                VStack {
+                    if !placement.relocateToTop {
+                        Spacer()
+                    }
+                    Text("Velkommen tilbake til Lumon. Avdelingen venter på dere.")
+                        .font(LunaTheme.Font.subtitleCue(size: comfort.subtitleFontSize.pointSize))
+                        .foregroundStyle(comfort.hdrSubtitlePreset.foregroundColor(isHDR: true))
+                        .multilineTextAlignment(.center)
+                        .shadow(color: .black.opacity(0.96), radius: 3, x: 0, y: 2)
+                        .padding(.horizontal, 120)
+                        .padding(.top, placement.relocateToTop ? placement.topInset : 0)
+                        .padding(.bottom, placement.relocateToTop ? 0 : placement.bottomInset)
+                    if placement.relocateToTop {
+                        Spacer()
+                    }
                 }
             }
         }

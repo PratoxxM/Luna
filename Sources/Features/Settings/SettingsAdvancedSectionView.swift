@@ -6,7 +6,10 @@ struct SettingsAdvancedSectionView: View {
 
     var body: some View {
         SettingsSectionPanel(title: "Avansert") {
-            SettingsControlRow(title: "Dolby Vision Dual-Layer (P7 FEL)") {
+            SettingsControlRow(
+                title: "Dolby Vision Dual-Layer (P7 FEL)",
+                axis: .vertical
+            ) {
                 HStack(spacing: 10) {
                     ForEach(DualLayerOverrideMode.allCases) { mode in
                         LunaPillButton(
@@ -45,7 +48,8 @@ struct SettingsAdvancedSectionView: View {
 
             SettingsControlRow(
                 title: "Fast lydsynk for denne Apple TV-en (HDMI / eARC)",
-                subtitle: "Negativ verdi sender lyden tidligere"
+                subtitle: "Negativ verdi sender lyden tidligere",
+                axis: .vertical
             ) {
                 let currentDelayLabel = comfort.formattedAudioDelayLabel.replacingOccurrences(of: "-", with: "−")
                 HStack(spacing: 10) {

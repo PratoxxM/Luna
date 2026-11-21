@@ -104,19 +104,21 @@ public struct PosterCardView: View {
                 onPlayShortcut?()
             }
 
+            let showCaption = showRestingTitle || isFocused
             VStack(alignment: .leading, spacing: 3) {
                 Text(card.title)
                     .font(showRestingTitle ? LunaTheme.Font.subtitle : LunaTheme.Font.cardTitle)
                     .foregroundStyle(isFocused ? LunaTheme.linen : (showRestingTitle ? LunaTheme.moonlight : LunaTheme.linen))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .opacity((showRestingTitle || isFocused) ? 1.0 : 0.0)
+                    .opacity(showCaption ? 1.0 : 0.0)
 
                 HStack(spacing: 6) {
-                    if isFocused && showStorageBadge,
+                    if showCaption && showStorageBadge,
                        let avail = card.availability,
-                       avail.isPhysicalLocal || avail.isLocalVfs {
+                       avail.isPhysicalLocal {
                         LunaTierDotView(availability: avail)
+                            .opacity(isFocused ? 1.0 : 0.88)
                     }
 
                     Text(subtitleText)
@@ -125,7 +127,7 @@ public struct PosterCardView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
-                .opacity(isFocused ? 1.0 : 0.0)
+                .opacity(showCaption ? 1.0 : 0.0)
             }
             .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: captionHeight, maxHeight: captionHeight, alignment: .topLeading)
             .animation(

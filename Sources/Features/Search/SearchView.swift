@@ -117,6 +117,7 @@ struct SearchView: View {
                                     }
                                     .focused($searchFocus, equals: .clearHistory)
                                 }
+                                .padding(.horizontal, LunaTheme.horizontalGutter)
 
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 12) {
@@ -127,13 +128,15 @@ struct SearchView: View {
                                             .focused($searchFocus, equals: .recent(term))
                                         }
                                     }
+                                    .padding(.horizontal, LunaTheme.horizontalGutter)
                                     .padding(.vertical, 6)
                                 }
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentMargins(.zero, for: .scrollContent)
                                 .scrollClipDisabled()
+                                .ignoresSafeArea(.container, edges: .horizontal)
                                 .focusSection()
                             }
-                            .padding(.horizontal, LunaTheme.horizontalGutter)
                         }
                     } else {
                         if !results.isEmpty {

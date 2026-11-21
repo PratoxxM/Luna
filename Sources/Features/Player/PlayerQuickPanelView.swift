@@ -60,6 +60,13 @@ struct PlayerQuickPanelView: View {
     @State private var focusRetryTask: Task<Void, Never>?
     @Namespace private var panelFocusNamespace
 
+    private static let topScrollFadeHeight: CGFloat = 12
+    private static let bottomScrollFadeHeight: CGFloat = 14
+
+    private var maxScrollContentHeight: CGFloat {
+        tab == .subtitles ? 500 : 610
+    }
+
     nonisolated static func panelWidth(for tab: PlayerQuickPanelTab) -> CGFloat {
         switch tab {
         case .source:
@@ -127,8 +134,10 @@ struct PlayerQuickPanelView: View {
 
     var body: some View {
         let leadingX = Self.resolvedPanelLeadingX(triggerFrame: triggerFrame, tab: tab)
+        let maxHeight = maxScrollContentHeight
+        let isScrollable = contentHeight > maxHeight + 2
 
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             panelHeader
 
             Rectangle()
@@ -140,8 +149,9 @@ struct PlayerQuickPanelView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         panelListContent
                     }
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 4)
+                    .padding(.top, Self.topScrollFadeHeight)
+                    .padding(.bottom, Self.bottomScrollFadeHeight)
+                    .padding(.horizontal, 6)
                     .onGeometryChange(for: CGFloat.self) { geo in
                         geo.size.height
                     } action: { newHeight in
@@ -150,7 +160,30 @@ struct PlayerQuickPanelView: View {
                         }
                     }
                 }
-                .frame(height: min(max(contentHeight, 120), 460))
+                .frame(height: min(max(contentHeight, 120), maxHeight))
+                .mask {
+                    if isScrollable {
+                        VStack(spacing: 0) {
+                            LinearGradient(
+                                colors: [.clear, .black],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: Self.topScrollFadeHeight)
+
+                            Color.black
+
+                            LinearGradient(
+                                colors: [.black, .clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: Self.bottomScrollFadeHeight)
+                        }
+                    } else {
+                        Color.black
+                    }
+                }
                 .onAppear {
                     chapterSnapshotTime = max(0, viewModel.engine.currentTime)
                     focusPreferredActiveItem(proxy: proxy)
@@ -169,7 +202,7 @@ struct PlayerQuickPanelView: View {
             .focusSection()
         }
         .padding(.horizontal, 26)
-        .padding(.vertical, 22)
+        .padding(.vertical, 20)
         .frame(width: panelWidth, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
@@ -188,7 +221,7 @@ struct PlayerQuickPanelView: View {
             y: 16
         )
         .padding(.leading, leadingX)
-        .padding(.bottom, 274)
+        .padding(.bottom, 248)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         .onDisappear {
             focusRetryTask?.cancel()
@@ -513,13 +546,13 @@ struct PlayerQuickPanelView: View {
     private func focusPreferredActiveItem(proxy: ScrollViewProxy) {
         focusRetryTask?.cancel()
         let targetID = preferredActiveItemID
-        proxy.scrollTo(targetID, anchor: .center)
+        proxy.scrollTo(targetID)
         focusedItemID = targetID
         focusRetryTask = Task { @MainActor in
             for delayNs: UInt64 in [16_000_000, 48_000_000] {
                 try? await Task.sleep(nanoseconds: delayNs)
                 guard !Task.isCancelled else { return }
-                proxy.scrollTo(targetID, anchor: .center)
+                proxy.scrollTo(targetID)
                 if focusedItemID != targetID {
                     focusedItemID = targetID
                 } else {

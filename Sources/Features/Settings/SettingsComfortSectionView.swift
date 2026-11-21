@@ -39,7 +39,8 @@ struct SettingsRoomDisplaySectionView: View {
 
             SettingsControlRow(
                 title: "MetalFX 4K-oppskalering",
-                subtitle: comfort.lowResUpscaleMode.shortDescription
+                subtitle: comfort.lowResUpscaleMode.shortDescription,
+                axis: .vertical
             ) {
                 HStack(spacing: 10) {
                     ForEach(LowResUpscaleMode.allCases) { mode in
@@ -102,7 +103,8 @@ struct SettingsSubtitlesSectionView: View {
         SettingsSectionPanel(title: "Undertekster") {
             SettingsControlRow(
                 title: "Kveldslys",
-                subtitle: "\(comfort.hdrSubtitlePreset.settingsDescription) · Gjelder HDR og Dolby Vision"
+                subtitle: "\(comfort.hdrSubtitlePreset.settingsDescription) · Gjelder HDR og Dolby Vision",
+                axis: .vertical
             ) {
                 HStack(spacing: 10) {
                     ForEach(HDRSubtitlePreset.allCases) { preset in

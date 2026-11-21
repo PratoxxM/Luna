@@ -1,11 +1,11 @@
-// Generated from design/tokens.json (sha256: 1807f61acaf00ec33d6df43bea3b2446aaf22d2efd584435a68db99e7ab535fa) — DO NOT EDIT MANUALLY.
+// Generated from design/tokens.json (sha256: 93300ad9c5c654cdeb77827205f72d1145440d93680ccca63ccac8ba3530bc6f) — DO NOT EDIT MANUALLY.
 // Regenerate via: ./ops/bin/luna-design-tokens --sync
 
 import CoreGraphics
 import SwiftUI
 
 public enum LunaTokens {
-    public static let tokensSha256 = "1807f61acaf00ec33d6df43bea3b2446aaf22d2efd584435a68db99e7ab535fa"
+    public static let tokensSha256 = "93300ad9c5c654cdeb77827205f72d1145440d93680ccca63ccac8ba3530bc6f"
 
     public enum Surface {
         public static let canvas = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0)
@@ -159,8 +159,8 @@ public enum LunaTokens {
         public static let sheetPadding: CGFloat = 48.0
         public static let sheetNarrowW: CGFloat = 880.0
         public static let sheetWideW: CGFloat = 1240.0
-        public static let quickPanelW: CGFloat = 640.0
-        public static let quickPanelWideW: CGFloat = 820.0
+        public static let quickPanelW: CGFloat = 740.0
+        public static let quickPanelWideW: CGFloat = 920.0
         public static let hairlineWidth: CGFloat = 0.5
         public static let focusBorderWidth: CGFloat = 2.0
         public static let focusBorderOpacity: CGFloat = 0.85

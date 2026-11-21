@@ -340,11 +340,13 @@ enum PreviewMockFixtures {
 
     static var genreChips: [TvGenreChip] {
         [
+            TvGenreChip(slug: "norsk", label: "Norsk", icon: nil, accentColor: nil, tmdbGenreIds: nil, browsePath: "/api/tv/v1/catalog/movies?genre=norsk", catalogPath: nil),
             TvGenreChip(slug: "drama", label: "Drama", icon: nil, accentColor: nil, tmdbGenreIds: [18], browsePath: "/api/tv/v1/catalog/movies?genre=drama", catalogPath: nil),
-            TvGenreChip(slug: "scifi", label: "Sci-Fi", icon: nil, accentColor: nil, tmdbGenreIds: [878], browsePath: "/api/tv/v1/catalog/movies?genre=scifi", catalogPath: nil),
-            TvGenreChip(slug: "thriller", label: "Thriller", icon: nil, accentColor: nil, tmdbGenreIds: [53], browsePath: "/api/tv/v1/catalog/movies?genre=thriller", catalogPath: nil),
-            TvGenreChip(slug: "nordic", label: "Norsk", icon: nil, accentColor: nil, tmdbGenreIds: nil, browsePath: "/api/tv/v1/catalog/movies?genre=nordic", catalogPath: nil),
-            TvGenreChip(slug: "krim", label: "Krim", icon: nil, accentColor: nil, tmdbGenreIds: [80], browsePath: "/api/tv/v1/catalog/movies?genre=krim", catalogPath: nil),
+            TvGenreChip(slug: "komedie", label: "Komedie", icon: nil, accentColor: nil, tmdbGenreIds: [35], browsePath: "/api/tv/v1/catalog/movies?genre=komedie", catalogPath: nil),
+            TvGenreChip(slug: "sci-fi", label: "Sci-Fi & Fantasy", icon: nil, accentColor: nil, tmdbGenreIds: [878], browsePath: "/api/tv/v1/catalog/movies?genre=sci-fi", catalogPath: nil),
+            TvGenreChip(slug: "thriller", label: "Thriller & Spenning", icon: nil, accentColor: nil, tmdbGenreIds: [53], browsePath: "/api/tv/v1/catalog/movies?genre=thriller", catalogPath: nil),
+            TvGenreChip(slug: "action", label: "Action & Eventyr", icon: nil, accentColor: nil, tmdbGenreIds: [28], browsePath: "/api/tv/v1/catalog/movies?genre=action", catalogPath: nil),
+            TvGenreChip(slug: "krim", label: "Krim & Mysterier", icon: nil, accentColor: nil, tmdbGenreIds: [80], browsePath: "/api/tv/v1/catalog/movies?genre=krim", catalogPath: nil),
         ]
     }
 

@@ -143,7 +143,7 @@ struct CatalogBrowseView: View {
                             .padding(.horizontal, LunaTheme.horizontalGutter)
                     }
 
-                // Uniform compact capsule filter strip within 90 pt margins + trailing fade mask
+                // Uniform compact capsule filter strip bleeding edge-to-edge with 90 pt leading inset
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(sortOptions, id: \.id) { opt in
@@ -228,17 +228,12 @@ struct CatalogBrowseView: View {
                         }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 10)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentMargins(.zero, for: .scrollContent)
                 .scrollClipDisabled()
-                .mask(
-                    HStack(spacing: 0) {
-                        Color.black
-                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: 48)
-                    }
-                )
+                .ignoresSafeArea(.container, edges: .horizontal)
                 .focusSection()
                 .onMoveCommand { direction in
                     if direction == .down {
@@ -338,6 +333,7 @@ struct CatalogBrowseView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, isRootTab ? LunaTopBarView.contentTopPadding : LunaTokens.Layout.subpageTop)
             .padding(.bottom, 84)
         }
