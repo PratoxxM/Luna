@@ -537,8 +537,11 @@ struct PlayerContainerView: View {
         if viewModel.isSwitchingSource {
             return ("Bytter kilde…", .ok, true)
         }
-        if viewModel.playbackPhase == .rebuffering || viewModel.playbackPhase == .stalled {
+        switch viewModel.playbackPhase {
+        case .rebuffering, .stalled:
             return ("Bufrer…", .warn, true)
+        default:
+            break
         }
         if let banner = viewModel.transientBannerMessage, !banner.isEmpty {
             return (banner, .warn, false)

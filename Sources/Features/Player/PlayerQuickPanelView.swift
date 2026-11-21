@@ -65,7 +65,7 @@ struct PlayerQuickPanelView: View {
         case .source:
             return LunaTokens.Layout.quickPanelWideW
         case .subtitles, .audio, .picture, .chapters:
-            return LunaTokens.Layout.quickPanelNarrowW
+            return LunaTokens.Layout.quickPanelW
         }
     }
 
