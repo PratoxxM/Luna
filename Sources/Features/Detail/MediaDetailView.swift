@@ -15,7 +15,8 @@ struct MediaDetailView: View {
     @State private var pendingMoreAction: PendingMoreSheetAction?
 
     private enum PendingMoreSheetAction {
-        case pickSource
+        case readOverview
+        case toggleWatched
         case deleteSeason(Int)
         case deleteTitle
     }
@@ -46,13 +47,12 @@ struct MediaDetailView: View {
             LunaTheme.canvas.ignoresSafeArea()
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: LunaTokens.Layout.blockGap) {
                     if let detail = viewModel.detail {
                         DetailHeroHeaderView(
                             item: detail,
                             client: viewModel.client,
                             primaryPlayTitle: viewModel.heroPrimaryPlayTitle(detail),
-                            watchedButtonTitle: viewModel.watchedButtonTitle(detail),
                             isPreResolvedReady: viewModel.isPreResolvedReady,
                             horizontalGutter: detailGutter,
                             focusNamespace: detailFocusNamespace,
@@ -62,9 +62,6 @@ struct MediaDetailView: View {
                             },
                             onToggleWatchlist: {
                                 Task { await viewModel.toggleWatchlist() }
-                            },
-                            onToggleWatched: {
-                                Task { await viewModel.handleHeroWatchedTap() }
                             },
                             onToggleMonitor: {
                                 Task { await viewModel.toggleMonitor() }
@@ -77,9 +74,6 @@ struct MediaDetailView: View {
                             },
                             onOpenMore: {
                                 viewModel.showMoreSheet = true
-                            },
-                            onReadMore: { _ in
-                                viewModel.showFullOverviewSheet = true
                             }
                         )
 
@@ -113,25 +107,15 @@ struct MediaDetailView: View {
                             )
                         }
                     } else if viewModel.isLoading {
-                        HStack(spacing: 16) {
-                            ProgressView()
-                            Text("Henter detaljer for \(initialTitle)…")
-                                .font(LunaTheme.Font.cardTitle)
-                                .foregroundStyle(LunaTheme.moonlight)
-                        }
-                        .padding(.horizontal, detailGutter)
-                        .padding(.top, 180)
+                        LunaLoadingRow(message: "Henter detaljer for \(initialTitle)…")
+                            .padding(.horizontal, detailGutter)
+                            .padding(.top, 140)
                     } else if let errorMessage = viewModel.errorMessage {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text(errorMessage)
-                                .font(LunaTheme.Font.body)
-                                .foregroundStyle(LunaTheme.danger)
-                            LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                                Task { await viewModel.reloadFromError() }
-                            }
+                        LunaInlineError(message: errorMessage) {
+                            Task { await viewModel.reloadFromError() }
                         }
                         .padding(.horizontal, detailGutter)
-                        .padding(.top, 180)
+                        .padding(.top, 140)
                     }
                 }
                 .padding(.bottom, viewModel.detail?.mediaType == "series" ? 84 : 0)
@@ -140,13 +124,8 @@ struct MediaDetailView: View {
             .contentMargins(.zero, for: .scrollContent)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .ignoresSafeArea()
-
-            if let mutationErrorBanner = viewModel.mutationErrorBanner {
-                TransientErrorBanner(message: mutationErrorBanner)
-                    .padding(.horizontal, detailGutter)
-                    .padding(.top, 72)
-            }
         }
+        .lunaBottomToast(message: viewModel.mutationErrorBanner, tone: .danger)
         .lunaNavigationContainerBackdrop(mode: .probeOnly)
         .focusScope(detailFocusNamespace)
         .toolbar(.hidden, for: .tabBar)
@@ -188,8 +167,10 @@ struct MediaDetailView: View {
             let action = pendingMoreAction
             pendingMoreAction = nil
             switch action {
-            case .pickSource:
-                viewModel.openPrimarySourcePicker()
+            case .readOverview:
+                viewModel.showFullOverviewSheet = true
+            case .toggleWatched:
+                Task { await viewModel.handleHeroWatchedTap() }
             case .deleteSeason(let seasonNumber):
                 viewModel.requestDeleteSeason(seasonNumber)
             case .deleteTitle:
@@ -207,8 +188,14 @@ struct MediaDetailView: View {
                     hasLocalEpisodes: viewModel.hasLocalEpisodes,
                     selectedSeasonNumber: detail.mediaType == "series" ? viewModel.selectedSeasonNumber : nil,
                     canDeleteSelectedSeason: detail.mediaType == "series" && seasonHasLocal,
-                    onPickSource: {
-                        pendingMoreAction = .pickSource
+                    canReadOverview: detail.preferredOverview != nil,
+                    watchedActionTitle: moreWatchedActionTitle(detail),
+                    onReadOverview: {
+                        pendingMoreAction = .readOverview
+                        viewModel.showMoreSheet = false
+                    },
+                    onToggleWatched: {
+                        pendingMoreAction = .toggleWatched
                         viewModel.showMoreSheet = false
                     },
                     onToggleMonitor: {
@@ -227,7 +214,6 @@ struct MediaDetailView: View {
                         viewModel.showMoreSheet = false
                     }
                 )
-                .environmentObject(sessionStore)
                 .preferredColorScheme(.dark)
             }
         }
@@ -298,5 +284,15 @@ struct MediaDetailView: View {
                 subpageVisibility.leaveSubpage(subpageToken)
             }
         }
+    }
+
+    private func moreWatchedActionTitle(_ detail: TvItemDetail) -> String {
+        if detail.watched {
+            return "Marker som usett"
+        }
+        if detail.mediaType == "series", let next = detail.nextUp {
+            return "Marker S\(next.season) E\(next.episode) som sett"
+        }
+        return "Marker som sett"
     }
 }

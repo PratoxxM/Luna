@@ -35,7 +35,7 @@ struct DetailSeasonsSectionView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: LunaTokens.Layout.headerGap) {
             if seasons.count <= 6 {
                 HStack(spacing: 10) {
                     ForEach(seasons) { season in
@@ -70,8 +70,8 @@ struct DetailSeasonsSectionView: View {
                 HStack(spacing: 16) {
                     let activeName = selectedSeasonSummary?.localizedName ?? "Sesong \(selectedSeasonNumber)"
                     LunaPillButton(
-                        "\(activeName) ▾",
-                        systemImage: "square.grid.2x2",
+                        activeName,
+                        systemImage: "chevron.down",
                         isSelected: true,
                         prominence: .glassPill,
                         size: .compact
@@ -96,13 +96,8 @@ struct DetailSeasonsSectionView: View {
             }
 
             if isLoadingEpisodes && episodes.isEmpty {
-                HStack(spacing: 14) {
-                    ProgressView()
-                    Text("Henter episoder…")
-                        .font(LunaTheme.Font.body)
-                        .foregroundStyle(LunaTheme.muted)
-                }
-                .padding(.horizontal, detailGutter)
+                LunaLoadingRow(message: "Henter episoder…")
+                    .padding(.horizontal, detailGutter)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -174,146 +169,47 @@ private struct DetailSeasonPickerSheetView: View {
     @Namespace private var seasonGridNamespace
 
     private let gridColumns = Array(
-        repeating: GridItem(.fixed(330), spacing: 20, alignment: .leading),
+        repeating: GridItem(.flexible(), spacing: 18, alignment: .leading),
         count: 4
     )
 
     var body: some View {
-        ZStack {
-            LunaTheme.canvas.ignoresSafeArea()
-
-            VStack(alignment: .leading, spacing: 24) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(seriesTitle)
-                            .font(LunaTheme.Font.subtitle)
-                            .foregroundStyle(LunaTheme.muted)
-                        Text("Velg sesong")
-                            .font(LunaTheme.Font.pageTitle)
-                            .foregroundStyle(LunaTheme.linen)
-                    }
-
-                    Spacer()
-
-                    Text(LunaCopy.seasonsCount(seasons.count))
-                        .font(LunaTheme.Font.subtitle)
-                        .foregroundStyle(LunaTheme.muted)
-                }
-
-                Rectangle()
-                    .fill(LunaTheme.warmBorderSubtle)
-                    .frame(height: 1)
-
-                ScrollViewReader { proxy in
-                    ScrollView(.vertical, showsIndicators: false) {
-                        LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 18) {
-                            ForEach(seasons) { season in
-                                let isSelected = (season.seasonNumber == selectedSeasonNumber)
-                                SeasonGridTileButton(
-                                    season: season,
-                                    isSelected: isSelected,
-                                    isFocused: focusedSeasonNumber == season.seasonNumber
-                                ) {
-                                    onPickSeason(season.seasonNumber)
-                                }
-                                .id(season.seasonNumber)
-                                .focused($focusedSeasonNumber, equals: season.seasonNumber)
-                                .prefersDefaultFocus(isSelected, in: seasonGridNamespace)
+        LunaSheetContainer(
+            title: "Velg sesong",
+            subtitle: seriesTitle,
+            trailingMeta: LunaCopy.seasonsCount(seasons.count),
+            width: .wide,
+            maxHeight: 860,
+            onClose: onClose
+        ) {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 14) {
+                        ForEach(seasons) { season in
+                            let isSelected = (season.seasonNumber == selectedSeasonNumber)
+                            LunaListRow(
+                                title: season.localizedName,
+                                subtitle: season.episodeCount > 0 ? LunaCopy.episodesCount(season.episodeCount) : nil,
+                                isSelected: isSelected,
+                                externalIsFocused: focusedSeasonNumber == season.seasonNumber
+                            ) {
+                                onPickSeason(season.seasonNumber)
                             }
-                        }
-                        .padding(8)
-                    }
-                    .scrollClipDisabled()
-                    .onAppear {
-                        focusedSeasonNumber = selectedSeasonNumber
-                        proxy.scrollTo(selectedSeasonNumber, anchor: .center)
-                    }
-                }
-                .focusScope(seasonGridNamespace)
-            }
-            .padding(48)
-            .frame(maxWidth: 1480, maxHeight: 860)
-            .background(
-                RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
-                    .fill(LunaTheme.surface)
-            )
-            .lunaTopLightEdge(
-                cornerRadius: LunaTokens.Radius.panel,
-                topColor: LunaTokens.Edge.top3,
-                sideColor: LunaTokens.Edge.top1
-            )
-        }
-        .onExitCommand {
-            onClose()
-        }
-    }
-}
-
-private struct SeasonGridTileButton: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
-
-    let season: TvSeasonSummary
-    let isSelected: Bool
-    let isFocused: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(season.localizedName)
-                        .font(LunaTheme.Font.cardTitle)
-                        .foregroundStyle(LunaTheme.linen)
-                        .lineLimit(1)
-
-                    if season.episodeCount > 0 {
-                        Text(LunaCopy.episodesCount(season.episodeCount))
-                            .font(LunaTheme.Font.caption)
-                            .foregroundStyle(isFocused ? LunaTheme.moonlight : LunaTheme.muted)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                if isSelected {
-                    Text("✓")
-                        .font(LunaTheme.Font.cardTitle)
-                        .foregroundStyle(LunaTheme.amber)
-                }
-            }
-            .transaction { $0.animation = nil }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
-                    .fill(isFocused ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
-                    .overlay {
-                        if isSelected && !isFocused {
-                            RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
-                                .fill(LunaTokens.Accent.soft)
+                            .id(season.seasonNumber)
+                            .focused($focusedSeasonNumber, equals: season.seasonNumber)
+                            .prefersDefaultFocus(isSelected, in: seasonGridNamespace)
                         }
                     }
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
-                    .strokeBorder(
-                        isFocused
-                            ? LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity)
-                            : (isSelected ? LunaTokens.Accent.border : LunaTheme.warmBorderSubtle),
-                        lineWidth: isFocused ? LunaFocusStyle.borderWidth : 1.0
-                    )
-            )
-            .shadow(
-                color: isFocused ? roomAtmosphere.lampColor.opacity(roomAtmosphere.lampStrength * 0.7) : .clear,
-                radius: isFocused ? 20 : 0,
-                x: 0,
-                y: isFocused ? 6 : 0
-            )
-            .scaleEffect(isFocused ? 1.03 : 1.0)
-            .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
+                    .padding(.vertical, 4)
+                }
+                .scrollClipDisabled()
+                .onAppear {
+                    focusedSeasonNumber = selectedSeasonNumber
+                    proxy.scrollTo(selectedSeasonNumber, anchor: .center)
+                }
+            }
+            .defaultFocus($focusedSeasonNumber, selectedSeasonNumber, priority: .userInitiated)
+            .focusScope(seasonGridNamespace)
         }
-        .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous))
-        .focusEffectDisabled(true)
     }
 }

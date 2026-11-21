@@ -1,10 +1,9 @@
 import SwiftUI
 
 struct DetailMoreSheetView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
-
     private enum ActionRowID: Hashable {
-        case pickSource
+        case readOverview
+        case toggleWatched
         case monitor
         case deleteSeason
         case deleteTitle
@@ -14,7 +13,10 @@ struct DetailMoreSheetView: View {
     let hasLocalEpisodes: Bool
     var selectedSeasonNumber: Int? = nil
     var canDeleteSelectedSeason: Bool = false
-    let onPickSource: () -> Void
+    var canReadOverview: Bool = false
+    var watchedActionTitle: String = "Marker som sett"
+    let onReadOverview: () -> Void
+    let onToggleWatched: () -> Void
     let onToggleMonitor: () -> Void
     var onDeleteSeason: ((Int) -> Void)? = nil
     let onDeleteTitle: () -> Void
@@ -22,6 +24,10 @@ struct DetailMoreSheetView: View {
 
     @FocusState private var focusedAction: ActionRowID?
     @Namespace private var moreSheetFocusNamespace
+
+    private var defaultAction: ActionRowID {
+        canReadOverview ? .readOverview : .toggleWatched
+    }
 
     private var shouldShowMonitorButton: Bool {
         if item.mediaType == "series" { return true }
@@ -36,90 +42,82 @@ struct DetailMoreSheetView: View {
     }
 
     var body: some View {
-        ZStack {
-            LunaTheme.canvas.ignoresSafeArea()
-
-            VStack(alignment: .leading, spacing: 26) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Mer")
-                        .font(LunaTheme.Font.pageTitle)
-                        .foregroundStyle(LunaTheme.linen)
-
-                    Text("\(item.title) · \(sessionStore.roomName)")
-                        .font(LunaTheme.Font.subtitle)
-                        .foregroundStyle(LunaTheme.moonlight)
-                }
-
-                Divider().overlay(LunaTheme.warmBorderSubtle)
-
-                VStack(spacing: 14) {
-                    DetailMoreActionRowButton(
-                        title: "Velg kilde",
-                        subtitle: "Anbefalt for \(sessionStore.roomName): beste bilde og lyd",
-                        systemImage: "arrow.triangle.2.circlepath"
+        LunaSheetContainer(
+            title: item.title,
+            width: .narrow,
+            onClose: onClose
+        ) {
+            LunaListGroup(showsSurface: false) {
+                if canReadOverview {
+                    LunaListRow(
+                        title: "Les hele handlingen",
+                        leadingSystemImage: "text.alignleft",
+                        showsChevron: true
                     ) {
-                        onPickSource()
+                        onReadOverview()
                     }
-                    .focused($focusedAction, equals: .pickSource)
-                    .prefersDefaultFocus(true, in: moreSheetFocusNamespace)
+                    .focused($focusedAction, equals: .readOverview)
+                    .prefersDefaultFocus(defaultAction == .readOverview, in: moreSheetFocusNamespace)
 
-                    if shouldShowMonitorButton {
-                        DetailMoreActionRowButton(
-                            title: monitorTitle,
-                            subtitle: monitorSubtitle,
-                            systemImage: monitorIcon
-                        ) {
-                            onToggleMonitor()
-                        }
-                        .focused($focusedAction, equals: .monitor)
-                    }
-
-                    if canDeleteSelectedSeason, let seasonNum = selectedSeasonNumber, let onDeleteSeason {
-                        DetailMoreActionRowButton(
-                            title: "Slett sesong \(seasonNum)",
-                            subtitle: "Frigjør lagringsplass for valgt sesong etter bekreftelse",
-                            systemImage: "trash",
-                            isDestructive: true
-                        ) {
-                            onDeleteSeason(seasonNum)
-                        }
-                        .focused($focusedAction, equals: .deleteSeason)
-                    }
-
-                    if shouldShowDeleteButton {
-                        DetailMoreActionRowButton(
-                            title: item.mediaType == "series" ? "Slett fra samlingen" : "Slett filmen fra samlingen",
-                            subtitle: "Du får se nøyaktig hva som fjernes før du bekrefter",
-                            systemImage: "trash",
-                            isDestructive: true
-                        ) {
-                            onDeleteTitle()
-                        }
-                        .focused($focusedAction, equals: .deleteTitle)
-                    }
+                    LunaListDivider()
                 }
 
-                Spacer(minLength: 0)
+                LunaListRow(
+                    title: watchedActionTitle,
+                    leadingSystemImage: item.watched ? "checkmark.circle.fill" : "checkmark",
+                    isSelected: item.watched
+                ) {
+                    onToggleWatched()
+                }
+                .focused($focusedAction, equals: .toggleWatched)
+                .prefersDefaultFocus(defaultAction == .toggleWatched, in: moreSheetFocusNamespace)
+
+                if shouldShowMonitorButton {
+                    LunaListDivider()
+
+                    LunaListRow(
+                        title: monitorTitle,
+                        leadingSystemImage: monitorIcon,
+                        isSelected: item.isMonitoredFlag
+                    ) {
+                        onToggleMonitor()
+                    }
+                    .focused($focusedAction, equals: .monitor)
+                }
+
+                if canDeleteSelectedSeason, let seasonNum = selectedSeasonNumber, let onDeleteSeason {
+                    LunaListDivider()
+
+                    LunaListRow(
+                        title: "Slett sesong \(seasonNum)",
+                        leadingSystemImage: "trash",
+                        showsChevron: true,
+                        isDestructive: true
+                    ) {
+                        onDeleteSeason(seasonNum)
+                    }
+                    .focused($focusedAction, equals: .deleteSeason)
+                }
+
+                if shouldShowDeleteButton {
+                    LunaListDivider()
+
+                    LunaListRow(
+                        title: item.mediaType == "series" ? "Slett fra samlingen" : "Slett filmen fra samlingen",
+                        leadingSystemImage: "trash",
+                        showsChevron: true,
+                        isDestructive: true
+                    ) {
+                        onDeleteTitle()
+                    }
+                    .focused($focusedAction, equals: .deleteTitle)
+                }
             }
-            .padding(52)
-            .frame(maxWidth: 880)
-            .background(
-                RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
-                    .fill(LunaTheme.surface)
-            )
-            .lunaTopLightEdge(
-                cornerRadius: LunaTokens.Radius.panel,
-                topColor: LunaTokens.Edge.top3,
-                sideColor: LunaTokens.Edge.top1
-            )
-            .defaultFocus($focusedAction, .pickSource, priority: .userInitiated)
+            .defaultFocus($focusedAction, defaultAction, priority: .userInitiated)
             .focusScope(moreSheetFocusNamespace)
         }
         .onAppear {
-            focusedAction = .pickSource
-        }
-        .onExitCommand {
-            onClose()
+            focusedAction = defaultAction
         }
     }
 
@@ -130,71 +128,11 @@ struct DetailMoreSheetView: View {
         return item.isMonitoredFlag ? "Avbryt klargjøring" : "Gjør klar på forhånd"
     }
 
-    private var monitorSubtitle: String {
-        if item.mediaType == "series" {
-            return item.isMonitoredFlag ? "Nye episoder hentes automatisk" : "Nye episoder hentes automatisk når de kommer"
-        }
-        return item.isMonitoredFlag ? "Lagres på NVMe for umiddelbar start" : "Starter umiddelbart neste gang dere skal se"
-    }
-
     private var monitorIcon: String {
         if item.mediaType == "series" {
             return item.isMonitoredFlag ? "bell.fill" : "bell"
         }
         return item.isMonitoredFlag ? "arrow.down.circle.fill" : "arrow.down.circle"
-    }
-}
-
-private struct DetailMoreActionRowButton: View {
-    let title: String
-    let subtitle: String
-    let systemImage: String
-    var isDestructive: Bool = false
-    let action: () -> Void
-
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 18) {
-                Image(systemName: systemImage)
-                    .font(LunaTheme.Font.cardTitle)
-                    .foregroundStyle(isDestructive ? LunaTheme.coral : (isFocused ? LunaTheme.linen : LunaTheme.moonlight))
-                    .frame(width: 34)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(LunaTheme.Font.cardTitle)
-                        .foregroundStyle(isDestructive ? LunaTheme.coral : LunaTheme.linen)
-                    Text(subtitle)
-                        .font(LunaTheme.Font.caption)
-                        .foregroundStyle(isFocused ? LunaTheme.moonlight : LunaTheme.muted)
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 12)
-
-                Image(systemName: "chevron.right")
-                    .font(LunaTheme.Font.microChevron)
-                    .foregroundStyle(isFocused ? (isDestructive ? LunaTheme.coral : LunaTheme.linen) : LunaTheme.muted)
-            }
-            .padding(.horizontal, 26)
-            .padding(.vertical, 20)
-            .background(
-                RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous)
-                    .fill(isFocused ? LunaTheme.surfaceElevated : LunaTheme.surfaceRaised)
-            )
-            .lunaFocusSurface(
-                .listRow,
-                isFocused: isFocused,
-                cornerRadius: LunaTheme.cardRadius,
-                accentColor: isDestructive ? LunaTheme.coral : LunaTheme.amber
-            )
-        }
-        .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
-        .focusEffectDisabled(true)
-        .focused($isFocused)
     }
 }
 
@@ -247,55 +185,35 @@ struct DetailOverviewSheetView: View {
     var body: some View {
         let paragraphs = focusableParagraphs
 
-        ZStack {
-            LunaTheme.canvas.ignoresSafeArea()
-
-            VStack(alignment: .leading, spacing: 24) {
-                Text(item.title)
-                    .font(LunaTheme.Font.heroSerif)
-                    .foregroundStyle(LunaTheme.linen)
-                    .lineLimit(2)
-
-                Divider().overlay(LunaTheme.warmBorderSubtle)
-
-                ScrollView(.vertical, showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: 18) {
-                        ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, paragraph in
-                            OverviewParagraphChunkView(
-                                text: paragraph,
-                                isFocused: focusedChunkIndex == index,
-                                isMultiChunk: paragraphs.count > 1
-                            )
-                            .focusable(true)
-                            .focusEffectDisabled(true)
-                            .focused($focusedChunkIndex, equals: index)
-                            .prefersDefaultFocus(index == 0, in: overviewFocusNamespace)
-                        }
+        LunaSheetContainer(
+            title: item.title,
+            titleUsesSerif: true,
+            width: .narrow,
+            maxHeight: 860,
+            onClose: onClose
+        ) {
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 18) {
+                    ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, paragraph in
+                        OverviewParagraphChunkView(
+                            text: paragraph,
+                            isFocused: focusedChunkIndex == index,
+                            isMultiChunk: paragraphs.count > 1
+                        )
+                        .focusable(true)
+                        .focusEffectDisabled(true)
+                        .focused($focusedChunkIndex, equals: index)
+                        .prefersDefaultFocus(index == 0, in: overviewFocusNamespace)
                     }
-                    .padding(.vertical, 6)
                 }
-                .scrollClipDisabled()
-                .frame(maxHeight: 680)
-                .defaultFocus($focusedChunkIndex, 0, priority: .userInitiated)
-                .focusScope(overviewFocusNamespace)
+                .padding(.vertical, 6)
             }
-            .padding(52)
-            .frame(maxWidth: 980)
-            .background(
-                RoundedRectangle(cornerRadius: LunaTokens.Radius.panel, style: .continuous)
-                    .fill(LunaTheme.surface)
-            )
-            .lunaTopLightEdge(
-                cornerRadius: LunaTokens.Radius.panel,
-                topColor: LunaTokens.Edge.top3,
-                sideColor: LunaTokens.Edge.top1
-            )
+            .scrollClipDisabled()
+            .defaultFocus($focusedChunkIndex, 0, priority: .userInitiated)
+            .focusScope(overviewFocusNamespace)
         }
         .onAppear {
             focusedChunkIndex = 0
-        }
-        .onExitCommand {
-            onClose()
         }
     }
 }

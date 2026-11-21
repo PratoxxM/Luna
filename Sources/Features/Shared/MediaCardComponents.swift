@@ -1,19 +1,5 @@
 import SwiftUI
 
-struct TransientErrorBanner: View {
-    let message: String
-
-    var body: some View {
-        Text(message)
-            .font(LunaTheme.Font.subtitle)
-            .foregroundStyle(LunaTheme.danger)
-            .padding(.horizontal, 22)
-            .padding(.vertical, 12)
-            .background(LunaTheme.cinemaGlass, in: Capsule())
-            .overlay(Capsule().strokeBorder(LunaTheme.danger.opacity(0.45), lineWidth: 1))
-    }
-}
-
 @MainActor
 enum MediaCardMutator {
     static func resolvePlayTarget(

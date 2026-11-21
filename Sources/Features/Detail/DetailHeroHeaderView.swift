@@ -1,12 +1,9 @@
 import SwiftUI
 
 struct DetailHeroHeaderView: View {
-    @EnvironmentObject private var sessionStore: AppSessionStore
-
     let item: TvItemDetail
     let client: LunaCoreClient?
     let primaryPlayTitle: String
-    let watchedButtonTitle: String
     let isPreResolvedReady: Bool
     var horizontalGutter: CGFloat = LunaTheme.horizontalGutter
     let focusNamespace: Namespace.ID
@@ -14,110 +11,86 @@ struct DetailHeroHeaderView: View {
     var hasLocalEpisodes: Bool = false
     let onPlay: () -> Void
     let onToggleWatchlist: () -> Void
-    let onToggleWatched: () -> Void
     var onToggleMonitor: () -> Void = {}
     var onPickSource: () -> Void = {}
     var onDeleteTitle: (() -> Void)? = nil
     var onOpenMore: (() -> Void)? = nil
-    var onReadMore: ((String) -> Void)? = nil
 
     private var heroMinHeight: CGFloat {
         item.mediaType == "movie" ? 760 : 500
     }
 
     var body: some View {
-        let landscapeURL = client?.resolveArtworkURL(item.backdropUrl ?? item.cardBackdropUrl)
-        let fallbackPosterURL = landscapeURL == nil ? client?.resolveArtworkURL(item.posterUrl) : nil
+        let landscapeURL = client?.resolveArtworkURL(item.backdropUrl ?? item.cardBackdropUrl, target: .hero4K)
+        let fallbackPosterURL = landscapeURL == nil ? client?.resolveArtworkURL(item.posterUrl, target: .poster2x) : nil
         let isMovie = (item.mediaType == "movie")
+        let formatBadges = Array(displayedBadges.prefix(3))
 
         VStack(alignment: .leading, spacing: isMovie ? 18 : 12) {
-            if let kicker = item.studioOrNetworkKicker, !kicker.isEmpty {
-                Text(kicker.uppercased())
-                    .font(LunaTheme.Font.detailKicker)
-                    .tracking(2.4)
-                    .foregroundStyle(LunaTheme.muted)
-                    .lineLimit(1)
-            }
-
             // Editorial New York serif hero title
             Text(item.title)
-                .font(LunaTheme.Font.detailHeroSerif)
+                .font(LunaTheme.Font.heroSerif)
                 .foregroundStyle(LunaTheme.linen)
                 .lineLimit(2)
                 .frame(maxWidth: 920, alignment: .leading)
 
-            // Single calm metadata line (no "IMDb" prefix)
-            Text(detailMetadataLine)
-                .font(LunaTheme.Font.subtitle)
-                .foregroundStyle(LunaTheme.moonlight)
-                .lineLimit(1)
+            // Single calm metadata line + discrete inline watched status
+            HStack(spacing: 8) {
+                if !detailMetadataLine.isEmpty {
+                    Text(detailMetadataLine)
+                        .font(LunaTheme.Font.subtitle)
+                        .foregroundStyle(LunaTheme.moonlight)
+                        .lineLimit(1)
+                }
 
-            // Small rectangular monochrome capability badges directly under metadata
-            if !displayedBadges.isEmpty {
-                HStack(spacing: 12) {
-                    ForEach(displayedBadges, id: \.self) { badge in
-                        Text(badge.uppercased())
-                            .font(LunaTheme.Font.badge)
-                            .tracking(0.8)
+                if item.watched {
+                    if !detailMetadataLine.isEmpty {
+                        Text("·")
+                            .font(LunaTheme.Font.subtitle)
+                            .foregroundStyle(LunaTheme.muted)
+                    }
+                    HStack(spacing: 5) {
+                        Image(systemName: "checkmark")
+                            .font(LunaTheme.Font.caption)
+                            .foregroundStyle(LunaTheme.emerald)
+                        Text("Sett")
+                            .font(LunaTheme.Font.subtitle)
                             .foregroundStyle(LunaTheme.moonlight)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .background(Color.clear)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .strokeBorder(LunaTokens.Edge.badgeOutline, lineWidth: 1)
-                            )
                     }
+                    .lineLimit(1)
                 }
             }
 
-            // Overview preview + optional «Les mer»
+            // Single calm format summary line with subtle storage tier dot (only NVMe / archive)
+            if !formatBadges.isEmpty {
+                HStack(spacing: 10) {
+                    if let avail = item.availability {
+                        LunaTierDotView(availability: avail)
+                    }
+                    Text(formatBadges.joined(separator: " · "))
+                        .font(LunaTheme.Font.subtitle)
+                        .foregroundStyle(LunaTheme.muted)
+                        .lineLimit(1)
+                }
+            }
+
+            // Overview preview (full overview is available under ⋯)
             if let overview = item.preferredOverview {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(overview)
-                        .font(LunaTheme.Font.body)
-                        .foregroundStyle(LunaTheme.moonlight)
-                        .lineSpacing(4)
-                        .lineLimit(isMovie ? 3 : 2)
-                        .frame(maxWidth: 920, alignment: .leading)
-
-                    if overview.count > (isMovie ? 165 : 120), let onReadMore {
-                        LunaPillButton("Les mer", prominence: .subtleChip, size: .compact) {
-                            onReadMore(overview)
-                        }
-                    }
-                }
+                Text(overview)
+                    .font(LunaTheme.Font.body)
+                    .foregroundStyle(LunaTheme.moonlight)
+                    .lineSpacing(4)
+                    .lineLimit(isMovie ? 3 : 2)
+                    .frame(maxWidth: 920, alignment: .leading)
             }
 
-            // Availability line placed BELOW overview, directly above action buttons
-            if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
-                HStack(spacing: 10) {
-                    Circle()
-                        .fill(LunaTheme.moonlight)
-                        .frame(width: 8, height: 8)
-                    Text("Kommer: \(upcomingBadge)")
-                        .font(LunaTheme.Font.subtitle)
-                        .foregroundStyle(LunaTheme.moonlight)
-                }
-                .padding(.top, 2)
-            } else if let avail = item.availability {
-                HStack(spacing: 10) {
-                    Circle()
-                        .fill(tierDotColor(for: avail))
-                        .frame(width: 8, height: 8)
-                        .shadow(color: tierDotColor(for: avail).opacity(0.45), radius: 5, x: 0, y: 0)
-                    Text("\(avail.resolvedBenefitLabel) · klar for \(sessionStore.roomName)")
-                        .font(LunaTheme.Font.subtitle)
-                        .foregroundStyle(LunaTheme.moonlight)
-                }
-                .padding(.top, 2)
-            }
-
-            // Action row: gold PrimaryPlayButton + Kilde + Huskeliste + Sett + Mer
+            // Action row: Play (primary) + Kilde + Huskeliste + ⋯
             HStack(spacing: 14) {
-                PrimaryPlayButton(
-                    title: primaryPlayTitle,
-                    isWarmReady: isPreResolvedReady,
+                LunaPillButton(
+                    primaryPlayTitle,
+                    systemImage: "play.fill",
+                    prominence: .primary,
+                    size: .regular,
                     action: onPlay
                 )
                 .prefersDefaultFocus(true, in: focusNamespace)
@@ -139,28 +112,16 @@ struct DetailHeroHeaderView: View {
                     onToggleWatchlist()
                 }
 
-                LunaPillButton(
-                    watchedButtonTitle,
-                    systemImage: item.watched ? "checkmark.circle.fill" : "checkmark",
-                    isSelected: item.watched,
-                    prominence: .glassPill,
-                    accent: .emerald
-                ) {
-                    onToggleWatched()
-                }
-
-                DetailCircleIconButton(
+                LunaIconButton(
                     systemImage: "ellipsis",
-                    isSelected: false,
-                    accessibilityLabel: "Mer",
-                    action: {
-                        if let onOpenMore {
-                            onOpenMore()
-                        } else {
-                            onPickSource()
-                        }
+                    accessibilityLabel: "Mer"
+                ) {
+                    if let onOpenMore {
+                        onOpenMore()
+                    } else {
+                        onPickSource()
                     }
-                )
+                }
             }
             .padding(.top, isMovie ? 12 : 6)
             .focusSection()
@@ -181,7 +142,7 @@ struct DetailHeroHeaderView: View {
                         CachedArtworkView(
                             url: landscapeURL,
                             client: client,
-                            maxPixelSize: 1920,
+                            maxPixelSize: 3840,
                             blurHash: item.blurHash,
                             dominantColor: item.dominantColor,
                             placeholderSymbol: "film.stack",
@@ -193,7 +154,7 @@ struct DetailHeroHeaderView: View {
                         CachedArtworkView(
                             url: fallbackPosterURL,
                             client: client,
-                            maxPixelSize: 320,
+                            maxPixelSize: 1280,
                             blurHash: item.blurHash,
                             dominantColor: item.dominantColor,
                             placeholderSymbol: "film.stack",
@@ -234,12 +195,6 @@ struct DetailHeroHeaderView: View {
         }
     }
 
-    private func tierDotColor(for avail: TvAvailabilityInfo) -> Color {
-        if avail.isLocalNvme { return LunaTheme.tierNvme }
-        if avail.isLocalArchive { return LunaTheme.tierArchive }
-        return LunaTheme.tierStream
-    }
-
     private var detailMetadataLine: String {
         var parts: [String] = []
         if let year = item.year {
@@ -257,6 +212,9 @@ struct DetailHeroHeaderView: View {
         if let disp = item.displayRating {
             parts.append(LunaCopy.formatRating(disp.value, prefix: "★"))
         }
+        if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
+            parts.append("Ny episode \(upcomingBadge)")
+        }
         return parts.joined(separator: " · ")
     }
 
@@ -267,9 +225,9 @@ struct DetailHeroHeaderView: View {
             "i arkiv",
             "strømmes ved start",
             "starter umiddelbart",
+            "kommer",
         ]
         if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
-            seen.insert("kommer")
             seen.insert("kommer: \(upcomingBadge.lowercased())")
         }
         var result: [String] = []
@@ -277,107 +235,8 @@ struct DetailHeroHeaderView: View {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty, seen.insert(trimmed.lowercased()).inserted else { continue }
             result.append(trimmed)
-            if result.count >= 4 { break }
+            if result.count >= 3 { break }
         }
         return result
-    }
-}
-
-private struct PrimaryPlayButton: View {
-    let title: String
-    let isWarmReady: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            PrimaryPlayLabel(title: title, isWarmReady: isWarmReady)
-        }
-        .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .focusEffectDisabled(true)
-    }
-}
-
-private struct PrimaryPlayLabel: View {
-    @Environment(\.isFocused) private var focused
-
-    let title: String
-    let isWarmReady: Bool
-
-    var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "play.fill")
-                .font(LunaTheme.Font.primaryPlayIcon)
-            Text(title)
-                .font(LunaTheme.Font.primaryPlayLabel)
-                .lineLimit(1)
-                .minimumScaleFactor(0.86)
-        }
-        .foregroundStyle(LunaTheme.canvas)
-        .transaction { $0.animation = nil }
-        .padding(.horizontal, 32)
-        .padding(.vertical, 16)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(LunaTheme.primaryAmberGradient)
-                    .opacity(focused ? 0 : 1)
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(LunaTheme.playFocusGradient)
-                    .opacity(focused ? 1 : 0)
-            }
-            .transaction { $0.animation = nil }
-        )
-        .lunaFocusSurface(.primaryPlay, isFocused: focused, cornerRadius: 16)
-    }
-}
-
-private struct DetailCircleIconButton: View {
-    let systemImage: String
-    let isSelected: Bool
-    let accessibilityLabel: String
-    let action: () -> Void
-
-    @FocusState private var isFocused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(LunaTheme.Font.cardTitle)
-                .foregroundStyle(
-                    isSelected ? LunaTheme.amber : (isFocused ? LunaTheme.linen : LunaTheme.moonlight)
-                )
-                .frame(width: 60, height: 60)
-                .background(
-                    Circle()
-                        .fill(isFocused ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
-                )
-                .overlay(
-                    Group {
-                        if isFocused {
-                            Circle()
-                                .strokeBorder(
-                                    LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity),
-                                    lineWidth: LunaFocusStyle.borderWidth
-                                )
-                        }
-                    }
-                )
-                .shadow(
-                    color: isFocused ? roomAtmosphere.lampColor.opacity(roomAtmosphere.lampStrength) : .clear,
-                    radius: isFocused ? LunaFocusStyle.glowBlur : 0,
-                    x: 0,
-                    y: isFocused ? LunaFocusStyle.glowOffsetY : 0
-                )
-                .scaleEffect(isFocused ? 1.05 : 1.0)
-                .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
-        }
-        .buttonStyle(LunaChromelessButtonStyle())
-        .contentShape(Circle())
-        .focusEffectDisabled(true)
-        .focused($isFocused)
-        .accessibilityLabel(accessibilityLabel)
     }
 }

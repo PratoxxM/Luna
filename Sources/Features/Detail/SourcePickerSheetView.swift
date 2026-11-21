@@ -300,94 +300,58 @@ struct SourcePickerSheetView: View {
     var body: some View {
         let defaultID = preferredDefaultCandidateID
 
-        ZStack {
-            LunaTheme.canvas.ignoresSafeArea()
-
-            VStack(alignment: .leading, spacing: 26) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Velg kilde")
-                        .font(LunaTheme.Font.pageTitle)
-                        .foregroundStyle(LunaTheme.linen)
-
-                    Text("\(context.displaySubject) · Tilpasset \(sessionStore.roomName)")
-                        .font(LunaTheme.Font.subtitle)
-                        .foregroundStyle(LunaTheme.muted)
+        LunaSheetContainer(
+            title: "Velg kilde",
+            subtitle: context.displaySubject,
+            width: .wide,
+            maxHeight: 860,
+            onClose: onCancel
+        ) {
+            if viewModel.isLoading {
+                LunaLoadingRow(message: "Søker etter tilgjengelige kilder…")
+            } else if let errorMessage = viewModel.errorMessage {
+                LunaInlineError(message: errorMessage) {
+                    reloadAttempt &+= 1
                 }
+            } else if viewModel.candidates.isEmpty {
+                LunaEmptyState(headline: "Fant ingen tilgjengelige kilder for denne tittelen.")
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    LunaListGroup(showsSurface: false) {
+                        ForEach(Array(viewModel.candidates.enumerated()), id: \.element.id) { index, candidate in
+                            let isCurrent = viewModel.activeCandidateId != nil
+                                ? (candidate.candidateId == viewModel.activeCandidateId)
+                                : (candidate.isActive == true)
+                            SourceCandidateRowView(
+                                candidate: candidate,
+                                roomName: "",
+                                isRecommended: index == 0,
+                                isSelected: isCurrent,
+                                activeStatusLabel: "Forhåndsvalgt",
+                                isFocused: focusedCandidateID == candidate.id
+                            ) {
+                                viewModel.selectCandidate(
+                                    candidate,
+                                    isCurrent: isCurrent,
+                                    context: context,
+                                    client: sessionStore.makeClient(),
+                                    onSelectCandidate: onSelectCandidate
+                                )
+                            }
+                            .focused($focusedCandidateID, equals: candidate.id)
+                            .prefersDefaultFocus(candidate.id == defaultID, in: sourcePickerFocusNamespace)
 
-                if viewModel.isLoading {
-                    Spacer()
-                    VStack(spacing: 16) {
-                        ProgressView()
-                        Text("Søker etter tilgjengelige kilder…")
-                            .font(LunaTheme.Font.cardTitle)
-                            .foregroundStyle(LunaTheme.moonlight)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    Spacer()
-                } else if let errorMessage = viewModel.errorMessage {
-                    Spacer()
-                    VStack(spacing: 18) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(LunaTheme.Font.largeStatusIcon)
-                            .foregroundStyle(LunaTheme.danger)
-                        Text(errorMessage)
-                            .font(LunaTheme.Font.body)
-                            .foregroundStyle(LunaTheme.moonlight)
-                            .multilineTextAlignment(.center)
-                        LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                            reloadAttempt &+= 1
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    Spacer()
-                } else if viewModel.candidates.isEmpty {
-                    Spacer()
-                    Text("Fant ingen tilgjengelige kilder for denne tittelen.")
-                        .font(LunaTheme.Font.cardTitle)
-                        .foregroundStyle(LunaTheme.muted)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                    Spacer()
-                } else {
-                    ScrollView(.vertical, showsIndicators: false) {
-                        LazyVStack(spacing: 14) {
-                            ForEach(Array(viewModel.candidates.enumerated()), id: \.element.id) { index, candidate in
-                                let isCurrent = viewModel.activeCandidateId != nil
-                                    ? (candidate.candidateId == viewModel.activeCandidateId)
-                                    : (candidate.isActive == true)
-                                SourceCandidateRowView(
-                                    candidate: candidate,
-                                    roomName: sessionStore.roomName,
-                                    isRecommended: index == 0,
-                                    isSelected: isCurrent,
-                                    activeStatusLabel: "Forhåndsvalgt",
-                                    isFocused: focusedCandidateID == candidate.id
-                                ) {
-                                    viewModel.selectCandidate(
-                                        candidate,
-                                        isCurrent: isCurrent,
-                                        context: context,
-                                        client: sessionStore.makeClient(),
-                                        onSelectCandidate: onSelectCandidate
-                                    )
-                                }
-                                .focused($focusedCandidateID, equals: candidate.id)
-                                .prefersDefaultFocus(candidate.id == defaultID, in: sourcePickerFocusNamespace)
+                            if index < viewModel.candidates.count - 1 {
+                                LunaListDivider()
                             }
                         }
-                        .frame(maxWidth: 1020)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 16)
                     }
-                    .scrollClipDisabled()
-                    .defaultFocus($focusedCandidateID, defaultID, priority: .userInitiated)
-                    .focusScope(sourcePickerFocusNamespace)
+                    .padding(.vertical, 4)
                 }
+                .scrollClipDisabled()
+                .defaultFocus($focusedCandidateID, defaultID, priority: .userInitiated)
+                .focusScope(sourcePickerFocusNamespace)
             }
-            .padding(56)
-        }
-        .onExitCommand {
-            onCancel()
         }
         .onAppear {
             viewModel.handleAppear()
