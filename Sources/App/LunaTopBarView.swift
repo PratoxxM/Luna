@@ -2,8 +2,8 @@ import SwiftUI
 import UIKit
 
 struct LunaTopBarView: View {
-    static let contentTopPadding: CGFloat = 162
-    static let focusDebounceNanoseconds: UInt64 = 180_000_000
+    static let contentTopPadding: CGFloat = LunaTokens.Layout.contentTop
+    static let focusDebounceNanoseconds: UInt64 = LunaTokens.Motion.focusSelectDebounceNanoseconds
 
     @Environment(\.lunaRoomAtmosphere) private var environmentAtmosphere
 
@@ -67,7 +67,7 @@ struct LunaTopBarView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, LunaTheme.horizontalGutter)
-            .padding(.top, 46)
+            .padding(.top, LunaTokens.Layout.safeTop)
             .padding(.bottom, 14)
             .defaultFocus($focusedTab, selectedTab as MainNavigationTab?, priority: .automatic)
             .focusScope(topBarFocusNamespace)
@@ -240,7 +240,7 @@ struct TopBarTabPillButton: View {
         isFocused: Bool,
         isBarFocused: Bool = false
     ) -> Color {
-        if isFocused { return LunaTheme.linen }
+        if isFocused { return LunaTokens.Text.onAccent }
         if isActive && !isBarFocused { return LunaTheme.linen }
         return LunaTheme.muted
     }
@@ -250,7 +250,7 @@ struct TopBarTabPillButton: View {
         isFocused: Bool,
         isBarFocused: Bool = false
     ) -> Color {
-        if isFocused { return LunaTheme.linen }
+        if isFocused { return LunaTokens.Text.onAccent }
         if isActive && !isBarFocused { return LunaTheme.linen }
         return LunaTheme.muted
     }
@@ -260,10 +260,7 @@ struct TopBarTabPillButton: View {
         isFocused: Bool,
         isBarFocused: Bool = false
     ) -> Color {
-        if isFocused {
-            return LunaTheme.focusGoldBorder.opacity(LunaFocusStyle.borderOpacity)
-        }
-        return Color.clear
+        Color.clear
     }
 
     var body: some View {
@@ -304,20 +301,8 @@ struct TopBarTabPillButton: View {
             .transaction { $0.animation = nil }
             .background(
                 Capsule()
-                    .fill(LunaTheme.surfaceElevated)
+                    .fill(LunaTheme.playFocusGradient)
                     .opacity(isFocused ? 1 : 0)
-                    .transaction { $0.animation = nil }
-            )
-            .overlay(
-                Capsule()
-                    .strokeBorder(
-                        Self.resolveBorderColor(
-                            isActive: isActive,
-                            isFocused: isFocused,
-                            isBarFocused: isBarFocused
-                        ),
-                        lineWidth: LunaFocusStyle.borderWidth
-                    )
                     .transaction { $0.animation = nil }
             )
             .overlay(alignment: .bottom) {
@@ -330,14 +315,7 @@ struct TopBarTabPillButton: View {
                         .transaction { $0.animation = nil }
                 }
             }
-            .shadow(
-                color: isFocused ? roomAtmosphere.lampColor.opacity(roomAtmosphere.lampStrength) : .clear,
-                radius: isFocused ? 24 : 0,
-                x: 0,
-                y: isFocused ? 10 : 0
-            )
-            .scaleEffect(isFocused ? 1.04 : 1.0)
-            .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusSpring, value: isFocused)
+            .lunaFocusSurface(.control, isFocused: isFocused, cornerRadius: LunaTokens.Radius.pill)
         }
         .buttonStyle(LunaChromelessButtonStyle())
         .contentShape(Capsule())

@@ -55,23 +55,25 @@ struct SearchView: View {
 
         ScrollViewReader { scrollProxy in
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: LunaTokens.Layout.blockGap) {
                     Color.clear
                         .frame(height: 0)
                         .id("luna-scroll-top")
 
-                    Text("Søk")
-                        .font(LunaTheme.Font.pageTitle)
-                        .foregroundStyle(LunaTheme.linen)
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
+                    if !isRootTab {
+                        Text("Søk")
+                            .font(LunaTheme.Font.pageTitle)
+                            .foregroundStyle(LunaTheme.linen)
+                            .padding(.horizontal, LunaTheme.horizontalGutter)
+                    }
 
                     HStack(spacing: 14) {
                         HStack(spacing: 14) {
                             Image(systemName: "magnifyingglass")
                                 .font(LunaTheme.Font.pillIcon)
-                                .foregroundStyle(searchFocus == .queryField ? LunaTheme.amber : LunaTheme.muted)
+                                .foregroundStyle(LunaTheme.muted)
 
-                            TextField("Søk etter film, serie, person eller originaltittel…", text: $query)
+                            TextField("Film, serie eller person", text: $query)
                                 .font(LunaTheme.Font.body)
                                 .foregroundStyle(LunaTheme.linen)
                                 .focused($searchFocus, equals: .queryField)
@@ -87,10 +89,17 @@ struct SearchView: View {
                             RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
                                 .fill(searchFocus == .queryField ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
                         )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
+                                .strokeBorder(
+                                    searchFocus == .queryField ? Color.clear : LunaTheme.warmBorder,
+                                    lineWidth: LunaTokens.Layout.hairlineWidth
+                                )
+                        )
                         .lunaFocusSurface(.listRow, isFocused: searchFocus == .queryField, cornerRadius: LunaTokens.Radius.card)
 
                         if !query.isEmpty {
-                            LunaPillButton("Tøm", systemImage: "xmark.circle", prominence: .glassPill, size: .compact) {
+                            LunaIconButton(systemImage: "xmark", accessibilityLabel: "Tøm søk") {
                                 query = ""
                             }
                             .focused($searchFocus, equals: .clearQuery)
@@ -101,15 +110,9 @@ struct SearchView: View {
 
                     if trimmedQuery.count < 2 {
                         if !recentSearches.isEmpty {
-                            VStack(alignment: .leading, spacing: 14) {
-                                HStack(spacing: 16) {
-                                    Text("Tidligere søk")
-                                        .font(LunaTheme.Font.cardTitle)
-                                        .foregroundStyle(LunaTheme.moonlight)
-
-                                    Spacer(minLength: 16)
-
-                                    LunaPillButton("Tøm logg", systemImage: "trash", prominence: .subtleChip, accent: .coral, size: .compact) {
+                            VStack(alignment: .leading, spacing: LunaTokens.Layout.headerGap) {
+                                LunaSectionHeader(title: "Tidligere søk") {
+                                    LunaPillButton("Tøm", prominence: .subtleChip, size: .compact) {
                                         clearRecentSearches()
                                     }
                                     .focused($searchFocus, equals: .clearHistory)
@@ -118,7 +121,7 @@ struct SearchView: View {
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 12) {
                                         ForEach(recentSearches, id: \.self) { term in
-                                            LunaPillButton(term, systemImage: "clock.arrow.circlepath", prominence: .glassPill, size: .compact) {
+                                            LunaPillButton(term, prominence: .glassPill, size: .compact) {
                                                 query = term
                                             }
                                             .focused($searchFocus, equals: .recent(term))
@@ -131,71 +134,43 @@ struct SearchView: View {
                                 .focusSection()
                             }
                             .padding(.horizontal, LunaTheme.horizontalGutter)
-                        } else {
-                            Text("Skriv minst to tegn for å søke i bibliotek og katalog.")
-                                .font(LunaTheme.Font.body)
-                                .foregroundStyle(LunaTheme.muted)
-                                .padding(.horizontal, LunaTheme.horizontalGutter)
-                                .padding(.top, 8)
                         }
                     } else {
                         if !results.isEmpty {
-                            HStack(spacing: 12) {
-                                if localCount > 0 {
-                                    Text("\(localCount) i Lokalt")
-                                        .font(LunaTheme.Font.badge)
-                                        .foregroundStyle(LunaTheme.moonlight)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 5)
-                                        .background(LunaTheme.surfaceRaised, in: Capsule())
-                                        .overlay(Capsule().strokeBorder(LunaTheme.warmBorderSubtle, lineWidth: 1))
-                                }
-                                Text("\(LunaCopy.searchHits(results.count)) totalt")
-                                    .font(LunaTheme.Font.caption)
-                                    .foregroundStyle(LunaTheme.muted)
-                            }
+                            Text(
+                                localCount > 0
+                                    ? "\(LunaCopy.searchHits(results.count)) · \(localCount) lokalt"
+                                    : LunaCopy.searchHits(results.count)
+                            )
+                            .font(LunaTheme.Font.caption)
+                            .foregroundStyle(LunaTheme.muted)
                             .padding(.horizontal, LunaTheme.horizontalGutter)
                         }
 
                         if isSearching && results.isEmpty {
-                            HStack(spacing: 14) {
-                                ProgressView()
-                                Text("Søker…")
-                                    .font(LunaTheme.Font.body)
-                                    .foregroundStyle(LunaTheme.moonlight)
-                            }
-                            .padding(.horizontal, LunaTheme.horizontalGutter)
+                            LunaLoadingRow(message: "Søker…")
+                                .padding(.horizontal, LunaTheme.horizontalGutter)
                         } else if let errorMessage, results.isEmpty {
-                            VStack(alignment: .leading, spacing: 14) {
-                                Text(errorMessage)
-                                    .font(LunaTheme.Font.body)
-                                    .foregroundStyle(LunaTheme.danger)
-                                LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                                    triggerSearch(trimmedQuery, debounceNanoseconds: 0)
-                                }
-                                .focused($searchFocus, equals: .retry)
+                            LunaInlineError(message: errorMessage) {
+                                triggerSearch(trimmedQuery, debounceNanoseconds: 0)
                             }
+                            .focused($searchFocus, equals: .retry)
                             .padding(.horizontal, LunaTheme.horizontalGutter)
                             .padding(.top, 12)
                         } else if !isSearching && results.isEmpty {
-                            VStack(spacing: 18) {
-                                LunaCrescentMarkView(size: 64, color: LunaTheme.moonlight.opacity(0.65))
-                                Text("Fant ikke «\(trimmedQuery)»")
-                                    .font(isRootTab ? LunaTheme.Font.pageTitle : LunaTheme.Font.heroSerif)
-                                    .foregroundStyle(LunaTheme.linen)
-                                Text("Prøv originaltittelen eller en annen stavemåte.")
-                                    .font(LunaTheme.Font.body)
-                                    .foregroundStyle(LunaTheme.moonlight)
-                                LunaPillButton("Tøm søk", systemImage: "xmark.circle", prominence: .glassPill) {
-                                    query = ""
-                                }
-                                .focused($searchFocus, equals: .emptyReset)
+                            LunaEmptyState(
+                                headline: "Fant ikke «\(trimmedQuery)»",
+                                actionTitle: "Tøm søk",
+                                actionSymbol: "xmark.circle",
+                                actionProminence: .glassPill
+                            ) {
+                                query = ""
                             }
-                            .frame(maxWidth: .infinity)
+                            .focused($searchFocus, equals: .emptyReset)
                             .padding(.horizontal, LunaTheme.horizontalGutter)
                             .padding(.top, 48)
                         } else {
-                            LazyVGrid(columns: columns, alignment: .leading, spacing: 26) {
+                            LazyVGrid(columns: columns, alignment: .leading, spacing: LunaTokens.Layout.gridRowGap) {
                                 ForEach(results) { card in
                                     PosterCardView(
                                         card: card,
@@ -236,7 +211,7 @@ struct SearchView: View {
                         }
                     }
                 }
-                .padding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 60)
+                .padding(.top, isRootTab ? LunaTokens.Layout.contentTop : LunaTokens.Layout.subpageTop)
                 .padding(.bottom, 72)
             }
             .contentMargins(.zero, for: .scrollContent)
@@ -255,14 +230,7 @@ struct SearchView: View {
                 focusSearchQueryField(scrollProxy: scrollProxy)
             }
         }
-        .overlay(alignment: .topLeading) {
-            if let mutationErrorBanner {
-                TransientErrorBanner(message: mutationErrorBanner)
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.top, (isRootTab ? LunaTopBarView.contentTopPadding : 60) + 8)
-                    .allowsHitTesting(false)
-            }
-        }
+        .lunaBottomToast(message: mutationErrorBanner, tone: .danger)
         .focusSection()
         .lunaNavigationContainerBackdrop(
             isEnabled: !isRootTab,

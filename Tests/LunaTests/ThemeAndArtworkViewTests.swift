@@ -259,8 +259,8 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: false), r: 160, g: 150, b: 140)
         try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: false), r: 245, g: 240, b: 232)
         try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: false), r: 245, g: 240, b: 232)
-        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: true), r: 245, g: 240, b: 232)
-        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: true), r: 245, g: 240, b: 232)
+        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: true), r: 10, g: 9, b: 8)
+        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: true), r: 10, g: 9, b: 8)
 
         XCTAssertEqual(
             TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: false, isBarFocused: true),
@@ -278,8 +278,8 @@ final class ThemeAndArtworkViewTests: XCTestCase {
             0.0,
             accuracy: 0.001
         )
-        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: true, isBarFocused: true), r: 245, g: 240, b: 232)
-        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: true, isBarFocused: true), r: 245, g: 240, b: 232)
+        try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: true, isBarFocused: true), r: 10, g: 9, b: 8)
+        try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: true, isBarFocused: true), r: 10, g: 9, b: 8)
         try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: false, isBarFocused: true), r: 160, g: 150, b: 140)
         try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: false, isBarFocused: true), r: 160, g: 150, b: 140)
         XCTAssertEqual(
@@ -289,13 +289,13 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         )
         XCTAssertEqual(
             try rgbaComponents(TopBarTabPillButton.resolveBorderColor(isActive: true, isFocused: true, isBarFocused: true)).a,
-            LunaFocusStyle.borderOpacity,
-            accuracy: 0.015
+            0.0,
+            accuracy: 0.001
         )
         XCTAssertEqual(
             try rgbaComponents(TopBarTabPillButton.resolveBorderColor(isActive: false, isFocused: true, isBarFocused: true)).a,
-            LunaFocusStyle.borderOpacity,
-            accuracy: 0.015
+            0.0,
+            accuracy: 0.001
         )
 
         let topBarPillWithFocus = TopBarTabPillButton(

@@ -107,32 +107,21 @@ struct HomeView: View {
 
         ScrollViewReader { scrollProxy in
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: LunaTokens.Layout.sectionGap) {
                     Color.clear
                         .frame(height: 0)
                         .id("luna-scroll-top")
 
                     if visibleRows.isEmpty && isInitialColdFetch {
-                        HStack(spacing: 16) {
-                            ProgressView()
-                            Text("Henter innhold…")
-                                .font(LunaTheme.Font.cardTitle)
-                                .foregroundStyle(LunaTheme.moonlight)
-                        }
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
-                        .padding(.vertical, 64)
+                        LunaLoadingRow(message: "Henter innhold…")
+                            .padding(.horizontal, LunaTheme.horizontalGutter)
                     }
 
                     if let errorMessage, visibleRows.isEmpty {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text(errorMessage)
-                                .font(LunaTheme.Font.body)
-                                .foregroundStyle(LunaTheme.danger)
-                            LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                                scheduleRevalidateHome(forceUnconditional: true)
-                            }
-                            .focused($isRetryButtonFocused)
+                        LunaInlineError(message: errorMessage) {
+                            scheduleRevalidateHome(forceUnconditional: true)
                         }
+                        .focused($isRetryButtonFocused)
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                     }
 
@@ -210,14 +199,7 @@ struct HomeView: View {
                 focusLeftmostHomeTarget(scrollProxy: scrollProxy)
             }
         }
-        .overlay(alignment: .topLeading) {
-            if let mutationErrorMessage {
-                TransientErrorBanner(message: mutationErrorMessage)
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.top, LunaTopBarView.contentTopPadding + 8)
-                    .allowsHitTesting(false)
-            }
-        }
+        .lunaBottomToast(message: mutationErrorMessage, tone: .danger)
         .defaultFocus(
             $focusedCardKey,
             (allowInitialColdFocus || previewFocusPosterRow) ? focusTargetKey : nil,

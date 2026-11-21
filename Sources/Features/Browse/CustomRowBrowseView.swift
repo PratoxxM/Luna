@@ -68,33 +68,25 @@ struct CustomRowBrowseView: View {
         let client = sessionStore.makeClient()
 
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: LunaTokens.Layout.blockGap) {
                 Text(title)
                     .font(LunaTheme.Font.pageTitle)
                     .foregroundStyle(LunaTheme.linen)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
 
                 if isLoading && items.isEmpty {
-                    ProgressView()
+                    LunaLoadingRow(message: "Henter innhold…")
                         .padding(.horizontal, LunaTheme.horizontalGutter)
-                        .padding(.vertical, 48)
                 } else if let errorMessage, items.isEmpty {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text(errorMessage)
-                            .font(LunaTheme.Font.body)
-                            .foregroundStyle(LunaTheme.danger)
-                        LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                            Task { await loadInitial() }
-                        }
+                    LunaInlineError(message: errorMessage) {
+                        Task { await loadInitial() }
                     }
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else if items.isEmpty {
-                    Text("Denne listen har ingen titler ennå.")
-                        .font(LunaTheme.Font.body)
-                        .foregroundStyle(LunaTheme.muted)
+                    LunaEmptyState(headline: "Ingen titler i denne listen")
                         .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 26) {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: LunaTokens.Layout.gridRowGap) {
                         ForEach(items) { card in
                             PosterCardView(
                                 card: card,
@@ -157,20 +149,13 @@ struct CustomRowBrowseView: View {
                     }
                 }
             }
-            .padding(.top, 60)
+            .padding(.top, LunaTokens.Layout.subpageTop)
             .padding(.bottom, 72)
         }
         .contentMargins(.zero, for: .scrollContent)
         .scrollClipDisabled()
         .ignoresSafeArea()
-        .overlay(alignment: .topLeading) {
-            if let mutationErrorBanner {
-                TransientErrorBanner(message: mutationErrorBanner)
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.top, 68)
-                    .allowsHitTesting(false)
-            }
-        }
+        .lunaBottomToast(message: mutationErrorBanner, tone: .danger)
         .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: sessionStore.activePlaybackTarget != nil))
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in

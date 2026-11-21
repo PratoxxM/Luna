@@ -200,7 +200,7 @@ struct MainNavigationShell: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 164)
+            .frame(height: LunaTokens.Layout.contentTop)
             .ignoresSafeArea(edges: [.top, .horizontal])
             .opacity(hideTopBar ? 0 : 1)
             .allowsHitTesting(false)

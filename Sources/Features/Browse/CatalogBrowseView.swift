@@ -131,15 +131,17 @@ struct CatalogBrowseView: View {
 
         return ScrollViewReader { scrollProxy in
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 26) {
+                VStack(alignment: .leading, spacing: LunaTokens.Layout.blockGap) {
                     Color.clear
                         .frame(height: 0)
                         .id("luna-scroll-top")
 
-                    Text(headerTitle)
-                        .font(LunaTheme.Font.pageTitle)
-                        .foregroundStyle(LunaTheme.linen)
-                        .padding(.horizontal, LunaTheme.horizontalGutter)
+                    if !isRootTab {
+                        Text(headerTitle)
+                            .font(LunaTheme.Font.pageTitle)
+                            .foregroundStyle(LunaTheme.linen)
+                            .padding(.horizontal, LunaTheme.horizontalGutter)
+                    }
 
                 // Uniform compact capsule filter strip within 90 pt margins + trailing fade mask
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -156,6 +158,12 @@ struct CatalogBrowseView: View {
                             }
                             .focused($focusedFilterId, equals: "sort-\(opt.id)")
                         }
+
+                        Rectangle()
+                            .fill(LunaTheme.warmBorderStrong)
+                            .frame(width: 1, height: 22)
+                            .padding(.horizontal, 8)
+                            .allowsHitTesting(false)
 
                         if !isRootTab {
                             LunaPillButton(
@@ -233,49 +241,50 @@ struct CatalogBrowseView: View {
                 )
                 .focusSection()
                 .onMoveCommand { direction in
-                    if direction == .down, let firstCardID = items.first?.id {
-                        focusedCardId = firstCardID
+                    if direction == .down {
+                        if let firstCardID = items.first?.id {
+                            focusedCardId = firstCardID
+                        } else if errorMessage != nil && items.isEmpty {
+                            focusedCardId = "__catalog_retry__"
+                        } else if localOnly || unwatchedOnly || selectedGenreSlug != nil {
+                            focusedCardId = "__catalog_empty_reset__"
+                        }
                     }
                 }
 
                 // Content Grid
                 if isLoading && items.isEmpty {
-                    HStack(spacing: 16) {
-                        ProgressView()
-                        Text("Henter utvalg…")
-                            .font(LunaTheme.Font.cardTitle)
-                            .foregroundStyle(LunaTheme.moonlight)
-                    }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 60)
+                    LunaLoadingRow(message: "Henter utvalg…")
+                        .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else if let errorMessage, items.isEmpty {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text(errorMessage)
-                            .font(LunaTheme.Font.body)
-                            .foregroundStyle(LunaTheme.danger)
-                        LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise") {
-                            scheduleReloadFirstPage(forceNetwork: true)
-                        }
+                    LunaInlineError(message: errorMessage) {
+                        scheduleReloadFirstPage(forceNetwork: true)
                     }
+                    .focused($focusedCardId, equals: "__catalog_retry__")
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else if items.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Ingenting passer akkurat disse filtrene.")
-                            .font(LunaTheme.Font.cardTitle)
-                            .foregroundStyle(LunaTheme.linen)
-                        if localOnly || unwatchedOnly || selectedGenreSlug != nil {
-                            LunaPillButton("Nullstill filtre", systemImage: "xmark.circle", prominence: .subtleChip) {
-                                localOnly = false
-                                unwatchedOnly = false
-                                selectedGenreSlug = nil
-                                selectedGenreLabel = nil
-                            }
-                        }
-                    }
+                    let hasFilters = localOnly || unwatchedOnly || selectedGenreSlug != nil
+                    let emptyView = LunaEmptyState(
+                        headline: "Ingen treff med disse filtrene",
+                        actionTitle: hasFilters ? "Nullstill filtre" : nil,
+                        actionSymbol: hasFilters ? "xmark" : nil,
+                        actionProminence: .subtleChip,
+                        onAction: hasFilters ? {
+                            localOnly = false
+                            unwatchedOnly = false
+                            selectedGenreSlug = nil
+                            selectedGenreLabel = nil
+                        } : nil
+                    )
                     .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 48)
+
+                    if hasFilters {
+                        emptyView.focused($focusedCardId, equals: "__catalog_empty_reset__")
+                    } else {
+                        emptyView
+                    }
                 } else {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 26) {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: LunaTokens.Layout.gridRowGap) {
                         ForEach(items) { card in
                             PosterCardView(
                                 card: card,
@@ -329,7 +338,7 @@ struct CatalogBrowseView: View {
                     }
                 }
             }
-            .padding(.top, isRootTab ? LunaTopBarView.contentTopPadding : 60)
+            .padding(.top, isRootTab ? LunaTopBarView.contentTopPadding : LunaTokens.Layout.subpageTop)
             .padding(.bottom, 84)
         }
         .contentMargins(.zero, for: .scrollContent)
@@ -352,14 +361,7 @@ struct CatalogBrowseView: View {
             guard isRootTab, isActiveTab else { return }
             focusEntryFilterTarget(scrollProxy: scrollProxy)
         }
-        .overlay(alignment: .topLeading) {
-            if let mutationErrorBanner {
-                TransientErrorBanner(message: mutationErrorBanner)
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.top, (isRootTab ? LunaTopBarView.contentTopPadding : 60) + 8)
-                    .allowsHitTesting(false)
-            }
-        }
+        .lunaBottomToast(message: mutationErrorBanner, tone: .danger)
         .focusSection()
         .lunaNavigationContainerBackdrop(
             isEnabled: !isRootTab,

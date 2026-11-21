@@ -20,15 +20,11 @@ struct PairingOnboardingView: View {
 
             VStack(spacing: 36) {
                 VStack(spacing: 14) {
-                    LunaCrescentMarkView(size: 62, color: LunaTheme.amber)
+                    LunaCrescentMarkView(size: 64, color: LunaTheme.amber)
 
                     Text("Luna")
-                        .font(LunaTheme.Font.heroDisplay)
+                        .font(LunaTheme.Font.heroSerif)
                         .foregroundStyle(LunaTheme.linen)
-
-                    Text("Hjemmekino for LunaCore · Dolby Vision og romtilpasset lyd")
-                        .font(LunaTheme.Font.subtitle)
-                        .foregroundStyle(LunaTheme.muted)
                 }
 
                 if let pairingInfo, let selectedBaseURL {
@@ -38,11 +34,16 @@ struct PairingOnboardingView: View {
                 }
 
                 if let errorMessage {
-                    Text(errorMessage)
-                        .font(LunaTheme.Font.body)
-                        .foregroundStyle(LunaTheme.danger)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 920)
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(LunaTheme.coral)
+                            .frame(width: 8, height: 8)
+                        Text(errorMessage)
+                            .font(LunaTheme.Font.body)
+                            .foregroundStyle(LunaTheme.linen)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: 920)
                 }
             }
             .padding(60)
@@ -80,11 +81,11 @@ struct PairingOnboardingView: View {
                         .font(LunaTheme.Font.subtitle)
                         .foregroundStyle(LunaTheme.muted)
 
-                    ForEach(bonjour.servers) { srv in
+                    ForEach(Array(bonjour.servers.enumerated()), id: \.element.id) { index, srv in
                         LunaPillButton(
                             "\(srv.name) · \(srv.displayAddress)",
                             systemImage: "server.rack",
-                            prominence: .primaryAmber
+                            prominence: (!showManualInput && index == 0) ? .primary : .glassPill
                         ) {
                             guard !isRequestingCode else { return }
                             startPairing(against: srv.baseURL)
@@ -99,7 +100,7 @@ struct PairingOnboardingView: View {
                         .frame(width: 760)
 
                     HStack(spacing: 20) {
-                        LunaPillButton("Start paring", systemImage: "link", prominence: .primaryAmber) {
+                        LunaPillButton("Start paring", systemImage: "link", prominence: .primary) {
                             guard !isRequestingCode else { return }
                             guard let normalized = AppSessionStore.normalizeServerURL(manualURLInput) else {
                                 errorMessage = "Oppgi en gyldig http:// eller https:// adresse."
@@ -129,8 +130,7 @@ struct PairingOnboardingView: View {
 
             Text(isCodeExpired ? "------" : pairingInfo.displayCode)
                 .font(LunaTheme.Font.pairingCode)
-                .tracking(8)
-                .foregroundStyle(isCodeExpired ? LunaTheme.muted : LunaTheme.amber)
+                .foregroundStyle(isCodeExpired ? LunaTheme.muted : LunaTheme.linen)
                 .padding(.horizontal, 48)
                 .padding(.vertical, 24)
                 .background(
@@ -153,7 +153,7 @@ struct PairingOnboardingView: View {
             .multilineTextAlignment(.center)
 
             HStack(spacing: 24) {
-                LunaPillButton("Ny kode", systemImage: "arrow.clockwise", prominence: .primaryAmber) {
+                LunaPillButton("Ny kode", systemImage: "arrow.clockwise", prominence: .primary) {
                     startPairing(against: baseURL)
                 }
 

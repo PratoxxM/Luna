@@ -80,11 +80,6 @@ public enum LibraryFilterSection: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    public func pillTitle(counts: TvLibraryCounts?) -> String {
-        guard let count = countValue(from: counts) else { return label }
-        return "\(label) (\(count))"
-    }
-
     public static func resolveInitialSection(
         counts: TvLibraryCounts?,
         didApplyInitialFallback: Bool,
@@ -107,17 +102,6 @@ public enum LibraryFilterSection: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    public var emptySubtitle: String {
-        switch self {
-        case .movies:
-            return "Filmer som er lagret lokalt vises her så snart de er på plass."
-        case .series:
-            return "Serier som er lagret lokalt vises her så snart de er klare."
-        case .watchlist:
-            return "Legg til noe dere vil se, så ligger det klart her."
-        }
-    }
-
     public var emptyActionTitle: String {
         switch self {
         case .series: return "Utforsk serier"
@@ -130,40 +114,5 @@ public enum LibraryFilterSection: String, CaseIterable, Identifiable, Sendable {
         case .series: return .series
         case .movies, .watchlist: return .movies
         }
-    }
-}
-
-struct LibraryEmptyStateView: View {
-    let headline: String
-    let subtitle: String
-    var actionTitle: String? = nil
-    var actionSymbol: String = "film"
-    var onAction: (() -> Void)? = nil
-
-    var body: some View {
-        VStack(spacing: 22) {
-            LunaCrescentMarkView(size: 80, color: LunaTheme.moonlight.opacity(0.65))
-
-            Text(headline)
-                .font(LunaTheme.Font.pageTitle)
-                .foregroundStyle(LunaTheme.linen)
-                .multilineTextAlignment(.center)
-
-            Text(subtitle)
-                .font(LunaTheme.Font.body)
-                .foregroundStyle(LunaTheme.moonlight)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 680)
-
-            if let actionTitle, let onAction {
-                LunaPillButton(actionTitle, systemImage: actionSymbol, prominence: .glassPill) {
-                    onAction()
-                }
-                .padding(.top, 8)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 90)
-        .padding(.horizontal, 40)
     }
 }
