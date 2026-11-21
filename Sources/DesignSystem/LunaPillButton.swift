@@ -17,9 +17,6 @@ public enum LunaButtonProminence: Sendable {
     case primary
     case glassPill
     case subtleChip
-
-    @available(*, deprecated, renamed: "primary")
-    public static let primaryAmber: Self = .primary
 }
 
 public enum LunaButtonAccent: Sendable {

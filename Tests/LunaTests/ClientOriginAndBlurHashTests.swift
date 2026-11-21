@@ -494,4 +494,37 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         XCTAssertEqual(whitespaceClient.stoppedSessions.withLock { $0 }, ["sess-whitespace-orphan"])
         XCTAssertNil(whitespaceVm.createdOrphanSessionId)
     }
+
+    func testArtworkURLResolutionUpgradesFor4KWithoutDowngrading() {
+        let client = LunaCoreClient(
+            baseURL: URL(string: "https://media.example.invalid")!,
+            deviceID: "dev-art",
+            deviceToken: "tok-art",
+            roomName: "Stua",
+            hardwareProfile: "dv-fel-714",
+            allowSelfSignedLanTLS: false
+        )
+
+        XCTAssertEqual(
+            client.resolveArtworkURL("https://image.tmdb.org/t/p/w342/poster.jpg", target: .poster2x)?.absoluteString,
+            "https://image.tmdb.org/t/p/w780/poster.jpg"
+        )
+        XCTAssertEqual(
+            client.resolveArtworkURL("https://image.tmdb.org/t/p/w780/backdrop.jpg", target: .landscape2x)?.absoluteString,
+            "https://image.tmdb.org/t/p/w1280/backdrop.jpg"
+        )
+        XCTAssertEqual(
+            client.resolveArtworkURL("https://image.tmdb.org/t/p/w1280/hero.jpg", target: .hero4K)?.absoluteString,
+            "https://image.tmdb.org/t/p/original/hero.jpg"
+        )
+        XCTAssertEqual(
+            client.resolveArtworkURL("https://image.tmdb.org/t/p/w1280/large.jpg", target: .poster2x)?.absoluteString,
+            "https://image.tmdb.org/t/p/w1280/large.jpg"
+        )
+        XCTAssertEqual(
+            client.resolveArtworkURL("/api/tv/v1/artwork?src=test&width=320", target: .hero4K)?.absoluteString,
+            "https://media.example.invalid/api/tv/v1/artwork?src=test&width=3840"
+        )
+        XCTAssertNil(client.resolveArtworkURL("   ", target: .poster2x))
+    }
 }

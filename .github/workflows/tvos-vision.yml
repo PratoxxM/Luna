@@ -40,7 +40,7 @@ jobs:
           bash ops/bin/luna-check
 
   tvos-screenshots:
-    name: Build & Capture 1920x1080 Simulator Screens
+    name: Build & Capture 4K (@2x) Simulator Screens
     needs: static-guardrails
     runs-on: ${{ inputs.runner || 'xcode-27' }}
     timeout-minutes: 30
@@ -83,9 +83,9 @@ jobs:
                   if not dev.get("isAvailable"):
                       continue
                   name = dev.get("name", "")
-                  is_1080p = 1 if "(at 1080p)" in name else 0
+                  is_native_4k = 1 if ("Apple TV 4K" in name and "(at 1080p)" not in name) else 0
                   is_4k = 1 if "Apple TV 4K" in name else 0
-                  candidates.append((nums, is_1080p, is_4k, name, dev["udid"]))
+                  candidates.append((nums, is_native_4k, is_4k, name, dev["udid"]))
           candidates.sort(reverse=True)
           if candidates:
               print(f"{candidates[0][4]}|{candidates[0][3]}")
@@ -164,12 +164,9 @@ jobs:
             OUT_FILE=".ci-screenshots/${SCREEN}.png"
             xcrun simctl io "$TVOS_SIM_UDID" screenshot "$OUT_FILE"
 
-            # Normalize 3840x2160 4K Simulator buffers down to exact 1920x1080 HD inspection size
             WIDTH=$(sips -g pixelWidth "$OUT_FILE" | awk '/pixelWidth:/ {print $2}')
             HEIGHT=$(sips -g pixelHeight "$OUT_FILE" | awk '/pixelHeight:/ {print $2}')
-            if [ "$WIDTH" != "1920" ] || [ "$HEIGHT" != "1080" ]; then
-              sips -z 1080 1920 "$OUT_FILE" >/dev/null
-            fi
+            echo "Captured ${OUT_FILE}: ${WIDTH}x${HEIGHT}"
             ls -lh "$OUT_FILE"
           done
 

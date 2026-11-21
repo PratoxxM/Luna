@@ -758,5 +758,19 @@ final class LunaCoreLinuxTests: XCTestCase {
         XCTAssertNil(headers["X-Hardware-Profile"])
         XCTAssertNotNil(headers["X-Supports-HW-AV1"])
         XCTAssertNotNil(headers["X-Physical-Memory-GB"])
+
+        // 5. @2x / 4K artwork URL upgrading without downgrading larger URLs
+        let posterURL = client.resolveArtworkURL("https://image.tmdb.org/t/p/w500/abc.jpg", target: .poster2x)
+        XCTAssertEqual(posterURL?.absoluteString, "https://image.tmdb.org/t/p/w780/abc.jpg")
+        let heroURL = client.resolveArtworkURL("https://image.tmdb.org/t/p/w500/abc.jpg", target: .hero4K)
+        XCTAssertEqual(heroURL?.absoluteString, "https://image.tmdb.org/t/p/original/abc.jpg")
+        let noDowngrade = client.resolveArtworkURL("https://image.tmdb.org/t/p/w1280/abc.jpg", target: .poster2x)
+        XCTAssertEqual(noDowngrade?.absoluteString, "https://image.tmdb.org/t/p/w1280/abc.jpg")
+        let relUpgraded = client.resolveArtworkURL("/api/tv/v1/artwork?src=a&w=320", target: .landscape2x)
+        XCTAssertEqual(relUpgraded?.absoluteString, "http://127.0.0.1:8090/api/tv/v1/artwork?src=a&w=1280")
+        let relWidthHero = client.resolveArtworkURL("/api/tv/v1/artwork?src=a&width=780", target: .hero4K)
+        XCTAssertEqual(relWidthHero?.absoluteString, "http://127.0.0.1:8090/api/tv/v1/artwork?src=a&width=3840")
+        let preserved = client.resolveArtworkURL("/api/tv/v1/artwork?src=a&w=320", target: .preserve)
+        XCTAssertEqual(preserved?.absoluteString, "http://127.0.0.1:8090/api/tv/v1/artwork?src=a&w=320")
     }
 }

@@ -4,12 +4,6 @@ public enum LunaFocusKind: Sendable {
     case card
     case control
     case listRow
-
-    @available(*, deprecated, renamed: "control")
-    public static let secondaryPill: Self = .control
-
-    @available(*, deprecated, renamed: "control")
-    public static let primaryPlay: Self = .control
 }
 
 public enum LunaFocusStyle {
