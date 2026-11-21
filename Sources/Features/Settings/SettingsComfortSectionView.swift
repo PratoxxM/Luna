@@ -59,7 +59,8 @@ struct SettingsRoomDisplaySectionView: View {
 
             SettingsControlRow(
                 title: "Skjermmodus i meny etter film",
-                subtitle: comfort.menuDisplayMode.shortDescription
+                subtitle: comfort.menuDisplayMode.shortDescription,
+                axis: .vertical
             ) {
                 HStack(spacing: 10) {
                     ForEach(MenuDisplayMode.allCases) { mode in
