@@ -411,9 +411,9 @@ public final class AppSessionStore {
         allowSelfSignedLanTLS: Bool
     ) -> Bool {
         LanURLSessionDelegate.shouldTrustServer(
-            host,
-            configuredHost: configuredHost,
-            allowSelfSignedLanTLS: allowSelfSignedLanTLS
+            host: host,
+            trustedHost: configuredHost,
+            allowSelfSignedTLS: allowSelfSignedLanTLS
         )
     }
 

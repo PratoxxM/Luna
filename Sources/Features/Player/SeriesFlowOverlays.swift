@@ -97,6 +97,13 @@ struct SeriesFlowOverlays: View {
     @State private var resumeAutoHideSeconds: TimeInterval = 4.5
 
     var body: some View {
+        withLifecycleObservers(
+            withPromptObservers(overlayCanvas)
+        )
+    }
+
+    @ViewBuilder
+    private var overlayCanvas: some View {
         let resumeSecs = showNextButton ? nil : activeResumeStartSeconds
 
         ZStack {
@@ -132,123 +139,143 @@ struct SeriesFlowOverlays: View {
         .opacity(isResting ? 0 : 1)
         .allowsHitTesting(!isResting)
         .disabled(isResting)
-        .onAppear {
-            clockBox.currentTime = max(0, viewModel.engine.currentTime)
-            armResumeBannerIfEligible()
-            evaluateContinuityState(at: clockBox.currentTime)
-        }
-        .onChange(of: focusedPromptControl) { _, newFocus in
-            isPromptFocused = (newFocus != nil)
-            if newFocus == .restartFromBeginning {
-                scheduleResumeAutoHide(seconds: 6.0)
-            }
-            evaluateContinuityState(at: clockBox.currentTime)
-        }
-        .onChange(of: isBottomBarVisible) { _, _ in
-            evaluateContinuityState(at: clockBox.currentTime)
-        }
-        .onChange(of: viewModel.chapters) { _, _ in
-            evaluateContinuityState(at: clockBox.currentTime)
-        }
-        .onChange(of: viewModel.durationSeconds) { _, _ in
-            evaluateContinuityState(at: clockBox.currentTime)
-        }
-        .onChange(of: focusPromptNonce) { _, _ in
-            guard !isResting else { return }
-            if activeResumeStartSeconds != nil && !showNextButton {
-                focusedPromptControl = .restartFromBeginning
-            } else if showNextButton {
-                focusedPromptControl = .playNext
-            } else if activeIntro != nil {
-                focusedPromptControl = .skipIntro
-            }
-        }
-        .onChange(of: isResting) { _, resting in
-            if resting {
-                focusedPromptControl = nil
-            }
-        }
-        .onChange(of: showNextButton) { _, visible in
-            syncActivePromptFlag()
-            if !visible, focusedPromptControl == .playNext {
-                focusedPromptControl = nil
-                onReturnFocusToCanvas()
-            }
-        }
-        .onChange(of: activeIntro?.id) { _, newID in
-            syncActivePromptFlag()
-            if newID == nil && focusedPromptControl == .skipIntro {
-                focusedPromptControl = nil
-                onReturnFocusToCanvas()
-            }
-        }
-        .onMoveCommand { direction in
-            switch direction {
-            case .up:
-                focusedPromptControl = nil
-                onReturnFocusToCanvas()
-            case .down:
-                if activeResumeStartSeconds != nil {
-                    hideResumeBanner(returningFocus: false)
+    }
+
+    private func withPromptObservers<Content: View>(_ content: Content) -> some View {
+        content
+            .onChange(of: focusedPromptControl) { _, newFocus in
+                isPromptFocused = (newFocus != nil)
+                if newFocus == .restartFromBeginning {
+                    scheduleResumeAutoHide(seconds: 6.0)
                 }
-                focusedPromptControl = nil
-                onFocusQuickActions()
-            case .left:
-                if activeResumeStartSeconds != nil {
-                    hideResumeBanner(returningFocus: false)
-                }
-                focusedPromptControl = nil
-                onSeekRelative(-10)
-            case .right:
-                if activeResumeStartSeconds != nil {
-                    hideResumeBanner(returningFocus: false)
-                }
-                focusedPromptControl = nil
-                onSeekRelative(10)
-            @unknown default:
-                break
+                evaluateContinuityState(at: clockBox.currentTime)
             }
+            .onChange(of: focusPromptNonce) { _, _ in
+                handleFocusPromptRequest()
+            }
+            .onChange(of: isResting) { _, resting in
+                if resting {
+                    focusedPromptControl = nil
+                }
+            }
+            .onChange(of: showNextButton) { _, visible in
+                syncActivePromptFlag()
+                if !visible, focusedPromptControl == .playNext {
+                    focusedPromptControl = nil
+                    onReturnFocusToCanvas()
+                }
+            }
+            .onChange(of: activeIntro?.id) { _, newID in
+                syncActivePromptFlag()
+                if newID == nil && focusedPromptControl == .skipIntro {
+                    focusedPromptControl = nil
+                    onReturnFocusToCanvas()
+                }
+            }
+            .onMoveCommand(perform: handleMoveCommand)
+            .onChange(of: dismissNonce) { _, _ in
+                dismissCurrentPrompt()
+            }
+    }
+
+    private func withLifecycleObservers<Content: View>(_ content: Content) -> some View {
+        content
+            .onAppear {
+                clockBox.currentTime = max(0, viewModel.engine.currentTime)
+                armResumeBannerIfEligible()
+                evaluateContinuityState(at: clockBox.currentTime)
+            }
+            .onChange(of: isBottomBarVisible) { _, _ in
+                evaluateContinuityState(at: clockBox.currentTime)
+            }
+            .onChange(of: viewModel.chapters) { _, _ in
+                evaluateContinuityState(at: clockBox.currentTime)
+            }
+            .onChange(of: viewModel.durationSeconds) { _, _ in
+                evaluateContinuityState(at: clockBox.currentTime)
+            }
+            .onChange(of: viewModel.activeSession?.sessionId) { _, _ in
+                resetForNewSession()
+            }
+            .task(id: isResumeAutoHideArmed ? resumeAutoHideNonce : 0) {
+                guard isResumeAutoHideArmed, resumeAutoHideNonce > 0 else { return }
+                let ns = UInt64(resumeAutoHideSeconds * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: ns)
+                guard !Task.isCancelled else { return }
+                let wasFocused = (focusedPromptControl == .restartFromBeginning)
+                hideResumeBanner(returningFocus: wasFocused, silentFocusReturn: true)
+            }
+            .onReceive(viewModel.engine.clock.$currentTime, perform: handleClockTick)
+            .onDisappear {
+                isResumeAutoHideArmed = false
+                activeResumeStartSeconds = nil
+                focusedPromptControl = nil
+                isPromptFocused = false
+                hasActivePrompt = false
+            }
+    }
+
+    private func handleFocusPromptRequest() {
+        guard !isResting else { return }
+        if activeResumeStartSeconds != nil && !showNextButton {
+            focusedPromptControl = .restartFromBeginning
+        } else if showNextButton {
+            focusedPromptControl = .playNext
+        } else if activeIntro != nil {
+            focusedPromptControl = .skipIntro
         }
-        .onChange(of: dismissNonce) { _, _ in
-            dismissCurrentPrompt()
-        }
-        .onChange(of: viewModel.activeSession?.sessionId) { _, _ in
-            clockBox.reset(initialTime: max(0, viewModel.engine.currentTime))
-            dismissedNextForSessionID = nil
-            dismissedIntroChapterIDs.removeAll()
-            isResumeAutoHideArmed = false
-            activeResumeStartSeconds = nil
-            activeIntro = nil
-            showNextButton = false
+    }
+
+    private func handleMoveCommand(_ direction: MoveCommandDirection) {
+        switch direction {
+        case .up:
             focusedPromptControl = nil
-            isPromptFocused = false
-            hasActivePrompt = false
-            armResumeBannerIfEligible()
-            evaluateContinuityState(at: clockBox.currentTime)
-        }
-        .task(id: isResumeAutoHideArmed ? resumeAutoHideNonce : 0) {
-            guard isResumeAutoHideArmed, resumeAutoHideNonce > 0 else { return }
-            let ns = UInt64(resumeAutoHideSeconds * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: ns)
-            guard !Task.isCancelled else { return }
-            let wasFocused = (focusedPromptControl == .restartFromBeginning)
-            hideResumeBanner(returningFocus: wasFocused, silentFocusReturn: true)
-        }
-        .onReceive(viewModel.engine.clock.$currentTime) { t in
-            let hasContinuityTargets = viewModel.activeSession?.nextEpisode != nil ||
-                viewModel.chapters.contains(where: { $0.kind == .intro || $0.kind == .recap || $0.kind == .credits })
-            guard hasContinuityTargets else { return }
-            guard abs(t - clockBox.currentTime) >= 0.5 || t < 1.0 else { return }
-            clockBox.currentTime = t
-            evaluateContinuityState(at: t)
-        }
-        .onDisappear {
-            isResumeAutoHideArmed = false
-            activeResumeStartSeconds = nil
+            onReturnFocusToCanvas()
+        case .down:
+            if activeResumeStartSeconds != nil {
+                hideResumeBanner(returningFocus: false)
+            }
             focusedPromptControl = nil
-            isPromptFocused = false
-            hasActivePrompt = false
+            onFocusQuickActions()
+        case .left:
+            if activeResumeStartSeconds != nil {
+                hideResumeBanner(returningFocus: false)
+            }
+            focusedPromptControl = nil
+            onSeekRelative(-10)
+        case .right:
+            if activeResumeStartSeconds != nil {
+                hideResumeBanner(returningFocus: false)
+            }
+            focusedPromptControl = nil
+            onSeekRelative(10)
+        @unknown default:
+            break
         }
+    }
+
+    private func resetForNewSession() {
+        clockBox.reset(initialTime: max(0, viewModel.engine.currentTime))
+        dismissedNextForSessionID = nil
+        dismissedIntroChapterIDs.removeAll()
+        isResumeAutoHideArmed = false
+        activeResumeStartSeconds = nil
+        activeIntro = nil
+        showNextButton = false
+        focusedPromptControl = nil
+        isPromptFocused = false
+        hasActivePrompt = false
+        armResumeBannerIfEligible()
+        evaluateContinuityState(at: clockBox.currentTime)
+    }
+
+    private func handleClockTick(_ t: Double) {
+        let hasContinuityTargets = viewModel.activeSession?.nextEpisode != nil ||
+            viewModel.chapters.contains(where: { $0.kind == .intro || $0.kind == .recap || $0.kind == .credits })
+        guard hasContinuityTargets else { return }
+        guard abs(t - clockBox.currentTime) >= 0.5 || t < 1.0 else { return }
+        clockBox.currentTime = t
+        evaluateContinuityState(at: t)
     }
 
     // MARK: - 0 Hz Steady-State Continuity Evaluation
