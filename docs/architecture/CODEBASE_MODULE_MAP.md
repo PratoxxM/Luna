@@ -55,7 +55,11 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/DesignSystem/LunaCrescentMarkView.swift` | Clean vector crescent moon brand mark (`LunaCrescentMarkView`) | — | `ThemeAndArtworkViewTests.swift` |
 | `Sources/DesignSystem/LunaPillButton.swift` | Focus-safe `LunaChromelessButtonStyle`, `LunaPillButton`, `LunaButtonProminence/Accent/Size` | — | `ThemeAndArtworkViewTests.swift`, `DesignTokensAndCopyTests.swift` |
 | `Sources/DesignSystem/CachedArtworkView.swift` | Off-main-actor key-matched artwork view preventing 1-frame recycled cell flash | — | `ThemeAndArtworkViewTests.swift` |
-| `Sources/DesignSystem/LunaFocusStyle.swift` | Shared `0.32/0.86` tvOS focus spring, inner gold border & warm under-glow modifier | — | `DesignTokensAndCopyTests.swift` |
+| `Sources/DesignSystem/LunaFocusStyle.swift` | Shared `0.32/0.86` tvOS focus spring, `.card`/`.control`/`.listRow` modifiers & room glow | — | `DesignTokensAndCopyTests.swift` |
+| `Sources/DesignSystem/LunaBadges.swift` | Borderless `LunaArtBadge`, `LunaTierDotView` & `56×56` `LunaIconButton` | — | — |
+| `Sources/DesignSystem/LunaListRow.swift` | Canonical `LunaSectionHeader`, single-frame `LunaListGroup`, `LunaListDivider`, `LunaInfoRow`, `LunaControlRow` & `LunaListRow` (`1.0x`) | — | — |
+| `Sources/DesignSystem/LunaSheetContainer.swift` | Unified `880`/`1240 pt` `LunaSheetContainer` modal frame (`48 pt` padding, `Surface.sheet`) | — | — |
+| `Sources/DesignSystem/LunaInlineStateViews.swift` | Left-aligned `LunaLoadingRow`, `LunaEmptyState`, `LunaInlineError`, `LunaToast` & `PlayerStatusPill` | — | — |
 | `Sources/DesignSystem/LunaCopy.swift` | Norwegian pluralization, comma decimal formatter, room/tier labels & greetings | — | `DesignTokensAndCopyTests.swift` |
 | `Sources/DesignSystem/AmbientBackdropView.swift` | Static warm charcoal/espresso ambient glow backdrop (paused during playback) | — | `ThemeAndArtworkViewTests.swift` |
 | `Sources/DesignSystem/Cards/PosterCardView.swift` | Isolated `@FocusState` poster card (`280×420` shelf / `260×390` grid, resting grid titles, focus-only `LunaTierMarkView`) | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
