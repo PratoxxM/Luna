@@ -25,7 +25,7 @@ struct SettingsAdvancedSectionView: View {
 
             SettingsControlRow(
                 title: "Høyttaleroppsett og objektlyd",
-                subtitle: "Auto (7.1.4) lar lydplanke/forsterker dekode full Atmos/DTS:X. Stereo 2.0 brukes som feilsøking for TV-høyttalere."
+                subtitle: "Auto 7.1.4 anbefales · Stereo for TV-høyttalere"
             ) {
                 HStack(spacing: 10) {
                     ForEach(SpeakerLayoutOverrideMode.allCases) { mode in
@@ -45,7 +45,7 @@ struct SettingsAdvancedSectionView: View {
 
             SettingsControlRow(
                 title: "Fast lydsynk for denne Apple TV-en (HDMI / eARC)",
-                subtitle: "Negativ verdi (f.eks. −25 til −75 ms) sender lyden tidligere ut på HDMI for å hente inn eARC- og Dolby MAT/LPCM-forsinkelse i TV og lydplanke."
+                subtitle: "Negativ verdi sender lyden tidligere"
             ) {
                 let currentDelayLabel = comfort.formattedAudioDelayLabel.replacingOccurrences(of: "-", with: "−")
                 HStack(spacing: 10) {
@@ -76,7 +76,6 @@ struct SettingsAdvancedSectionView: View {
 
             SettingsToggleRowButton(
                 title: "Vis teknisk oversikt i spilleren",
-                subtitle: "Sanntids bilde-, lyd- og bufferoversikt under avspilling",
                 isOn: $comfort.showNerdHUD
             )
 

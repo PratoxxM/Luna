@@ -10,37 +10,33 @@ struct SettingsServerDiagnosticsSectionView: View {
     let onRefreshCacheMetrics: () async -> Void
 
     var body: some View {
-        SettingsSectionPanel(title: "System") {
-            SettingsInfoRow(
-                title: "App og motor",
-                value: "Luna \(AppSessionStore.currentAppVersionDisplayString()) · AetherEngine \(AetherBridgeInfo.pinnedAetherEngineVersion)"
-            )
-            SettingsSectionDivider()
-            SettingsInfoRow(
-                title: "Apple TV-maskinvare",
-                value: "\(DeviceHardwareCapabilities.physicalMemoryGB) GB RAM · Maskinvare-AV1: \(DeviceHardwareCapabilities.supportsHardwareAV1 ? "Støttet" : "Ikke støttet")"
-            )
-            SettingsSectionDivider()
-            SettingsInfoRow(
-                title: "LunaCore-server",
-                value: sessionStore.serverBaseURL?.absoluteString ?? "Ikke tilkoblet"
-            )
-            SettingsSectionDivider()
-            SettingsInfoRow(
-                title: "Aktivt rom",
-                value: "\(sessionStore.roomName) · \(sessionStore.effectiveEquipmentLabel)"
-            )
-            SettingsSectionDivider()
-            SettingsInfoRow(title: "Bilde- og kataloghurtigbuffer", value: formattedCacheSize)
-            SettingsSectionDivider()
+        VStack(alignment: .leading, spacing: LunaTokens.Layout.sectionGap) {
+            SettingsSectionPanel(title: "Om denne Apple TV-en") {
+                SettingsInfoRow(
+                    title: "App og motor",
+                    value: "Luna \(AppSessionStore.currentAppVersionDisplayString()) · AetherEngine \(AetherBridgeInfo.pinnedAetherEngineVersion)"
+                )
+                SettingsSectionDivider()
+                SettingsInfoRow(
+                    title: "Apple TV-maskinvare",
+                    value: "\(DeviceHardwareCapabilities.physicalMemoryGB) GB RAM · Maskinvare-AV1: \(DeviceHardwareCapabilities.supportsHardwareAV1 ? "Støttet" : "Ikke støttet")"
+                )
+                SettingsSectionDivider()
+                SettingsInfoRow(
+                    title: "LunaCore-server",
+                    value: sessionStore.serverBaseURL?.absoluteString ?? "Ikke tilkoblet"
+                )
+                SettingsSectionDivider()
+                SettingsInfoRow(title: "Bilde- og kataloghurtigbuffer", value: formattedCacheSize)
+            }
 
-            HStack(spacing: 12) {
-                LunaPillButton(
-                    "Tøm hurtigbuffer",
-                    systemImage: "trash",
-                    prominence: .glassPill,
-                    accent: .coral,
-                    size: .compact
+            SettingsSectionPanel(title: "Vedlikehold") {
+                LunaListRow(
+                    title: "Tøm hurtigbuffer",
+                    leadingSystemImage: "trash",
+                    trailingText: cacheClearedNotice ? "Hurtigbuffer tømt" : nil,
+                    trailingTextProminent: cacheClearedNotice,
+                    isDestructive: true
                 ) {
                     Task {
                         CatalogBrowseMemoryCache.shared.clear()
@@ -55,27 +51,17 @@ struct SettingsServerDiagnosticsSectionView: View {
                     }
                 }
 
-                LunaPillButton(
-                    "Koble til på nytt…",
-                    systemImage: "arrow.triangle.2.circlepath",
-                    prominence: .glassPill,
-                    accent: .coral,
-                    size: .compact
+                SettingsSectionDivider()
+
+                LunaListRow(
+                    title: "Koble til på nytt…",
+                    leadingSystemImage: "arrow.triangle.2.circlepath",
+                    showsChevron: true,
+                    isDestructive: true
                 ) {
                     showReconnectDialog = true
                 }
-
-                Spacer(minLength: 0)
-
-                if cacheClearedNotice {
-                    Text("Hurtigbuffer tømt")
-                        .font(LunaTheme.Font.settingsStatusTag)
-                        .foregroundStyle(LunaTheme.emerald)
-                        .lineLimit(1)
-                        .fixedSize()
-                }
             }
-            .padding(.top, 2)
         }
     }
 

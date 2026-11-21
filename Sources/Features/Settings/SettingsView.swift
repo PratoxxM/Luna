@@ -82,7 +82,7 @@ struct SettingsView: View {
 
             ScrollViewReader { scrollProxy in
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: LunaTokens.Layout.sectionGap) {
                         Color.clear
                             .frame(height: 0)
                             .id("luna-scroll-top")
@@ -108,7 +108,7 @@ struct SettingsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.top, LunaTopBarView.contentTopPadding)
+        .padding(.top, LunaTokens.Layout.contentTop)
         .padding(.horizontal, LunaTheme.horizontalGutter)
         .ignoresSafeArea()
         .confirmationDialog(
@@ -223,35 +223,13 @@ private struct SettingsCategoryRowButton: View {
                 Spacer(minLength: 8)
             }
             .transaction { $0.animation = nil }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, LunaTokens.Layout.listRowPadX)
             .padding(.vertical, 16)
             .background(
                 RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
-                    .fill(isFocused ? LunaTheme.surfaceSelected : (isSelected ? LunaTheme.surfaceRaised : Color.clear))
-                    .overlay {
-                        if isSelected && !isFocused {
-                            RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
-                                .fill(LunaTokens.Accent.soft)
-                        }
-                    }
+                    .fill(isFocused ? LunaTheme.surfaceSelected : Color.clear)
                     .transaction { $0.animation = nil }
             )
-            .overlay {
-                if isSelected && !isFocused {
-                    HStack {
-                        Capsule()
-                            .fill(LunaTheme.amber)
-                            .frame(width: LunaFocusStyle.listMarkerWidth)
-                            .padding(.vertical, 12)
-                        Spacer(minLength: 0)
-                    }
-                    .overlay(
-                        RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
-                            .strokeBorder(LunaTokens.Accent.border, lineWidth: 1.0)
-                    )
-                    .allowsHitTesting(false)
-                }
-            }
             .lunaFocusSurface(.listRow, isFocused: isFocused, cornerRadius: LunaTokens.Radius.card)
         }
         .buttonStyle(LunaChromelessButtonStyle())
@@ -263,7 +241,7 @@ private struct SettingsCategoryRowButton: View {
             focusTask = nil
             guard focused, !isSelected else { return }
             focusTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 120_000_000)
+                try? await Task.sleep(nanoseconds: LunaTokens.Motion.focusSelectDebounceNanoseconds)
                 guard !Task.isCancelled, isFocused else { return }
                 action()
             }

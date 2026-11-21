@@ -9,44 +9,33 @@ struct SettingsRoomDisplaySectionView: View {
 
     var body: some View {
         SettingsSectionPanel(title: "Rom og skjerm") {
-            SettingsInfoRow(
-                title: "Aktivt rom",
-                value: "\(sessionStore.roomName) · \(sessionStore.effectiveEquipmentLabel)"
-            )
+            let matchingProfileCount = Dictionary(
+                grouping: sessionStore.availableRooms,
+                by: \.hardwareProfile
+            ).mapValues(\.count)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Velg rom for denne Apple TV-en (oppdaterer LunaCore direkte)")
-                    .font(LunaTheme.Font.settingsRowSubtitle)
-                    .foregroundStyle(LunaTheme.muted)
-
-                let matchingProfileCount = Dictionary(
-                    grouping: sessionStore.availableRooms,
-                    by: \.hardwareProfile
-                ).mapValues(\.count)
-
-                ForEach(sessionStore.availableRooms) { room in
-                    let isSelected = sessionStore.effectiveHardwareProfile == room.hardwareProfile &&
-                        (sessionStore.roomName == room.roomName || (matchingProfileCount[room.hardwareProfile] ?? 0) == 1)
-                    let fallbackPreset = HardwareProfilePreset(rawValue: room.hardwareProfile)
-                    let eqLabel = LunaCopy.roomEquipmentLabel(
-                        hardwareProfile: room.hardwareProfile,
+            ForEach(sessionStore.availableRooms) { room in
+                let isSelected = sessionStore.effectiveHardwareProfile == room.hardwareProfile &&
+                    (sessionStore.roomName == room.roomName || (matchingProfileCount[room.hardwareProfile] ?? 0) == 1)
+                let fallbackPreset = HardwareProfilePreset(rawValue: room.hardwareProfile)
+                let eqLabel = LunaCopy.roomEquipmentLabel(
+                    hardwareProfile: room.hardwareProfile,
+                    roomName: room.roomName,
+                    serverLabel: room.equipmentLabel
+                )
+                SettingsRoomRowButton(
+                    title: room.label ?? fallbackPreset?.displayTitle ?? room.roomName,
+                    subtitle: room.description ?? eqLabel,
+                    isSelected: isSelected
+                ) {
+                    sessionStore.setRoomAndProfile(
                         roomName: room.roomName,
-                        serverLabel: room.equipmentLabel
+                        hardwareProfile: room.hardwareProfile
                     )
-                    SettingsRoomRowButton(
-                        title: room.label ?? fallbackPreset?.displayTitle ?? room.roomName,
-                        subtitle: room.description ?? eqLabel,
-                        isSelected: isSelected
-                    ) {
-                        sessionStore.setRoomAndProfile(
-                            roomName: room.roomName,
-                            hardwareProfile: room.hardwareProfile
-                        )
-                    }
                 }
-            }
 
-            SettingsSectionDivider()
+                SettingsSectionDivider()
+            }
 
             SettingsControlRow(
                 title: "MetalFX 4K-oppskalering",
@@ -88,7 +77,7 @@ struct SettingsRoomDisplaySectionView: View {
 
             SettingsSectionDivider()
 
-            SettingsInfoRow(title: "Aktiv tvOS-videomodus nå", value: activeVideoModeSummary)
+            SettingsInfoRow(title: "Skjermen støtter", value: activeVideoModeSummary)
         }
     }
 
@@ -180,7 +169,6 @@ struct SettingsPlaybackSectionView: View {
         SettingsSectionPanel(title: "Avspilling") {
             SettingsToggleRowButton(
                 title: "Spill neste episode automatisk",
-                subtitle: "Starter neste episode automatisk når episoden er helt ferdig",
                 isOn: $comfort.autoPlayNextEpisode
             )
 
@@ -188,7 +176,7 @@ struct SettingsPlaybackSectionView: View {
 
             SettingsInfoRow(
                 title: "Siri Remote-spoling",
-                value: "Kun ved pause · adaptiv over hele lengden · hold ring for hurtigspoling"
+                value: "Kun ved pause · adaptiv · hold ring"
             )
         }
     }
