@@ -12,10 +12,12 @@ final class MockPlayerTransport: PlayerTransportControlling {
     var currentTime: Double
     var needsForegroundVideoRestore: Bool
     var events: [String] = []
+    var lastAudioDelaySeconds: Double?
 
     var onPlay: (() -> Void)?
     var onPause: (() -> Void)?
     var onSeek: ((Double, Bool) async -> Void)?
+    var onSetAudioDelay: ((Double) -> Void)?
     var onStop: ((Bool, Bool) -> Void)?
 
     init(
@@ -60,6 +62,13 @@ final class MockPlayerTransport: PlayerTransportControlling {
         if let onSeek {
             await onSeek(seconds, exact)
         }
+    }
+
+    func setAudioDelay(_ seconds: Double) {
+        lastAudioDelaySeconds = seconds
+        let ms = Int((seconds * 1000.0).rounded())
+        events.append("audioDelay(\(ms)ms)")
+        onSetAudioDelay?(seconds)
     }
 
     func stop(resetDisplayCriteria: Bool, finalTeardown: Bool) {

@@ -245,4 +245,104 @@ final class NetworkCacheAndMemoryProfileTests: XCTestCase {
         XCTAssertFalse(LunaCoreError.isCancellation(URLError(.timedOut)))
         XCTAssertFalse(LunaCoreError.isCancellation(LunaCoreError.unauthorized))
     }
+
+    func testEtappe3A19PlaybackBudgetsAndConcurrencyCaps() {
+        let standard = DeviceMemoryProfile(physicalMemoryBytes: 4 * 1_073_741_824, activeProcessorCount: 6)
+        let high2026 = DeviceMemoryProfile(physicalMemoryBytes: 8 * 1_073_741_824, activeProcessorCount: 6)
+
+        XCTAssertEqual(standard.sessionCacheByteBudget, 1_073_741_824)
+        XCTAssertEqual(standard.sessionCacheFreeReserveBytes, 1_536 * 1_048_576)
+        XCTAssertFalse(standard.defaultLowResUpscaleEnabled)
+
+        XCTAssertEqual(high2026.sessionCacheByteBudget, 3 * 1_073_741_824)
+        XCTAssertEqual(high2026.sessionCacheFreeReserveBytes, 4 * 1_073_741_824)
+        XCTAssertTrue(high2026.defaultLowResUpscaleEnabled)
+
+        // Retained session cache after stop
+        XCTAssertFalse(standard.retainsSessionCacheAfterStop(availableMemoryBytes: 2_000 * 1_048_576))
+        XCTAssertFalse(high2026.retainsSessionCacheAfterStop(availableMemoryBytes: 900 * 1_048_576))
+        XCTAssertTrue(high2026.retainsSessionCacheAfterStop(availableMemoryBytes: 1_000 * 1_048_576))
+
+        // Forward buffer segments
+        XCTAssertEqual(high2026.forwardBufferSegments(availableMemoryBytes: 1_600 * 1_048_576), 45)
+        XCTAssertEqual(high2026.forwardBufferSegments(availableMemoryBytes: 1_000 * 1_048_576), 24)
+        XCTAssertEqual(high2026.forwardBufferSegments(availableMemoryBytes: 500 * 1_048_576), 12)
+        XCTAssertEqual(standard.forwardBufferSegments(availableMemoryBytes: 600 * 1_048_576), 12)
+        XCTAssertEqual(standard.forwardBufferSegments(availableMemoryBytes: 400 * 1_048_576), 8)
+
+        // Concurrent source requests + strict single-stream (<= 1) server cap preservation
+        XCTAssertEqual(high2026.maxConcurrentSourceRequests(isFastLocalTier: true, isSameOrigin: true, serverConfigured: 2), 8)
+        XCTAssertEqual(high2026.maxConcurrentSourceRequests(isFastLocalTier: false, isSameOrigin: true, serverConfigured: 2), 4)
+        XCTAssertEqual(high2026.maxConcurrentSourceRequests(isFastLocalTier: false, isSameOrigin: false, serverConfigured: 2), 2)
+        XCTAssertEqual(high2026.maxConcurrentSourceRequests(isFastLocalTier: true, isSameOrigin: true, serverConfigured: 1), 1)
+        XCTAssertEqual(high2026.maxConcurrentSourceRequests(isFastLocalTier: false, isSameOrigin: true, serverConfigured: 1), 1)
+
+        XCTAssertEqual(standard.maxConcurrentSourceRequests(isFastLocalTier: true, isSameOrigin: true, serverConfigured: 2), 6)
+        XCTAssertEqual(standard.maxConcurrentSourceRequests(isFastLocalTier: false, isSameOrigin: true, serverConfigured: 2), 3)
+        XCTAssertEqual(standard.maxConcurrentSourceRequests(isFastLocalTier: false, isSameOrigin: true, serverConfigured: 4), 4)
+        XCTAssertEqual(standard.maxConcurrentSourceRequests(isFastLocalTier: true, isSameOrigin: true, serverConfigured: 1), 1)
+    }
+
+    func testCandidateHardwareRoutingAndBcp47LanguageNormalization() {
+        func makeCandidate(
+            resolution: String? = "2160p",
+            range: String? = nil,
+            dvProfile: Int? = nil,
+            dvLayer: String? = nil,
+            codec: String? = nil
+        ) -> TvCandidateInfo {
+            TvCandidateInfo(
+                candidateId: "c1",
+                displayHeadline: "Test",
+                releaseTitle: "Test",
+                source: "ssd",
+                tier: "ssd",
+                resolution: resolution,
+                videoRangeType: range,
+                dvProfile: dvProfile,
+                dvEnhancementLayer: dvLayer,
+                audioCodec: "truehd",
+                sizeBytes: 50 * 1_073_741_824,
+                tvScore: 100,
+                isActive: true,
+                explanationChips: nil,
+                releaseGroup: nil,
+                isNorwegian: false,
+                videoCodec: codec
+            )
+        }
+
+        let dvFel = makeCandidate(range: "DolbyVision", dvProfile: 7, dvLayer: "FEL", codec: "hevc")
+        XCTAssertTrue(dvFel.canCarryDualLayerDolbyVision)
+        XCTAssertTrue(dvFel.allowsDualLayerDolbyVisionWhenForced)
+        XCTAssertFalse(dvFel.requiresSoftwareVideoDecode(supportsHardwareAV1: true))
+
+        let av1Hdr = makeCandidate(range: "HDR10+", dvProfile: nil, codec: "av1")
+        XCTAssertFalse(av1Hdr.canCarryDualLayerDolbyVision)
+        XCTAssertFalse(av1Hdr.allowsDualLayerDolbyVisionWhenForced)
+        XCTAssertFalse(av1Hdr.requiresSoftwareVideoDecode(supportsHardwareAV1: true))
+        XCTAssertTrue(av1Hdr.requiresSoftwareVideoDecode(supportsHardwareAV1: false))
+
+        let dvP8 = makeCandidate(range: "DolbyVision", dvProfile: 8, codec: "hevc")
+        XCTAssertFalse(dvP8.canCarryDualLayerDolbyVision)
+        XCTAssertFalse(dvP8.allowsDualLayerDolbyVisionWhenForced)
+
+        let hdr10Remux = makeCandidate(range: "HDR10", dvProfile: nil, codec: "hevc")
+        XCTAssertFalse(hdr10Remux.canCarryDualLayerDolbyVision)
+        XCTAssertTrue(hdr10Remux.allowsDualLayerDolbyVisionWhenForced)
+        XCTAssertFalse(hdr10Remux.isLikelyLowResolutionSDRForUpscale)
+
+        let hdSdr = makeCandidate(resolution: "1080p", range: "SDR", codec: "h264")
+        XCTAssertTrue(hdSdr.isLikelyLowResolutionSDRForUpscale)
+        XCTAssertFalse(hdSdr.canCarryDualLayerDolbyVision)
+
+        let vp9Web = makeCandidate(resolution: "2160p", range: "HDR10", codec: "vp9")
+        XCTAssertTrue(vp9Web.requiresSoftwareVideoDecode(supportsHardwareAV1: true))
+
+        XCTAssertEqual(SmartTrackRuleEngine.normalizeLanguage("nb-NO"), "nob")
+        XCTAssertEqual(SmartTrackRuleEngine.normalizeLanguage("nn_NO"), "nob")
+        XCTAssertEqual(SmartTrackRuleEngine.normalizeLanguage("en-US"), "eng")
+        XCTAssertEqual(SmartTrackRuleEngine.normalizeLanguage("sv-SE"), "swe")
+        XCTAssertEqual(SmartTrackRuleEngine.normalizeLanguage("da-DK"), "dan")
+    }
 }

@@ -144,12 +144,15 @@ final class PlayerViewModel {
     @ObservationIgnored var didApplyInitialSmartRule: Bool = false
     @ObservationIgnored var didBindEnginePublishers: Bool = false
 
+    nonisolated static let audioDelayDebounceNs: UInt64 = 220_000_000
+
     @ObservationIgnored var cancellables = Set<AnyCancellable>()
     @ObservationIgnored var coalescedSeekTask: Task<Void, Never>?
     @ObservationIgnored var chapterSeekTask: Task<Void, Never>?
     @ObservationIgnored var smartRuleTask: Task<Void, Never>?
     @ObservationIgnored var switchSourceTask: Task<Void, Never>?
     @ObservationIgnored var audioDelayCommitTask: Task<Void, Never>?
+    @ObservationIgnored var hasPendingAudioDelayCommit: Bool = false
     @ObservationIgnored var upscaleReloadTask: Task<Void, Never>?
     @ObservationIgnored var foregroundRestoreTask: Task<Void, Never>?
     @ObservationIgnored private(set) var pausedRestoreResumeTask: Task<Void, Never>?
@@ -262,9 +265,7 @@ final class PlayerViewModel {
         )
     }
 
-    func start(request: PlaybackLaunchRequest, client: LunaCoreClient?) {
-        bindEnginePublishersIfNeeded()
-        engineOwnerToken = PlayerAudioSessionCoordinator.shared.claimEngineOwnership()
+    func resetTransientTransitionState() {
         PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
         cancelPendingPausedRestoreResume()
         cancelPendingScrubCommit()
@@ -272,8 +273,18 @@ final class PlayerViewModel {
         foregroundRestoreTask = nil
         isRestoringFromBackground = false
         userDesiredPlayingDuringRestore = nil
-        lastForegroundPlaybackWasPlaying = false
         needsNativeAudioActivationAfterPausedRestore = false
+        audioDelayCommitTask?.cancel()
+        audioDelayCommitTask = nil
+        hasPendingAudioDelayCommit = false
+    }
+
+    func start(request: PlaybackLaunchRequest, client: LunaCoreClient?) {
+        bindEnginePublishersIfNeeded()
+        PlayerAudioSessionCoordinator.shared.sampleMenuRefreshRateIfIdle(hasActivePlayback: false)
+        engineOwnerToken = PlayerAudioSessionCoordinator.shared.claimEngineOwnership()
+        resetTransientTransitionState()
+        lastForegroundPlaybackWasPlaying = false
         isDismissing = false
         pendingStopSnapshot = nil
         pendingInflightPrepareTask?.cancel()
@@ -312,22 +323,13 @@ final class PlayerViewModel {
 
     func playNextEpisode(_ next: TvNextEpisodeSummary) {
         guard let client = activeClient, let current = activeSession else { return }
-        PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
-        cancelPendingPausedRestoreResume()
-        cancelPendingScrubCommit()
-        foregroundRestoreTask?.cancel()
-        foregroundRestoreTask = nil
-        isRestoringFromBackground = false
-        userDesiredPlayingDuringRestore = nil
-        needsNativeAudioActivationAfterPausedRestore = false
+        resetTransientTransitionState()
         resolveTask?.cancel()
         pendingInflightPrepareTask?.cancel()
         pendingInflightPrepareTask = nil
         pendingHandedOverSessionId = nil
         switchSourceTask?.cancel()
         switchSourceTask = nil
-        audioDelayCommitTask?.cancel()
-        audioDelayCommitTask = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil
         lastReportedServerState = nil
@@ -484,18 +486,9 @@ final class PlayerViewModel {
 
     func triggerSourceSwitch(to candidateId: String) {
         guard activeClient != nil, activeSession != nil else { return }
-        PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
-        cancelPendingPausedRestoreResume()
-        cancelPendingScrubCommit()
-        foregroundRestoreTask?.cancel()
-        foregroundRestoreTask = nil
-        isRestoringFromBackground = false
-        userDesiredPlayingDuringRestore = nil
-        needsNativeAudioActivationAfterPausedRestore = false
+        resetTransientTransitionState()
         fatalError = nil
         isSwitchingSource = true
-        audioDelayCommitTask?.cancel()
-        audioDelayCommitTask = nil
         switchSourceTask?.cancel()
         switchSourceTask = Task { @MainActor [weak self] in
             await self?.switchSource(to: candidateId)

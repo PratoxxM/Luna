@@ -180,19 +180,22 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
 
         XCTAssertFalse(
             PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
-                keepDisplayModeInMenuAfterPlayback: true,
+                menuDisplayMode: .preserveExactMatch,
+                videoFormat: .dolbyVision,
                 isForegroundActive: true
             )
         )
         XCTAssertTrue(
             PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
-                keepDisplayModeInMenuAfterPlayback: true,
+                menuDisplayMode: .preserveExactMatch,
+                videoFormat: .dolbyVision,
                 isForegroundActive: false
             )
         )
         XCTAssertTrue(
             PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
-                keepDisplayModeInMenuAfterPlayback: false,
+                menuDisplayMode: .sdr60Hz,
+                videoFormat: .dolbyVision,
                 isForegroundActive: true
             )
         )

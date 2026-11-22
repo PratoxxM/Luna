@@ -354,6 +354,7 @@ public final class AppSessionStore {
         }
         SideloadSafeStorage.deleteDeviceToken(defaults: defaults)
         AetherEngine.discardPrewarmedSources()
+        AetherEngine.discardRetainedSessionCache()
         PlayerAudioSessionCoordinator.shared.flushDeferredDisplayCriteriaResetIfIdle()
         LunaCoreSessionPool.shared.invalidateAll()
         CatalogBrowseMemoryCache.shared.clear()

@@ -1,4 +1,4 @@
-# AetherEngine (`7.71.0`) — Extracted Host API Reference
+# AetherEngine (`7.72.1`) — Extracted Host API Reference
 
 Canonical signature reference extracted directly from `Luna`'s `Packages/AetherBridge` and `Sources/` integration. Use these exact signatures when modifying playback, subtitle, audio, or prewarm logic on Linux without local Xcode autocompletion.
 
@@ -10,7 +10,7 @@ Canonical signature reference extracted directly from `Luna`'s `Packages/AetherB
 // Packages/AetherBridge/Package.swift (swift-tools-version: 6.1)
 .package(
     url: "https://github.com/superuser404notfound/AetherEngine.git",
-    exact: "7.71.0",
+    exact: "7.72.1",
     traits: [
         "TrueHDObjectAudio",
         "DTSXObjectAudio",
@@ -24,7 +24,7 @@ Canonical signature reference extracted directly from `Luna`'s `Packages/AetherB
 @_exported import AetherEngine
 
 public enum AetherBridgeInfo {
-    public static let pinnedAetherEngineVersion = "7.71.0"
+    public static let pinnedAetherEngineVersion = "7.72.1"
 }
 ```
 
@@ -98,6 +98,7 @@ public final class AetherEngine: ObservableObject {
     // Isolated High-Frequency Sub-Objects (Observe ONLY in Leaf Views!)
     public let clock: EngineClock
     public let diagnostics: EngineDiagnostics
+    public let systemCaptionRequest: PassthroughSubject<SystemCaptionRequest, Never>
 
     // Scrub Preview Capabilities & Generation
     public var scrubPreviewDrawsInView: Bool { get }
@@ -165,6 +166,13 @@ public struct UpscaleStatus: Sendable, Equatable {
     public let mlScale: Float?
     public let targetSize: CGSize
     public let disabledReason: String?
+    public let degraded: Bool
+    public let scaler: UpscaleScaler
+}
+
+public struct SystemCaptionRequest: Equatable, Sendable {
+    public let language: String?
+    public init(language: String?)
 }
 
 public struct DisplayCapabilities: Sendable {
@@ -226,11 +234,15 @@ public struct LoadOptions: Sendable {
     public var generatesBackgroundScrubPreviews: Bool
     public var serveIFramePlaylist: Bool
     public var confirmAtmos: Bool
-    public var maxConcurrentSourceRequests: Int
+    public var maxConcurrentSourceRequests: Int?
     public var declaredDurationSeconds: Double?
+    public var untaggedVideoColor: UntaggedVideoColor         // .standard | .hdr10 | .hlg
+    public var inverseTelecine: InverseTelecineMode           // .off | .auto
     public var upscalesLowResolutionVideo: Bool
     public var upscaleScaler: UpscaleScaler                   // .automatic | .lineArt
     public var forwardBufferSegments: Int?
+    public var sessionCacheByteBudget: Int?
+    public var sessionCacheFreeReserveBytes: Int
     public var progressiveSegmentDelivery: Bool
     public var externalSubtitles: [ExternalSubtitleTrack]
     public var retainsSessionCacheAfterStop: Bool
@@ -381,7 +393,7 @@ public enum EngineTLS {
 ## 6. Luna Host Abstractions (`Sources/Features/Player/` & `Sources/Core/Playback/`)
 
 - **tvOS Player Transport Seam (`Sources/Features/Player/PlayerTransportProtocol.swift`)**:
-  - `@MainActor protocol PlayerTransportControlling`: `state`, `playbackPhase`, `videoRoute`, `currentTime`, `needsForegroundVideoRestore`, `play()`, `pause()`, `togglePlayPause()`, `seek(to:exact:)`, `stop(resetDisplayCriteria:finalTeardown:)`.
+  - `@MainActor protocol PlayerTransportControlling`: `state`, `playbackPhase`, `videoRoute`, `currentTime`, `needsForegroundVideoRestore`, `play()`, `pause()`, `togglePlayPause()`, `seek(to:exact:)`, `setAudioDelay(_:)`, `stop(resetDisplayCriteria:finalTeardown:)`.
   - `protocol NativeAudioActivating: Sendable`: `activateNativePlaybackIfNeeded(videoRoute:) async`.
 - **Linux-Testable Core Seam (`Sources/Core/Playback/PlaybackCoreAbstractions.swift` & `RemoteScrubMath.swift`)**:
   - `public protocol PlaybackEngine: AnyObject, Sendable` & `public protocol IOReader: Sendable`, coordinated by `PlaybackCoordinatorStateMachine` and `PlaybackCurtainWatchdog`.

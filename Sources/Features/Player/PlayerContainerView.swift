@@ -567,6 +567,7 @@ struct PlayerContainerView: View {
         }
         .onChange(of: viewModel.isRestoringFromBackground) { _, restoring in
             if restoring, activeQuickPanel != nil, suspendedFatalErrorForPanel == nil {
+                viewModel.flushPendingAudioDelayCommitIfNeeded()
                 activeQuickPanel = nil
             }
         }
@@ -688,6 +689,7 @@ struct PlayerContainerView: View {
     }
 
     private func closeQuickPanel(returnFocusToPill: Bool) {
+        viewModel.flushPendingAudioDelayCommitIfNeeded()
         isQuickActionsModeActive = returnFocusToPill
         withAnimation(.easeOut(duration: 0.18)) {
             activeQuickPanel = nil

@@ -15,10 +15,12 @@ enum NowPlayingArtworkFactory {
     }
 }
 
-/// Publishes tvOS Control Center / iPhone Remote Now Playing metadata, chapter/next-episode
-/// command handlers, and decoded poster/backdrop artwork via `AetherEngine 7.71.0`.
+/// Publishes tvOS Control Center / iPhone Remote Now Playing metadata
+/// and decoded poster/backdrop artwork via `AetherEngine 7.72.1`.
 @MainActor
 enum PlayerNowPlayingCoordinator {
+    static let nowPlayingArtworkMaxPixels = 780
+
     static func publish(
         session: TvPlaybackSession,
         client: LunaCoreClient,
@@ -28,25 +30,27 @@ enum PlayerNowPlayingCoordinator {
         viewModel.nowPlayingArtworkTask = nil
 
         let engine = viewModel.engine
-        let baseInfo = makeBaseInfo(for: session)
+        var baseInfo = makeBaseInfo(for: session)
+        let resolvedArtURL = client.resolveArtworkURL(
+            session.item.posterUrl ?? session.item.backdropUrl,
+            target: .poster
+        )
+        if let artURL = resolvedArtURL,
+           let cachedCGImage = ArtworkPipeline.shared.cachedImage(
+               for: artURL,
+               maxPixelSize: nowPlayingArtworkMaxPixels
+           ) ?? ArtworkPipeline.shared.cachedAnySizeImage(for: artURL) {
+            baseInfo[MPMediaItemPropertyArtwork] = NowPlayingArtworkFactory.makeArtwork(cgImage: cachedCGImage)
+        }
         engine.setVideoNowPlayingInfo(baseInfo)
 
-        if session.nextEpisode != nil {
-            engine.setNowPlayingTrackCommands(
-                next: { [weak viewModel] in
-                    guard let vm = viewModel,
-                          let currentNext = vm.activeSession?.nextEpisode else {
-                        return
-                    }
-                    vm.playNextEpisode(currentNext)
-                },
-                previous: nil
-            )
-        } else {
-            engine.setNowPlayingTrackCommands(next: nil, previous: nil)
-        }
+        // Keep track commands cleared so AetherEngine's NowPlayingArbiter / SoftwareNowPlaying
+        // keeps skipForward & skipBackward (±10 s Siri / iPhone Remote skip) enabled on TV episodes
+        // as well as movies. Episode advancement is served via on-screen prompts & remote heartbeat.
+        engine.setNowPlayingTrackCommands(next: nil, previous: nil)
 
-        guard let artURL = client.resolveArtworkURL(session.item.posterUrl ?? session.item.backdropUrl) else {
+        guard let artURL = resolvedArtURL,
+              ArtworkPipeline.shared.cachedImage(for: artURL, maxPixelSize: nowPlayingArtworkMaxPixels) == nil else {
             return
         }
 
@@ -54,7 +58,7 @@ enum PlayerNowPlayingCoordinator {
         viewModel.nowPlayingArtworkTask = Task { @MainActor [weak viewModel] in
             guard let cgImage = await ArtworkPipeline.shared.loadImage(
                 url: artURL,
-                maxPixelSize: 640,
+                maxPixelSize: nowPlayingArtworkMaxPixels,
                 client: client
             ) else {
                 return
@@ -79,8 +83,14 @@ enum PlayerNowPlayingCoordinator {
 
     static func makeBaseInfo(for session: TvPlaybackSession) -> [String: Any] {
         let meta = EpisodeTitleFormatter.nowPlayingMetadata(for: session.item)
+        let mediaType = session.item.mediaType == "episode"
+            ? MPMediaType.tvShow.rawValue
+            : MPMediaType.movie.rawValue
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: meta.title
+            MPMediaItemPropertyTitle: meta.title,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.video.rawValue,
+            MPMediaItemPropertyMediaType: mediaType,
+            MPNowPlayingInfoPropertyExternalContentIdentifier: session.item.itemId,
         ]
 
         if let artist = meta.artist, !artist.isEmpty {
@@ -88,6 +98,10 @@ enum PlayerNowPlayingCoordinator {
         }
         if let albumTitle = meta.albumTitle, !albumTitle.isEmpty {
             info[MPMediaItemPropertyAlbumTitle] = albumTitle
+        }
+        if let duration = session.stream.declaredDurationSeconds ?? session.item.runtimeSeconds,
+           duration > 0 {
+            info[MPMediaItemPropertyPlaybackDuration] = duration
         }
 
         return info

@@ -27,6 +27,7 @@ protocol PlayerTransportControlling: AnyObject {
     func pause()
     func togglePlayPause()
     func seek(to seconds: Double, exact: Bool) async
+    func setAudioDelay(_ seconds: Double)
     func stop(resetDisplayCriteria: Bool, finalTeardown: Bool)
 }
 
@@ -58,6 +59,10 @@ final class AetherEngineTransport: PlayerTransportControlling {
 
     func seek(to seconds: Double, exact: Bool) async {
         await engine.seek(to: seconds, exact: exact)
+    }
+
+    func setAudioDelay(_ seconds: Double) {
+        engine.setAudioDelay(seconds)
     }
 
     func stop(resetDisplayCriteria: Bool, finalTeardown: Bool) {

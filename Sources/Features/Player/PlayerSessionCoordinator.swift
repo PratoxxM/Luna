@@ -14,19 +14,41 @@ struct PendingStopSnapshot {
 extension PlayerViewModel {
     // MARK: - Resolve & Engine Load Pipeline
 
-    nonisolated static func isLikelyHeavySoftwareSession(_ session: TvPlaybackSession?) -> Bool {
+    nonisolated static func isLikelyHeavySoftwareSession(
+        _ session: TvPlaybackSession?,
+        dualLayerOverride: DualLayerOverrideMode = .auto,
+        lowResUpscaleMode: LowResUpscaleMode = .off,
+        supportsHardwareAV1: Bool = DeviceHardwareCapabilities.supportsHardwareAV1
+    ) -> Bool {
         guard let session else { return false }
-        if session.aetherConfig.preferDualLayerDolbyVision
-            || session.aetherConfig.foldsDolbyVisionFEL == true
-            || session.selectedCandidate.dvProfile == 7
-            || session.selectedCandidate.dvEnhancementLayer?.uppercased() == "FEL" {
+        let candidate = session.selectedCandidate
+
+        if candidate.requiresSoftwareVideoDecode(supportsHardwareAV1: supportsHardwareAV1) {
             return true
         }
-        if session.selectedCandidate.videoCodec?.lowercased() == "av1",
-           !DeviceHardwareCapabilities.supportsHardwareAV1 {
+
+        let forceBaseLayerOnly = (dualLayerOverride == .forceOff)
+            || (session.aetherConfig.dolbyVisionHandling == "baseLayerOnly" && dualLayerOverride != .forceOn)
+        if !forceBaseLayerOnly {
+            let layerUpper = (candidate.dvEnhancementLayer ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            if dualLayerOverride == .forceOn && candidate.allowsDualLayerDolbyVisionWhenForced {
+                if candidate.dvProfile == 7
+                    || layerUpper == "FEL"
+                    || (candidate.dvProfile == nil && candidate.canCarryDualLayerDolbyVision) {
+                    return true
+                }
+            } else if session.aetherConfig.preferDualLayerDolbyVision && candidate.canCarryDualLayerDolbyVision {
+                if candidate.dvProfile == 7 || layerUpper == "FEL" {
+                    return true
+                }
+            }
+        }
+
+        if lowResUpscaleMode != .off && candidate.isLikelyLowResolutionSDRForUpscale {
             return true
         }
-        return (session.selectedCandidate.sizeBytes ?? 0) >= 35 * 1_073_741_824
+
+        return false
     }
 
     func runResolveAndLoad(
@@ -52,7 +74,11 @@ extension PlayerViewModel {
             resolveHeadline = nil
         }
         ArtworkPipeline.shared.enterPlaybackMemoryMode(
-            isHeavySoftwareStream: Self.isLikelyHeavySoftwareSession(request.preparedSession)
+            isHeavySoftwareStream: Self.isLikelyHeavySoftwareSession(
+                request.preparedSession,
+                dualLayerOverride: comfort.dualLayerOverride,
+                lowResUpscaleMode: comfort.lowResUpscaleMode
+            )
         )
         UIApplication.shared.isIdleTimerDisabled = true
 
@@ -87,15 +113,14 @@ extension PlayerViewModel {
             }
 
             ArtworkPipeline.shared.enterPlaybackMemoryMode(
-                isHeavySoftwareStream: Self.isLikelyHeavySoftwareSession(resolvedSession)
+                isHeavySoftwareStream: Self.isLikelyHeavySoftwareSession(
+                    resolvedSession,
+                    dualLayerOverride: comfort.dualLayerOverride,
+                    lowResUpscaleMode: comfort.lowResUpscaleMode
+                )
             )
             resolveStageLabel = "Tilpasser skjerm og starter avspilling…"
             resolvePercent = 95
-            if !isReplacement {
-                engine.ownsSoftwareNowPlaying = true
-                engine.ownsVideoNowPlayingSession = true
-                engine.ownsVideoNowPlayingCommands = true
-            }
             try await mountSessionInEngine(
                 resolvedSession,
                 client: client,
@@ -214,6 +239,7 @@ extension PlayerViewModel {
 
         audioDelayCommitTask?.cancel()
         audioDelayCommitTask = nil
+        hasPendingAudioDelayCommit = false
         upscaleReloadTask?.cancel()
         upscaleReloadTask = nil
         let initialAudioDelayMs = comfort.audioDelayMs
@@ -267,7 +293,7 @@ extension PlayerViewModel {
         subtitleDelaySeconds = engine.softwareSubtitleDelaySeconds
         if comfort.audioDelayMs != initialAudioDelayMs {
             audioDelayMs = comfort.audioDelayMs
-            engine.setAudioDelay(comfort.audioDelaySeconds)
+            transport.setAudioDelay(comfort.audioDelaySeconds)
         } else {
             audioDelayMs = initialAudioDelayMs
         }
@@ -551,6 +577,7 @@ extension PlayerViewModel {
         smartRuleTask = nil
         audioDelayCommitTask?.cancel()
         audioDelayCommitTask = nil
+        hasPendingAudioDelayCommit = false
         upscaleReloadTask?.cancel()
         upscaleReloadTask = nil
         transientBannerTask?.cancel()

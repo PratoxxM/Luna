@@ -139,5 +139,11 @@ extension PlayerViewModel {
             }
             .store(in: &cancellables)
         bindEquatable(engine.$activeSubtitleTrackIndex, to: \.activeSubtitleTrackIndex)
+
+        engine.systemCaptionRequest
+            .sink { [weak self] request in
+                self?.handleSystemCaptionRequest(request)
+            }
+            .store(in: &cancellables)
     }
 }

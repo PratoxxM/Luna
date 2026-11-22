@@ -3,9 +3,22 @@ import AVFoundation
 import AVKit
 import CoreMedia
 import CoreVideo
+import QuartzCore
 import UIKit
 import AetherBridge
 import os
+
+private final class MenuDisplayLinkTarget: NSObject {
+    let onTick: (CADisplayLink) -> Void
+
+    init(onTick: @escaping (CADisplayLink) -> Void) {
+        self.onTick = onTick
+    }
+
+    @objc func handleTick(_ link: CADisplayLink) {
+        onTick(link)
+    }
+}
 
 private actor NativeAudioSessionActivator {
     private let logger = Logger(subsystem: "local.lunacore.luna", category: "AudioSession")
@@ -25,21 +38,22 @@ private actor NativeAudioSessionActivator {
     }
 }
 
-/// Aligns `AVAudioSession` native-layer activation and deferred HDMI display-criteria resets
-/// with `AetherEngine` 7.71.0's tvOS lifecycle contracts.
+/// Aligns `AVAudioSession` native-layer activation, QMS menu refresh-rate preservation,
+/// and held HDMI display-criteria resets with `AetherEngine` 7.72.1's tvOS lifecycle contracts.
 @MainActor
 final class PlayerAudioSessionCoordinator {
     static let shared = PlayerAudioSessionCoordinator()
 
-    nonisolated static let defaultDisplayCriteriaResetDelayNs: UInt64 = 20_000_000_000
+    nonisolated static let fallbackMenuRefreshRateHz: Float = 60.0
 
     private let activator = NativeAudioSessionActivator()
     private var activeEngineOwnerToken: UInt64 = 0
-    private var deferredResetTask: Task<Void, Never>?
     private var isHoldingDisplayCriteriaReset: Bool = false
-    private var deferredResetToken: UInt64 = 0
     private var pendingResetCheck: (@MainActor () -> Bool)?
     private var pendingResetAction: (@MainActor () -> Void)?
+    private(set) var cachedMenuRefreshRateHz: Float?
+    private var menuRateDisplayLink: CADisplayLink?
+    private var menuRateTickCount: Int = 0
 
     init() {}
 
@@ -67,7 +81,7 @@ final class PlayerAudioSessionCoordinator {
         }
     }
 
-    /// Only reset display criteria once the singleton engine is genuinely idle so a deferred reset
+    /// Only reset display criteria once the singleton engine is genuinely idle so a held reset
     /// never interrupts a follow-up playback load or active session.
     nonisolated static func shouldExecuteDeferredDisplayCriteriaReset(engineState: PlaybackState) -> Bool {
         engineState == .idle
@@ -79,13 +93,6 @@ final class PlayerAudioSessionCoordinator {
         keepDisplayModeInMenu: Bool = false
     ) -> Bool {
         !keepDisplayModeInMenu && !isLaunchingPlayback && !isShowingSourcePicker
-    }
-
-    nonisolated static func shouldResetDisplayCriteriaOnPlayerExit(
-        keepDisplayModeInMenuAfterPlayback: Bool,
-        isForegroundActive: Bool = true
-    ) -> Bool {
-        !keepDisplayModeInMenuAfterPlayback || !isForegroundActive
     }
 
     nonisolated static func shouldResetDisplayCriteriaOnPlayerExit(
@@ -112,37 +119,123 @@ final class PlayerAudioSessionCoordinator {
         !isActiveScene && !hasActivePlayback && engineState == .idle
     }
 
-    func activateNativePlaybackIfNeeded(videoRoute: VideoRoute) async {
-        guard !Task.isCancelled, Self.shouldActivateNativeAudioSession(for: videoRoute) else {
-            return
+    /// Snaps a measured VSync refresh rate strictly to valid tvOS HDMI menu rates
+    /// (`50.0`, `59.94`, or `60.0 Hz`), rejecting cinema rates (`23.976` / `24` / `25` / `30`)
+    /// and invalid/zero `CADisplayLink` readings before the first VSync tick.
+    nonisolated static func snappedMenuRefreshRate(fromHz rawHz: Double?) -> Float? {
+        guard let rawHz, rawHz.isFinite, rawHz > 0 else { return nil }
+        if (49.5...50.5).contains(rawHz) {
+            return 50.0
         }
-        await activator.ensureActiveOffMain()
+        if (59.88..<59.97).contains(rawHz) {
+            return Float(60_000.0 / 1_001.0)
+        }
+        if (59.97...60.5).contains(rawHz) {
+            return 60.0
+        }
+        return nil
     }
 
-    func cancelDeferredDisplayCriteriaReset() {
-        deferredResetToken &+= 1
-        deferredResetTask?.cancel()
-        deferredResetTask = nil
-        isHoldingDisplayCriteriaReset = false
-        pendingResetCheck = nil
-        pendingResetAction = nil
+    nonisolated static func canSampleMenuRefreshRate(
+        hasPreferredDisplayCriteria: Bool,
+        isDisplayModeSwitchInProgress: Bool,
+        hasActivePlayback: Bool
+    ) -> Bool {
+        !hasPreferredDisplayCriteria && !isDisplayModeSwitchInProgress && !hasActivePlayback
     }
 
-    func applyMenu60HzHDRCriteriaIfNeeded(videoFormat: VideoFormat) {
-        guard videoFormat != .sdr,
+    @discardableResult
+    func recordSampledMenuRefreshRate(
+        rawHz: Double,
+        hasPreferredDisplayCriteria: Bool,
+        isDisplayModeSwitchInProgress: Bool,
+        hasActivePlayback: Bool
+    ) -> Bool {
+        guard Self.canSampleMenuRefreshRate(
+            hasPreferredDisplayCriteria: hasPreferredDisplayCriteria,
+            isDisplayModeSwitchInProgress: isDisplayModeSwitchInProgress,
+            hasActivePlayback: hasActivePlayback
+        ), let snapped = Self.snappedMenuRefreshRate(fromHz: rawHz) else {
+            return false
+        }
+        cachedMenuRefreshRateHz = snapped
+        return true
+    }
+
+    func sampleMenuRefreshRateIfIdle(hasActivePlayback: Bool = false) {
+        guard menuRateDisplayLink == nil,
               let window = Self.activeKeyWindow() else {
             return
         }
-        let displayManager = window.avDisplayManager
-        guard displayManager.isDisplayCriteriaMatchingEnabled else { return }
+        let dm = window.avDisplayManager
+        guard Self.canSampleMenuRefreshRate(
+            hasPreferredDisplayCriteria: dm.preferredDisplayCriteria != nil,
+            isDisplayModeSwitchInProgress: dm.isDisplayModeSwitchInProgress,
+            hasActivePlayback: hasActivePlayback
+        ) else {
+            return
+        }
 
+        menuRateTickCount = 0
+        let target = MenuDisplayLinkTarget { [weak self] link in
+            MainActor.assumeIsolated {
+                self?.handleMenuDisplayLinkTick(link)
+            }
+        }
+        let link = CADisplayLink(target: target, selector: #selector(MenuDisplayLinkTarget.handleTick(_:)))
+        menuRateDisplayLink = link
+        link.add(to: .main, forMode: .common)
+    }
+
+    private func handleMenuDisplayLinkTick(_ link: CADisplayLink) {
+        guard let window = Self.activeKeyWindow() else {
+            stopMenuRateSampling()
+            return
+        }
+        let dm = window.avDisplayManager
+        guard Self.canSampleMenuRefreshRate(
+            hasPreferredDisplayCriteria: dm.preferredDisplayCriteria != nil,
+            isDisplayModeSwitchInProgress: dm.isDisplayModeSwitchInProgress,
+            hasActivePlayback: false
+        ) else {
+            stopMenuRateSampling()
+            return
+        }
+
+        menuRateTickCount += 1
+        if menuRateTickCount > 8 {
+            stopMenuRateSampling()
+            return
+        }
+
+        guard link.timestamp > 0 else { return }
+        let dt = link.targetTimestamp - link.timestamp
+        guard dt > 0 else { return }
+
+        _ = recordSampledMenuRefreshRate(
+            rawHz: 1.0 / dt,
+            hasPreferredDisplayCriteria: false,
+            isDisplayModeSwitchInProgress: false,
+            hasActivePlayback: false
+        )
+        stopMenuRateSampling()
+    }
+
+    func stopMenuRateSampling() {
+        menuRateDisplayLink?.invalidate()
+        menuRateDisplayLink = nil
+        menuRateTickCount = 0
+    }
+
+    nonisolated static func hdrMenuFormatDescription(for videoFormat: VideoFormat) -> CMVideoFormatDescription? {
+        guard videoFormat != .sdr else { return nil }
         let transferFunction: CFString = switch videoFormat {
         case .hlg:
             kCVImageBufferTransferFunction_ITU_R_2100_HLG
         default:
             kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ
         }
-        let extensions: NSDictionary? = (videoFormat == .dolbyVision) ? nil : [
+        let extensions: NSDictionary = [
             kCMFormatDescriptionExtension_ColorPrimaries: kCVImageBufferColorPrimaries_ITU_R_2020,
             kCMFormatDescriptionExtension_TransferFunction: transferFunction,
             kCMFormatDescriptionExtension_YCbCrMatrix: kCVImageBufferYCbCrMatrix_ITU_R_2020,
@@ -156,8 +249,38 @@ final class PlayerAudioSessionCoordinator {
             extensions: extensions,
             formatDescriptionOut: &formatDesc
         )
-        guard let desc = formatDesc else { return }
-        displayManager.preferredDisplayCriteria = AVDisplayCriteria(refreshRate: 60.0, formatDescription: desc)
+        return formatDesc
+    }
+
+    var effectiveMenuRefreshRateHz: Float {
+        cachedMenuRefreshRateHz ?? Self.fallbackMenuRefreshRateHz
+    }
+
+    func activateNativePlaybackIfNeeded(videoRoute: VideoRoute) async {
+        guard !Task.isCancelled, Self.shouldActivateNativeAudioSession(for: videoRoute) else {
+            return
+        }
+        await activator.ensureActiveOffMain()
+    }
+
+    func cancelDeferredDisplayCriteriaReset() {
+        isHoldingDisplayCriteriaReset = false
+        pendingResetCheck = nil
+        pendingResetAction = nil
+    }
+
+    func applyMenu60HzHDRCriteriaIfNeeded(videoFormat: VideoFormat) {
+        guard let desc = Self.hdrMenuFormatDescription(for: videoFormat),
+              let window = Self.activeKeyWindow() else {
+            return
+        }
+        let displayManager = window.avDisplayManager
+        guard displayManager.isDisplayCriteriaMatchingEnabled else { return }
+        stopMenuRateSampling()
+        displayManager.preferredDisplayCriteria = AVDisplayCriteria(
+            refreshRate: effectiveMenuRefreshRateHz,
+            formatDescription: desc
+        )
     }
 
     private static func activeKeyWindow() -> UIWindow? {
@@ -185,32 +308,9 @@ final class PlayerAudioSessionCoordinator {
         performReset: @escaping @MainActor () -> Void
     ) {
         cancelDeferredDisplayCriteriaReset()
-        deferredResetToken &+= 1
         isHoldingDisplayCriteriaReset = true
         pendingResetCheck = shouldExecute
         pendingResetAction = performReset
-    }
-
-    func scheduleDeferredDisplayCriteriaReset(
-        delayNanoseconds: UInt64 = defaultDisplayCriteriaResetDelayNs,
-        shouldExecute: @escaping @MainActor () -> Bool,
-        performReset: @escaping @MainActor () -> Void
-    ) {
-        cancelDeferredDisplayCriteriaReset()
-        deferredResetToken &+= 1
-        let token = deferredResetToken
-        pendingResetCheck = shouldExecute
-        pendingResetAction = performReset
-
-        deferredResetTask = Task { @MainActor [weak self] in
-            if delayNanoseconds > 0 {
-                try? await Task.sleep(nanoseconds: delayNanoseconds)
-            }
-            guard !Task.isCancelled, let self, self.deferredResetToken == token else {
-                return
-            }
-            self.executePendingResetIfEligible()
-        }
     }
 
     func handleDetailDisappear(
@@ -229,14 +329,14 @@ final class PlayerAudioSessionCoordinator {
     }
 
     func flushDeferredDisplayCriteriaResetIfIdle() {
-        guard deferredResetTask != nil || isHoldingDisplayCriteriaReset else { return }
+        guard isHoldingDisplayCriteriaReset else { return }
         if pendingResetCheck?() == true {
             executePendingResetIfEligible()
         }
     }
 
     func flushDeferredDisplayCriteriaResetIfIdle(engine: AetherEngine) {
-        guard deferredResetTask != nil || isHoldingDisplayCriteriaReset else { return }
+        guard isHoldingDisplayCriteriaReset else { return }
         if Self.shouldExecuteDeferredDisplayCriteriaReset(engineState: engine.state) {
             executePendingResetIfEligible()
         }
@@ -245,9 +345,6 @@ final class PlayerAudioSessionCoordinator {
     private func executePendingResetIfEligible() {
         let shouldExecute = pendingResetCheck
         let action = pendingResetAction
-        deferredResetToken &+= 1
-        deferredResetTask?.cancel()
-        deferredResetTask = nil
         isHoldingDisplayCriteriaReset = false
         pendingResetCheck = nil
         pendingResetAction = nil

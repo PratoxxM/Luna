@@ -74,7 +74,18 @@ struct NerdHUDView: View {
             let srcH = Int(up.sourceSize.height.rounded())
             let dstW = Int(up.targetSize.width.rounded())
             let dstH = Int(up.targetSize.height.rounded())
-            return "\(srcW)×\(srcH) → \(dstW)×\(dstH) MetalFX"
+            let stageLabel: String
+            if up.scaler == .lineArt {
+                stageLabel = "Anime4K 2×"
+            } else if let ml = up.mlScale, ml > 1.01 {
+                let factor = (ml == ml.rounded())
+                    ? "\(Int(ml))×"
+                    : "\(LunaCopy.formatDecimal(Double(ml), decimals: 1))×"
+                stageLabel = up.degraded ? "ANE \(factor)" : "ANE \(factor) + MetalFX"
+            } else {
+                stageLabel = "MetalFX"
+            }
+            return "\(srcW)×\(srcH) → \(dstW)×\(dstH) (\(stageLabel))"
         }
         if viewModel.comfort.lowResUpscaleMode == .off {
             return "Nativ (Av)"

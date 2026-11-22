@@ -195,16 +195,21 @@ public enum SmartTrackRuleEngine {
 
     public static func normalizeLanguage(_ rawCode: String?, fallbackName: String = "") -> String? {
         let code = (rawCode ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if ["no", "nb", "nn", "nor", "nob", "nno", "norwegian", "norsk", "bokmål", "nynorsk"].contains(code) {
+        let primary = code.split(whereSeparator: { $0 == "-" || $0 == "_" }).first.map(String.init) ?? code
+        if ["no", "nb", "nn", "nor", "nob", "nno", "norwegian", "norsk", "bokmål", "nynorsk"].contains(code)
+            || ["no", "nb", "nn", "nor", "nob", "nno"].contains(primary) {
             return "nob"
         }
-        if ["en", "eng", "english", "engelsk"].contains(code) {
+        if ["en", "eng", "english", "engelsk"].contains(code)
+            || ["en", "eng"].contains(primary) {
             return "eng"
         }
-        if ["sv", "swe", "swedish", "svensk"].contains(code) {
+        if ["sv", "swe", "swedish", "svensk"].contains(code)
+            || ["sv", "swe"].contains(primary) {
             return "swe"
         }
-        if ["da", "dan", "danish", "dansk"].contains(code) {
+        if ["da", "dan", "danish", "dansk"].contains(code)
+            || ["da", "dan"].contains(primary) {
             return "dan"
         }
 
@@ -215,7 +220,7 @@ public enum SmartTrackRuleEngine {
         if nameLower.contains("english") || nameLower.contains("engelsk") {
             return "eng"
         }
-        return code.isEmpty ? nil : code
+        return primary.isEmpty ? nil : primary
     }
 
     private static func pickBestSubtitle(

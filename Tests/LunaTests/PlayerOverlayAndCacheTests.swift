@@ -1,3 +1,4 @@
+import AetherBridge
 import CoreGraphics
 import Foundation
 import MediaPlayer
@@ -591,5 +592,190 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
         )
         XCTAssertTrue(popoverWithHud.relocateToTop)
         XCTAssertEqual(popoverWithHud.topInset, 168)
+    }
+
+    @MainActor
+    func testEtappe3A19LoadOptionsHeavySoftwareClassificationAndAudioDelayFlushCancel() async throws {
+        let suite = "luna.test.etappe3.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let high2026 = DeviceMemoryProfile(physicalMemoryBytes: 8 * 1_073_741_824, activeProcessorCount: 6)
+        let standard = DeviceMemoryProfile(physicalMemoryBytes: 4 * 1_073_741_824, activeProcessorCount: 6)
+        let comfort = ComfortPreferences(defaults: defaults, memoryTier: .high2026)
+        XCTAssertEqual(comfort.lowResUpscaleMode, .auto)
+
+        let hdr10RemuxJson = #"""
+        {
+          "sessionId": "sess-a19-1",
+          "streamToken": "stream-placeholder-token",
+          "roomName": "Kjellerstua",
+          "hardwareProfile": "dv-fel-714",
+          "item": {
+            "itemId": "movie:tmdb:693134",
+            "mediaType": "movie",
+            "ids": { "tmdb": 693134 },
+            "title": "Dune: Part Two"
+          },
+          "selectedCandidate": {
+            "candidateId": "cand-remux",
+            "displayHeadline": "4K HDR10 Remux",
+            "releaseTitle": "Dune.Part.Two.2160p.UHD.BluRay.REMUX.HEVC.TrueHD.7.1.Atmos",
+            "source": "ssd",
+            "tier": "nvme",
+            "resolution": "2160p",
+            "videoRangeType": "HDR10",
+            "videoCodec": "hevc",
+            "sizeBytes": 64424509440
+          },
+          "stream": {
+            "url": "/api/tv/v1/streams/sess-a19-1/master",
+            "declaredDurationSeconds": 9960
+          },
+          "aetherConfig": {
+            "preferDualLayerDolbyVision": true,
+            "foldsDolbyVisionFEL": true,
+            "matchContentEnabled": true,
+            "audioBridgeMode": "lossless",
+            "objectAudioRendering": { "mode": "render", "layout": "5.1.2" }
+          }
+        }
+        """#
+        let hdr10Session = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(hdr10RemuxJson.utf8))
+        let client = LunaCoreClient(
+            baseURL: try XCTUnwrap(URL(string: "http://lunacore.local:8090")),
+            deviceID: "luna-test-device",
+            deviceToken: nil,
+            roomName: "Kjellerstua",
+            hardwareProfile: "dv-fel-714",
+            allowSelfSignedLanTLS: true
+        )
+
+        // 60 GiB 4K HEVC HDR10 Remux in Kjellerstua stays hardware-decoded (dual-layer gated off, no heavy SW shed)
+        XCTAssertFalse(
+            PlayerViewModel.isLikelyHeavySoftwareSession(
+                hdr10Session,
+                dualLayerOverride: .auto,
+                lowResUpscaleMode: .auto,
+                supportsHardwareAV1: true
+            )
+        )
+        let hdr10OnlyCaps = DisplayCapabilities(
+            supportsHDR: true,
+            supportsDolbyVision: false,
+            supportsHDR10: true,
+            supportsHLG: true
+        )
+        let optsHigh = PlayerViewModel.buildLoadOptions(
+            session: hdr10Session,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0,
+            displayCapabilities: hdr10OnlyCaps,
+            memoryProfile: high2026,
+            availableMemoryBytes: 2_048 * 1_048_576
+        )
+        XCTAssertFalse(optsHigh.preferDualLayerDolbyVision)
+        XCTAssertFalse(optsHigh.foldsDolbyVisionFEL)
+        XCTAssertEqual(optsHigh.untaggedVideoColor, .hdr10)
+        XCTAssertTrue(optsHigh.attemptsHDRMasterOnUnprovenPanel)
+        XCTAssertTrue(optsHigh.preferHDR10PlusOverForcedDolbyVision)
+        XCTAssertEqual(optsHigh.objectAudioRendering, .render(.l512))
+        XCTAssertTrue(optsHigh.confirmAtmos)
+        XCTAssertEqual(optsHigh.maxConcurrentSourceRequests, 8)
+        XCTAssertEqual(optsHigh.forwardBufferSegments, 45)
+        XCTAssertTrue(optsHigh.retainsSessionCacheAfterStop)
+        XCTAssertEqual(optsHigh.sessionCacheByteBudget, 3 * 1_073_741_824)
+        XCTAssertEqual(optsHigh.sessionCacheFreeReserveBytes, 4 * 1_073_741_824)
+        XCTAssertTrue(optsHigh.upscalesLowResolutionVideo)
+        XCTAssertEqual(optsHigh.upscaleScaler, .automatic)
+
+        let optsStd = PlayerViewModel.buildLoadOptions(
+            session: hdr10Session,
+            client: client,
+            comfort: ComfortPreferences(defaults: defaults, memoryTier: .standard),
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0,
+            memoryProfile: standard,
+            availableMemoryBytes: 700 * 1_048_576
+        )
+        XCTAssertEqual(optsStd.maxConcurrentSourceRequests, 6)
+        XCTAssertEqual(optsStd.forwardBufferSegments, 12)
+        XCTAssertFalse(optsStd.retainsSessionCacheAfterStop)
+        XCTAssertFalse(optsStd.confirmAtmos)
+
+        // Audio delay 220 ms debounce coalescing, panel-close flush, and teardown cancellation
+        let engine = try LunaApp.makeSharedEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+        let transport = MockPlayerTransport(state: .playing, playbackPhase: .playing)
+        let vm = PlayerViewModel(engine: engine, comfort: comfort, transport: transport)
+        vm.isResolving = false
+
+        // 1. Rapid adjustments coalesce until flushed on quick-panel close
+        vm.adjustAudioDelay(byMs: 10)
+        vm.adjustAudioDelay(byMs: 15)
+        XCTAssertEqual(vm.audioDelayMs, 25)
+        XCTAssertEqual(transport.events, [])
+        vm.flushPendingAudioDelayCommitIfNeeded()
+        XCTAssertEqual(transport.events, ["audioDelay(25ms)"])
+        vm.flushPendingAudioDelayCommitIfNeeded()
+        XCTAssertEqual(transport.events, ["audioDelay(25ms)"])
+
+        // 2. Natural 220 ms debounce fires once
+        vm.adjustAudioDelay(byMs: 10)
+        try? await Task.sleep(nanoseconds: 290_000_000)
+        XCTAssertEqual(transport.events, ["audioDelay(25ms)", "audioDelay(35ms)"])
+
+        // 3. Teardown cancels pending debounce without calling setAudioDelay on stopping engine
+        vm.adjustAudioDelay(byMs: 20)
+        vm.teardownAndStop()
+        try? await Task.sleep(nanoseconds: 280_000_000)
+        XCTAssertFalse(transport.events.contains("audioDelay(55ms)"))
+    }
+
+    @MainActor
+    func testSystemCaptionRequestHandlesEmptyAndPopulatedSubtitleTracksSafely() throws {
+        let suite = "luna.test.syscap.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let engine = try LunaApp.makeSharedEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+        let comfort = ComfortPreferences(defaults: defaults, memoryTier: .standard)
+        let vm = PlayerViewModel(engine: engine, comfort: comfort)
+        vm.isResolving = false
+
+        // 1. Empty subtitleTracks -> safe no-op
+        engine.systemCaptionRequest.send(SystemCaptionRequest(language: "nb-NO"))
+        XCTAssertNil(vm.activeSubtitleTrackIndex)
+
+        // 2. Populated subtitleTracks with no active subtitle -> selects matching BCP-47 track
+        vm.previewSubtitleOptions = [
+            PlayerDrawerSubtitleOption(id: 10, languageCode: "en", rawTitle: "English", isForced: false, isHearingImpaired: false, isExternal: false),
+            PlayerDrawerSubtitleOption(id: 11, languageCode: "nob", rawTitle: "Norsk", isForced: false, isHearingImpaired: false, isExternal: true),
+        ]
+        vm.subtitleTracks = [
+            TrackInfo(id: 10, name: "English", codec: "subrip", language: "eng", channels: 0, isDefault: false),
+            TrackInfo(id: 11, name: "Norsk", codec: "subrip", language: "nob", channels: 0, isDefault: false, isExternal: true),
+        ]
+        engine.systemCaptionRequest.send(SystemCaptionRequest(language: "nb-NO"))
+        XCTAssertEqual(vm.activeSubtitleTrackIndex, 11)
+
+        // 3. When a subtitle is already active -> never overwrites user's active track
+        engine.systemCaptionRequest.send(SystemCaptionRequest(language: "en-US"))
+        XCTAssertEqual(vm.activeSubtitleTrackIndex, 11)
     }
 }

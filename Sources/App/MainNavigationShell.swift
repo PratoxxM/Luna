@@ -259,6 +259,9 @@ struct MainNavigationShell: View {
             if previewConfiguration?.focusDirection == .up {
                 navBarVisibility.handleMenuPressToRevealTopBar()
             }
+            if sessionStore.activePlaybackTarget == nil {
+                PlayerAudioSessionCoordinator.shared.sampleMenuRefreshRateIfIdle(hasActivePlayback: false)
+            }
             await refreshBootstrapProfile()
         }
         .task(id: bootstrapRefreshNonce) {
@@ -276,8 +279,11 @@ struct MainNavigationShell: View {
             if phase != .active {
                 return
             }
-            guard sessionStore.activePlaybackTarget == nil,
-                  Date().timeIntervalSince(lastBootstrapRefreshAt) >= 30 else {
+            guard sessionStore.activePlaybackTarget == nil else {
+                return
+            }
+            PlayerAudioSessionCoordinator.shared.sampleMenuRefreshRateIfIdle(hasActivePlayback: false)
+            guard Date().timeIntervalSince(lastBootstrapRefreshAt) >= 30 else {
                 return
             }
             bootstrapRefreshNonce &+= 1

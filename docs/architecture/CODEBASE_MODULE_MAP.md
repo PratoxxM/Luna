@@ -15,7 +15,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/App/LunaTopBarView.swift` | Left-aligned crescent mark, divider & tabs (`x=90`) + right-anchored `56×56` utility triggers (`x=1830`), single `.focusSection()`, resting `22×2.5 pt` bronze underline & deterministic `Down` bridges | — | `LunaNavigationAndDetailRaceTests.swift`, `ThemeAndArtworkViewTests.swift` |
 | `Sources/Core/Discovery/BonjourServerBrowser.swift` | `NWBrowser` discovery for `_lunacore._tcp`, publishes `DiscoveredLunaCoreServer` | mDNS `_lunacore._tcp` (`api`, `https_port`) | `BonjourServerBrowserTests.swift` |
 | `Sources/Core/Config/SideloadSafeStorage.swift` | Bundle-ID-independent `UserDefaults` + Keychain persistence (`luna.v1.*`) | — | `SideloadSafeStorageTests.swift` |
-| `Sources/Core/Config/DeviceHardwareCapabilities.swift` | Runtime RAM tier (`physicalMemoryGB` / `os_proc_available_memory`) & hardware AV1 (`VideoToolbox`) detection | `X-Supports-HW-AV1`, `X-Physical-Memory-GB` | `LunaCoreLinuxTests.swift` |
+| `Sources/Core/Config/DeviceHardwareCapabilities.swift` | Runtime RAM tier (`DeviceMemoryProfile`), cached hardware AV1 (`VideoToolbox`) detection & A19 playback budgets | `X-Supports-HW-AV1`, `X-Physical-Memory-GB` | `LunaCoreLinuxTests.swift`, `NetworkCacheAndMemoryProfileTests.swift` |
 | `Sources/Core/Config/ServerConfiguration.swift` | `AppSessionStore`, URL normalization, LAN TLS evaluator & `LunaCoreClient` factory | — | `ClientOriginAndBlurHashTests.swift`, `PlayerOverlayAndCacheTests.swift` |
 | `Sources/Core/Config/ComfortPreferences.swift` | Subtitle preset/scale/box, DV P7 FEL, speaker & MetalFX upscaling settings | `PATCH /api/tv/v1/device/profile` | `PlayerOverlayAndCacheTests.swift`, `NavigationSettingsAndDeleteTests.swift` |
 | `Sources/Core/Config/SmartTrackRuleEngine.swift` | Automatic Nordic/English audio & subtitle track matching | — | `SmartTrackRuleEngineTests.swift` |
@@ -43,7 +43,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Core/Networking/LunaCoreClient+Playback.swift` | Playback prepare, resolve, heartbeat, stop, source switch & alternatives | `/playback/{prepare,resolve,heartbeat,stop,*/switch,*/alternatives}` | `PlaybackTitleAndNowPlayingTests.swift`, `SeriesFlowAndHomePolicyTests.swift` |
 | `Sources/Core/Networking/LunaCoreSessionPool.swift` | Shared ephemeral `URLSession` lanes (`api`, `artwork`, `ws`) + `LanURLSessionDelegate` | HTTP keep-alive & LAN self-signed TLS | `LunaCoreSessionPoolTests.swift` |
 | `Sources/Core/Networking/PlaybackResolveSocket.swift` | `AsyncThrowingStream` WebSocket client for playback resolution progress | `WS /api/tv/v1/ws/playback/:resolveId` | `PlaybackResolveSocketTests.swift` |
-| `Packages/AetherBridge/Package.swift` | Local SwiftPM wrapper pinning `AetherEngine` `7.71.0` + 5 audio/DV traits | SwiftPM (`TrueHD`, `DTSX`, `DualLayerDV`, `FelCurves`, `StillReshaping`) | — |
+| `Packages/AetherBridge/Package.swift` | Local SwiftPM wrapper pinning `AetherEngine` `7.72.1` + 5 audio/DV traits | SwiftPM (`TrueHD`, `DTSX`, `DualLayerDV`, `FelCurves`, `StillReshaping`) | — |
 | `Packages/AetherBridge/Sources/AetherBridge/Exports.swift` | Public `@_exported import AetherEngine` re-export for app & test targets | — | — |
 
 ## 3. Design System & Feature Modules (`Sources/DesignSystem/`, `Sources/Features/`)

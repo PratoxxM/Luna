@@ -116,6 +116,26 @@ final class PlaybackTitleAndNowPlayingTests: XCTestCase {
         XCTAssertEqual(genericNowPlaying[MPMediaItemPropertyTitle] as? String, "S01E04")
         XCTAssertEqual(genericNowPlaying[MPMediaItemPropertyArtist] as? String, "Severance")
         XCTAssertEqual(genericNowPlaying[MPMediaItemPropertyAlbumTitle] as? String, "Severance")
+        XCTAssertEqual(
+            genericNowPlaying[MPNowPlayingInfoPropertyMediaType] as? UInt,
+            MPNowPlayingInfoMediaType.video.rawValue
+        )
+        XCTAssertEqual(
+            genericNowPlaying[MPMediaItemPropertyMediaType] as? UInt,
+            MPMediaType.tvShow.rawValue
+        )
+        XCTAssertEqual(
+            genericNowPlaying[MPNowPlayingInfoPropertyExternalContentIdentifier] as? String,
+            "episode:tmdb:95396:s1:e4"
+        )
+
+        let movieDurationJson = genericSessionJson
+            .replacingOccurrences(of: "\"episode\"", with: "\"movie\"")
+            .replacingOccurrences(of: "\"/api/tv/v1/streams/sess-np-1/master\"", with: "\"/api/tv/v1/streams/sess-np-1/master\", \"declaredDurationSeconds\": 5420")
+        let movieDurationSession = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(movieDurationJson.utf8))
+        let movieNowPlaying = PlayerNowPlayingCoordinator.makeBaseInfo(for: movieDurationSession)
+        XCTAssertEqual(movieNowPlaying[MPMediaItemPropertyMediaType] as? UInt, MPMediaType.movie.rawValue)
+        XCTAssertEqual(movieNowPlaying[MPMediaItemPropertyPlaybackDuration] as? Double, 5420)
 
         let namedSessionJson = genericSessionJson.replacingOccurrences(of: "\"S01E04\"", with: "\"401 Unauthorized\"")
         let namedSession = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(namedSessionJson.utf8))

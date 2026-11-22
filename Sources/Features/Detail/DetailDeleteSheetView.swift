@@ -1,4 +1,5 @@
 import SwiftUI
+import AetherBridge
 
 struct DetailDeleteSheetView: View {
     @Environment(AppSessionStore.self) private var sessionStore
@@ -185,6 +186,7 @@ struct DetailDeleteSheetView: View {
                 removeFromLibrary: target.isWholeTitle
             )
             ItemDetailMemoryCache.invalidate(itemId: target.itemId, tmdbId: target.tmdbId)
+            AetherEngine.discardRetainedSessionCache()
             sessionStore.notifyContentMutated()
             onDeleted(result)
         } catch LunaCoreError.unauthorized {

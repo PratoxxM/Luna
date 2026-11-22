@@ -155,11 +155,25 @@ final class ModelDecodingTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let comfort = ComfortPreferences(defaults: defaults)
+        let comfort = ComfortPreferences(defaults: defaults, memoryTier: .standard)
         XCTAssertEqual(comfort.subtitleBoxOpacity, .none)
         XCTAssertEqual(comfort.subtitleBoxOpacity.alpha, 0.0, accuracy: 0.001)
         XCTAssertEqual(comfort.hdrSubtitlePreset, .warm75)
         XCTAssertEqual(comfort.lowResUpscaleMode, .off)
+        XCTAssertNil(defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey))
+
+        let highComfort = ComfortPreferences(defaults: defaults, memoryTier: .high2026)
+        XCTAssertEqual(highComfort.lowResUpscaleMode, .auto)
+        XCTAssertNil(defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey))
+        XCTAssertEqual(LowResUpscaleMode.allCases.map(\.displayTitle), ["Av", "Auto", "Animasjon"])
+        XCTAssertEqual(LowResUpscaleMode.allCases.map(\.rawValue), ["off", "auto", "line_art"])
+
+        highComfort.lowResUpscaleMode = .off
+        XCTAssertEqual(defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey), "off")
+        XCTAssertEqual(ComfortPreferences(defaults: defaults, memoryTier: .high2026).lowResUpscaleMode, .off)
+
+        defaults.set("line_art", forKey: SideloadSafeStorage.lowResUpscaleModeKey)
+        XCTAssertEqual(ComfortPreferences(defaults: defaults, memoryTier: .high2026).lowResUpscaleMode, .animeLineArt)
 
         var syncCalls = 0
         comfort.onSyncRequested = { _ in

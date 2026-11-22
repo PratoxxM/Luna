@@ -224,17 +224,21 @@ public enum LowResUpscaleMode: String, CaseIterable, Identifiable, Sendable {
     public var displayTitle: String {
         switch self {
         case .off: return "Av"
-        case .auto: return "Auto (< 1080p 8-bit SDR)"
-        case .animeLineArt: return "Skarp strek / Anime (≤ 1080p SDR)"
+        case .auto: return "Auto"
+        case .animeLineArt: return "Animasjon"
         }
     }
 
     public var shortDescription: String {
         switch self {
         case .off: return "Standard tvOS-skalering uten MetalFX."
-        case .auto: return "Kun ≤ 1080p 8-bit SDR · 4K og HDR forblir urørt."
-        case .animeLineArt: return "Linjekunst-skalerer for animasjon i ≤ 1080p SDR."
+        case .auto: return "Neural Engine + MetalFX for < 1080p 8-bit SDR · 4K og HDR urørt."
+        case .animeLineArt: return "Anime4K 2× linjekunst for animasjon i ≤ 1080p SDR."
         }
+    }
+
+    public static func defaultMode(for tier: DeviceMemoryTier) -> LowResUpscaleMode {
+        tier == .high2026 ? .auto : .off
     }
 }
 
@@ -361,7 +365,10 @@ public final class ComfortPreferences {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var suppressSync: Bool = false
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(
+        defaults: UserDefaults = .standard,
+        memoryTier: DeviceMemoryTier = DeviceHardwareCapabilities.memoryProfile.tier
+    ) {
         self.defaults = defaults
 
         let rawPreset = defaults.string(forKey: SideloadSafeStorage.hdrSubtitlePresetKey) ?? HDRSubtitlePreset.warm75.rawValue
@@ -403,8 +410,12 @@ public final class ComfortPreferences {
             ) as? Bool ?? false
             self.menuDisplayMode = legacyKeep ? .preserveExactMatch : .sdr60Hz
         }
-        let rawUpscale = defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey) ?? LowResUpscaleMode.off.rawValue
-        self.lowResUpscaleMode = LowResUpscaleMode(rawValue: rawUpscale) ?? .off
+        if let rawUpscale = defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey),
+           let savedUpscale = LowResUpscaleMode(rawValue: rawUpscale) {
+            self.lowResUpscaleMode = savedUpscale
+        } else {
+            self.lowResUpscaleMode = LowResUpscaleMode.defaultMode(for: memoryTier)
+        }
         if defaults.object(forKey: SideloadSafeStorage.audioDelayMsKey) != nil {
             self.audioDelayMs = Self.clampAudioDelayMs(defaults.integer(forKey: SideloadSafeStorage.audioDelayMsKey))
         } else {

@@ -33,21 +33,60 @@ extension PlayerViewModel {
         audioDelayCommitTask?.cancel()
         audioDelayCommitTask = nil
 
-        guard !isResolving && !isSwitchingSource else {
+        guard !isResolving && !isSwitchingSource && !isDismissing && !isTeardownCompleted else {
+            hasPendingAudioDelayCommit = false
             return
         }
 
         let targetSeconds = Double(clamped) / 1000.0
         if !debounceEngineCommit {
-            engine.setAudioDelay(targetSeconds)
+            hasPendingAudioDelayCommit = false
+            transport.setAudioDelay(targetSeconds)
             return
         }
 
+        hasPendingAudioDelayCommit = true
         audioDelayCommitTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            guard !Task.isCancelled, let self, !self.isResolving, !self.isSwitchingSource else { return }
-            self.engine.setAudioDelay(Double(self.audioDelayMs) / 1000.0)
-            self.audioDelayCommitTask = nil
+            try? await Task.sleep(nanoseconds: Self.audioDelayDebounceNs)
+            guard !Task.isCancelled, let self else { return }
+            self.flushPendingAudioDelayCommitIfNeeded()
+        }
+    }
+
+    func flushPendingAudioDelayCommitIfNeeded() {
+        audioDelayCommitTask?.cancel()
+        audioDelayCommitTask = nil
+        guard hasPendingAudioDelayCommit else { return }
+        hasPendingAudioDelayCommit = false
+        guard !isResolving, !isSwitchingSource, !isDismissing, !isTeardownCompleted else {
+            return
+        }
+        transport.setAudioDelay(Double(audioDelayMs) / 1000.0)
+    }
+
+    func handleSystemCaptionRequest(_ request: SystemCaptionRequest) {
+        guard !isDismissing, !isTeardownCompleted, !isResolving, !isSwitchingSource else {
+            return
+        }
+        let availableTracks = !subtitleTracks.isEmpty ? subtitleTracks : engine.subtitleTracks
+        guard !availableTracks.isEmpty else {
+            return
+        }
+        if subtitleTracks != availableTracks {
+            subtitleTracks = availableTracks
+        }
+        guard activeSubtitleTrackIndex == nil && engine.activeSubtitleTrackIndex == nil else {
+            return
+        }
+        guard let match = SmartTrackRuleEngine.selectBestSubtitleTrack(
+            forLanguage: request.language,
+            in: availableTracks
+        ) else {
+            return
+        }
+        activeSubtitleTrackIndex = match.id
+        if previewSubtitleOptions.isEmpty {
+            engine.selectSubtitleTrack(index: match.id)
         }
     }
 
@@ -134,8 +173,8 @@ extension PlayerViewModel {
             ? Int(sourceVideoHeight)
             : Int((activeUpscale?.sourceSize.height ?? 1080).rounded())
         let sourceLabel = rawH > 0 ? "\(rawH)p" : "SD/HD"
-        if comfort.lowResUpscaleMode == .animeLineArt {
-            return "\(sourceLabel) → 4K MetalFX (Strek)"
+        if activeUpscale?.scaler == .lineArt || comfort.lowResUpscaleMode == .animeLineArt {
+            return "\(sourceLabel) → 4K MetalFX (Animasjon)"
         }
         return "\(sourceLabel) → 4K MetalFX"
     }

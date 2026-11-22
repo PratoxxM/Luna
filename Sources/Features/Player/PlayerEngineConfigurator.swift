@@ -36,7 +36,7 @@ extension PlayerViewModel {
             return "Stereo 2.0"
         }
         let activeTrack = audioTracks.first(where: { $0.id == activeAudioTrackIndex })
-        let configuredLayout = effectiveSpeakerLayoutLabel
+        let configuredLayout = effectiveSpeakerLayoutLabel(isDTSX: activeTrack?.isDTSX == true)
         if let activeTrack {
             if activeTrack.isAtmos {
                 return "\(configuredLayout) Atmos"
@@ -61,16 +61,37 @@ extension PlayerViewModel {
     }
 
     var effectiveSpeakerLayoutLabel: String {
+        effectiveSpeakerLayoutLabel(isDTSX: false)
+    }
+
+    private func effectiveSpeakerLayoutLabel(isDTSX: Bool) -> String {
         if comfort.speakerLayoutOverride == .stereo {
             return "Stereo 2.0"
         }
         if let lay = activeSession?.aetherConfig.objectAudioRendering?.layout, !lay.isEmpty {
-            return lay == "5.1.2" ? "7.1.4" : lay
+            return (lay == "5.1.2" && isDTSX) ? "7.1.4" : lay
         }
         return "7.1.4"
     }
 
     // MARK: - AetherEngine LoadOptions
+
+    nonisolated static func untaggedVideoColorHint(for candidate: TvCandidateInfo) -> UntaggedVideoColor {
+        if candidate.dvProfile != nil {
+            return .standard
+        }
+        let range = (candidate.videoRangeType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !range.isEmpty, !range.contains("dv"), !range.contains("dolby") else {
+            return .standard
+        }
+        if range.contains("hlg") {
+            return .hlg
+        }
+        if range.contains("hdr10") || range == "hdr" || range.contains("pq") {
+            return .hdr10
+        }
+        return .standard
+    }
 
     static func buildLoadOptions(
         session: TvPlaybackSession,
@@ -78,7 +99,10 @@ extension PlayerViewModel {
         comfort: ComfortPreferences,
         audioEnhancement: AudioEnhancementMode,
         audioDelaySeconds: Double,
-        autoplay: Bool = true
+        autoplay: Bool = true,
+        displayCapabilities: DisplayCapabilities = AetherEngine.displayCapabilities,
+        memoryProfile: DeviceMemoryProfile = DeviceHardwareCapabilities.memoryProfile,
+        availableMemoryBytes: UInt64 = DeviceHardwareCapabilities.availableMemoryBytes()
     ) -> LoadOptions {
         let cfg = session.aetherConfig
         var options = LoadOptions()
@@ -88,12 +112,14 @@ extension PlayerViewModel {
 
         switch comfort.dualLayerOverride {
         case .auto:
-            options.preferDualLayerDolbyVision = cfg.preferDualLayerDolbyVision
-            options.foldsDolbyVisionFEL = cfg.foldsDolbyVisionFEL ?? true
+            let allowsDualLayer = session.selectedCandidate.canCarryDualLayerDolbyVision
+            options.preferDualLayerDolbyVision = cfg.preferDualLayerDolbyVision && allowsDualLayer
+            options.foldsDolbyVisionFEL = (cfg.foldsDolbyVisionFEL ?? true) && allowsDualLayer
             options.dolbyVisionHandling = cfg.dolbyVisionHandling == "baseLayerOnly" ? .baseLayerOnly : .automatic
         case .forceOn:
-            options.preferDualLayerDolbyVision = true
-            options.foldsDolbyVisionFEL = true
+            let allowsForced = session.selectedCandidate.allowsDualLayerDolbyVisionWhenForced
+            options.preferDualLayerDolbyVision = allowsForced
+            options.foldsDolbyVisionFEL = allowsForced
             options.dolbyVisionHandling = .automatic
         case .forceOff:
             options.preferDualLayerDolbyVision = false
@@ -104,8 +130,12 @@ extension PlayerViewModel {
         options.dualLayerRoute = cfg.dualLayerRoute == "avPlayerOutput" ? .avPlayerOutput : .softwareHost
         options.matchContentEnabled = cfg.matchContentEnabled
         options.displayCriteriaOwner = .engine
-        options.attemptsHDRMasterOnUnprovenPanel = cfg.attemptsHDRMasterOnUnprovenPanel ?? false
-        options.preferHDR10PlusOverForcedDolbyVision = (session.hardwareProfile == "hdr10-512")
+        options.untaggedVideoColor = Self.untaggedVideoColorHint(for: session.selectedCandidate)
+        options.inverseTelecine = .auto
+        options.attemptsHDRMasterOnUnprovenPanel = cfg.attemptsHDRMasterOnUnprovenPanel ?? true
+        options.preferHDR10PlusOverForcedDolbyVision =
+            (session.hardwareProfile == HardwareProfilePreset.hdr10512.rawValue)
+            || (!displayCapabilities.supportsDolbyVision && displayCapabilities.supportsHDR10)
 
         // Let AetherEngine inspect HDMI capabilities directly via AVPlayer.availableHDRModes
         options.panelPresentsDolbyVision = false
@@ -145,22 +175,32 @@ extension PlayerViewModel {
         options.skipsContainerAttachments = cfg.skipsContainerAttachments ?? true
         options.generatesBackgroundScrubPreviews = cfg.generatesBackgroundScrubPreviews ?? false
         options.serveIFramePlaylist = cfg.serveIFramePlaylist ?? false
-        options.confirmAtmos = cfg.confirmAtmos ?? false
+        options.confirmAtmos = cfg.confirmAtmos ?? (memoryProfile.tier == .high2026)
+
         let tierLower = (session.selectedCandidate.tier ?? session.selectedCandidate.source)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        let baseRequests = cfg.maxConcurrentSourceRequests ?? 2
-        if tierLower == "ssd" || tierLower == "nvme" || tierLower == "local" {
-            options.maxConcurrentSourceRequests = max(baseRequests, 6)
-        } else {
-            options.maxConcurrentSourceRequests = baseRequests
-        }
+        let isFastLocalTier = (tierLower == "ssd" || tierLower == "nvme" || tierLower == "local")
+        let isSameOrigin: Bool = {
+            guard let resolvedStreamURL = client.buildAbsoluteURL(session.stream.url) else {
+                return true
+            }
+            return client.isSameOrigin(resolvedStreamURL)
+        }()
+        options.maxConcurrentSourceRequests = memoryProfile.maxConcurrentSourceRequests(
+            isFastLocalTier: isFastLocalTier,
+            isSameOrigin: isSameOrigin,
+            serverConfigured: cfg.maxConcurrentSourceRequests
+        )
         options.progressiveSegmentDelivery = true
-        options.retainsSessionCacheAfterStop = DeviceHardwareCapabilities.isHighMemoryDevice
-        if DeviceHardwareCapabilities.isHighMemoryDevice
-            && DeviceHardwareCapabilities.availableMemoryBytes() > 640 * 1024 * 1024 {
-            options.forwardBufferSegments = 24
-        }
+        options.sessionCacheByteBudget = memoryProfile.sessionCacheByteBudget
+        options.sessionCacheFreeReserveBytes = memoryProfile.sessionCacheFreeReserveBytes
+        options.retainsSessionCacheAfterStop = memoryProfile.retainsSessionCacheAfterStop(
+            availableMemoryBytes: availableMemoryBytes
+        )
+        options.forwardBufferSegments = memoryProfile.forwardBufferSegments(
+            availableMemoryBytes: availableMemoryBytes
+        )
         options.declaredDurationSeconds = cfg.declaredDurationSeconds ?? session.stream.declaredDurationSeconds
 
         Self.applyLowResUpscaleMode(comfort.lowResUpscaleMode, to: &options)
@@ -196,10 +236,11 @@ extension PlayerViewModel {
         }
     }
 
-    private static func mapSpeakerLayout(_ raw: String?) -> SpatialSpeakerLayout {
+    nonisolated static func mapSpeakerLayout(_ raw: String?) -> SpatialSpeakerLayout {
         switch raw {
-        case "7.1.2": return .l712
+        case "5.1.2": return .l512
         case "5.1.4": return .l514
+        case "7.1.2": return .l712
         case "9.1.6": return .l916
         default: return .l714
         }
