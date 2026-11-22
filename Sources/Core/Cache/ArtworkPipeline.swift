@@ -279,9 +279,12 @@ public actor ArtworkPipeline {
                 guard await self.acquireDecodePermit(priority: priority) else {
                     return nil
                 }
-                let decoded: CGImage? = Task.isCancelled
-                    ? nil
-                    : Self.downsampleAndDecode(data: data, maxPixelSize: maxPixelSize)
+                let decoded: CGImage?
+                if Task.isCancelled {
+                    decoded = nil
+                } else {
+                    decoded = await Self.downsampleAndDecode(data: data, maxPixelSize: maxPixelSize)
+                }
                 await self.releaseDecodePermit()
                 guard let decoded else { return nil }
                 ramCacheRef.insert(decoded, forKey: key, subjectKey: subjectKey)
@@ -564,7 +567,7 @@ public actor ArtworkPipeline {
     /// Hardware-accelerated ImageIO thumbnail creation & GPU-ready bitmap preparation
     /// on a background worker thread, falling back cleanly to `ImageIO` `CGImage` if
     /// `byPreparingForDisplay()` returns `nil` (grayscale / indexed / special color profiles).
-    private nonisolated static func downsampleAndDecode(data: Data, maxPixelSize: Int) -> CGImage? {
+    private nonisolated static func downsampleAndDecode(data: Data, maxPixelSize: Int) async -> CGImage? {
         let sourceOpts: [CFString: Any] = [
             kCGImageSourceShouldCache: false
         ]
@@ -582,7 +585,7 @@ public actor ArtworkPipeline {
             return nil
         }
         #if canImport(UIKit)
-        if let displayReady = UIImage(cgImage: decoded).byPreparingForDisplay()?.cgImage {
+        if let displayReady = await UIImage(cgImage: decoded).byPreparingForDisplay()?.cgImage {
             return displayReady
         }
         #endif
