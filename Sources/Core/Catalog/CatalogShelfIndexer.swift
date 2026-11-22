@@ -29,22 +29,13 @@ public enum CatalogShelfIndexer: Sendable {
         "hele samlingen",
     ]
 
-    public static let upcomingRowIds: Set<String> = [
-        "upcoming",
-        "upcoming-episodes",
-        "medialogg-upcoming",
-        "kommende",
-        "kommende-episoder",
-    ]
-
-    /// Filters out empty shelves, rows belonging exclusively in the Bibliotek hub,
-    /// and unreleased `Kommende episoder` rows so playable `Nye episoder` stay near the top.
+    /// Filters out empty shelves and generic Bibliotek-only duplicate rows (`Huskeliste` / full local library),
+    /// while preserving `Kommende episoder` and server-ordered shelves configured on `/api/tv/v1/home`.
     public static func filterVisibleRows(_ rows: [TvShelfRow]) -> [TvShelfRow] {
         rows.filter { row in
             guard !row.items.isEmpty else { return false }
             let lowerId = row.rowId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let lowerSource = (row.sourceKind ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let lowerStyle = row.rowStyle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let lowerTitle = row.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
             if lowerSource == "watchlist" || duplicateWatchlistRowIds.contains(lowerId) {
@@ -56,48 +47,47 @@ public enum CatalogShelfIndexer: Sendable {
             if lowerSource == "local_library" && duplicateGenericLocalTitles.contains(lowerTitle) {
                 return false
             }
-            if lowerStyle == "upcoming_backdrop"
-                || lowerSource == "system_upcoming"
-                || lowerSource == "upcoming"
-                || upcomingRowIds.contains(lowerId)
-                || lowerTitle == "kommende episoder"
-                || lowerTitle == "kommende" {
-                return false
-            }
             return true
         }
     }
 
-    /// Promotes `Fortsett` to row 0 and merges any `Fra iPhone` handoff card at index 0.
+    /// Prioritizes `Fortsett` cards (`Fra iPhone` first, `I kveld` second), keeps server row order by default,
+    /// and promotes `Fortsett` to row 0 when an active `Fra iPhone` handoff is waiting.
     public static func prepareVisibleRows(from payload: TvHomeResponse?) -> [TvShelfRow] {
         var rows = filterVisibleRows(payload?.rows ?? [])
         let continueIdx = rows.firstIndex { row in
             row.rowId == "medialogg-continue" || row.sourceKind == "system_continue"
         }
+        let preparedFromPhone = payload?.tonight?.preparedFromPhone
 
         if let idx = continueIdx {
-            var contRow = rows.remove(at: idx)
+            let existing = rows[idx]
             let prioritizedItems = prioritizeContinueCards(
-                contRow.items,
-                preparedFromPhone: payload?.tonight?.preparedFromPhone
+                existing.items,
+                preparedFromPhone: preparedFromPhone
             )
             let normalizedTitle: String = {
-                let lower = contRow.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                return (lower == "fortsett å se" || lower.isEmpty) ? "Fortsett" : contRow.title
+                let lower = existing.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                return (lower == "fortsett å se" || lower.isEmpty) ? "Fortsett" : existing.title
             }()
-            contRow = TvShelfRow(
-                rowId: contRow.rowId,
+            let contRow = TvShelfRow(
+                rowId: existing.rowId,
                 title: normalizedTitle,
-                rowStyle: contRow.rowStyle,
-                sourceKind: contRow.sourceKind,
-                listMode: contRow.listMode,
-                hasMore: contRow.hasMore,
-                nextPath: contRow.nextPath,
+                rowStyle: existing.rowStyle,
+                sourceKind: existing.sourceKind,
+                listMode: existing.listMode,
+                hasMore: existing.hasMore,
+                nextPath: existing.nextPath,
                 items: prioritizedItems,
-                genres: contRow.genres
+                genres: existing.genres
             )
-            rows.insert(contRow, at: 0)
-        } else if let prepared = payload?.tonight?.preparedFromPhone {
+            if preparedFromPhone != nil && idx != 0 {
+                rows.remove(at: idx)
+                rows.insert(contRow, at: 0)
+            } else {
+                rows[idx] = contRow
+            }
+        } else if let prepared = preparedFromPhone {
             let synthetic = TvShelfRow(
                 rowId: "medialogg-continue",
                 title: "Fortsett",

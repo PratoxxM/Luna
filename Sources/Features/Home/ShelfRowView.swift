@@ -41,8 +41,13 @@ struct ShelfRowView: View {
     }
 
     var body: some View {
-        let isContinue = row.rowStyle == "continue_backdrop"
-        let isBackdrop = isContinue || row.rowStyle == "backdrop"
+        let isContinue = row.rowStyle == "continue_backdrop" || row.sourceKind == "system_continue"
+        let isUpcoming = !isContinue && (
+            row.rowStyle == "upcoming_backdrop"
+            || row.sourceKind == "system_upcoming"
+            || row.sourceKind == "upcoming"
+        )
+        let isBackdrop = isContinue || isUpcoming || row.rowStyle == "backdrop"
         let seeAllHeight = isBackdrop ? LunaTokens.Layout.backdropH : LunaTokens.Layout.posterH
         let seeAllRadius = isBackdrop ? LunaTheme.cardRadius : LunaTheme.posterRadius
         let removeTitle = rowRemoveActionTitle
@@ -71,6 +76,18 @@ struct ShelfRowView: View {
                                 )
                                 .contextMenu {
                                     continueContextMenu(for: card)
+                                }
+                            } else if isUpcoming {
+                                BackdropCardView(
+                                    card: card,
+                                    client: client,
+                                    variant: .upcomingEpisode,
+                                    width: LunaTokens.Layout.backdropW,
+                                    focusRequestNonce: directNonce,
+                                    onPrimaryAction: { onSelectCard(card) }
+                                )
+                                .contextMenu {
+                                    upcomingContextMenu(for: card)
                                 }
                             } else if isBackdrop {
                                 BackdropCardView(
@@ -158,6 +175,21 @@ struct ShelfRowView: View {
             onMarkWatched(card)
         } label: {
             Label("Marker som sett", systemImage: "checkmark.circle")
+        }
+
+        Button {
+            onRemoveFromOngoing(card)
+        } label: {
+            Label("Fjern fra pågående", systemImage: "minus.circle")
+        }
+    }
+
+    @ViewBuilder
+    private func upcomingContextMenu(for card: TvMediaCard) -> some View {
+        Button {
+            onSelectCard(card)
+        } label: {
+            Label("Åpne detaljer", systemImage: "info.circle")
         }
 
         Button {

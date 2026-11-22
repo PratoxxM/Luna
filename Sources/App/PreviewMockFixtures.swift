@@ -20,7 +20,7 @@ enum PreviewMockFixtures {
             roomName: previewRoomName,
             hardwareProfile: previewHardwareProfile,
             allowSelfSignedLanTLS: true,
-            appVersion: "2.10.0",
+            appVersion: "2.10.1",
             osVersion: "tvOS 26.0",
             session: session,
             imageSession: session,
@@ -351,17 +351,53 @@ enum PreviewMockFixtures {
     }
 
     static var homeResponse: TvHomeResponse {
-        let upcomingGhost = TvMediaCard(
-            itemId: "series:upcoming-1",
-            mediaType: "series",
-            ids: TvMediaIds(tmdb: 99901),
-            title: "Kommende tittel",
-            year: 2026,
-            backdropUrl: "/preview-art/navy-backdrop.png",
-            episodeCode: "S02E04",
-            airDateBadge: "På søndag",
-            availability: TvAvailabilityInfo(state: "upcoming", tier: "usenet", benefitLabel: "Kommer")
-        )
+        let upcomingCards: [TvMediaCard] = [
+            TvMediaCard(
+                itemId: "series:95396",
+                mediaType: "series",
+                ids: TvMediaIds(tmdb: 95396, imdb: "tt11280740"),
+                title: "Severance",
+                year: 2022,
+                backdropUrl: "/preview-art/navy-backdrop.png",
+                dominantColor: "#16243a",
+                daysUntil: 1,
+                episodeCode: "S02E05",
+                episodeTitle: "Trojan's Horse",
+                airDateBadge: "I morgen · S02E05",
+                nextUp: TvNextUpPointer(season: 2, episode: 5),
+                availability: TvAvailabilityInfo(state: "upcoming", tier: "usenet", benefitLabel: "Kommer")
+            ),
+            TvMediaCard(
+                itemId: "series:83867",
+                mediaType: "series",
+                ids: TvMediaIds(tmdb: 83867, imdb: "tt9253284"),
+                title: "Andor",
+                year: 2022,
+                backdropUrl: "/preview-art/teal-backdrop.png",
+                dominantColor: "#152726",
+                daysUntil: 3,
+                episodeCode: "S02E04",
+                episodeTitle: "Ever Been to Ghorman?",
+                airDateBadge: "På torsdag · S02E04",
+                nextUp: TvNextUpPointer(season: 2, episode: 4),
+                availability: TvAvailabilityInfo(state: "upcoming", tier: "usenet", benefitLabel: "Kommer")
+            ),
+            TvMediaCard(
+                itemId: "series:126308",
+                mediaType: "series",
+                ids: TvMediaIds(tmdb: 126308),
+                title: "Shōgun",
+                year: 2024,
+                backdropUrl: "/preview-art/crimson-backdrop.png",
+                dominantColor: "#2a1216",
+                daysUntil: 6,
+                episodeCode: "S02E01",
+                episodeTitle: "Episode 1",
+                airDateBadge: "På søndag · S02E01",
+                nextUp: TvNextUpPointer(season: 2, episode: 1),
+                availability: TvAvailabilityInfo(state: "upcoming", tier: "usenet", benefitLabel: "Kommer")
+            ),
+        ]
         return TvHomeResponse(
             ok: true,
             generatedAt: "2026-11-20T00:00:00Z",
@@ -402,7 +438,7 @@ enum PreviewMockFixtures {
                     listMode: "smart",
                     hasMore: false,
                     nextPath: nil,
-                    items: [upcomingGhost],
+                    items: upcomingCards,
                     genres: nil
                 ),
                 TvShelfRow(

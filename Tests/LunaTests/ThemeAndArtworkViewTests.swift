@@ -331,6 +331,7 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         )
         let posterCard = PosterCardView(card: sampleCard, client: nil, onSelect: {})
         let backdropCard = BackdropCardView(card: sampleCard, client: nil, variant: .standard, onPrimaryAction: {})
+        let upcomingCard = BackdropCardView(card: sampleCard, client: nil, variant: .upcomingEpisode, onPrimaryAction: {})
         let sampleEpisode = TvEpisodeCard(
             itemId: "episode:tmdb:95396:s1:e1",
             seasonNumber: 1,
@@ -357,6 +358,7 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         )
         XCTAssertEqual(posterCard.card.title, "Fight Club")
         XCTAssertEqual(backdropCard.card.title, "Fight Club")
+        XCTAssertEqual(upcomingCard.variant, .upcomingEpisode)
         XCTAssertEqual(episodeCard.episode.episodeNumber, 1)
     }
 

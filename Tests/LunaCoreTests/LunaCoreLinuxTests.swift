@@ -444,14 +444,25 @@ final class LunaCoreLinuxTests: XCTestCase {
             title: "Kommende episoder",
             rowStyle: "upcoming_backdrop",
             sourceKind: "system_upcoming",
-            listMode: nil,
+            listMode: "smart",
             hasMore: false,
             nextPath: nil,
             items: [regularCard],
             genres: nil
         )
         let filteredUpcoming = CatalogShelfIndexer.filterVisibleRows([upcomingRow])
-        XCTAssertTrue(filteredUpcoming.isEmpty)
+        XCTAssertEqual(filteredUpcoming.map(\.rowId), ["upcoming-episodes"])
+
+        let orderedWithoutHandoff = CatalogShelfIndexer.prepareVisibleRows(
+            from: TvHomeResponse(
+                ok: true,
+                roomName: "Stua",
+                hardwareProfile: "hdr10-512",
+                rows: [upcomingRow, payload.rows[2]]
+            )
+        )
+        XCTAssertEqual(orderedWithoutHandoff.map(\.rowId), ["upcoming-episodes", "medialogg-continue"])
+        XCTAssertEqual(orderedWithoutHandoff[1].title, "Fortsett")
 
         let tiers = CatalogShelfIndexer.indexByTier([phoneCard, tonightCard, regularCard, phoneCard])
         XCTAssertEqual(tiers.nvme.map(\.itemId), ["movie:1"])
@@ -503,7 +514,7 @@ final class LunaCoreLinuxTests: XCTestCase {
             roomName: "Stua",
             hardwareProfile: "hdr10-512",
             allowSelfSignedLanTLS: true,
-            appVersion: "2.10.0",
+            appVersion: "2.10.1",
             osVersion: "Linux-CI",
             session: session
         )

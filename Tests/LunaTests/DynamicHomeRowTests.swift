@@ -18,6 +18,23 @@ final class DynamicHomeRowTests: XCTestCase {
               "items": []
             },
             {
+              "rowId": "upcoming-episodes",
+              "title": "Kommende episoder",
+              "rowStyle": "upcoming_backdrop",
+              "sourceKind": "system_upcoming",
+              "items": [
+                {
+                  "itemId": "series:tmdb:95396",
+                  "mediaType": "series",
+                  "ids": { "tmdb": 95396 },
+                  "title": "Severance",
+                  "episodeCode": "S02E05",
+                  "episodeTitle": "Trojan's Horse",
+                  "airDateBadge": "I morgen · S02E05"
+                }
+              ]
+            },
+            {
               "rowId": "custom:julefilmer",
               "title": "Populære julefilmer",
               "rowStyle": "backdrop",
@@ -74,19 +91,23 @@ final class DynamicHomeRowTests: XCTestCase {
 
         let decoded = try JSONDecoder().decode(TvHomeResponse.self, from: Data(json.utf8))
         XCTAssertTrue(decoded.ok)
-        XCTAssertEqual(decoded.rows.count, 4)
+        XCTAssertEqual(decoded.rows.count, 5)
 
         let visible = HomeView.filterVisibleRows(decoded.rows)
         XCTAssertEqual(visible.map(\.rowId), [
+            "upcoming-episodes",
             "custom:julefilmer",
             "custom:lokal-4k",
             "custom:mine-serier"
         ])
-        XCTAssertEqual(visible[0].rowStyle, "backdrop")
-        XCTAssertEqual(visible[0].nextPath, "/api/tv/v1/rows/custom%3Ajulefilmer")
-        XCTAssertEqual(visible[1].sourceKind, "local_library")
-        XCTAssertEqual(visible[1].items.first?.availability?.isPhysicalLocal, true)
-        XCTAssertEqual(visible[2].sourceKind, "active_series")
+        XCTAssertEqual(visible[0].rowStyle, "upcoming_backdrop")
+        XCTAssertEqual(visible[0].items.first?.upcomingPillText, "I morgen")
+        XCTAssertEqual(visible[0].items.first?.cleanUpcomingSubtitle, "S2 · E5 · Trojan's Horse")
+        XCTAssertEqual(visible[1].rowStyle, "backdrop")
+        XCTAssertEqual(visible[1].nextPath, "/api/tv/v1/rows/custom%3Ajulefilmer")
+        XCTAssertEqual(visible[2].sourceKind, "local_library")
+        XCTAssertEqual(visible[2].items.first?.availability?.isPhysicalLocal, true)
+        XCTAssertEqual(visible[3].sourceKind, "active_series")
     }
 
     func testHomeSemanticEqualityDetectsDynamicRowReorderingAndStyleChanges() throws {

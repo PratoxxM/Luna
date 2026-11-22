@@ -1,4 +1,4 @@
-# Luna (`v2.10.0`) — Codebase Module Map
+# Luna (`v2.10.1`) — Codebase Module Map
 
 Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced bidirectionally by `ops/bin/luna-check`).
 
@@ -23,7 +23,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Core/Cache/BlurHashDecoder.swift` | Pure Swift BlurHash decoder for instant card & hero placeholders | — | `ClientOriginAndBlurHashTests.swift` |
 | `Sources/Core/Cache/DiskSWRStore.swift` | `.cachesDirectory` ETag/JSON SWR snapshot persistence for cold start | `GET /api/tv/v1/home` (`If-None-Match` / `304`) | `DiskSWRStoreTests.swift`, `LunaCoreLinuxTests.swift` |
 | `Sources/Core/Cache/InflightTaskCoalescer.swift` | Waiter-isolated in-flight task deduplicator, `BoundedLRUMemoryCache` & directory byte counter | — | `NetworkCacheAndMemoryProfileTests.swift`, `LunaCoreHTTPTransportTests.swift` |
-| `Sources/Core/Catalog/CatalogShelfIndexer.swift` | Pure-Swift shelf deduplication, `Fra iPhone`/`I kveld` continue ordering & tier indexing | — | `DynamicHomeRowTests.swift`, `LunaCoreLinuxTests.swift` |
+| `Sources/Core/Catalog/CatalogShelfIndexer.swift` | Pure-Swift shelf deduplication, server-ordered shelves (`Kommende episoder`), `Fra iPhone`/`I kveld` continue ordering & tier indexing | — | `DynamicHomeRowTests.swift`, `LunaCoreLinuxTests.swift` |
 | `Sources/Core/Playback/PlaybackCoreAbstractions.swift` | Pure-Swift `PlaybackEngine`, `IOReader`, `PlaybackCurtainWatchdog` & coordinator state machine | — | `LunaCoreLinuxTests.swift` |
 | `Sources/Core/Playback/RemoteScrubMath.swift` | Paused-only Siri Remote pan breakaway (`20 pt`), `0 pt` reversal deadzone, EMA velocity (`α=0.35`), 3-zone duration-adaptive scrub curve & `< 280 ms` ring-hold speeds | — | `LunaCoreLinuxTests.swift`, `RemoteScrubMathTests.swift` |
 | `Sources/Core/Models/ChapterModels.swift` | Chapter & intro/recap/credits classification models | `chapters[]` metadata | `ChapterClassificationTests.swift` |
@@ -64,12 +64,12 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/DesignSystem/LunaCopy.swift` | Norwegian pluralization, comma decimal formatter, room/tier labels & greetings | — | `DesignTokensAndCopyTests.swift` |
 | `Sources/DesignSystem/AmbientBackdropView.swift` | Static warm charcoal/espresso ambient glow backdrop (paused during playback) | — | `ThemeAndArtworkViewTests.swift` |
 | `Sources/DesignSystem/Cards/PosterCardView.swift` | Isolated `@FocusState` poster card (`280×420` shelf / `260×390` grid; resting title, metadata & `LunaTierDotView` in grids, focus-only captions on shelves) | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
-| `Sources/DesignSystem/Cards/BackdropCardView.swift` | Isolated `@FocusState` 520×293 16:9 card (`LunaArtBadge`, focus-only `LunaTierDotView` & progress bar) | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
+| `Sources/DesignSystem/Cards/BackdropCardView.swift` | Isolated `@FocusState` 520×293 16:9 card (`continueWatching`, `upcomingEpisode`, `standard`, `LunaArtBadge`, focus-only `LunaTierDotView` & progress bar) | Artwork pipeline loading | `ThemeAndArtworkViewTests.swift` |
 | `Sources/Features/Shared/MediaCardComponents.swift` | `MediaCardMutator` & shared context-menu mutations | `POST /api/tv/v1/{watchlist,watched,continue/remove,rows/:id/remove}` | `NavigationSettingsAndDeleteTests.swift` |
 | `Sources/Features/Shared/SourceCandidateRowView.swift` | Unified source release candidate row shared between `SourcePickerSheetView` & `PlayerQuickPanelView` | — | `ClientOriginAndBlurHashTests.swift` |
 | `Sources/Features/Onboarding/PairingOnboardingView.swift` | `_lunacore._tcp` auto-discovery & 6-digit pairing flow | `POST /api/tv/v1/pair/request`, `GET /pair/poll/:code` | `ClientOriginAndBlurHashTests.swift` |
 | `Sources/Features/Home/HomeView.swift` | 4-row evening home with SWR instant paint & context-menu shelf mutators | `GET /api/tv/v1/home` | `SeriesFlowAndHomePolicyTests.swift`, `DynamicHomeRowTests.swift` |
-| `Sources/Features/Home/ShelfRowView.swift` | Horizontal focus-safe shelf carousel supporting poster & backdrop styles | — | `DynamicHomeRowTests.swift` |
+| `Sources/Features/Home/ShelfRowView.swift` | Horizontal focus-safe shelf carousel supporting continue, upcoming (`upcoming_backdrop`), backdrop & poster styles | — | `DynamicHomeRowTests.swift` |
 | `Sources/Features/Browse/CatalogBrowseView.swift` | Paginated genre & sort catalog browser | `GET /api/tv/v1/catalog/{movies,series}` | `SeriesFlowAndHomePolicyTests.swift` |
 | `Sources/Features/Browse/CustomRowBrowseView.swift` | Paginated custom row browser | `GET /api/tv/v1/rows/:id` | `DynamicHomeRowTests.swift` |
 | `Sources/Features/Library/LibraryHubView.swift` | Clean 3-pill horizontal Bibliotek hub (*Filmer · Serier · Huskeliste*) above a 6-column `260×390` poster grid | `GET /api/tv/v1/library?section={watchlist,local}` | `NavigationSettingsAndDeleteTests.swift`, `DynamicHomeRowTests.swift` |
@@ -111,7 +111,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 
 ## 4. Build, Guardrails, Actions & `LunaTests` (`Tests/LunaTests/`)
 
-- **Build, Tokens & CI**: `project.yml` (`MARKETING_VERSION: "2.10.0"`, `CURRENT_PROJECT_VERSION: "65"`, `bundleIdPrefix: local.lunacore`), `Package.swift` (Linux `LunaCore` test target), `design/tokens.json`, `Resources/Localizable.xcstrings`, `ops/bin/luna-design-tokens`, `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/workflows/tvos-vision.yml`, `scripts/test-core.sh`, `scripts/preview-capture.sh`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, `>= 22 pt` tvOS font floor, zero system `Material`, sideload, zero private infra leaks, token parity & bidirectional doc parity).
+- **Build, Tokens & CI**: `project.yml` (`MARKETING_VERSION: "2.10.1"`, `CURRENT_PROJECT_VERSION: "66"`, `bundleIdPrefix: local.lunacore`), `Package.swift` (Linux `LunaCore` test target), `design/tokens.json`, `Resources/Localizable.xcstrings`, `ops/bin/luna-design-tokens`, `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/workflows/tvos-vision.yml`, `scripts/test-core.sh`, `scripts/preview-capture.sh`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, `>= 22 pt` tvOS font floor, zero system `Material`, sideload, zero private infra leaks, token parity & bidirectional doc parity).
 - **23 XCTest Suites + Test Doubles (`Tests/LunaTests/`)**:
   - `Tests/LunaTests/BonjourServerBrowserTests.swift`
   - `Tests/LunaTests/ChapterClassificationTests.swift`
