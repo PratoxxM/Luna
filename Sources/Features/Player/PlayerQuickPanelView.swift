@@ -55,7 +55,7 @@ struct PlayerQuickPanelView: View {
     let onClose: (_ returnFocusToPill: Bool) -> Void
 
     @FocusState private var focusedItemID: String?
-    @State private var chapterSnapshotTime: Double = 0
+    @State private var chapterSnapshotTime: Double?
     @State private var contentHeight: CGFloat = 280
     @Namespace private var panelFocusNamespace
 
@@ -95,7 +95,11 @@ struct PlayerQuickPanelView: View {
         Self.panelWidth(for: tab)
     }
 
-    private var preferredActiveItemID: String {
+    private var currentPlayheadSnapshotSeconds: Double {
+        viewModel.previewPlayheadOverrideSeconds ?? max(0, viewModel.engine.currentTime)
+    }
+
+    private func preferredActiveItemID(at snapshotSeconds: Double) -> String {
         switch tab {
         case .subtitles:
             if let subIdx = viewModel.activeSubtitleTrackIndex {
@@ -124,11 +128,19 @@ struct PlayerQuickPanelView: View {
         case .picture:
             return "pic-metalfx-\(comfort.lowResUpscaleMode.rawValue)"
         case .chapters:
-            if let activeCh = viewModel.activeChapter(at: chapterSnapshotTime) ?? viewModel.chapters.first {
+            if let activeCh = viewModel.activeChapter(at: snapshotSeconds) ?? viewModel.chapters.first {
                 return "ch-\(activeCh.id)"
             }
             return "ch-empty"
         }
+    }
+
+    private var effectiveChapterSnapshotSeconds: Double {
+        chapterSnapshotTime ?? currentPlayheadSnapshotSeconds
+    }
+
+    private var preferredActiveItemID: String {
+        preferredActiveItemID(at: effectiveChapterSnapshotSeconds)
     }
 
     var body: some View {
@@ -183,14 +195,10 @@ struct PlayerQuickPanelView: View {
                         Color.black
                     }
                 }
-                .onAppear {
-                    chapterSnapshotTime = max(0, viewModel.engine.currentTime)
-                }
-                .onChange(of: tab) { _, _ in
-                    chapterSnapshotTime = max(0, viewModel.engine.currentTime)
-                }
                 .task(id: "\(tab.rawValue)#\(tab == .source ? viewModel.alternatives.count : 0)#\(viewModel.activeSession?.sessionId ?? "")") {
-                    let targetID = preferredActiveItemID
+                    let snapshotSeconds = currentPlayheadSnapshotSeconds
+                    chapterSnapshotTime = snapshotSeconds
+                    let targetID = preferredActiveItemID(at: snapshotSeconds)
                     proxy.scrollTo(targetID)
                     focusedItemID = targetID
                     for delayNs: UInt64 in [16_000_000, 48_000_000] {
@@ -479,7 +487,7 @@ struct PlayerQuickPanelView: View {
 
     @ViewBuilder
     private var chaptersList: some View {
-        let activeChapterID = viewModel.activeChapter(at: chapterSnapshotTime)?.id
+        let activeChapterID = viewModel.activeChapter(at: effectiveChapterSnapshotSeconds)?.id
         ForEach(viewModel.chapters) { ch in
             let rowID = "ch-\(ch.id)"
             let isCurrent = ch.id == activeChapterID

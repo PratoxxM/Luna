@@ -126,7 +126,7 @@ struct EpisodeCardView: View {
                 .foregroundStyle(LunaTheme.muted)
                 .lineLimit(2)
                 .frame(width: cardWidth, height: 58, alignment: .topLeading)
-                .lunaFocusCaptionReveal(isVisible: !overviewText.isEmpty, isFocused: isFocused)
+                .lunaFocusCaptionReveal(isVisible: isFocused && !overviewText.isEmpty, isFocused: isFocused)
         }
     }
 }
