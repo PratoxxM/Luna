@@ -45,7 +45,7 @@ struct LibraryHubView: View {
         self.onSelectTab = onSelectTab
     }
 
-    private let pageSize = 36
+    private let pageSize = DeviceMemoryProfile.current.libraryPageSize
     private let columns = LunaTheme.posterGridColumns
 
     private var queryKey: String {
@@ -154,7 +154,8 @@ struct LibraryHubView: View {
                 subpageVisibility.leaveModal(modalToken)
             }
         }
-        .task(id: queryKey) {
+        .task(id: "\(queryKey)#active:\(isActiveTab)") {
+            guard isActiveTab else { return }
             reloadTask?.cancel()
             reloadTask = nil
             reloadGeneration &+= 1
@@ -165,20 +166,6 @@ struct LibraryHubView: View {
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
             guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
             lastSeenRefreshNonce = newNonce
-            scheduleReloadLibrary(forceNetwork: true)
-        }
-        .onChange(of: isActiveTab) { _, active in
-            guard active else { return }
-            let cached = LibraryBrowseMemoryCache.shared.snapshot(for: queryKey)
-            let isFresh = TabContentFreshnessPolicy.isCacheFresh(
-                hasCachedContent: cached != nil,
-                lastValidatedAt: cached?.fetchedAt ?? .distantPast,
-                cachedRefreshNonce: cached?.refreshNonce ?? lastSeenRefreshNonce,
-                currentRefreshNonce: sessionStore.homeRefreshNonce,
-                freshnessInterval: TabContentFreshnessPolicy.effectiveFreshnessInterval
-            )
-            guard !isFresh else { return }
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
             scheduleReloadLibrary(forceNetwork: true)
         }
         .onDisappear {
@@ -266,6 +253,11 @@ struct LibraryHubView: View {
                         )
                     }
                     .onAppear {
+                        ArtworkPipeline.shared.prefetchUpcomingCards(
+                            in: activeItems,
+                            afterIndex: idx,
+                            client: client
+                        )
                         if activeSection != .watchlist,
                            idx >= prefetchThreshold,
                            localHasMore,
@@ -389,7 +381,7 @@ struct LibraryHubView: View {
             localHasMore = res.localHasMore ?? false
             persistLibrarySnapshot(for: targetKey, payload: res, fetchedAt: Date())
             applyInitialSectionResolutionIfNeeded(counts: res.counts)
-        } catch is CancellationError {
+        } catch where LunaCoreError.isCancellation(error) {
             return
         } catch LunaCoreError.unauthorized {
             LibraryBrowseMemoryCache.shared.clear()

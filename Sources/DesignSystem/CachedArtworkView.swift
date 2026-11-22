@@ -21,6 +21,7 @@ public struct CachedArtworkView: View, Equatable {
     let placeholderSymbol: String
     let contentMode: ContentMode
     let reuseAnyCachedSize: Bool
+    let progressiveFallback: Bool
 
     @State private var loadedArtwork: TaggedCGImage? = nil
     @State private var decodedBlur: TaggedCGImage? = nil
@@ -33,7 +34,8 @@ public struct CachedArtworkView: View, Equatable {
         dominantColor: String? = nil,
         placeholderSymbol: String = "film",
         contentMode: ContentMode = .fill,
-        reuseAnyCachedSize: Bool = false
+        reuseAnyCachedSize: Bool = false,
+        progressiveFallback: Bool = false
     ) {
         self.url = url
         self.client = client
@@ -43,6 +45,7 @@ public struct CachedArtworkView: View, Equatable {
         self.placeholderSymbol = placeholderSymbol
         self.contentMode = contentMode
         self.reuseAnyCachedSize = reuseAnyCachedSize
+        self.progressiveFallback = progressiveFallback
     }
 
     public nonisolated static func == (lhs: CachedArtworkView, rhs: CachedArtworkView) -> Bool {
@@ -53,6 +56,7 @@ public struct CachedArtworkView: View, Equatable {
             lhs.placeholderSymbol == rhs.placeholderSymbol &&
             lhs.contentMode == rhs.contentMode &&
             lhs.reuseAnyCachedSize == rhs.reuseAnyCachedSize &&
+            lhs.progressiveFallback == rhs.progressiveFallback &&
             lhs.client?.baseURL == rhs.client?.baseURL &&
             lhs.client?.deviceToken == rhs.client?.deviceToken
     }
@@ -92,9 +96,10 @@ public struct CachedArtworkView: View, Equatable {
     private nonisolated static func lookupMemoryImage(
         url: URL,
         maxPixelSize: Int,
-        reuseAnyCachedSize: Bool
+        reuseAnyCachedSize: Bool,
+        progressiveFallback: Bool
     ) -> CGImage? {
-        if reuseAnyCachedSize {
+        if reuseAnyCachedSize || progressiveFallback {
             return ArtworkPipeline.shared.anyMemoryCachedImage(
                 for: url,
                 preferredMaxPixelSize: maxPixelSize
@@ -149,24 +154,35 @@ public struct CachedArtworkView: View, Equatable {
                 return
             }
 
-            if let hit = Self.lookupMemoryImage(
-                url: url,
-                maxPixelSize: maxPixelSize,
-                reuseAnyCachedSize: reuseAnyCachedSize
-            ) {
-                if loadedArtwork?.key != targetImageKey || loadedArtwork?.image !== hit {
-                    loadedArtwork = TaggedCGImage(key: targetImageKey, image: hit)
+            if let exactHit = ArtworkPipeline.shared.memoryCachedImage(for: url, maxPixelSize: maxPixelSize) {
+                if loadedArtwork?.key != targetImageKey || loadedArtwork?.image !== exactHit {
+                    loadedArtwork = TaggedCGImage(key: targetImageKey, image: exactHit)
                 }
                 return
             }
 
-            if loadedArtwork != nil {
-                loadedArtwork = nil
+            if reuseAnyCachedSize,
+               let anyHit = ArtworkPipeline.shared.anyMemoryCachedImage(for: url, preferredMaxPixelSize: maxPixelSize)?.image {
+                if loadedArtwork?.key != targetImageKey || loadedArtwork?.image !== anyHit {
+                    loadedArtwork = TaggedCGImage(key: targetImageKey, image: anyHit)
+                }
+                return
             }
-            if let targetBlurKey, decodedBlur?.key != targetBlurKey, contentMode != .fit {
-                if let blurImg = await BlurHashDecoder.decodeAsync(targetBlurKey, width: 32, height: 24),
-                   !Task.isCancelled {
-                    decodedBlur = TaggedCGImage(key: targetBlurKey, image: blurImg)
+
+            if progressiveFallback,
+               let previewHit = ArtworkPipeline.shared.anyMemoryCachedImage(for: url, preferredMaxPixelSize: maxPixelSize)?.image {
+                if loadedArtwork?.key != targetImageKey || loadedArtwork?.image !== previewHit {
+                    loadedArtwork = TaggedCGImage(key: targetImageKey, image: previewHit)
+                }
+            } else {
+                if loadedArtwork != nil {
+                    loadedArtwork = nil
+                }
+                if let targetBlurKey, decodedBlur?.key != targetBlurKey, contentMode != .fit {
+                    if let blurImg = await BlurHashDecoder.decodeAsync(targetBlurKey, width: 32, height: 24),
+                       !Task.isCancelled {
+                        decodedBlur = TaggedCGImage(key: targetBlurKey, image: blurImg)
+                    }
                 }
             }
 
@@ -180,7 +196,7 @@ public struct CachedArtworkView: View, Equatable {
                 withAnimation(.easeOut(duration: 0.18)) {
                     loadedArtwork = TaggedCGImage(key: targetImageKey, image: fetched)
                 }
-            } else if loadedArtwork != nil {
+            } else if !progressiveFallback, loadedArtwork != nil {
                 loadedArtwork = nil
             }
         }
@@ -196,7 +212,8 @@ public struct CachedArtworkView: View, Equatable {
                 return Self.lookupMemoryImage(
                     url: url,
                     maxPixelSize: maxPixelSize,
-                    reuseAnyCachedSize: reuseAnyCachedSize
+                    reuseAnyCachedSize: reuseAnyCachedSize,
+                    progressiveFallback: progressiveFallback
                 )
             }
         )

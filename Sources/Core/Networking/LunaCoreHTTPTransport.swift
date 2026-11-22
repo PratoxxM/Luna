@@ -22,21 +22,29 @@ public enum LunaCoreError: LocalizedError, Sendable {
             return "Kunne ikke tolke svar fra LunaCore (\(detail))."
         }
     }
+
+    public static func isCancellation(_ error: any Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
+        if let urlError = error as? URLError, urlError.code == .cancelled {
+            return true
+        }
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
+    }
 }
 
 private struct ServerErrorEnvelope: Decodable, Sendable {
     let error: String?
 }
 
-public enum HomeConditionalResult: Sendable {
-    case notModified
-    case updated(payload: TvHomeResponse, etag: String?, rawPayloadData: Data)
-}
-
-internal enum ConditionalHTTPResult<Payload: Decodable & Sendable>: Sendable {
+public enum ConditionalHTTPResult<Payload: Decodable & Sendable>: Sendable {
     case notModified
     case updated(payload: Payload, etag: String?, rawPayloadData: Data)
 }
+
+public typealias HomeConditionalResult = ConditionalHTTPResult<TvHomeResponse>
 
 public struct LunaCoreClient: Sendable {
     public let baseURL: URL
@@ -51,8 +59,8 @@ public struct LunaCoreClient: Sendable {
     private let session: URLSession
     private let imageSession: URLSession
     private let externalImageSession: URLSession
+    private let inflightGETRequests = InflightTaskCoalescer<String, any Sendable>()
 
-    private static let sharedDecoder = Mutex(JSONDecoder())
     private static let sharedEncoder = Mutex(JSONEncoder())
 
     public init(
@@ -110,18 +118,18 @@ public struct LunaCoreClient: Sendable {
         self.externalImageSession = externalImageSession ?? session
     }
 
-    // MARK: - Shared JSON Coding
+    // MARK: - Lock-Free JSON Coding
 
     internal static func decodeJSON<T: Decodable & Sendable>(_ type: T.Type, from data: Data) throws -> T {
-        try sharedDecoder.withLock { try $0.decode(type, from: data) }
+        try JSONDecoder().decode(type, from: data)
     }
 
     internal static func decodeJSONAsync<T: Decodable & Sendable>(_ type: T.Type, from data: Data) async throws -> T {
         if data.count < 4096 {
-            return try decodeJSON(type, from: data)
+            return try JSONDecoder().decode(type, from: data)
         }
         return try await Task.detached(priority: .userInitiated) {
-            try decodeJSON(type, from: data)
+            try JSONDecoder().decode(type, from: data)
         }.value
     }
 
@@ -227,7 +235,7 @@ public struct LunaCoreClient: Sendable {
         return URL(string: "\(cleanBase)\(cleanRel)")
     }
 
-    public func streamHTTPHeaders() -> [String: String] {
+    private func commonClientHeaders(includeAuth: Bool = true) -> [String: String] {
         var headers: [String: String] = [
             "X-Device-Id": deviceID,
             "X-Luna-Version": appVersion,
@@ -237,10 +245,14 @@ public struct LunaCoreClient: Sendable {
         if !osVersion.isEmpty {
             headers["X-tvOS-Version"] = osVersion
         }
-        if let deviceToken, !deviceToken.isEmpty {
+        if includeAuth, let deviceToken, !deviceToken.isEmpty {
             headers["Authorization"] = "Bearer \(deviceToken)"
         }
         return headers
+    }
+
+    public func streamHTTPHeaders() -> [String: String] {
+        commonClientHeaders(includeAuth: true)
     }
 
     public func isSameOrigin(_ url: URL) -> Bool {
@@ -277,7 +289,7 @@ public struct LunaCoreClient: Sendable {
         return (data, http)
     }
 
-    // MARK: - Transport Primitives & Unified Error / ETag Handling
+    // MARK: - Transport Primitives, GET Coalescing & Unified Error / ETag Handling
 
     internal func buildQueryPath(_ basePath: String, queryItems: [URLQueryItem]) -> String {
         var components = URLComponents()
@@ -290,15 +302,8 @@ public struct LunaCoreClient: Sendable {
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue(deviceID, forHTTPHeaderField: "X-Device-Id")
-        req.setValue(appVersion, forHTTPHeaderField: "X-Luna-Version")
-        req.setValue(DeviceHardwareCapabilities.supportsHardwareAV1 ? "1" : "0", forHTTPHeaderField: "X-Supports-HW-AV1")
-        req.setValue(String(DeviceHardwareCapabilities.physicalMemoryGB), forHTTPHeaderField: "X-Physical-Memory-GB")
-        if !osVersion.isEmpty {
-            req.setValue(osVersion, forHTTPHeaderField: "X-tvOS-Version")
-        }
-        if includeAuth, let deviceToken, !deviceToken.isEmpty {
-            req.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")
+        for (key, value) in commonClientHeaders(includeAuth: includeAuth) {
+            req.setValue(value, forHTTPHeaderField: key)
         }
         return req
     }
@@ -334,25 +339,39 @@ public struct LunaCoreClient: Sendable {
         guard let url = buildAbsoluteURL(path) else {
             throw LunaCoreError.invalidURL(path)
         }
+        let trimmedEtag = ifNoneMatch?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let etagHeader = (trimmedEtag?.isEmpty == false) ? trimmedEtag : nil
         var req = authorizedRequest(url: url, method: "GET")
-        if let etag = ifNoneMatch?.trimmingCharacters(in: .whitespacesAndNewlines), !etag.isEmpty {
-            req.setValue(etag, forHTTPHeaderField: "If-None-Match")
+        if let etagHeader {
+            req.setValue(etagHeader, forHTTPHeaderField: "If-None-Match")
         }
 
-        let (data, rawResp) = try await session.data(for: req)
-        let http = rawResp as? HTTPURLResponse
-        let status = http?.statusCode ?? 500
-        if status == 304 {
-            return .notModified
+        let immutableReq = req
+        let coalesceKey = "CONDGET|\(ObjectIdentifier(Payload.self))|\(etagHeader ?? "")|\(path)"
+        let outcome = try await inflightGETRequests.coalesce(key: coalesceKey) { [self] () -> any Sendable in
+            let (data, rawResp) = try await self.session.data(for: immutableReq)
+            let http = rawResp as? HTTPURLResponse
+            let status = http?.statusCode ?? 500
+            if status == 304 {
+                return ConditionalHTTPResult<Payload>.notModified
+            }
+            try self.validateHTTPStatus(status, data: data)
+            do {
+                let decoded = try await Self.decodeJSONAsync(Payload.self, from: data)
+                let responseEtag = http?.value(forHTTPHeaderField: "ETag")
+                return ConditionalHTTPResult<Payload>.updated(
+                    payload: decoded,
+                    etag: responseEtag,
+                    rawPayloadData: data
+                )
+            } catch {
+                throw LunaCoreError.decodingFailed(error.localizedDescription)
+            }
         }
-        try validateHTTPStatus(status, data: data)
-        do {
-            let decoded = try await Self.decodeJSONAsync(Payload.self, from: data)
-            let responseEtag = http?.value(forHTTPHeaderField: "ETag")
-            return .updated(payload: decoded, etag: responseEtag, rawPayloadData: data)
-        } catch {
-            throw LunaCoreError.decodingFailed(error.localizedDescription)
+        guard let typed = outcome.value as? ConditionalHTTPResult<Payload> else {
+            throw LunaCoreError.decodingFailed("Ugyldig sammenslått svarstype")
         }
+        return typed
     }
 
     internal func sendJSON<Response: Decodable & Sendable>(
@@ -364,7 +383,19 @@ public struct LunaCoreClient: Sendable {
             throw LunaCoreError.invalidURL(path)
         }
         let req = authorizedRequest(url: url, method: method, includeAuth: includeAuth)
-        return try await executeAndDecode(req).response
+        // Strictly coalesce idempotent GET requests only; mutating verbs execute independently.
+        guard method == "GET" else {
+            return try await executeAndDecode(req).response
+        }
+        let coalesceKey = "GET|\(ObjectIdentifier(Response.self))|auth:\(includeAuth)|\(path)"
+        let outcome = try await inflightGETRequests.coalesce(key: coalesceKey) { [self] () -> any Sendable in
+            let (_, decoded): (Int, Response) = try await self.executeAndDecode(req)
+            return decoded
+        }
+        guard let typed = outcome.value as? Response else {
+            throw LunaCoreError.decodingFailed("Ugyldig sammenslått svarstype")
+        }
+        return typed
     }
 
     internal func sendJSON<Body: Encodable & Sendable, Response: Decodable & Sendable>(

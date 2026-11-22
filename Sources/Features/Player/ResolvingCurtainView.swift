@@ -130,17 +130,21 @@ struct ResolvingCurtainView: View {
     }
 
     private var resolvedBackdropURL: URL? {
-        let raw = initialRequest.backdropUrl ?? viewModel.activeSession?.item.backdropUrl
+        let raw = initialRequest.backdropUrl
+            ?? viewModel.activeSession?.item.backdropUrl
+            ?? initialRequest.preparedSession?.item.backdropUrl
         return client?.resolveArtworkURL(raw, target: .hero4K)
     }
 
     private var resolvedLogoURL: URL? {
-        let raw = viewModel.activeSession?.item.logoUrl ?? initialRequest.logoUrl
+        let raw = viewModel.activeSession?.item.logoUrl
+            ?? initialRequest.logoUrl
+            ?? initialRequest.preparedSession?.item.logoUrl
         return client?.resolveArtworkURL(raw)
     }
 
     private var curtainDisplay: (seriesLine: String?, mainLine: String?) {
-        let item = viewModel.activeSession?.item
+        let item = viewModel.activeSession?.item ?? initialRequest.preparedSession?.item
         return EpisodeTitleFormatter.curtainLabels(
             title: item?.title ?? initialRequest.title,
             seriesTitle: item?.seriesTitle ?? initialRequest.seriesTitle,

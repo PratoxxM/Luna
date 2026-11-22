@@ -10,6 +10,8 @@ public struct PlaybackLaunchRequest: Identifiable, Equatable, Sendable {
     public let startPositionSeconds: Double?
     public let candidateId: String?
     public let prepareToken: String?
+    public let preparedSession: TvPlaybackSession?
+    public let inflightPrepareTask: Task<TvPrepareResponse?, Never>?
     public let backdropUrl: String?
     public let logoUrl: String?
 
@@ -22,6 +24,8 @@ public struct PlaybackLaunchRequest: Identifiable, Equatable, Sendable {
         startPositionSeconds: Double? = nil,
         candidateId: String? = nil,
         prepareToken: String? = nil,
+        preparedSession: TvPlaybackSession? = nil,
+        inflightPrepareTask: Task<TvPrepareResponse?, Never>? = nil,
         backdropUrl: String? = nil,
         logoUrl: String? = nil
     ) {
@@ -29,18 +33,24 @@ public struct PlaybackLaunchRequest: Identifiable, Equatable, Sendable {
         self.itemId = itemId
         self.title = title
         self.seriesTitle = seriesTitle
-        let parsed = EpisodeTitleFormatter.resolveSeasonAndEpisode(
-            itemId: itemId,
-            season: season,
-            episode: episode
-        )
+        let parsed = EpisodeTitleFormatter.resolveSeasonAndEpisode(itemId: itemId, season: season, episode: episode)
         self.season = parsed.season
         self.episode = parsed.episode
         self.startPositionSeconds = startPositionSeconds
         self.candidateId = candidateId
         self.prepareToken = prepareToken
+        self.preparedSession = preparedSession
+        self.inflightPrepareTask = inflightPrepareTask
         self.backdropUrl = backdropUrl
         self.logoUrl = logoUrl
+    }
+
+    public static func == (lhs: PlaybackLaunchRequest, rhs: PlaybackLaunchRequest) -> Bool {
+        lhs.id == rhs.id && lhs.itemId == rhs.itemId && lhs.title == rhs.title &&
+            lhs.seriesTitle == rhs.seriesTitle && lhs.season == rhs.season && lhs.episode == rhs.episode &&
+            lhs.startPositionSeconds == rhs.startPositionSeconds && lhs.candidateId == rhs.candidateId &&
+            lhs.prepareToken == rhs.prepareToken && lhs.preparedSession == rhs.preparedSession &&
+            lhs.backdropUrl == rhs.backdropUrl && lhs.logoUrl == rhs.logoUrl
     }
 
     public var formattedEpisodeCode: String? {

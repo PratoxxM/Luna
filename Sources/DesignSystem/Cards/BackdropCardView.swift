@@ -2,7 +2,6 @@ import SwiftUI
 
 public enum BackdropCardVariant: Sendable {
     case continueWatching
-    case upcomingEpisode
     case standard
 }
 
@@ -58,7 +57,7 @@ public struct BackdropCardView: View {
                     maxPixelSize: 1280,
                     blurHash: card.blurHash,
                     dominantColor: card.dominantColor,
-                    placeholderSymbol: variant == .upcomingEpisode ? "calendar.badge.clock" : "play.tv",
+                    placeholderSymbol: "play.tv",
                     contentMode: .fill
                 )
                 .equatable()
@@ -83,8 +82,6 @@ public struct BackdropCardView: View {
                                 label: badgeText,
                                 dotColor: card.origin == "phone" ? LunaTheme.amber : LunaTheme.moonlight
                             )
-                        } else if variant == .upcomingEpisode {
-                            LunaArtBadge(label: card.upcomingPillText)
                         }
 
                         Spacer(minLength: 4)
@@ -118,18 +115,16 @@ public struct BackdropCardView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                            if variant != .upcomingEpisode {
-                                Image(systemName: "play.fill")
-                                    .font(LunaTheme.Font.pillIcon)
-                                    .foregroundStyle(LunaTokens.Text.onAccent)
-                                    .frame(
-                                        width: LunaTokens.Layout.playBadgeSize,
-                                        height: LunaTokens.Layout.playBadgeSize
-                                    )
-                                    .background(LunaTheme.amber, in: Circle())
-                                    .opacity(isFocused ? 1.0 : 0.0)
-                                    .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusFade, value: isFocused)
-                            }
+                            Image(systemName: "play.fill")
+                                .font(LunaTheme.Font.pillIcon)
+                                .foregroundStyle(LunaTokens.Text.onAccent)
+                                .frame(
+                                    width: LunaTokens.Layout.playBadgeSize,
+                                    height: LunaTokens.Layout.playBadgeSize
+                                )
+                                .background(LunaTheme.amber, in: Circle())
+                                .opacity(isFocused ? 1.0 : 0.0)
+                                .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusFade, value: isFocused)
                         }
 
                         progressBar
@@ -172,8 +167,6 @@ public struct BackdropCardView: View {
 
     private var subtitleLine: String {
         switch variant {
-        case .upcomingEpisode:
-            return card.cleanUpcomingSubtitle
         case .continueWatching:
             return card.cleanContinueSubtitle
         case .standard:

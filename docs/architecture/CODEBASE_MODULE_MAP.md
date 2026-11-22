@@ -22,6 +22,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Core/Cache/ArtworkPipeline.swift` | Off-main-actor image download/downsample cache & BlurHash placeholder pipeline | Same-origin artwork auth & CDN fetch | `ClientOriginAndBlurHashTests.swift`, `PlayerOverlayAndCacheTests.swift` |
 | `Sources/Core/Cache/BlurHashDecoder.swift` | Pure Swift BlurHash decoder for instant card & hero placeholders | — | `ClientOriginAndBlurHashTests.swift` |
 | `Sources/Core/Cache/DiskSWRStore.swift` | `.cachesDirectory` ETag/JSON SWR snapshot persistence for cold start | `GET /api/tv/v1/home` (`If-None-Match` / `304`) | `DiskSWRStoreTests.swift`, `LunaCoreLinuxTests.swift` |
+| `Sources/Core/Cache/InflightTaskCoalescer.swift` | Waiter-isolated in-flight task deduplicator, `BoundedLRUMemoryCache` & directory byte counter | — | `NetworkCacheAndMemoryProfileTests.swift`, `LunaCoreHTTPTransportTests.swift` |
 | `Sources/Core/Catalog/CatalogShelfIndexer.swift` | Pure-Swift shelf deduplication, `Fra iPhone`/`I kveld` continue ordering & tier indexing | — | `DynamicHomeRowTests.swift`, `LunaCoreLinuxTests.swift` |
 | `Sources/Core/Playback/PlaybackCoreAbstractions.swift` | Pure-Swift `PlaybackEngine`, `IOReader`, `PlaybackCurtainWatchdog` & coordinator state machine | — | `LunaCoreLinuxTests.swift` |
 | `Sources/Core/Playback/RemoteScrubMath.swift` | Paused-only Siri Remote pan breakaway (`20 pt`), `0 pt` reversal deadzone, EMA velocity (`α=0.35`), 3-zone duration-adaptive scrub curve & `< 280 ms` ring-hold speeds | — | `LunaCoreLinuxTests.swift`, `RemoteScrubMathTests.swift` |
@@ -138,4 +139,5 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
   - `Tests/LunaTests/PlayerTestDoubles.swift` (shared player/transport test doubles)
 - **Linux `LunaCoreTests` (`Package.swift` / `./scripts/test-core.sh`)**:
   - `Tests/LunaCoreTests/LunaCoreLinuxTests.swift` (native Linux x86_64 tests for `PlaybackEngine`/`IOReader`, `PlaybackCurtainWatchdog`, `CatalogShelfIndexer`, `LunaCoreClient`, `SmartTrackRuleEngine`, `PlaybackChapter`, `SideloadSafeStorage` & `PreviewLaunchConfiguration`)
+  - `Tests/LunaCoreTests/NetworkCacheAndMemoryProfileTests.swift` (native Linux x86_64 tests for `DeviceMemoryProfile` 4 GB vs. 8 GB scaling, `InflightTaskCoalescer` deduplication & per-waiter cancellation isolation, and `BoundedLRUMemoryCache`)
   - `Tests/LunaCoreTests/RemoteScrubMathTests.swift` (native Linux x86_64 unit tests for paused-only 3-zone scrubbing, `20 pt` breakaway, `0 pt` reversal, EMA smoothing & `< 280 ms` ring-hold speeds)

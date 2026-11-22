@@ -41,6 +41,7 @@ struct SettingsServerDiagnosticsSectionView: View {
                     Task {
                         CatalogBrowseMemoryCache.shared.clear()
                         LibraryBrowseMemoryCache.shared.clear()
+                        ItemDetailMemoryCache.shared.clear()
                         await DiskSWRStore.clearAllAsync()
                         await ArtworkPipeline.shared.clearAll()
                         AetherEngine.discardPrewarmedSources()

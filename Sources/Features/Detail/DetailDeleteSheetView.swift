@@ -184,6 +184,7 @@ struct DetailDeleteSheetView: View {
                 preflightId: preflightId,
                 removeFromLibrary: target.isWholeTitle
             )
+            ItemDetailMemoryCache.invalidate(itemId: target.itemId, tmdbId: target.tmdbId)
             sessionStore.notifyContentMutated()
             onDeleted(result)
         } catch LunaCoreError.unauthorized {

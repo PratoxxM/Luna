@@ -5,6 +5,19 @@ public struct CachedHomeSnapshot: Sendable {
     public let etag: String?
     public let savedAt: Date
     public let payload: TvHomeResponse
+    public let visibleRows: [TvShelfRow]
+
+    public init(
+        etag: String?,
+        savedAt: Date,
+        payload: TvHomeResponse,
+        visibleRows: [TvShelfRow]? = nil
+    ) {
+        self.etag = etag
+        self.savedAt = savedAt
+        self.payload = payload
+        self.visibleRows = visibleRows ?? CatalogShelfIndexer.prepareVisibleRows(from: payload)
+    }
 }
 
 private struct HomeCacheMetadata: Codable, Sendable {
@@ -43,10 +56,12 @@ private actor DiskSWRStorageActor {
             } else {
                 meta = nil
             }
+            let rows = CatalogShelfIndexer.prepareVisibleRows(from: decoded)
             return CachedHomeSnapshot(
                 etag: meta?.etag,
                 savedAt: meta?.savedAt ?? Date.distantPast,
-                payload: decoded
+                payload: decoded,
+                visibleRows: rows
             )
         }
         return nil
@@ -68,21 +83,7 @@ private actor DiskSWRStorageActor {
     }
 
     func diskUsageBytes() -> Int64 {
-        let dir = swrDirectoryURL
-        guard let urls = try? FileManager.default.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.fileSizeKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return 0
-        }
-        var total: Int64 = 0
-        for url in urls {
-            if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                total += Int64(size)
-            }
-        }
-        return total
+        FileManager.allocatedDirectoryBytes(at: swrDirectoryURL)
     }
 
     func clearAllDiskFiles() {
@@ -164,13 +165,17 @@ public enum DiskSWRStore {
         serverHost: String? = nil,
         roomName: String,
         hardwareProfile: String,
-        decodedPayload: TvHomeResponse? = nil
+        decodedPayload: TvHomeResponse? = nil,
+        precomputedRows: [TvShelfRow]? = nil
     ) {
         let primaryKey = fileBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
         let taskID = UUID()
+        let immediateSnapshot: CachedHomeSnapshot? = decodedPayload.map {
+            CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: $0, visibleRows: precomputedRows)
+        }
         state.withLock { s in
-            if let decodedPayload {
-                s.snapshots[primaryKey] = CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: decodedPayload)
+            if let immediateSnapshot {
+                s.snapshots[primaryKey] = immediateSnapshot
             }
             let epoch = s.clearEpoch
             let created = Task.detached(priority: .utility) {
@@ -178,11 +183,17 @@ public enum DiskSWRStore {
                     _ = state.withLock { $0.activeTasks.removeValue(forKey: taskID) }
                 }
                 guard !Task.isCancelled else { return }
-                if decodedPayload == nil,
+                if immediateSnapshot == nil,
                    let decoded = try? LunaCoreClient.decodeJSON(TvHomeResponse.self, from: rawPayloadData) {
+                    let computed = CatalogShelfIndexer.prepareVisibleRows(from: decoded)
                     state.withLock { s in
                         guard s.clearEpoch == epoch, !Task.isCancelled else { return }
-                        s.snapshots[primaryKey] = CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: decoded)
+                        s.snapshots[primaryKey] = CachedHomeSnapshot(
+                            etag: etag,
+                            savedAt: Date(),
+                            payload: decoded,
+                            visibleRows: computed
+                        )
                     }
                 }
                 let shouldWriteDisk = state.withLock { $0.clearEpoch == epoch && !Task.isCancelled }

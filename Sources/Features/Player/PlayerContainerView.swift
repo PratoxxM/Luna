@@ -575,7 +575,11 @@ struct PlayerContainerView: View {
             isPauseRestArmed = false
             guard !isPreviewMode else { return }
             let store = sessionStore
+            let invalidatedItemId = viewModel.activeSession?.item.itemId ?? initialRequest.itemId
+            let invalidatedTmdbId = viewModel.activeSession?.item.ids.tmdb ?? initialRequest.preparedSession?.item.ids.tmdb
+            ItemDetailMemoryCache.invalidate(itemId: invalidatedItemId, tmdbId: invalidatedTmdbId)
             viewModel.teardownAndStop {
+                ItemDetailMemoryCache.invalidate(itemId: invalidatedItemId, tmdbId: invalidatedTmdbId)
                 store.notifyContentMutated()
             }
         }

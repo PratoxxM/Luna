@@ -415,4 +415,174 @@ final class MediaDetailViewModelTests: XCTestCase {
         let loaded = try XCTUnwrap(vm.detail)
         XCTAssertEqual(vm.heroPrimaryPlayTitle(loaded), "Spill S28 E1 · 45 min")
     }
+
+    @MainActor
+    func testDetailMemoryCacheHitMutationInvalidationAndPreparedSessionHandoff() async throws {
+        let host = "detail-cache-handoff-\(UUID().uuidString.lowercased()).local"
+        defer {
+            MockURLProtocol.unregister(host: host)
+            ItemDetailMemoryCache.shared.clear()
+        }
+        ItemDetailMemoryCache.shared.clear()
+
+        let movieJSON = #"""
+        {
+          "ok": true,
+          "item": {
+            "itemId": "movie:tmdb:157336",
+            "mediaType": "movie",
+            "ids": { "tmdb": 157336 },
+            "title": "Interstellar",
+            "year": 2014,
+            "inWatchlist": false,
+            "watched": false
+          }
+        }
+        """#
+        let prepareJSON = #"""
+        {
+          "ok": true,
+          "status": "prepared",
+          "prepareToken": "tvs_interstellar_1",
+          "canClientPrewarmBytes": false,
+          "playbackSession": {
+            "sessionId": "tvs_interstellar_1",
+            "streamToken": "secret_stream_token_1234",
+            "roomName": "Stua",
+            "hardwareProfile": "hdr10-512",
+            "item": {
+              "itemId": "movie:tmdb:157336",
+              "mediaType": "movie",
+              "ids": { "tmdb": 157336 },
+              "title": "Interstellar",
+              "backdropUrl": "/art/interstellar-backdrop.jpg",
+              "logoUrl": "/art/interstellar-logo.png"
+            },
+            "selectedCandidate": {
+              "candidateId": "cand-1",
+              "displayHeadline": "4K UHD · HDR10 · TrueHD 7.1",
+              "releaseTitle": "Interstellar.2014.2160p",
+              "source": "local",
+              "tier": "ssd"
+            },
+            "stream": {
+              "url": "/api/tv/v1/stream/tvs_interstellar_1/secret_stream_token_1234/Interstellar.mkv",
+              "canClientPrewarmBytes": false
+            },
+            "aetherConfig": {
+              "preferDualLayerDolbyVision": false,
+              "dolbyVisionHandling": "auto",
+              "matchContentEnabled": true,
+              "audioBridgeMode": "passthrough"
+            }
+          }
+        }
+        """#
+
+        let detailFetches = TestLockedBox(0)
+        MockURLProtocol.register(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            if url.path.contains("/items/movie/") {
+                detailFetches.withLock { $0 += 1 }
+                return (resp, Data(movieJSON.utf8))
+            }
+            if url.path == "/api/tv/v1/playback/prepare" {
+                return (resp, Data(prepareJSON.utf8))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let context = MockDetailSessionContext()
+        context.roomName = "Stua"
+        context.effectiveHardwareProfile = "hdr10-512"
+        context.client = try MockURLProtocol.makeClient(host: host)
+        let scope = "movie#movie:tmdb:157336#Stua#hdr10-512"
+
+        let vm1 = MediaDetailViewModel(mediaType: "movie", itemId: "movie:tmdb:157336", initialTitle: "Interstellar")
+        await vm1.handleTaskAppearance(scopeKey: scope, sessionContext: context)
+        XCTAssertEqual(detailFetches.withLock { $0 }, 1)
+
+        // Wait briefly for 0 ms immediate preparePlayback to finish
+        for _ in 0..<40 where !vm1.preResolve.isPreResolvedReady {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertTrue(vm1.preResolve.isPreResolvedReady)
+
+        // Re-opening same title in a fresh ViewModel hits ItemDetailMemoryCache with 0 extra HTTP fetches!
+        let vm2 = MediaDetailViewModel(mediaType: "movie", itemId: "movie:tmdb:157336", initialTitle: "Interstellar")
+        await vm2.handleTaskAppearance(scopeKey: scope, sessionContext: context)
+        XCTAssertEqual(detailFetches.withLock { $0 }, 1)
+        XCTAssertEqual(vm2.detail?.title, "Interstellar")
+
+        // Launch primary playback from vm1 transfers both prepareToken AND preparedSession into PlaybackLaunchRequest
+        vm1.launchPrimaryPlayback()
+        XCTAssertEqual(context.activePlaybackTarget?.prepareToken, "tvs_interstellar_1")
+        XCTAssertEqual(context.activePlaybackTarget?.preparedSession?.sessionId, "tvs_interstellar_1")
+        XCTAssertEqual(context.activePlaybackTarget?.preparedSession?.item.logoUrl, "/art/interstellar-logo.png")
+        XCTAssertEqual(ItemDetailMemoryCache.shared.entryCount, 0, "Launching playback must invalidate ItemDetailMemoryCache")
+
+        vm1.handleDisappear(sessionContext: context)
+        vm2.handleDisappear(sessionContext: context)
+    }
+
+    @MainActor
+    func testEarlyClickPreservesMatchingInflightPrepareWithoutCancellingNetworkCall() async throws {
+        let host = "detail-early-click-\(UUID().uuidString.lowercased()).local"
+        defer {
+            MockURLProtocol.unregister(host: host)
+            ItemDetailMemoryCache.shared.clear()
+        }
+        ItemDetailMemoryCache.shared.clear()
+
+        let movieJSON = #"""
+        {
+          "ok": true,
+          "item": {
+            "itemId": "movie:tmdb:603",
+            "mediaType": "movie",
+            "ids": { "tmdb": 603 },
+            "title": "The Matrix",
+            "inWatchlist": false,
+            "watched": false
+          }
+        }
+        """#
+
+        let prepareGate = TestStepGate()
+        let gateLog = TestLockedBox<[String]>([])
+        let prepareCancelled = TestLockedBox(false)
+
+        MockURLProtocol.registerAsync(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            if url.path.contains("/items/movie/") {
+                return (resp, Data(movieJSON.utf8))
+            }
+            if url.path == "/api/tv/v1/playback/prepare" {
+                await prepareGate.wait(label: "prep", log: gateLog)
+                if Task.isCancelled {
+                    prepareCancelled.withLock { $0 = true }
+                }
+                return (resp, Data(#"{"ok":true,"status":"prepared","prepareToken":"tvs_matrix_inflight"}"#.utf8))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let context = MockDetailSessionContext()
+        context.client = try MockURLProtocol.makeClient(host: host)
+        let vm = MediaDetailViewModel(mediaType: "movie", itemId: "movie:tmdb:603", initialTitle: "The Matrix")
+        await vm.handleTaskAppearance(scopeKey: "movie#movie:tmdb:603#Kjellerstua#dv-fel-714", sessionContext: context)
+
+        await prepareGate.waitUntilStarted()
+        // User clicks Spill av BEFORE /playback/prepare finishes!
+        vm.launchPrimaryPlayback()
+        let handedTask = try XCTUnwrap(context.activePlaybackTarget?.inflightPrepareTask)
+        XCTAssertFalse(prepareCancelled.withLock { $0 }, "Early click must NOT cancel matching in-flight preparePlayback")
+
+        await prepareGate.finish()
+        let completedPrep = await handedTask.value
+        XCTAssertEqual(completedPrep?.prepareToken, "tvs_matrix_inflight")
+        XCTAssertFalse(prepareCancelled.withLock { $0 })
+    }
 }

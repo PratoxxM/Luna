@@ -67,6 +67,8 @@ struct LunaApp: App {
             .onReceive(NotificationCenter.default.publisher(for: Notification.Name("UIApplicationDidReceiveMemoryWarningNotification"))) { _ in
                 CatalogBrowseMemoryCache.shared.clear()
                 LibraryBrowseMemoryCache.shared.clear()
+                ItemDetailMemoryCache.shared.clear()
+                BlurHashDecoder.clearCache()
                 DiskSWRStore.clearMemory()
                 AetherEngine.discardPrewarmedSources()
                 AetherEngine.discardRetainedSessionCache()

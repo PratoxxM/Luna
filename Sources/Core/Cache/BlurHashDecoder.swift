@@ -2,12 +2,6 @@ import Foundation
 import CoreGraphics
 import Synchronization
 
-private struct InflightBlurHashDecode: Sendable {
-    let id: UUID
-    let task: Task<CGImage?, Never>
-    var waiters: Set<UUID>
-}
-
 internal struct BlurHashDecodeMetrics: Equatable, Sendable {
     var cacheHits: Int = 0
     var coalescedWaiters: Int = 0
@@ -15,10 +9,10 @@ internal struct BlurHashDecodeMetrics: Equatable, Sendable {
 }
 
 /// Fast pure-Swift BlurHash decoder producing tiny 32x18 smooth placeholders off or on demand,
-/// with Swift 6 `Mutex`-backed in-flight task deduplication across concurrent shelf cards.
+/// backed by `InflightTaskCoalescer` across concurrent shelf cards.
 public enum BlurHashDecoder {
     private static let cache = ThreadSafeImageMemoryCache(totalCostLimit: 4 * 1024 * 1024)
-    private static let inflightDecodes = Mutex<[String: InflightBlurHashDecode]>([:])
+    private static let inflightDecodes = InflightTaskCoalescer<String, CGImage?>()
     private static let metricsState = Mutex(BlurHashDecodeMetrics())
 
     internal static func metricsSnapshot() -> BlurHashDecodeMetrics {
@@ -63,14 +57,7 @@ public enum BlurHashDecoder {
     }
 
     public static func clearCache() {
-        let running = inflightDecodes.withLock { map in
-            let tasks = map.values.map(\.task)
-            map.removeAll()
-            return tasks
-        }
-        for task in running {
-            task.cancel()
-        }
+        inflightDecodes.cancelAll()
         cache.removeAll()
     }
 
@@ -87,67 +74,16 @@ public enum BlurHashDecoder {
             return hit
         }
 
-        let waiterID = UUID()
-        enum Lookup {
-            case cached(CGImage)
-            case joined(entryID: UUID, task: Task<CGImage?, Never>, coalesced: Bool)
-        }
-
-        let lookup: Lookup = inflightDecodes.withLock { map in
-            if let hit = cache.image(forKey: cacheKey) {
-                return .cached(hit)
-            }
-            if var existing = map[cacheKey] {
-                existing.waiters.insert(waiterID)
-                map[cacheKey] = existing
-                return .joined(entryID: existing.id, task: existing.task, coalesced: true)
-            }
-            let entryID = UUID()
-            let created = Task.detached(priority: .utility) { () -> CGImage? in
-                defer {
-                    inflightDecodes.withLock { current in
-                        if current[cacheKey]?.id == entryID {
-                            current.removeValue(forKey: cacheKey)
-                        }
-                    }
-                }
-                guard !Task.isCancelled else { return nil }
-                return decode(raw, width: width, height: height, punch: punch)
-            }
-            map[cacheKey] = InflightBlurHashDecode(id: entryID, task: created, waiters: [waiterID])
-            return .joined(entryID: entryID, task: created, coalesced: false)
-        }
-
-        switch lookup {
-        case .cached(let hit):
-            metricsState.withLock { $0.cacheHits += 1 }
-            return hit
-        case .joined(let entryID, let task, let coalesced):
-            if coalesced {
-                metricsState.withLock { $0.coalescedWaiters += 1 }
-            }
-            let result = await withTaskCancellationHandler {
-                await task.value
-            } onCancel: {
-                releaseInflightWaiter(waiterID, forKey: cacheKey, entryID: entryID)
-            }
-            releaseInflightWaiter(waiterID, forKey: cacheKey, entryID: entryID)
-            return Task.isCancelled ? nil : result
-        }
-    }
-
-    private static func releaseInflightWaiter(_ waiterID: UUID, forKey cacheKey: String, entryID: UUID) {
-        let taskToCancel: Task<CGImage?, Never>? = inflightDecodes.withLock { map in
-            guard var entry = map[cacheKey], entry.id == entryID else { return nil }
-            guard entry.waiters.remove(waiterID) != nil else { return nil }
-            if entry.waiters.isEmpty {
-                map.removeValue(forKey: cacheKey)
-                return entry.task
-            }
-            map[cacheKey] = entry
+        guard let outcome = await inflightDecodes.coalesceNonThrowing(key: cacheKey, priority: .utility, operation: {
+            guard !Task.isCancelled else { return nil }
+            return decode(raw, width: width, height: height, punch: punch)
+        }) else {
             return nil
         }
-        taskToCancel?.cancel()
+        if outcome.wasCoalesced {
+            metricsState.withLock { $0.coalescedWaiters += 1 }
+        }
+        return outcome.value
     }
 
     public static func decode(_ blurHash: String?, width: Int = 32, height: Int = 18, punch: Float = 1.0) -> CGImage? {

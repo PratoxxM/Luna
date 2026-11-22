@@ -70,7 +70,7 @@ public final class LunaCoreSessionPool: Sendable {
             for: baseURL,
             allowSelfSignedLanTLS: allowSelfSignedLanTLS,
             lane: "api",
-            maxConnections: 8,
+            maxConnections: DeviceMemoryProfile.current.apiConnectionsPerHost,
             requestTimeout: 25
         )
     }
@@ -80,7 +80,7 @@ public final class LunaCoreSessionPool: Sendable {
             for: baseURL,
             allowSelfSignedLanTLS: allowSelfSignedLanTLS,
             lane: "artwork",
-            maxConnections: DeviceHardwareCapabilities.isHighMemoryDevice ? 12 : 8,
+            maxConnections: DeviceMemoryProfile.current.artworkConnectionsPerHost,
             requestTimeout: 15
         )
     }
@@ -105,9 +105,12 @@ public final class LunaCoreSessionPool: Sendable {
             let config = URLSessionConfiguration.ephemeral
             config.timeoutIntervalForRequest = 15
             config.timeoutIntervalForResource = 45
-            config.httpMaximumConnectionsPerHost = DeviceHardwareCapabilities.isHighMemoryDevice ? 12 : 6
+            config.httpMaximumConnectionsPerHost = DeviceMemoryProfile.current.externalArtworkConnectionsPerHost
             config.urlCache = nil
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
+            #if !os(Linux)
+            config.waitsForConnectivity = false
+            #endif
 
             let created = URLSession(configuration: config)
             map[key] = created
@@ -134,6 +137,9 @@ public final class LunaCoreSessionPool: Sendable {
             config.httpMaximumConnectionsPerHost = maxConnections
             config.urlCache = nil
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
+            #if !os(Linux)
+            config.waitsForConnectivity = false
+            #endif
 
             let delegate = LanURLSessionDelegate(
                 trustedHost: baseURL.host,

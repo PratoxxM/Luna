@@ -161,6 +161,8 @@ final class PlayerViewModel {
     @ObservationIgnored var engineOwnerToken: UInt64 = 0
     @ObservationIgnored var isDismissing: Bool = false
     @ObservationIgnored var pendingStopSnapshot: PendingStopSnapshot?
+    @ObservationIgnored var pendingHandedOverSessionId: String?
+    @ObservationIgnored var pendingInflightPrepareTask: Task<TvPrepareResponse?, Never>?
     @ObservationIgnored var lastObservedPhase: PlaybackPhase = .idle
     @ObservationIgnored var isForegroundActive: Bool = true
     @ObservationIgnored var lastForegroundPlaybackWasPlaying: Bool = false
@@ -274,6 +276,16 @@ final class PlayerViewModel {
         needsNativeAudioActivationAfterPausedRestore = false
         isDismissing = false
         pendingStopSnapshot = nil
+        pendingInflightPrepareTask?.cancel()
+        pendingInflightPrepareTask = request.inflightPrepareTask
+        pendingHandedOverSessionId = request.preparedSession?.sessionId ?? request.prepareToken
+        if let preTok = request.preparedSession?.streamToken, preTok.count >= 8 {
+            if let oldTok = registeredStreamToken, oldTok.count >= 8, oldTok != preTok {
+                EngineLog.unregisterSecret(oldTok)
+            }
+            _ = EngineLog.registerSecret(preTok)
+            registeredStreamToken = preTok
+        }
         didTeardown = false
         fatalError = nil
         firstFrameFallbackUnlocked = false
@@ -281,6 +293,9 @@ final class PlayerViewModel {
         lastReportedServerState = nil
         currentRequest = request
         guard let client else {
+            pendingInflightPrepareTask?.cancel()
+            pendingInflightPrepareTask = nil
+            pendingHandedOverSessionId = nil
             fatalError = "Mangler tilkobling til LunaCore."
             isResolving = false
             return
@@ -306,6 +321,9 @@ final class PlayerViewModel {
         userDesiredPlayingDuringRestore = nil
         needsNativeAudioActivationAfterPausedRestore = false
         resolveTask?.cancel()
+        pendingInflightPrepareTask?.cancel()
+        pendingInflightPrepareTask = nil
+        pendingHandedOverSessionId = nil
         switchSourceTask?.cancel()
         switchSourceTask = nil
         audioDelayCommitTask?.cancel()
@@ -558,6 +576,9 @@ final class PlayerViewModel {
 
         let snapshot = pendingStopSnapshot ?? captureStopSnapshot()
         pendingStopSnapshot = nil
+        pendingHandedOverSessionId = nil
+        pendingInflightPrepareTask = nil
+        ArtworkPipeline.shared.exitPlaybackMemoryMode()
         cancellables.removeAll()
         didBindEnginePublishers = false
 
@@ -584,7 +605,8 @@ final class PlayerViewModel {
             registeredStreamToken = nil
         }
 
-        if let client = snapshot.client, let sessionId = snapshot.sessionId {
+        if let client = snapshot.client, let sessionId = snapshot.sessionId, !sessionId.isEmpty {
+            snapshot.inflightPrepareTask?.cancel()
             let finalPos = snapshot.finalPos
             let finalDur = snapshot.finalDur
             let isCompleted = snapshot.isCompleted
@@ -600,7 +622,29 @@ final class PlayerViewModel {
                     await onComplete()
                 }
             }
+        } else if let client = snapshot.client, let inflightPrep = snapshot.inflightPrepareTask {
+            inflightPrep.cancel()
+            Task.detached {
+                if let latePrep = await inflightPrep.value {
+                    if let lateTok = latePrep.playbackSession?.streamToken, lateTok.count >= 8 {
+                        EngineLog.unregisterSecret(lateTok)
+                    }
+                    if let orphanSid = latePrep.playbackSession?.sessionId ?? latePrep.prepareToken,
+                       !orphanSid.isEmpty {
+                        _ = try? await client.sendHeartbeat(
+                            sessionId: orphanSid,
+                            state: "stopped",
+                            positionSeconds: 0,
+                            durationSeconds: 0
+                        )
+                    }
+                }
+                if let onComplete {
+                    await onComplete()
+                }
+            }
         } else {
+            snapshot.inflightPrepareTask?.cancel()
             onComplete?()
         }
     }

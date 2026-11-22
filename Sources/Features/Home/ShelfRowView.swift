@@ -104,6 +104,15 @@ struct ShelfRowView: View {
                         }
                         .lunaTrackMountedCard(id: cardKey, in: mountedTracker)
                         .prefersDefaultFocus(isDefaultFocusRow && idx == 0, in: focusNamespace)
+                        .onAppear {
+                            ArtworkPipeline.shared.prefetchUpcomingCards(
+                                in: row.items,
+                                afterIndex: idx,
+                                isBackdrop: isBackdrop,
+                                maxLookahead: 10,
+                                client: client
+                            )
+                        }
                     }
 
                     if row.hasMore == true {

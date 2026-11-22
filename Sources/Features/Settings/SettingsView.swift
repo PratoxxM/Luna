@@ -125,7 +125,8 @@ struct SettingsView: View {
         } message: {
             Text("Velg om du vil pare denne Apple TV-en på nytt med samme server, eller nullstille både serveradresse og tilkobling.")
         }
-        .task {
+        .task(id: isActiveTab) {
+            guard isActiveTab else { return }
             await refreshCacheMetricsAsync()
             await sessionStore.refreshProfileFromServer()
         }

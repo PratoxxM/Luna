@@ -10,45 +10,10 @@ internal struct CatalogBrowseSnapshot {
     var refreshNonce: Int
 }
 
-@MainActor
-internal final class BoundedLRUMemoryCache<Value> {
-    private let maxEntries: Int
-    private var entries: [String: Value] = [:]
-    private var order: [String] = []
-
-    init(maxEntries: Int) {
-        self.maxEntries = max(1, maxEntries)
-    }
-
-    var entryCount: Int { entries.count }
-
-    func snapshot(for key: String) -> Value? {
-        guard let hit = entries[key] else { return nil }
-        order.removeAll { $0 == key }
-        order.append(key)
-        return hit
-    }
-
-    func store(_ snapshot: Value, for key: String) {
-        entries[key] = snapshot
-        order.removeAll { $0 == key }
-        order.append(key)
-        while order.count > maxEntries {
-            let evicted = order.removeFirst()
-            entries.removeValue(forKey: evicted)
-        }
-    }
-
-    func clear() {
-        entries.removeAll()
-        order.removeAll()
-    }
-}
-
 internal enum CatalogBrowseMemoryCache {
     @MainActor
     static let shared = BoundedLRUMemoryCache<CatalogBrowseSnapshot>(
-        maxEntries: DeviceHardwareCapabilities.isHighMemoryDevice ? 48 : 16
+        maxEntries: DeviceMemoryProfile.current.catalogCacheMaxEntries
     )
 }
 
@@ -97,6 +62,20 @@ struct CatalogBrowseView: View {
     @Namespace private var catalogGridNamespace
 
     private let columns = LunaTheme.posterGridColumns
+    private let pageSize = DeviceMemoryProfile.current.catalogPageSize
+
+    internal static func makeCacheKey(
+        serverBaseURL: URL?,
+        mediaType: String,
+        genreSlug: String? = nil,
+        sort: String = "popular",
+        localOnly: Bool = false,
+        unwatchedOnly: Bool = false,
+        roomName: String,
+        hardwareProfile: String
+    ) -> String {
+        "\(serverBaseURL?.absoluteString ?? "")#\(mediaType)#\(genreSlug ?? "all")#\(sort)#\(localOnly)#\(unwatchedOnly)#\(roomName)#\(hardwareProfile)"
+    }
 
     private var sortOptions: [(id: String, label: String)] {
         let base: [(id: String, label: String)] = [
@@ -137,7 +116,16 @@ struct CatalogBrowseView: View {
     }
 
     private var reloadTriggerKey: String {
-        "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(mediaType)#\(selectedGenreSlug ?? "all")#\(selectedSort)#\(localOnly)#\(unwatchedOnly)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
+        Self.makeCacheKey(
+            serverBaseURL: sessionStore.serverBaseURL,
+            mediaType: mediaType,
+            genreSlug: selectedGenreSlug,
+            sort: selectedSort,
+            localOnly: localOnly,
+            unwatchedOnly: unwatchedOnly,
+            roomName: sessionStore.roomName,
+            hardwareProfile: sessionStore.effectiveHardwareProfile
+        )
     }
 
     var body: some View {
@@ -337,6 +325,11 @@ struct CatalogBrowseView: View {
                                 )
                             }
                             .onAppear {
+                                ArtworkPipeline.shared.prefetchUpcomingCards(
+                                    in: items,
+                                    afterIndex: idx,
+                                    client: client
+                                )
                                 if idx >= prefetchThreshold && hasMore && !isLoadingMore {
                                     Task { await loadNextPage() }
                                 }
@@ -405,7 +398,8 @@ struct CatalogBrowseView: View {
                 cardFocusNonce &+= 1
             }
         }
-        .task(id: reloadTriggerKey) {
+        .task(id: "\(reloadTriggerKey)#active:\(isActiveTab || !isRootTab)") {
+            guard isActiveTab || !isRootTab else { return }
             reloadTask?.cancel()
             reloadTask = nil
             reloadGeneration &+= 1
@@ -416,20 +410,6 @@ struct CatalogBrowseView: View {
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
             guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
             lastSeenRefreshNonce = newNonce
-            scheduleReloadFirstPage(forceNetwork: true)
-        }
-        .onChange(of: isActiveTab) { _, active in
-            guard active else { return }
-            let cached = CatalogBrowseMemoryCache.shared.snapshot(for: reloadTriggerKey)
-            let isFresh = TabContentFreshnessPolicy.isCacheFresh(
-                hasCachedContent: !(cached?.items.isEmpty ?? items.isEmpty),
-                lastValidatedAt: cached?.fetchedAt ?? .distantPast,
-                cachedRefreshNonce: cached?.refreshNonce ?? lastSeenRefreshNonce,
-                currentRefreshNonce: sessionStore.homeRefreshNonce,
-                freshnessInterval: TabContentFreshnessPolicy.effectiveFreshnessInterval
-            )
-            guard !isFresh else { return }
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
             scheduleReloadFirstPage(forceNetwork: true)
         }
         .onDisappear {
@@ -516,7 +496,7 @@ struct CatalogBrowseView: View {
                 localOnly: localOnly,
                 unwatchedOnly: unwatchedOnly,
                 page: 1,
-                limit: 30
+                limit: pageSize
             )
             guard !Task.isCancelled, (generation == nil || generation == reloadGeneration), reloadTriggerKey == triggerKey else { return }
             currentPage = 1
@@ -529,7 +509,7 @@ struct CatalogBrowseView: View {
                 selectedGenreLabel = serverGenre.label
             }
             persistSnapshot(for: triggerKey, fetchedAt: Date(), refreshNonce: sessionStore.homeRefreshNonce)
-        } catch is CancellationError {
+        } catch where LunaCoreError.isCancellation(error) {
             return
         } catch LunaCoreError.unauthorized {
             CatalogBrowseMemoryCache.shared.clear()
@@ -559,7 +539,7 @@ struct CatalogBrowseView: View {
             localOnly: localOnly,
             unwatchedOnly: unwatchedOnly,
             page: nextPage,
-            limit: 30
+            limit: pageSize
         ), reloadTriggerKey == triggerKey else {
             return
         }

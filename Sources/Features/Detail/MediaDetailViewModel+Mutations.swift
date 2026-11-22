@@ -11,18 +11,33 @@ extension MediaDetailViewModel {
         return latest
     }
 
-    func schedulePreResolve(for item: TvItemDetail) {
+    var detailCacheKey: String {
+        ItemDetailMemoryCache.makeKey(
+            baseURL: client?.baseURL,
+            mediaType: mediaType,
+            itemId: itemId,
+            roomName: sessionContext?.roomName ?? "",
+            hardwareProfile: sessionContext?.effectiveHardwareProfile ?? ""
+        )
+    }
+
+    func schedulePreResolve(for item: TvItemDetail, immediate: Bool = true) {
         let target = primaryTargetInfo(item)
         preResolve.schedule(
             targetItemId: target.itemId,
             title: target.title,
             seriesTitle: target.seriesTitle,
             startPos: target.startPos,
+            immediate: immediate,
             client: refreshedClient()
         )
     }
 
-    func launchSerializedDetailLoad(preserveSeason: Bool, expectedScope: String? = nil) {
+    func launchSerializedDetailLoad(
+        preserveSeason: Bool,
+        expectedScope: String? = nil,
+        bypassCache: Bool = false
+    ) {
         detailLoadTask?.cancel()
         detailLoadGeneration &+= 1
         let generation = detailLoadGeneration
@@ -31,21 +46,96 @@ extension MediaDetailViewModel {
             await self?.loadDetail(
                 preserveSeason: preserveSeason,
                 generation: generation,
-                expectedScope: targetScope
+                expectedScope: targetScope,
+                bypassCache: bypassCache
             )
         }
     }
 
-    func runSerializedDetailLoad(preserveSeason: Bool, expectedScope: String? = nil) async {
-        launchSerializedDetailLoad(preserveSeason: preserveSeason, expectedScope: expectedScope)
+    func runSerializedDetailLoad(
+        preserveSeason: Bool,
+        expectedScope: String? = nil,
+        bypassCache: Bool = false
+    ) async {
+        launchSerializedDetailLoad(
+            preserveSeason: preserveSeason,
+            expectedScope: expectedScope,
+            bypassCache: bypassCache
+        )
         await detailLoadTask?.value
     }
 
-    private func loadDetail(preserveSeason: Bool = false, generation: UInt64, expectedScope: String) async {
+    private func resolveInitialTargetSeason(for loaded: TvItemDetail, preserveSeason: Bool) -> Int {
+        if preserveSeason && selectedSeasonNumber > 0 {
+            return selectedSeasonNumber
+        }
+        if let nextSeason = loaded.nextUp?.season,
+           nextSeason >= 0,
+           loaded.seasons?.contains(where: { $0.seasonNumber == nextSeason }) ?? true {
+            return nextSeason
+        }
+        return loaded.selectedSeason
+            ?? loaded.seasons?.first(where: { $0.seasonNumber > 0 })?.seasonNumber
+            ?? 1
+    }
+
+    private func persistDetailSnapshot(_ loaded: TvItemDetail, season: Int?, seasonEpisodes: [TvEpisodeCard]?) {
+        let key = detailCacheKey
+        var existingMap = ItemDetailMemoryCache.shared.snapshot(for: key)?.episodesBySeason ?? [:]
+        if let season, let seasonEpisodes, !seasonEpisodes.isEmpty {
+            existingMap[season] = seasonEpisodes
+        }
+        ItemDetailMemoryCache.shared.store(
+            ItemDetailSnapshot(
+                detail: loaded,
+                episodesBySeason: existingMap,
+                fetchedAt: Date(),
+                refreshNonce: sessionContext?.homeRefreshNonce ?? 0
+            ),
+            for: key
+        )
+    }
+
+    private func loadDetail(
+        preserveSeason: Bool = false,
+        generation: UInt64,
+        expectedScope: String,
+        bypassCache: Bool = false
+    ) async {
         guard let client = refreshedClient() else {
             isLoading = false
             return
         }
+        let cacheKey = detailCacheKey
+        let currentNonce = sessionContext?.homeRefreshNonce ?? 0
+
+        if !bypassCache, !preserveSeason, let cached = ItemDetailMemoryCache.shared.snapshot(for: cacheKey) {
+            let targetSeason = resolveInitialTargetSeason(for: cached.detail, preserveSeason: false)
+            let isFresh = TabContentFreshnessPolicy.isCacheFresh(
+                hasCachedContent: true,
+                lastValidatedAt: cached.fetchedAt,
+                cachedRefreshNonce: cached.refreshNonce,
+                currentRefreshNonce: currentNonce,
+                freshnessInterval: TabContentFreshnessPolicy.effectiveFreshnessInterval
+            )
+            let hasRequiredSeason = cached.detail.mediaType != "series" || cached.episodesBySeason[targetSeason] != nil
+            if isFresh && hasRequiredSeason {
+                loadedScopeKey = expectedScope
+                detail = cached.detail
+                if cached.detail.mediaType == "series" {
+                    selectedSeasonNumber = targetSeason
+                    episodes = cached.episodesBySeason[targetSeason] ?? []
+                }
+                errorMessage = nil
+                isLoading = false
+                isLoadingEpisodes = false
+                if sessionContext?.activePlaybackTarget == nil {
+                    schedulePreResolve(for: cached.detail, immediate: true)
+                }
+                return
+            }
+        }
+
         if detail == nil {
             isLoading = true
         }
@@ -67,28 +157,26 @@ extension MediaDetailViewModel {
             loadedScopeKey = expectedScope
             detail = loaded
 
-            if loaded.mediaType == "movie",
-               !Task.isCancelled,
-               generation == detailLoadGeneration,
-               sessionContext?.activePlaybackTarget == nil {
-                schedulePreResolve(for: loaded)
+            if loaded.mediaType == "movie" {
+                persistDetailSnapshot(loaded, season: nil, seasonEpisodes: nil)
+                if !Task.isCancelled,
+                   generation == detailLoadGeneration,
+                   sessionContext?.activePlaybackTarget == nil {
+                    schedulePreResolve(for: loaded, immediate: true)
+                }
             }
 
             if loaded.mediaType == "series" {
-                let targetSeason: Int
-                if preserveSeason && selectedSeasonNumber > 0 {
-                    targetSeason = selectedSeasonNumber
-                } else if let nextSeason = loaded.nextUp?.season,
-                          nextSeason >= 0,
-                          loaded.seasons?.contains(where: { $0.seasonNumber == nextSeason }) ?? true {
-                    targetSeason = nextSeason
-                } else {
-                    targetSeason = loaded.selectedSeason
-                        ?? loaded.seasons?.first(where: { $0.seasonNumber > 0 })?.seasonNumber
-                        ?? 1
-                }
+                let targetSeason = resolveInitialTargetSeason(for: loaded, preserveSeason: preserveSeason)
                 if !preserveSeason {
                     selectedSeasonNumber = targetSeason
+                }
+                // Fire 0 ms initial pre-resolve immediately from `loaded.nextUp` / `loaded.progress`
+                // in parallel with any secondary season-episodes fetch!
+                if !Task.isCancelled,
+                   generation == detailLoadGeneration,
+                   sessionContext?.activePlaybackTarget == nil {
+                    schedulePreResolve(for: loaded, immediate: true)
                 }
                 if let inlineEpisodes = loaded.episodes,
                    !inlineEpisodes.isEmpty,
@@ -96,6 +184,7 @@ extension MediaDetailViewModel {
                     seasonLoadGeneration &+= 1
                     isLoadingEpisodes = false
                     episodes = inlineEpisodes
+                    persistDetailSnapshot(loaded, season: targetSeason, seasonEpisodes: inlineEpisodes)
                 } else {
                     await loadSeasonEpisodes(detail: loaded, seasonNumber: targetSeason)
                 }
@@ -108,12 +197,14 @@ extension MediaDetailViewModel {
                     }
                     return
                 }
-                schedulePreResolve(for: loaded)
+                // Re-verify target in case loaded episode progress refined `startPositionSeconds`.
+                schedulePreResolve(for: loaded, immediate: true)
             }
-        } catch is CancellationError {
+        } catch where LunaCoreError.isCancellation(error) {
             return
         } catch LunaCoreError.unauthorized {
             guard generation == detailLoadGeneration else { return }
+            ItemDetailMemoryCache.shared.clear()
             sessionContext?.unpairDevice()
         } catch {
             guard generation == detailLoadGeneration else { return }
@@ -125,6 +216,17 @@ extension MediaDetailViewModel {
     }
 
     func loadSeasonEpisodes(detail: TvItemDetail, seasonNumber: Int) async {
+        let cacheKey = detailCacheKey
+        if let cached = ItemDetailMemoryCache.shared.snapshot(for: cacheKey),
+           cached.refreshNonce == (sessionContext?.homeRefreshNonce ?? -1),
+           let cachedSeasonEps = cached.episodesBySeason[seasonNumber],
+           !cachedSeasonEps.isEmpty {
+            seasonLoadGeneration &+= 1
+            episodes = cachedSeasonEps
+            isLoadingEpisodes = false
+            return
+        }
+
         guard let client = refreshedClient(),
               let tmdbId = detail.ids.tmdb else { return }
         seasonLoadGeneration &+= 1
@@ -135,6 +237,7 @@ extension MediaDetailViewModel {
            generation == seasonLoadGeneration,
            selectedSeasonNumber == seasonNumber {
             episodes = seasonRes.episodes
+            persistDetailSnapshot(detail, season: seasonNumber, seasonEpisodes: seasonRes.episodes)
         }
         if generation == seasonLoadGeneration {
             isLoadingEpisodes = false
@@ -146,11 +249,12 @@ extension MediaDetailViewModel {
     }
 
     func markLocalMutationAndReload() async {
+        ItemDetailMemoryCache.invalidate(itemId: itemId, tmdbId: detail?.ids.tmdb)
         if let sessionContext {
             lastSeenRefreshNonce = sessionContext.homeRefreshNonce &+ 1
             sessionContext.notifyContentMutated()
         }
-        await runSerializedDetailLoad(preserveSeason: true)
+        await runSerializedDetailLoad(preserveSeason: true, bypassCache: true)
     }
 
     func toggleWatchlist() async {

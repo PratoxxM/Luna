@@ -298,4 +298,94 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
         XCTAssertNil(weakBoundVM, "All [weak self] Combine sinks in PlayerEnginePublishers must release PlayerViewModel without retain cycles")
         XCTAssertNil(weakDismissedVM, "Dismissed PlayerViewModel must deallocate cleanly")
     }
+
+    @MainActor
+    func testEarlyBackAbortDuringResolvingCurtainStopsHandedOverAndInflightSessionsWithoutLeak() async throws {
+        let host = "player-early-abort-\(UUID().uuidString.lowercased()).local"
+        let suite = "luna.test.earlyabort.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer {
+            MockURLProtocol.unregister(host: host)
+            defaults.removePersistentDomain(forName: suite)
+        }
+
+        let resolveGate = TestStepGate()
+        let gateLog = TestLockedBox<[String]>([])
+        let stoppedHeartbeatCount = TestLockedBox(0)
+
+        MockURLProtocol.registerAsync(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            if url.path == "/api/tv/v1/playback/resolve" {
+                await resolveGate.wait(label: "resolve", log: gateLog)
+                return (resp, Data(#"{"ok":false,"status":"failed","resolveId":"r1"}"#.utf8))
+            }
+            if url.path == "/api/tv/v1/playback/heartbeat" {
+                stoppedHeartbeatCount.withLock { $0 += 1 }
+                return (resp, Data(#"{"ok":true,"sessionId":"stopped","state":"stopped"}"#.utf8))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let engine = try AetherEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+        let comfort = ComfortPreferences(defaults: defaults)
+        let client = try MockURLProtocol.makeClient(host: host)
+
+        // Sub-case A: Pre-resolved prepareToken handed over, then user presses Back in ResolvingCurtainView
+        let transportA = MockPlayerTransport()
+        let vmA = PlayerViewModel(engine: engine, comfort: comfort, transport: transportA)
+        let reqA = PlaybackLaunchRequest(
+            itemId: "movie:tmdb:550",
+            title: "Fight Club",
+            prepareToken: "tvs_handed_over_1"
+        )
+        vmA.start(request: reqA, client: client)
+        await resolveGate.waitUntilStarted()
+
+        let stopDoneA = expectation(description: "Stopped heartbeat sent for handed-over session")
+        vmA.prepareForDismissal()
+        vmA.teardownAndStop {
+            stopDoneA.fulfill()
+        }
+        await resolveGate.finish()
+        await fulfillment(of: [stopDoneA], timeout: 3.0)
+        XCTAssertEqual(stoppedHeartbeatCount.withLock { $0 }, 1)
+
+        // Sub-case B: Early click handed over an in-flight prepareTask that finishes during Back abort
+        await resolveGate.reset()
+        let latePrepJSON = #"""
+        {"ok":true,"status":"prepared","prepareToken":"tvs_inflight_orphan_2"}
+        """#
+        let latePrep = try JSONDecoder().decode(TvPrepareResponse.self, from: Data(latePrepJSON.utf8))
+        let inflightPrepTask = Task<TvPrepareResponse?, Never> {
+            try? await Task.sleep(nanoseconds: 25_000_000)
+            return latePrep
+        }
+
+        let transportB = MockPlayerTransport()
+        let vmB = PlayerViewModel(engine: engine, comfort: comfort, transport: transportB)
+        let reqB = PlaybackLaunchRequest(
+            itemId: "movie:tmdb:603",
+            title: "The Matrix",
+            inflightPrepareTask: inflightPrepTask
+        )
+        vmB.start(request: reqB, client: client)
+        await resolveGate.waitUntilStarted()
+
+        let stopDoneB = expectation(description: "Stopped heartbeat sent for late in-flight prepare session")
+        vmB.prepareForDismissal()
+        vmB.teardownAndStop {
+            stopDoneB.fulfill()
+        }
+        await resolveGate.finish()
+        await fulfillment(of: [stopDoneB], timeout: 3.0)
+        XCTAssertEqual(stoppedHeartbeatCount.withLock { $0 }, 2, "Both handed-over and in-flight sessions must send state='stopped' on curtain abort")
+    }
 }

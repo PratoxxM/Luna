@@ -48,6 +48,7 @@ let package = Package(
             sources: [
                 "App/PreviewLaunchConfiguration.swift",
                 "Core/Cache/DiskSWRStore.swift",
+                "Core/Cache/InflightTaskCoalescer.swift",
                 "Core/Catalog/CatalogShelfIndexer.swift",
                 "Core/Config/DeviceHardwareCapabilities.swift",
                 "Core/Config/SideloadSafeStorage.swift",

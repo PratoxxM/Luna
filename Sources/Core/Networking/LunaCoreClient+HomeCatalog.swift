@@ -93,16 +93,7 @@ extension LunaCoreClient {
     }
 
     public func fetchHomeConditional(ifNoneMatch: String?) async throws -> HomeConditionalResult {
-        let result: ConditionalHTTPResult<TvHomeResponse> = try await sendConditionalGET(
-            path: "/api/tv/v1/home",
-            ifNoneMatch: ifNoneMatch
-        )
-        switch result {
-        case .notModified:
-            return .notModified
-        case .updated(let payload, let etag, let rawData):
-            return .updated(payload: payload, etag: etag, rawPayloadData: rawData)
-        }
+        try await sendConditionalGET(path: "/api/tv/v1/home", ifNoneMatch: ifNoneMatch)
     }
 
     public func fetchCatalog(

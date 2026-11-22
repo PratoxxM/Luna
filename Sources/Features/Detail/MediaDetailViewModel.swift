@@ -199,14 +199,18 @@ final class MediaDetailViewModel {
         selectedSeasonNumber = seasonNumber
         guard let detail else { return }
         await loadSeasonEpisodes(detail: detail, seasonNumber: seasonNumber)
+        if sessionContext?.activePlaybackTarget == nil {
+            schedulePreResolve(for: detail, immediate: false)
+        }
     }
 
     // MARK: - Playback, Source Picker & Delete Intents
 
     func launchPrimaryPlayback() {
         guard let detail else { return }
+        ItemDetailMemoryCache.invalidate(itemId: itemId, tmdbId: detail.ids.tmdb)
         let target = primaryTargetInfo(detail)
-        let matchingToken = preResolve.consumeForPlayback(
+        let handoff = preResolve.consumeHandoffForPlayback(
             itemId: target.itemId,
             startPosition: target.startPos,
             client: refreshedClient()
@@ -218,7 +222,9 @@ final class MediaDetailViewModel {
             season: target.season,
             episode: target.episode,
             startPositionSeconds: target.startPos,
-            prepareToken: matchingToken,
+            prepareToken: handoff.prepareToken,
+            preparedSession: handoff.preparedSession,
+            inflightPrepareTask: handoff.inflightPrepareTask,
             backdropUrl: detail.backdropUrl ?? detail.cardBackdropUrl,
             logoUrl: detail.logoUrl
         )
@@ -226,7 +232,8 @@ final class MediaDetailViewModel {
 
     func playEpisode(_ ep: TvEpisodeCard) {
         guard let detail, ep.isUpcoming != true else { return }
-        let usePrep = preResolve.consumeForPlayback(
+        ItemDetailMemoryCache.invalidate(itemId: itemId, tmdbId: detail.ids.tmdb)
+        let handoff = preResolve.consumeHandoffForPlayback(
             itemId: ep.itemId,
             startPosition: ep.progress?.positionSeconds,
             client: refreshedClient()
@@ -245,7 +252,9 @@ final class MediaDetailViewModel {
             season: ep.seasonNumber,
             episode: ep.episodeNumber,
             startPositionSeconds: ep.progress?.positionSeconds,
-            prepareToken: usePrep,
+            prepareToken: handoff.prepareToken,
+            preparedSession: handoff.preparedSession,
+            inflightPrepareTask: handoff.inflightPrepareTask,
             backdropUrl: ep.stillUrl ?? detail.backdropUrl,
             logoUrl: detail.logoUrl
         )
@@ -300,13 +309,18 @@ final class MediaDetailViewModel {
         reusedToken: String?,
         context target: SourcePickerContext
     ) {
+        ItemDetailMemoryCache.invalidate(itemId: itemId, tmdbId: detail?.ids.tmdb)
         let currentClient = refreshedClient()
+        var handedOverSession: TvPlaybackSession? = nil
+        var handedOverInflight: Task<TvPrepareResponse?, Never>? = nil
         if reusedToken != nil {
-            _ = preResolve.consumeForPlayback(
+            let handoff = preResolve.consumeHandoffForPlayback(
                 itemId: target.itemId,
                 startPosition: target.startPositionSeconds,
                 client: currentClient
             )
+            handedOverSession = handoff.preparedSession
+            handedOverInflight = handoff.inflightPrepareTask
         } else {
             preResolve.discardPreparedSession(client: currentClient)
         }
@@ -320,6 +334,8 @@ final class MediaDetailViewModel {
             startPositionSeconds: target.startPositionSeconds,
             candidateId: reusedToken == nil ? picked.candidateId : nil,
             prepareToken: reusedToken,
+            preparedSession: handedOverSession,
+            inflightPrepareTask: handedOverInflight,
             backdropUrl: target.backdropUrl ?? detail?.backdropUrl,
             logoUrl: target.logoUrl ?? detail?.logoUrl
         )
@@ -373,6 +389,7 @@ final class MediaDetailViewModel {
 
     func handleDeleted(target: TvDeleteRequestTarget) async -> Bool {
         pendingDeleteTarget = nil
+        ItemDetailMemoryCache.invalidate(itemId: target.itemId, tmdbId: target.tmdbId ?? detail?.ids.tmdb)
         if target.isWholeTitle {
             return true
         }

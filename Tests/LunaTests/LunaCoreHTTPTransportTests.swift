@@ -224,4 +224,74 @@ final class LunaCoreHTTPTransportTests: XCTestCase {
             XCTAssertEqual(code, 404)
         }
     }
+
+    func testConcurrentIdempotentGETRequestsCoalesceWhilePOSTMutationsNeverCoalesce() async throws {
+        let host = "coalesce-transport-\(UUID().uuidString.lowercased()).local"
+        defer { MockURLProtocol.unregister(host: host) }
+
+        let bootstrapJSON = #"""
+        {
+          "ok": true,
+          "device": {
+            "deviceId": "luna-test-device",
+            "deviceName": "Stua TV",
+            "roomName": "Stua",
+            "hardwareProfile": "hdr10-512"
+          },
+          "defaultRooms": []
+        }
+        """#
+
+        let getCount = TestLockedBox(0)
+        let postCount = TestLockedBox(0)
+
+        MockURLProtocol.registerAsync(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            if request.httpMethod == "GET" && url.path == "/api/tv/v1/bootstrap" {
+                getCount.withLock { $0 += 1 }
+                try await Task.sleep(nanoseconds: 50_000_000)
+                return (resp, Data(bootstrapJSON.utf8))
+            }
+            if request.httpMethod == "POST" && url.path == "/api/tv/v1/watchlist" {
+                postCount.withLock { $0 += 1 }
+                try await Task.sleep(nanoseconds: 40_000_000)
+                return (resp, Data(#"{"ok":true}"#.utf8))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let client = try MockURLProtocol.makeClient(host: host)
+
+        let bootstraps = try await withThrowingTaskGroup(of: TvBootstrapResponse.self) { group in
+            for _ in 0..<6 {
+                group.addTask {
+                    try await client.fetchBootstrap()
+                }
+            }
+            var out: [TvBootstrapResponse] = []
+            for try await item in group {
+                out.append(item)
+            }
+            return out
+        }
+        XCTAssertEqual(bootstraps.count, 6)
+        XCTAssertEqual(getCount.withLock { $0 }, 1, "6 concurrent identical GET /bootstrap calls must coalesce into 1 wire request")
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for idx in 0..<4 {
+                group.addTask {
+                    try await client.setWatchlist(
+                        listed: idx.isMultiple(of: 2),
+                        mediaType: "movie",
+                        ids: TvMediaIds(tmdb: 550),
+                        title: "Fight Club",
+                        year: 1999
+                    )
+                }
+            }
+            try await group.waitForAll()
+        }
+        XCTAssertEqual(postCount.withLock { $0 }, 4, "POST mutations must never coalesce")
+    }
 }

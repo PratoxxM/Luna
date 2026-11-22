@@ -27,6 +27,7 @@ struct HomeView: View {
     var allowInitialColdFocus: Bool = false
 
     @State private var homePayload: TvHomeResponse?
+    @State private var visibleRows: [TvShelfRow]
     @State private var cachedEtag: String?
     @State private var isInitialColdFetch: Bool = false
     @State private var errorMessage: String?
@@ -73,6 +74,7 @@ struct HomeView: View {
             hardwareProfile: initialHardwareProfile
         )
         _homePayload = State(initialValue: snap?.payload)
+        _visibleRows = State(initialValue: snap?.visibleRows ?? [])
         _cachedEtag = State(initialValue: snap?.etag)
     }
 
@@ -86,7 +88,7 @@ struct HomeView: View {
 
     var body: some View {
         let client = sessionStore.makeClient()
-        let rows = Self.prepareVisibleRows(from: homePayload)
+        let rows = visibleRows
         let defaultRow = resolveDefaultRow(in: rows)
         let focusRowId = defaultRow?.rowId
         let focusTargetKey = defaultRow.flatMap { row in
@@ -244,7 +246,8 @@ struct HomeView: View {
             .environment(sessionStore)
             .preferredColorScheme(.dark)
         }
-        .task(id: "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)") {
+        .task(id: "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)#active:\(isActiveTab)") {
+            guard isActiveTab else { return }
             let currentScope = "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
             await syncDiskSnapshotIfRoomChanged()
             if validatedScopeKey == currentScope,
@@ -264,6 +267,9 @@ struct HomeView: View {
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
             await revalidateHome(forceUnconditional: false, scopeKey: currentScope, generation: taskGen)
         }
+        .task(id: "\(validatedScopeKey ?? "")#warm:\(!visibleRows.isEmpty && !isInitialColdFetch)") {
+            await warmCatalogMetadataAfterHomePaintIfEligible()
+        }
         .onChange(of: sourcePickerContext != nil) { _, isShowingModal in
             if isShowingModal {
                 subpageVisibility.enterModal(modalToken)
@@ -275,20 +281,6 @@ struct HomeView: View {
             guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
             lastSeenRefreshNonce = newNonce
             scheduleRevalidateHome(forceUnconditional: false)
-        }
-        .onChange(of: isActiveTab) { _, active in
-            guard active else { return }
-            let isFresh = TabContentFreshnessPolicy.isCacheFresh(
-                hasCachedContent: homePayload != nil,
-                lastValidatedAt: lastValidatedAt,
-                cachedRefreshNonce: lastSeenRefreshNonce,
-                currentRefreshNonce: sessionStore.homeRefreshNonce,
-                freshnessInterval: TabContentFreshnessPolicy.effectiveFreshnessInterval
-            )
-            if !isFresh {
-                lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-                scheduleRevalidateHome(forceUnconditional: false)
-            }
         }
         .onChange(of: scenePhase) { _, phase in
             let elapsed = Date().timeIntervalSince(lastValidatedAt)
@@ -335,6 +327,7 @@ struct HomeView: View {
                 hardwareProfile: targetProfile
             ), !Task.isCancelled {
                 homePayload = snap.payload
+                visibleRows = snap.visibleRows
                 cachedEtag = snap.etag
             }
             return
@@ -346,10 +339,74 @@ struct HomeView: View {
                 hardwareProfile: targetProfile
             ), !Task.isCancelled {
                 homePayload = snap.payload
+                visibleRows = snap.visibleRows
                 cachedEtag = snap.etag
             } else {
                 cachedEtag = nil
             }
+        }
+    }
+
+    private func warmCatalogMetadataAfterHomePaintIfEligible() async {
+        let profile = DeviceMemoryProfile.current
+        guard profile.enableBackgroundCatalogMetadataWarmup,
+              !visibleRows.isEmpty,
+              !isInitialColdFetch,
+              sessionStore.activePlaybackTarget == nil,
+              PreviewLaunchConfiguration.parse(arguments: ProcessInfo.processInfo.arguments) == nil else {
+            return
+        }
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        guard !Task.isCancelled,
+              sessionStore.activePlaybackTarget == nil,
+              let client = sessionStore.makeClient() else {
+            return
+        }
+        let baseURL = sessionStore.serverBaseURL
+        let room = sessionStore.roomName
+        let hwProfile = sessionStore.effectiveHardwareProfile
+        let pageSize = profile.catalogPageSize
+
+        for kind in ["movie", "series"] {
+            guard !Task.isCancelled, sessionStore.activePlaybackTarget == nil else { return }
+            let cacheKey = CatalogBrowseView.makeCacheKey(
+                serverBaseURL: baseURL,
+                mediaType: kind,
+                roomName: room,
+                hardwareProfile: hwProfile
+            )
+            let currentNonce = sessionStore.homeRefreshNonce
+            if let existing = CatalogBrowseMemoryCache.shared.snapshot(for: cacheKey),
+               TabContentFreshnessPolicy.isCacheFresh(
+                   hasCachedContent: !existing.items.isEmpty,
+                   lastValidatedAt: existing.fetchedAt,
+                   cachedRefreshNonce: existing.refreshNonce,
+                   currentRefreshNonce: currentNonce,
+                   freshnessInterval: TabContentFreshnessPolicy.effectiveFreshnessInterval
+               ) {
+                continue
+            }
+            let fetched: TvCatalogResponse? = await Task.detached(priority: .utility) {
+                try? await client.fetchCatalog(kind: kind, sort: "popular", page: 1, limit: pageSize)
+            }.value
+            guard !Task.isCancelled,
+                  sessionStore.activePlaybackTarget == nil,
+                  let res = fetched,
+                  !res.items.isEmpty else {
+                continue
+            }
+            CatalogBrowseMemoryCache.shared.store(
+                CatalogBrowseSnapshot(
+                    items: res.items,
+                    availableGenres: res.availableGenres ?? [],
+                    selectedGenreLabel: res.genre?.label,
+                    hasMore: res.hasMore,
+                    currentPage: 1,
+                    fetchedAt: Date(),
+                    refreshNonce: sessionStore.homeRefreshNonce
+                ),
+                for: cacheKey
+            )
         }
     }
 
@@ -383,11 +440,16 @@ struct HomeView: View {
                 lastValidatedAt = Date()
                 validatedScopeKey = resolvedScope
             case .updated(let payload, let newEtag, let rawData):
+                let computedRows = await Task.detached(priority: .userInitiated) {
+                    CatalogShelfIndexer.prepareVisibleRows(from: payload)
+                }.value
+                guard !Task.isCancelled, (generation == nil || generation == reloadGeneration) else { return }
                 cachedEtag = newEtag
                 lastValidatedAt = Date()
                 validatedScopeKey = resolvedScope
                 if !(homePayload?.isSemanticallyEqual(to: payload) ?? false) {
                     homePayload = payload
+                    visibleRows = computedRows
                 }
                 DiskSWRStore.saveHomeInBackground(
                     rawPayloadData: rawData,
@@ -395,10 +457,11 @@ struct HomeView: View {
                     serverHost: sessionStore.serverBaseURL?.host,
                     roomName: sessionStore.roomName,
                     hardwareProfile: sessionStore.effectiveHardwareProfile,
-                    decodedPayload: payload
+                    decodedPayload: payload,
+                    precomputedRows: computedRows
                 )
             }
-        } catch is CancellationError {
+        } catch where LunaCoreError.isCancellation(error) {
             return
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()

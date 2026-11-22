@@ -12,7 +12,7 @@ internal struct LibraryBrowseSnapshot {
 internal enum LibraryBrowseMemoryCache {
     @MainActor
     static let shared = BoundedLRUMemoryCache<LibraryBrowseSnapshot>(
-        maxEntries: DeviceHardwareCapabilities.isHighMemoryDevice ? 32 : 12
+        maxEntries: DeviceMemoryProfile.current.libraryCacheMaxEntries
     )
 }
 

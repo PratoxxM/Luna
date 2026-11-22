@@ -142,7 +142,8 @@ struct DetailHeroHeaderView: View {
                             blurHash: item.blurHash,
                             dominantColor: item.dominantColor,
                             placeholderSymbol: "film.stack",
-                            contentMode: .fill
+                            contentMode: .fill,
+                            progressiveFallback: true
                         )
                         .equatable()
                         .frame(width: geo.size.width * 0.76, height: geo.size.height, alignment: .center)

@@ -3,8 +3,16 @@ import CryptoKit
 import ImageIO
 import CoreGraphics
 import Synchronization
+#if canImport(UIKit)
+import UIKit
+#endif
 
-private final class CGImageBox: NSObject {
+public enum ArtworkLoadPriority: Sendable {
+    case interactive
+    case prefetch
+}
+
+private final class CGImageBox: NSObject, @unchecked Sendable {
     let image: CGImage
     let byteCost: Int
 
@@ -14,10 +22,15 @@ private final class CGImageBox: NSObject {
     }
 }
 
+private struct WeakImageBox: @unchecked Sendable {
+    weak var box: CGImageBox?
+}
+
 internal final class ThreadSafeImageMemoryCache: @unchecked Sendable {
     private let cache = NSCache<NSString, CGImageBox>()
+    private let subjectBoxes = Mutex<[String: WeakImageBox]>([:])
 
-    init(totalCostLimit: Int, countLimit: Int = 360) {
+    init(totalCostLimit: Int, countLimit: Int = 420) {
         cache.totalCostLimit = totalCostLimit
         cache.countLimit = countLimit
     }
@@ -26,13 +39,35 @@ internal final class ThreadSafeImageMemoryCache: @unchecked Sendable {
         cache.object(forKey: key as NSString)?.image
     }
 
-    func insert(_ image: CGImage, forKey key: String) {
+    func bestImage(forSubjectKey subjectKey: String) -> CGImage? {
+        subjectBoxes.withLock { map in
+            guard let entry = map[subjectKey] else { return nil }
+            guard let live = entry.box else {
+                map.removeValue(forKey: subjectKey)
+                return nil
+            }
+            return live.image
+        }
+    }
+
+    func insert(_ image: CGImage, forKey key: String, subjectKey: String? = nil) {
         let box = CGImageBox(image)
         cache.setObject(box, forKey: key as NSString, cost: box.byteCost)
+        guard let subjectKey else { return }
+        subjectBoxes.withLock { map in
+            if map.count >= 1024 {
+                map = map.filter { $0.value.box != nil }
+            }
+            let existingWidth = map[subjectKey]?.box?.image.width ?? 0
+            if existingWidth <= image.width {
+                map[subjectKey] = WeakImageBox(box: box)
+            }
+        }
     }
 
     func removeAll() {
         cache.removeAllObjects()
+        subjectBoxes.withLock { $0.removeAll() }
     }
 }
 
@@ -66,33 +101,39 @@ private final class DiskTouchTracker: Sendable {
     }
 }
 
-private struct InflightTaskEntry<Value: Sendable>: Sendable {
-    let id: UUID
-    let task: Task<Value?, Never>
-    var waiters: Set<UUID>
-}
-
-/// Shared off-main-thread WebP/JPEG/PNG artwork loader & disk cache (`< 120 MB`).
+/// Off-main-thread WebP/JPEG/PNG artwork loader, GPU-ready bitmap cache, and adaptive NVMe disk cache.
 public actor ArtworkPipeline {
     public static let shared = ArtworkPipeline()
 
+    private struct DecodeWaiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
     private nonisolated let ramCache = ThreadSafeImageMemoryCache(
-        totalCostLimit: DeviceHardwareCapabilities.isHighMemoryDevice ? 192 * 1024 * 1024 : 96 * 1024 * 1024,
-        countLimit: DeviceHardwareCapabilities.isHighMemoryDevice ? 720 : 360
+        totalCostLimit: DeviceMemoryProfile.current.artworkMemoryBytes,
+        countLimit: DeviceMemoryProfile.current.artworkMemoryCountLimit
     )
     private nonisolated let diskTouchTracker = DiskTouchTracker()
     private nonisolated static let hexChars: [UInt8] = Array("0123456789abcdef".utf8)
-    private nonisolated let inflightImages = Mutex<[String: InflightTaskEntry<CGImage>]>([:])
-    private nonisolated let inflightRawFetches = Mutex<[String: InflightTaskEntry<Data>]>([:])
+    private nonisolated let inflightImages = InflightTaskCoalescer<String, CGImage?>()
+    private nonisolated let inflightRawFetches = InflightTaskCoalescer<String, Data?>()
+    private nonisolated let isPlaybackActiveFlag = Mutex(false)
+    private nonisolated let activePrefetchTasks = Mutex<[UUID: Task<Void, Never>]>([:])
+
     private var writesSinceLastTrim: Int = 0
     private var didEnsureCacheDir: Bool = false
 
-    private let maxConcurrentDecodes = DeviceHardwareCapabilities.isHighMemoryDevice ? 6 : 4
+    private let maxConcurrentDecodes = DeviceMemoryProfile.current.maxConcurrentDecodes
+    private let trimWriteInterval = DeviceMemoryProfile.current.artworkDiskTrimWriteInterval
+
     public nonisolated static var defaultDiskMaxBytes: Int64 {
-        DeviceHardwareCapabilities.isHighMemoryDevice ? 180 * 1024 * 1024 : 115 * 1024 * 1024
+        DeviceMemoryProfile.current.artworkDiskMaxBytes
     }
+
     private var activeDecodeCount: Int = 0
-    private var decodeWaiters: [CheckedContinuation<Void, Never>] = []
+    private var interactiveDecodeWaiters: [DecodeWaiter] = []
+    private var prefetchDecodeWaiters: [DecodeWaiter] = []
 
     private init() {
         let cache = self.ramCache
@@ -132,6 +173,32 @@ public actor ArtworkPipeline {
         return "\(scheme)://\(host)\(pathPart)"
     }
 
+    /// Size-agnostic subject identity bridging TMDB `/t/p/w1280/...` <-> `/t/p/original/...`
+    /// and query-width `/api/tv/v1/artwork?...&w=1280` <-> `...&w=3840` for instant progressive 4K upgrades.
+    public nonisolated static func canonicalSubjectIdentity(for url: URL) -> String {
+        let segments = url.path.components(separatedBy: "/")
+        if let pIdx = segments.firstIndex(of: "p"),
+           pIdx >= 1,
+           segments[pIdx - 1] == "t",
+           pIdx + 2 < segments.count {
+            let tail = segments[(pIdx + 2)...].joined(separator: "/")
+            return "tmdb:/\(tail)"
+        }
+        if var comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           let items = comps.queryItems,
+           !items.isEmpty {
+            let filtered = items.filter { item in
+                let lower = item.name.lowercased()
+                return lower != "w" && lower != "width"
+            }
+            comps.queryItems = filtered.isEmpty ? nil : filtered
+            if let stripped = comps.url {
+                return rawIdentity(for: stripped)
+            }
+        }
+        return rawIdentity(for: url)
+    }
+
     public nonisolated static func cacheKey(for url: URL, maxPixelSize: Int) -> String {
         "\(rawIdentity(for: url))#px\(maxPixelSize)"
     }
@@ -145,9 +212,8 @@ public actor ArtworkPipeline {
         3840, 1920, 1280, 1120, 1040, 960, 900, 896, 800, 750, 720, 640, 480, 220,
     ]
 
-    /// Looks up any already-decoded bitmap in RAM for `url` (checking `preferredMaxPixelSize` first,
-    /// then standard hero/card/still pixel buckets) so player startup curtains can reuse already-rendered
-    /// detail or shelf backdrops in `0 ms` without re-decoding.
+    /// Looks up any already-decoded bitmap in RAM for `url` (checking exact `preferredMaxPixelSize`,
+    /// canonical size-agnostic subject match, and standard pixel buckets) in `0 ms`.
     public nonisolated func anyMemoryCachedImage(
         for url: URL,
         preferredMaxPixelSize: Int
@@ -155,6 +221,10 @@ public actor ArtworkPipeline {
         let preferredKey = Self.cacheKey(for: url, maxPixelSize: preferredMaxPixelSize)
         if let exact = ramCache.image(forKey: preferredKey) {
             return (preferredKey, exact)
+        }
+        let subjectKey = Self.canonicalSubjectIdentity(for: url)
+        if let subjectHit = ramCache.bestImage(forSubjectKey: subjectKey) {
+            return (subjectKey, subjectHit)
         }
         for bucket in Self.candidateCachedPixelSizes where bucket != preferredMaxPixelSize {
             let key = Self.cacheKey(for: url, maxPixelSize: bucket)
@@ -166,104 +236,186 @@ public actor ArtworkPipeline {
     }
 
     internal nonisolated func insertMemoryCachedImage(_ image: CGImage, url: URL, maxPixelSize: Int) {
-        ramCache.insert(image, forKey: Self.cacheKey(for: url, maxPixelSize: maxPixelSize))
+        ramCache.insert(
+            image,
+            forKey: Self.cacheKey(for: url, maxPixelSize: maxPixelSize),
+            subjectKey: Self.canonicalSubjectIdentity(for: url)
+        )
     }
 
     public nonisolated func loadImage(
         url: URL,
         maxPixelSize: Int,
-        client: LunaCoreClient?
+        client: LunaCoreClient?,
+        priority: ArtworkLoadPriority = .interactive
     ) async -> CGImage? {
         let key = Self.cacheKey(for: url, maxPixelSize: maxPixelSize)
         if let memHit = ramCache.image(forKey: key) {
             return memHit
         }
 
-        let waiterID = UUID()
-        enum Lookup {
-            case cached(CGImage)
-            case joined(entryID: UUID, task: Task<CGImage?, Never>)
-        }
+        let taskPriority: TaskPriority = priority == .interactive ? .userInitiated : .utility
+        let rawKey = Self.rawIdentity(for: url)
+        let subjectKey = Self.canonicalSubjectIdentity(for: url)
+        let ramCacheRef = self.ramCache
 
-        let lookup: Lookup = inflightImages.withLock { map in
-            if let memHit = ramCache.image(forKey: key) {
-                return .cached(memHit)
-            }
-            if var existing = map[key] {
-                existing.waiters.insert(waiterID)
-                map[key] = existing
-                return .joined(entryID: existing.id, task: existing.task)
-            }
-            let entryID = UUID()
-            let rawKey = Self.rawIdentity(for: url)
-            let ramCacheRef = self.ramCache
-            let pipeline = self
-
-            let created = Task.detached(priority: .userInitiated) { () -> CGImage? in
-                defer {
-                    pipeline.inflightImages.withLock { current in
-                        if current[key]?.id == entryID {
-                            current.removeValue(forKey: key)
-                        }
-                    }
+        guard let outcome = await inflightImages.coalesceNonThrowing(
+            key: key,
+            priority: taskPriority,
+            operation: { [self] () -> CGImage? in
+                if let memHit = ramCacheRef.image(forKey: key) {
+                    return memHit
                 }
                 guard !Task.isCancelled,
-                      let data = await pipeline.acquireRawData(url: url, rawKey: rawKey, client: client),
+                      let data = await self.acquireRawData(
+                          url: url,
+                          rawKey: rawKey,
+                          client: client,
+                          priority: taskPriority
+                      ),
                       !Task.isCancelled else {
                     return nil
                 }
-                await pipeline.acquireDecodePermit()
-                let decoded: CGImage?
-                if Task.isCancelled {
-                    decoded = nil
-                } else {
-                    decoded = Self.downsampleAndDecode(data: data, maxPixelSize: maxPixelSize)
+                guard await self.acquireDecodePermit(priority: priority) else {
+                    return nil
                 }
-                await pipeline.releaseDecodePermit()
+                let decoded: CGImage? = Task.isCancelled
+                    ? nil
+                    : Self.downsampleAndDecode(data: data, maxPixelSize: maxPixelSize)
+                await self.releaseDecodePermit()
                 guard let decoded else { return nil }
-                ramCacheRef.insert(decoded, forKey: key)
+                ramCacheRef.insert(decoded, forKey: key, subjectKey: subjectKey)
                 return decoded
             }
-            map[key] = InflightTaskEntry(id: entryID, task: created, waiters: [waiterID])
-            return .joined(entryID: entryID, task: created)
+        ) else {
+            return nil
         }
+        return outcome.value
+    }
 
-        switch lookup {
-        case .cached(let memHit):
-            return memHit
-        case .joined(let entryID, let task):
-            let result = await withTaskCancellationHandler {
-                await task.value
-            } onCancel: {
-                Self.releaseWaiter(waiterID, key: key, entryID: entryID, in: self.inflightImages)
+    /// Viewport lookahead prefetching for horizontal shelves and 6-column poster grids.
+    /// Automatically pauses during active video playback and yields decode permits to interactive views.
+    public nonisolated func prefetchUpcomingCards(
+        in cards: [TvMediaCard],
+        afterIndex index: Int,
+        isBackdrop: Bool = false,
+        maxLookahead: Int? = nil,
+        client: LunaCoreClient?
+    ) {
+        guard let client,
+              !(isPlaybackActiveFlag.withLock { $0 }),
+              index >= 0,
+              index + 1 < cards.count else {
+            return
+        }
+        let strideStep = isBackdrop ? 2 : 3
+        guard index == 0 || index % strideStep == 0 else { return }
+
+        let window = min(maxLookahead ?? DeviceMemoryProfile.current.scrollPrefetchCardWindow, DeviceMemoryProfile.current.scrollPrefetchCardWindow)
+        guard window > 0 else { return }
+        let endIndex = min(cards.count, index + 1 + window)
+        let targetPixelSize = isBackdrop ? 1280 : 900
+        let urls: [URL] = cards[(index + 1)..<endIndex].compactMap { card in
+            let path = isBackdrop ? card.preferredLandscapePath : card.posterUrl
+            return client.resolveArtworkURL(path, target: isBackdrop ? .landscape2x : .poster2x)
+        }
+        prefetchImages(urls: urls, maxPixelSize: targetPixelSize, client: client)
+    }
+
+    public nonisolated func prefetchImages(
+        urls: [URL],
+        maxPixelSize: Int,
+        client: LunaCoreClient?
+    ) {
+        guard !urls.isEmpty, !(isPlaybackActiveFlag.withLock { $0 }) else { return }
+        let missingURLs = urls.filter { memoryCachedImage(for: $0, maxPixelSize: maxPixelSize) == nil }
+        guard !missingURLs.isEmpty else { return }
+
+        let taskID = UUID()
+        let created = Task.detached(priority: .utility) { [self] in
+            defer {
+                _ = self.activePrefetchTasks.withLock { $0.removeValue(forKey: taskID) }
             }
-            Self.releaseWaiter(waiterID, key: key, entryID: entryID, in: self.inflightImages)
-            return result
+            let floorBytes = DeviceMemoryProfile.current.playbackMemoryShedFloorBytes
+            for url in missingURLs {
+                guard !Task.isCancelled, !(self.isPlaybackActiveFlag.withLock { $0 }) else {
+                    return
+                }
+                if self.memoryCachedImage(for: url, maxPixelSize: maxPixelSize) != nil {
+                    continue
+                }
+                if DeviceHardwareCapabilities.availableMemoryBytes() > floorBytes {
+                    _ = await self.loadImage(
+                        url: url,
+                        maxPixelSize: maxPixelSize,
+                        client: client,
+                        priority: .prefetch
+                    )
+                } else {
+                    _ = await self.acquireRawData(
+                        url: url,
+                        rawKey: Self.rawIdentity(for: url),
+                        client: client,
+                        priority: .utility
+                    )
+                }
+            }
+        }
+        activePrefetchTasks.withLock { map in
+            if map.count >= 8 {
+                let oldest = Array(map.values)
+                map.removeAll(keepingCapacity: true)
+                for task in oldest { task.cancel() }
+            }
+            map[taskID] = created
         }
     }
 
-    private nonisolated func acquireRawData(url: URL, rawKey: String, client: LunaCoreClient?) async -> Data? {
-        let rawWaiterID = UUID()
-        let (entryID, rawTask): (UUID, Task<Data?, Never>) = inflightRawFetches.withLock { map in
-            if var existing = map[rawKey] {
-                existing.waiters.insert(rawWaiterID)
-                map[rawKey] = existing
-                return (existing.id, existing.task)
-            }
-            let newID = UUID()
-            let diskFileURL = Self.diskFileURL(for: url)
-            let externalSession = LunaCoreSessionPool.shared.externalArtworkSession()
-            let pipeline = self
-            let diskTouchTracker = self.diskTouchTracker
+    /// Cancels background artwork prefetches and proactively frees RAM bitmaps before heavy `.softwareHost`
+    /// (4K Dolby Vision Profile 7 FEL / AV1) frame pools allocate when headroom is tight.
+    public nonisolated func enterPlaybackMemoryMode(isHeavySoftwareStream: Bool) {
+        isPlaybackActiveFlag.withLock { $0 = true }
+        cancelAllPrefetchTasks()
 
-            let created = Task.detached(priority: .userInitiated) { () -> Data? in
-                defer {
-                    pipeline.inflightRawFetches.withLock { current in
-                        if current[rawKey]?.id == newID {
-                            current.removeValue(forKey: rawKey)
-                        }
-                    }
-                }
+        let profile = DeviceMemoryProfile.current
+        let available = DeviceHardwareCapabilities.availableMemoryBytes()
+        let shouldShed = available < profile.playbackMemoryShedFloorBytes
+            || (isHeavySoftwareStream && profile.tier == .standard)
+        if shouldShed {
+            ramCache.removeAll()
+            BlurHashDecoder.clearCache()
+        }
+    }
+
+    public nonisolated func exitPlaybackMemoryMode() {
+        isPlaybackActiveFlag.withLock { $0 = false }
+    }
+
+    private nonisolated func cancelAllPrefetchTasks() {
+        let tasks = activePrefetchTasks.withLock { map -> [Task<Void, Never>] in
+            let running = Array(map.values)
+            map.removeAll()
+            return running
+        }
+        for task in tasks {
+            task.cancel()
+        }
+    }
+
+    private nonisolated func acquireRawData(
+        url: URL,
+        rawKey: String,
+        client: LunaCoreClient?,
+        priority: TaskPriority = .userInitiated
+    ) async -> Data? {
+        let diskFileURL = Self.diskFileURL(for: url)
+        let externalSession = LunaCoreSessionPool.shared.externalArtworkSession()
+        let diskTouchTracker = self.diskTouchTracker
+
+        guard let outcome = await inflightRawFetches.coalesceNonThrowing(
+            key: rawKey,
+            priority: priority,
+            operation: { [self] () -> Data? in
                 guard !Task.isCancelled else { return nil }
                 if let diskData = try? Data(contentsOf: diskFileURL), !diskData.isEmpty {
                     let now = Date().timeIntervalSinceReferenceDate
@@ -287,46 +439,20 @@ public actor ArtworkPipeline {
                     return nil
                 }
 
-                await pipeline.ensureCacheDirectoryIfNeeded()
+                await self.ensureCacheDirectoryIfNeeded()
                 do {
                     try data.write(to: diskFileURL, options: .atomic)
                     diskTouchTracker.recordWrite(rawKey, now: Date().timeIntervalSinceReferenceDate)
-                    await pipeline.recordDiskWriteCompleted()
+                    await self.recordDiskWriteCompleted()
                 } catch {
                     // Best-effort disk cache write; still decode in-memory data
                 }
                 return data
             }
-            map[rawKey] = InflightTaskEntry(id: newID, task: created, waiters: [rawWaiterID])
-            return (newID, created)
-        }
-
-        let data = await withTaskCancellationHandler {
-            await rawTask.value
-        } onCancel: {
-            Self.releaseWaiter(rawWaiterID, key: rawKey, entryID: entryID, in: self.inflightRawFetches)
-        }
-        Self.releaseWaiter(rawWaiterID, key: rawKey, entryID: entryID, in: self.inflightRawFetches)
-        return data
-    }
-
-    private nonisolated static func releaseWaiter<Value: Sendable>(
-        _ waiterID: UUID,
-        key: String,
-        entryID: UUID,
-        in mutex: borrowing Mutex<[String: InflightTaskEntry<Value>]>
-    ) {
-        let taskToCancel: Task<Value?, Never>? = mutex.withLock { map in
-            guard var entry = map[key], entry.id == entryID else { return nil }
-            guard entry.waiters.remove(waiterID) != nil else { return nil }
-            if entry.waiters.isEmpty {
-                map.removeValue(forKey: key)
-                return entry.task
-            }
-            map[key] = entry
+        ) else {
             return nil
         }
-        taskToCancel?.cancel()
+        return outcome.value
     }
 
     private func ensureCacheDirectoryIfNeeded() {
@@ -335,20 +461,51 @@ public actor ArtworkPipeline {
         didEnsureCacheDir = true
     }
 
-    private func acquireDecodePermit() async {
+    private func acquireDecodePermit(priority: ArtworkLoadPriority) async -> Bool {
+        guard !Task.isCancelled else { return false }
         if activeDecodeCount < maxConcurrentDecodes {
             activeDecodeCount += 1
+            return true
+        }
+        let waiterID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(returning: false)
+                    return
+                }
+                let waiter = DecodeWaiter(id: waiterID, continuation: continuation)
+                switch priority {
+                case .interactive:
+                    interactiveDecodeWaiters.append(waiter)
+                case .prefetch:
+                    prefetchDecodeWaiters.append(waiter)
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelDecodeWaiter(id: waiterID) }
+        }
+    }
+
+    private func cancelDecodeWaiter(id: UUID) {
+        if let idx = interactiveDecodeWaiters.firstIndex(where: { $0.id == id }) {
+            let removed = interactiveDecodeWaiters.remove(at: idx)
+            removed.continuation.resume(returning: false)
             return
         }
-        await withCheckedContinuation { continuation in
-            decodeWaiters.append(continuation)
+        if let idx = prefetchDecodeWaiters.firstIndex(where: { $0.id == id }) {
+            let removed = prefetchDecodeWaiters.remove(at: idx)
+            removed.continuation.resume(returning: false)
         }
     }
 
     private func releaseDecodePermit() {
-        if !decodeWaiters.isEmpty {
-            let next = decodeWaiters.removeFirst()
-            next.resume()
+        if !interactiveDecodeWaiters.isEmpty {
+            let next = interactiveDecodeWaiters.removeFirst()
+            next.continuation.resume(returning: true)
+        } else if !prefetchDecodeWaiters.isEmpty {
+            let next = prefetchDecodeWaiters.removeFirst()
+            next.continuation.resume(returning: true)
         } else {
             activeDecodeCount = max(0, activeDecodeCount - 1)
         }
@@ -356,7 +513,7 @@ public actor ArtworkPipeline {
 
     private func recordDiskWriteCompleted() {
         writesSinceLastTrim += 1
-        if writesSinceLastTrim >= 28 {
+        if writesSinceLastTrim >= trimWriteInterval {
             writesSinceLastTrim = 0
             let maxBytes = Self.defaultDiskMaxBytes
             Task.detached(priority: .utility) {
@@ -372,19 +529,9 @@ public actor ArtworkPipeline {
     }
 
     public func clearAll() {
-        let imgTasks = inflightImages.withLock { map in
-            let tasks = map.values.map(\.task)
-            map.removeAll()
-            return tasks
-        }
-        let rawTasks = inflightRawFetches.withLock { map in
-            let tasks = map.values.map(\.task)
-            map.removeAll()
-            return tasks
-        }
-        for task in imgTasks { task.cancel() }
-        for task in rawTasks { task.cancel() }
-
+        cancelAllPrefetchTasks()
+        inflightImages.cancelAll()
+        inflightRawFetches.cancelAll()
         ramCache.removeAll()
         BlurHashDecoder.clearCache()
         diskTouchTracker.removeAll()
@@ -394,26 +541,8 @@ public actor ArtworkPipeline {
 
     public nonisolated static func diskUsageBytesAsync() async -> Int64 {
         await Task.detached(priority: .utility) {
-            diskUsageBytes()
+            FileManager.allocatedDirectoryBytes(at: imageCacheDirectoryURL)
         }.value
-    }
-
-    private nonisolated static func diskUsageBytes() -> Int64 {
-        let dir = imageCacheDirectoryURL
-        guard let urls = try? FileManager.default.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.fileSizeKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return 0
-        }
-        var total: Int64 = 0
-        for url in urls {
-            if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                total += Int64(size)
-            }
-        }
-        return total
     }
 
     private nonisolated static func diskFileURL(for url: URL) -> URL {
@@ -432,8 +561,9 @@ public actor ArtworkPipeline {
         return imageCacheDirectoryURL.appendingPathComponent("\(hex).img")
     }
 
-    /// Hardware-accelerated ImageIO thumbnail creation & immediate bitmap decompression
-    /// on a background worker thread so `@MainActor` spends 0 ms decoding pixels.
+    /// Hardware-accelerated ImageIO thumbnail creation & GPU-ready bitmap preparation
+    /// on a background worker thread, falling back cleanly to `ImageIO` `CGImage` if
+    /// `byPreparingForDisplay()` returns `nil` (grayscale / indexed / special color profiles).
     private nonisolated static func downsampleAndDecode(data: Data, maxPixelSize: Int) -> CGImage? {
         let sourceOpts: [CFString: Any] = [
             kCGImageSourceShouldCache: false
@@ -448,7 +578,15 @@ public actor ArtworkPipeline {
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceThumbnailMaxPixelSize: max(128, maxPixelSize)
         ]
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOpts as CFDictionary)
+        guard let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOpts as CFDictionary) else {
+            return nil
+        }
+        #if canImport(UIKit)
+        if let displayReady = UIImage(cgImage: decoded).byPreparingForDisplay()?.cgImage {
+            return displayReady
+        }
+        #endif
+        return decoded
     }
 
     private nonisolated static func trimDiskCacheSynchronously(maxBytes: Int64) {

@@ -5,6 +5,7 @@ import AetherBridge
 struct PendingStopSnapshot {
     let client: LunaCoreClient?
     let sessionId: String?
+    let inflightPrepareTask: Task<TvPrepareResponse?, Never>?
     let finalPos: Double
     let finalDur: Double
     let isCompleted: Bool
@@ -12,6 +13,21 @@ struct PendingStopSnapshot {
 
 extension PlayerViewModel {
     // MARK: - Resolve & Engine Load Pipeline
+
+    nonisolated static func isLikelyHeavySoftwareSession(_ session: TvPlaybackSession?) -> Bool {
+        guard let session else { return false }
+        if session.aetherConfig.preferDualLayerDolbyVision
+            || session.aetherConfig.foldsDolbyVisionFEL == true
+            || session.selectedCandidate.dvProfile == 7
+            || session.selectedCandidate.dvEnhancementLayer?.uppercased() == "FEL" {
+            return true
+        }
+        if session.selectedCandidate.videoCodec?.lowercased() == "av1",
+           !DeviceHardwareCapabilities.supportsHardwareAV1 {
+            return true
+        }
+        return (session.selectedCandidate.sizeBytes ?? 0) >= 35 * 1_073_741_824
+    }
 
     func runResolveAndLoad(
         request: PlaybackLaunchRequest,
@@ -26,9 +42,18 @@ extension PlayerViewModel {
         firstFrameFallbackUnlocked = false
         userManuallySelectedSubtitle = false
         didApplyInitialSmartRule = false
-        resolveStageLabel = "Søker etter beste kilde…"
-        resolvePercent = 16
-        resolveHeadline = nil
+        if let prepSession = request.preparedSession {
+            resolveStageLabel = "Starter klargjort strøm…"
+            resolvePercent = 82
+            resolveHeadline = prepSession.selectedCandidate.displayHeadline
+        } else {
+            resolveStageLabel = "Søker etter beste kilde…"
+            resolvePercent = 16
+            resolveHeadline = nil
+        }
+        ArtworkPipeline.shared.enterPlaybackMemoryMode(
+            isHeavySoftwareStream: Self.isLikelyHeavySoftwareSession(request.preparedSession)
+        )
         UIApplication.shared.isIdleTimerDisabled = true
 
         do {
@@ -54,6 +79,16 @@ extension PlayerViewModel {
                 throw LunaCoreError.serverMessage(status, startRes.error ?? "Uventet svar ved klargjøring av strøm.")
             }
 
+            pendingHandedOverSessionId = resolvedSession.sessionId
+            pendingInflightPrepareTask = nil
+            try Task.checkCancellation()
+            guard !isTeardownCompleted, !isDismissing else {
+                throw CancellationError()
+            }
+
+            ArtworkPipeline.shared.enterPlaybackMemoryMode(
+                isHeavySoftwareStream: Self.isLikelyHeavySoftwareSession(resolvedSession)
+            )
             resolveStageLabel = "Tilpasser skjerm og starter avspilling…"
             resolvePercent = 95
             if !isReplacement {
@@ -70,6 +105,8 @@ extension PlayerViewModel {
             isResolving = false
             armFirstFrameFallbackWatchdog()
             startHeartbeatLoop()
+        } catch where LunaCoreError.isCancellation(error) {
+            return
         } catch LunaCoreError.unauthorized {
             guard !Task.isCancelled else { return }
             isResolving = false
@@ -217,6 +254,8 @@ extension PlayerViewModel {
         }
 
         self.activeSession = session
+        self.pendingHandedOverSessionId = nil
+        self.pendingInflightPrepareTask = nil
         self.lastReportedServerState = autoplay ? "playing" : "paused"
         self.registeredStreamToken = session.streamToken.count >= 8 ? session.streamToken : previousToken
         self.resolveHeadline = session.selectedCandidate.displayHeadline
@@ -524,13 +563,17 @@ extension PlayerViewModel {
     }
 
     func captureStopSnapshot() -> PendingStopSnapshot {
-        let finalPos = max(0, transport.currentTime)
-        let finalDur = max(0, effectiveDurationSeconds)
-        let inCredits = chapters.contains { $0.kind == .credits && finalPos >= $0.startSeconds }
-        let isCompleted = playbackPhase == .ended || (inCredits && finalDur > 0 && finalPos / finalDur >= 0.75)
+        let hasActiveSession = activeSession != nil
+        let finalPos = hasActiveSession ? max(0, transport.currentTime) : 0
+        let finalDur = hasActiveSession ? max(0, effectiveDurationSeconds) : 0
+        let inCredits = hasActiveSession && chapters.contains { $0.kind == .credits && finalPos >= $0.startSeconds }
+        let isCompleted = hasActiveSession && (
+            playbackPhase == .ended || (inCredits && finalDur > 0 && finalPos / finalDur >= 0.75)
+        )
         return PendingStopSnapshot(
             client: activeClient,
-            sessionId: activeSession?.sessionId,
+            sessionId: activeSession?.sessionId ?? pendingHandedOverSessionId,
+            inflightPrepareTask: hasActiveSession ? nil : pendingInflightPrepareTask,
             finalPos: finalPos,
             finalDur: finalDur,
             isCompleted: isCompleted
@@ -546,6 +589,9 @@ extension PlayerViewModel {
         resetScrubStateOnSessionChange()
         UIApplication.shared.isIdleTimerDisabled = false
         pendingStopSnapshot = captureStopSnapshot()
+        pendingInflightPrepareTask?.cancel()
+        pendingInflightPrepareTask = nil
+        pendingHandedOverSessionId = nil
         // Disconnect Combine sinks first so pausing does not publish `.paused` and flash the bottom bar.
         cancellables.removeAll()
         didBindEnginePublishers = false

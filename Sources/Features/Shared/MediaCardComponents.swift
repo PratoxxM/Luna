@@ -114,6 +114,7 @@ enum MediaCardMutator {
                 title: card.title,
                 year: card.year
             )
+            ItemDetailMemoryCache.invalidate(itemId: card.itemId, tmdbId: card.ids.tmdb)
             return true
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
@@ -133,6 +134,7 @@ enum MediaCardMutator {
                 ids: card.ids,
                 title: card.title
             )
+            ItemDetailMemoryCache.invalidate(itemId: card.itemId, tmdbId: card.ids.tmdb)
             return true
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
@@ -154,6 +156,7 @@ enum MediaCardMutator {
                 ids: card.ids,
                 title: card.title
             )
+            ItemDetailMemoryCache.invalidate(itemId: card.itemId, tmdbId: card.ids.tmdb)
             return true
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
@@ -182,6 +185,7 @@ enum MediaCardMutator {
                         season: s,
                         episode: e
                     )
+                    ItemDetailMemoryCache.invalidate(itemId: card.itemId, tmdbId: card.ids.tmdb)
                     return true
                 }
             }
@@ -192,6 +196,7 @@ enum MediaCardMutator {
                 title: card.title,
                 year: card.year
             )
+            ItemDetailMemoryCache.invalidate(itemId: card.itemId, tmdbId: card.ids.tmdb)
             return true
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()

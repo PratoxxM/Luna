@@ -305,8 +305,13 @@ public final class AppSessionStore {
     }
 
     public func refreshProfileFromServer() async {
-        defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
-        rebuildCachedClient()
+        let hadOverride = defaults.object(forKey: SideloadSafeStorage.localProfileOverrideKey) != nil
+        if hadOverride {
+            defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
+            rebuildCachedClient()
+        }
+        let previousRoom = roomName
+        let previousProfile = effectiveHardwareProfile
         if let client = makeClient() {
             do {
                 let boot = try await client.fetchBootstrap()
@@ -318,7 +323,9 @@ public final class AppSessionStore {
                 // Keep cached server values until next bootstrap succeeds
             }
         }
-        homeRefreshNonce &+= 1
+        if hadOverride || roomName != previousRoom || effectiveHardwareProfile != previousProfile {
+            homeRefreshNonce &+= 1
+        }
     }
 
     public nonisolated static func currentAppVersionString() -> String {
@@ -351,6 +358,7 @@ public final class AppSessionStore {
         LunaCoreSessionPool.shared.invalidateAll()
         CatalogBrowseMemoryCache.shared.clear()
         LibraryBrowseMemoryCache.shared.clear()
+        ItemDetailMemoryCache.shared.clear()
         DiskSWRStore.clearMemory()
         Task { await DiskSWRStore.clearAllAsync() }
         deviceToken = nil

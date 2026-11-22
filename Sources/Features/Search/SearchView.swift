@@ -322,7 +322,7 @@ struct SearchView: View {
             if !res.items.isEmpty {
                 recordRecentSearch(trimmed)
             }
-        } catch is CancellationError {
+        } catch where LunaCoreError.isCancellation(error) {
             return
         } catch LunaCoreError.unauthorized {
             guard !Task.isCancelled else { return }
