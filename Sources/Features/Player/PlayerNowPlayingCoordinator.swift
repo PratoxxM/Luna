@@ -33,13 +33,13 @@ enum PlayerNowPlayingCoordinator {
         var baseInfo = makeBaseInfo(for: session)
         let resolvedArtURL = client.resolveArtworkURL(
             session.item.posterUrl ?? session.item.backdropUrl,
-            target: .poster
+            target: .poster2x
         )
         if let artURL = resolvedArtURL,
-           let cachedCGImage = ArtworkPipeline.shared.cachedImage(
+           let cachedCGImage = ArtworkPipeline.shared.anyMemoryCachedImage(
                for: artURL,
-               maxPixelSize: nowPlayingArtworkMaxPixels
-           ) ?? ArtworkPipeline.shared.cachedAnySizeImage(for: artURL) {
+               preferredMaxPixelSize: nowPlayingArtworkMaxPixels
+           )?.image {
             baseInfo[MPMediaItemPropertyArtwork] = NowPlayingArtworkFactory.makeArtwork(cgImage: cachedCGImage)
         }
         engine.setVideoNowPlayingInfo(baseInfo)
@@ -50,7 +50,10 @@ enum PlayerNowPlayingCoordinator {
         engine.setNowPlayingTrackCommands(next: nil, previous: nil)
 
         guard let artURL = resolvedArtURL,
-              ArtworkPipeline.shared.cachedImage(for: artURL, maxPixelSize: nowPlayingArtworkMaxPixels) == nil else {
+              ArtworkPipeline.shared.memoryCachedImage(
+                  for: artURL,
+                  maxPixelSize: nowPlayingArtworkMaxPixels
+              ) == nil else {
             return
         }
 
