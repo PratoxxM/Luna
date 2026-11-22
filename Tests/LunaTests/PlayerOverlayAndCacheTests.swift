@@ -638,6 +638,7 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
           "aetherConfig": {
             "preferDualLayerDolbyVision": true,
             "foldsDolbyVisionFEL": true,
+            "dolbyVisionHandling": "automatic",
             "matchContentEnabled": true,
             "audioBridgeMode": "lossless",
             "objectAudioRendering": { "mode": "render", "layout": "5.1.2" }
