@@ -232,6 +232,11 @@ final class LunaCoreHTTPTransportTests: XCTestCase {
         let bootstrapJSON = #"""
         {
           "ok": true,
+          "server": {
+            "name": "LunaCore",
+            "version": "5.0.0",
+            "apiVersion": 1
+          },
           "device": {
             "deviceId": "luna-test-device",
             "deviceName": "Stua TV",
