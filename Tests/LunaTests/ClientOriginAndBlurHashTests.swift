@@ -578,11 +578,12 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         let dest = try XCTUnwrap(CGImageDestinationCreateWithData(pngData as CFMutableData, "public.png" as CFString, 1, nil))
         CGImageDestinationAddImage(dest, grayCG, nil)
         XCTAssertTrue(CGImageDestinationFinalize(dest))
+        let pngBytes = pngData as Data
 
         MockURLProtocol.register(host: host) { request in
             let url = try XCTUnwrap(request.url)
             let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
-            return (resp, pngData as Data)
+            return (resp, pngBytes)
         }
         let client = try MockURLProtocol.makeClient(host: host)
         let grayURL = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v1/img/grayscale.png"))
