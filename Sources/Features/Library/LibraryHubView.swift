@@ -475,8 +475,8 @@ private struct LibraryFilterStripView: View {
     @Binding var didApplyInitialSectionFallback: Bool
     let entryFocusNonce: Int
     let isEntryActive: Bool
-    let onScrollToTop: () -> Void
-    let onMoveDown: () -> Void
+    let onScrollToTop: @MainActor () -> Void
+    let onMoveDown: @MainActor () -> Void
 
     @FocusState private var focusedFilterPill: LibraryFilterSection?
     @Namespace private var filterFocusNamespace

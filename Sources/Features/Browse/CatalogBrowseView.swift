@@ -561,8 +561,8 @@ private struct CatalogFilterStripView: View {
     @Binding var selectedGenreLabel: String?
     let entryFocusNonce: Int
     let isEntryActive: Bool
-    let onScrollToTop: () -> Void
-    let onMoveDown: () -> Void
+    let onScrollToTop: @MainActor () -> Void
+    let onMoveDown: @MainActor () -> Void
 
     @FocusState private var focusedFilterId: String?
 
