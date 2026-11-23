@@ -138,7 +138,7 @@ struct DetailHeroHeaderView: View {
                         CachedArtworkView(
                             url: landscapeURL,
                             client: client,
-                            maxPixelSize: 3840,
+                            maxPixelSize: 1920,
                             blurHash: item.blurHash,
                             dominantColor: item.dominantColor,
                             placeholderSymbol: "film.stack",

@@ -39,7 +39,7 @@ struct MediaDetailView: View {
     }
 
     private var scopeKey: String {
-        "\(mediaType)#\(itemId)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
+        "\(mediaType)#\(itemId)#\(sessionStore.roomName)#\(sessionStore.hardwareProfile)"
     }
 
     var body: some View {

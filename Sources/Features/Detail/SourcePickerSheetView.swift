@@ -82,8 +82,15 @@ internal protocol SourcePickerSessionClient: Sendable {
         itemId: String,
         title: String,
         seriesTitle: String?,
-        startPositionSeconds: Double?
+        startPositionSeconds: Double?,
+        prepareToken: String?
     ) async throws -> TvPrepareResponse
+    func cancelInflightPlayback(
+        sessionId: String?,
+        resolveId: String?,
+        itemId: String?,
+        prepareToken: String?
+    ) async throws
     func fetchAlternatives(sessionId: String) async throws -> TvAlternativesResponse
     func sendHeartbeat(
         sessionId: String,
@@ -104,6 +111,7 @@ internal final class SourcePickerViewModel {
     @ObservationIgnored private(set) var resolvedPrepareToken: String?
     @ObservationIgnored private(set) var existingTokenFailed: Bool = false
     @ObservationIgnored private(set) var createdOrphanSessionId: String?
+    @ObservationIgnored private(set) var inflightPrepareToken: String?
     @ObservationIgnored private(set) var didSelectCandidate: Bool = false
     private(set) var isLoading: Bool = true
     private(set) var errorMessage: String?
@@ -141,11 +149,19 @@ internal final class SourcePickerViewModel {
                 resolvedPrepareToken = existing
                 usedExistingToken = true
             } else {
+                let reqToken = UUID().uuidString
+                inflightPrepareToken = reqToken
+                defer {
+                    if inflightPrepareToken == reqToken {
+                        inflightPrepareToken = nil
+                    }
+                }
                 let prep = try await client.preparePlayback(
                     itemId: context.itemId,
                     title: context.apiTitle,
                     seriesTitle: context.seriesTitle,
-                    startPositionSeconds: context.startPositionSeconds
+                    startPositionSeconds: context.startPositionSeconds,
+                    prepareToken: reqToken
                 )
                 if Task.isCancelled || isDismissed {
                     if let orphanSid = prep.playbackSession?.sessionId {
@@ -251,9 +267,22 @@ internal final class SourcePickerViewModel {
             rawExistingToken: context.existingPrepareToken,
             existingTokenFailed: existingTokenFailed
         )
-        guard activeExistingToken == nil,
-              let sid = createdOrphanSessionId,
-              let client else {
+        guard activeExistingToken == nil, let client else {
+            return
+        }
+        if let pendingToken = inflightPrepareToken {
+            inflightPrepareToken = nil
+            let targetItemId = context.itemId
+            Task.detached(priority: .utility) {
+                try? await client.cancelInflightPlayback(
+                    sessionId: nil,
+                    resolveId: nil,
+                    itemId: targetItemId,
+                    prepareToken: pendingToken
+                )
+            }
+        }
+        guard let sid = createdOrphanSessionId else {
             return
         }
         createdOrphanSessionId = nil
@@ -326,7 +355,7 @@ struct SourcePickerSheetView: View {
                                 : (candidate.isActive == true)
                             SourceCandidateRowView(
                                 candidate: candidate,
-                                roomName: "",
+                                roomName: sessionStore.roomName,
                                 isRecommended: index == 0,
                                 isSelected: isCurrent,
                                 activeStatusLabel: "Forhåndsvalgt",

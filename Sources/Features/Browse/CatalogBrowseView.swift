@@ -51,13 +51,13 @@ struct CatalogBrowseView: View {
     @State private var mutationErrorBanner: String?
     @State private var lastSeenRefreshNonce: Int = -1
     @State private var reloadTask: Task<Void, Never>?
+    @State private var loadMoreTask: Task<Void, Never>?
     @State private var reloadGeneration: UInt64 = 0
 
     @State private var selectedCard: TvMediaCard?
     @State private var mountedTracker = MountedEntryCardTracker()
     @State private var entryCardID: String?
     @State private var cardFocusNonce: Int = 0
-    @FocusState private var focusedFilterId: String?
     @FocusState private var fallbackFocus: CatalogFallbackFocus?
     @Namespace private var catalogGridNamespace
 
@@ -124,7 +124,7 @@ struct CatalogBrowseView: View {
             localOnly: localOnly,
             unwatchedOnly: unwatchedOnly,
             roomName: sessionStore.roomName,
-            hardwareProfile: sessionStore.effectiveHardwareProfile
+            hardwareProfile: sessionStore.hardwareProfile
         )
     }
 
@@ -145,115 +145,36 @@ struct CatalogBrowseView: View {
                             .padding(.horizontal, LunaTheme.horizontalGutter)
                     }
 
-                // Uniform compact capsule filter strip bleeding edge-to-edge with 90 pt leading inset
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(sortOptions, id: \.id) { opt in
-                            LunaPillButton(
-                                opt.label,
-                                isSelected: selectedSort == opt.id,
-                                prominence: .glassPill,
-                                size: .compact
-                            ) {
-                                guard selectedSort != opt.id else { return }
-                                selectedSort = opt.id
-                            }
-                            .focused($focusedFilterId, equals: "sort-\(opt.id)")
-                        }
-
-                        Rectangle()
-                            .fill(LunaTheme.warmBorderStrong)
-                            .frame(width: 1, height: 22)
-                            .padding(.horizontal, 8)
-                            .allowsHitTesting(false)
-
-                        if !isRootTab {
-                            LunaPillButton(
-                                "Kun lokalt",
-                                systemImage: localOnly ? "checkmark" : nil,
-                                isSelected: localOnly,
-                                prominence: .glassPill,
-                                size: .compact
-                            ) {
-                                localOnly.toggle()
-                            }
-                            .focused($focusedFilterId, equals: "local-only")
-                        }
-
-                        LunaPillButton(
-                            "Skjul sette",
-                            systemImage: unwatchedOnly ? "checkmark" : nil,
-                            isSelected: unwatchedOnly,
-                            prominence: .glassPill,
-                            size: .compact
-                        ) {
-                            unwatchedOnly.toggle()
-                        }
-                        .focused($focusedFilterId, equals: "unwatched")
-
-                        if !availableGenres.isEmpty {
-                            Rectangle()
-                                .fill(LunaTheme.warmBorderStrong)
-                                .frame(width: 1, height: 22)
-                                .padding(.horizontal, 8)
-                                .allowsHitTesting(false)
-
-                            LunaPillButton(
-                                "Alle sjangre",
-                                isSelected: selectedGenreSlug == nil,
-                                prominence: .glassPill,
-                                size: .compact
-                            ) {
-                                selectedGenreSlug = nil
-                                selectedGenreLabel = nil
-                            }
-                            .focused($focusedFilterId, equals: "genre-all")
-
-                            ForEach(availableGenres) { chip in
-                                let active = selectedGenreSlug == chip.slug
-                                LunaPillButton(
-                                    chip.label,
-                                    isSelected: active,
-                                    prominence: .glassPill,
-                                    size: .compact
-                                ) {
-                                    if active {
-                                        selectedGenreSlug = nil
-                                        selectedGenreLabel = nil
-                                    } else {
-                                        selectedGenreSlug = chip.slug
-                                        selectedGenreLabel = chip.label
-                                    }
+                    CatalogFilterStripView(
+                        sortOptions: sortOptions,
+                        isRootTab: isRootTab,
+                        availableGenres: availableGenres,
+                        selectedSort: $selectedSort,
+                        localOnly: $localOnly,
+                        unwatchedOnly: $unwatchedOnly,
+                        selectedGenreSlug: $selectedGenreSlug,
+                        selectedGenreLabel: $selectedGenreLabel,
+                        entryFocusNonce: contentEntryFocusNonce,
+                        isEntryActive: isRootTab && isActiveTab,
+                        onScrollToTop: {
+                            scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
+                        },
+                        onMoveDown: {
+                            if !items.isEmpty {
+                                if !mountedTracker.hasAnyMounted, let firstID = items.first?.id {
+                                    scrollProxy.scrollTo(firstID, anchor: .top)
                                 }
-                                .focused($focusedFilterId, equals: "genre-\(chip.slug)")
+                                if let resolvedID = mountedTracker.resolveEntryID(orderedIDs: items.map(\.id)) {
+                                    entryCardID = resolvedID
+                                    cardFocusNonce &+= 1
+                                }
+                            } else if errorMessage != nil {
+                                fallbackFocus = .retry
+                            } else if localOnly || unwatchedOnly || selectedGenreSlug != nil {
+                                fallbackFocus = .emptyReset
                             }
                         }
-                    }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 10)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentMargins(.zero, for: .scrollContent)
-                .scrollClipDisabled()
-                .ignoresSafeArea(.container, edges: .horizontal)
-                .focusSection()
-                .onMoveCommand { direction in
-                    if direction == .down {
-                        if !items.isEmpty {
-                            if !mountedTracker.hasAnyMounted, let firstID = items.first?.id {
-                                scrollProxy.scrollTo(firstID, anchor: .top)
-                            }
-                            if let resolvedID = mountedTracker.resolveEntryID(orderedIDs: items.map(\.id)) {
-                                entryCardID = resolvedID
-                                cardFocusNonce &+= 1
-                            }
-                        } else if errorMessage != nil {
-                            fallbackFocus = .retry
-                        } else if localOnly || unwatchedOnly || selectedGenreSlug != nil {
-                            fallbackFocus = .emptyReset
-                        }
-                    }
-                }
+                    )
 
                 // Content Grid
                 if isLoading && items.isEmpty {
@@ -331,7 +252,10 @@ struct CatalogBrowseView: View {
                                     client: client
                                 )
                                 if idx >= prefetchThreshold && hasMore && !isLoadingMore {
-                                    Task { await loadNextPage() }
+                                    loadMoreTask?.cancel()
+                                    loadMoreTask = Task { @MainActor in
+                                        await loadNextPage()
+                                    }
                                 }
                             }
                         }
@@ -366,13 +290,6 @@ struct CatalogBrowseView: View {
                 scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
             }
         }
-        .lunaEntryFocusTarget(
-            nonce: contentEntryFocusNonce,
-            isActive: isRootTab && isActiveTab,
-            focus: $focusedFilterId,
-            target: { "sort-\(selectedSort)" },
-            onTrigger: { scrollProxy.scrollTo("luna-scroll-top", anchor: .top) }
-        )
         .lunaBottomToast(message: $mutationErrorBanner, tone: .danger)
         .focusSection()
         .lunaNavigationContainerBackdrop(
@@ -402,6 +319,8 @@ struct CatalogBrowseView: View {
             guard isActiveTab || !isRootTab else { return }
             reloadTask?.cancel()
             reloadTask = nil
+            loadMoreTask?.cancel()
+            loadMoreTask = nil
             reloadGeneration &+= 1
             let gen = reloadGeneration
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
@@ -415,6 +334,8 @@ struct CatalogBrowseView: View {
         .onDisappear {
             reloadTask?.cancel()
             reloadTask = nil
+            loadMoreTask?.cancel()
+            loadMoreTask = nil
             if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
                 isRootTab: isRootTab,
                 hasPushedChildDestination: selectedCard != nil,
@@ -444,6 +365,8 @@ struct CatalogBrowseView: View {
 
     private func scheduleReloadFirstPage(forceNetwork: Bool) {
         reloadTask?.cancel()
+        loadMoreTask?.cancel()
+        loadMoreTask = nil
         reloadGeneration &+= 1
         let gen = reloadGeneration
         reloadTask = Task { @MainActor in
@@ -528,28 +451,39 @@ struct CatalogBrowseView: View {
     private func loadNextPage() async {
         guard !isLoadingMore, hasMore, let client = sessionStore.makeClient() else { return }
         let triggerKey = reloadTriggerKey
+        let gen = reloadGeneration
         isLoadingMore = true
         let nextPage = currentPage + 1
         defer { isLoadingMore = false }
 
-        guard let res = try? await client.fetchCatalog(
-            kind: mediaType,
-            genre: selectedGenreSlug,
-            sort: selectedSort,
-            localOnly: localOnly,
-            unwatchedOnly: unwatchedOnly,
-            page: nextPage,
-            limit: pageSize
-        ), reloadTriggerKey == triggerKey else {
+        do {
+            let res = try await client.fetchCatalog(
+                kind: mediaType,
+                genre: selectedGenreSlug,
+                sort: selectedSort,
+                localOnly: localOnly,
+                unwatchedOnly: unwatchedOnly,
+                page: nextPage,
+                limit: pageSize
+            )
+            guard !Task.isCancelled, gen == reloadGeneration, reloadTriggerKey == triggerKey else {
+                return
+            }
+            currentPage = nextPage
+            hasMore = res.hasMore
+            let existingIDs = Set(items.map(\.id))
+            let fresh = res.items.filter { !existingIDs.contains($0.id) }
+            items.append(contentsOf: fresh)
+            persistSnapshot(for: triggerKey)
+        } catch where LunaCoreError.isCancellation(error) {
             return
+        } catch LunaCoreError.unauthorized {
+            CatalogBrowseMemoryCache.shared.clear()
+            sessionStore.unpairDevice()
+        } catch {
+            guard !Task.isCancelled, gen == reloadGeneration else { return }
+            showMutationError(error)
         }
-
-        currentPage = nextPage
-        hasMore = res.hasMore
-        let existingIDs = Set(items.map(\.id))
-        let fresh = res.items.filter { !existingIDs.contains($0.id) }
-        items.append(contentsOf: fresh)
-        persistSnapshot(for: triggerKey)
     }
 
     private func showMutationError(_ error: Error) {
@@ -590,7 +524,12 @@ struct CatalogBrowseView: View {
             persistSnapshot(for: triggerKey)
         }
         do {
-            if try await MediaCardMutator.toggleWatched(for: card, watched: nextWatched, sessionStore: sessionStore) {
+            if try await MediaCardMutator.toggleWatched(
+                for: card,
+                watched: nextWatched,
+                preferSeriesEpisodeTarget: true,
+                sessionStore: sessionStore
+            ) {
                 if unwatchedOnly && nextWatched {
                     items.removeAll { $0.id == card.id }
                 }
@@ -605,6 +544,131 @@ struct CatalogBrowseView: View {
                 persistSnapshot(for: triggerKey)
             }
             showMutationError(error)
+        }
+    }
+}
+
+/// Focus-isolated horizontal filter pill strip so moving Siri Remote focus across sort/filter/genre
+/// pills updates only this strip's `@FocusState` (`0` re-evaluations of `CatalogBrowseView` / `LazyVGrid`).
+private struct CatalogFilterStripView: View {
+    let sortOptions: [(id: String, label: String)]
+    let isRootTab: Bool
+    let availableGenres: [TvGenreChip]
+    @Binding var selectedSort: String
+    @Binding var localOnly: Bool
+    @Binding var unwatchedOnly: Bool
+    @Binding var selectedGenreSlug: String?
+    @Binding var selectedGenreLabel: String?
+    let entryFocusNonce: Int
+    let isEntryActive: Bool
+    let onScrollToTop: () -> Void
+    let onMoveDown: () -> Void
+
+    @FocusState private var focusedFilterId: String?
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(sortOptions, id: \.id) { opt in
+                    LunaPillButton(
+                        opt.label,
+                        isSelected: selectedSort == opt.id,
+                        prominence: .glassPill,
+                        size: .compact
+                    ) {
+                        guard selectedSort != opt.id else { return }
+                        selectedSort = opt.id
+                    }
+                    .focused($focusedFilterId, equals: "sort-\(opt.id)")
+                }
+
+                Rectangle()
+                    .fill(LunaTheme.warmBorderStrong)
+                    .frame(width: 1, height: 22)
+                    .padding(.horizontal, 8)
+                    .allowsHitTesting(false)
+
+                if !isRootTab {
+                    LunaPillButton(
+                        "Kun lokalt",
+                        systemImage: localOnly ? "checkmark" : nil,
+                        isSelected: localOnly,
+                        prominence: .glassPill,
+                        size: .compact
+                    ) {
+                        localOnly.toggle()
+                    }
+                    .focused($focusedFilterId, equals: "local-only")
+                }
+
+                LunaPillButton(
+                    "Skjul sette",
+                    systemImage: unwatchedOnly ? "checkmark" : nil,
+                    isSelected: unwatchedOnly,
+                    prominence: .glassPill,
+                    size: .compact
+                ) {
+                    unwatchedOnly.toggle()
+                }
+                .focused($focusedFilterId, equals: "unwatched")
+
+                if !availableGenres.isEmpty {
+                    Rectangle()
+                        .fill(LunaTheme.warmBorderStrong)
+                        .frame(width: 1, height: 22)
+                        .padding(.horizontal, 8)
+                        .allowsHitTesting(false)
+
+                    LunaPillButton(
+                        "Alle sjangre",
+                        isSelected: selectedGenreSlug == nil,
+                        prominence: .glassPill,
+                        size: .compact
+                    ) {
+                        selectedGenreSlug = nil
+                        selectedGenreLabel = nil
+                    }
+                    .focused($focusedFilterId, equals: "genre-all")
+
+                    ForEach(availableGenres) { chip in
+                        let active = selectedGenreSlug == chip.slug
+                        LunaPillButton(
+                            chip.label,
+                            isSelected: active,
+                            prominence: .glassPill,
+                            size: .compact
+                        ) {
+                            if active {
+                                selectedGenreSlug = nil
+                                selectedGenreLabel = nil
+                            } else {
+                                selectedGenreSlug = chip.slug
+                                selectedGenreLabel = chip.label
+                            }
+                        }
+                        .focused($focusedFilterId, equals: "genre-\(chip.slug)")
+                    }
+                }
+            }
+            .padding(.horizontal, LunaTheme.horizontalGutter)
+            .padding(.vertical, 10)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentMargins(.zero, for: .scrollContent)
+        .scrollClipDisabled()
+        .ignoresSafeArea(.container, edges: .horizontal)
+        .focusSection()
+        .lunaEntryFocusTarget(
+            nonce: entryFocusNonce,
+            isActive: isEntryActive,
+            focus: $focusedFilterId,
+            target: { "sort-\(selectedSort)" },
+            onTrigger: onScrollToTop
+        )
+        .onMoveCommand { direction in
+            if direction == .down {
+                onMoveDown()
+            }
         }
     }
 }

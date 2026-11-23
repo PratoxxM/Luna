@@ -159,7 +159,7 @@ if not xcstrings_path.is_file():
 else:
     try:
         xc_data = json.loads(xcstrings_path.read_text(encoding="utf-8"))
-        if xc_data.get("sourceLanguage") != "nb" or not isinstance(xc_data.get("strings"), dict) or len(xc_data["strings"]) < 5:
+        if xc_data.get("sourceLanguage") != "nb" or not isinstance(xc_data.get("strings"), dict) or len(xc_data["strings"]) < 4:
             errors.append("COPY_GATE Resources/Localizable.xcstrings must declare sourceLanguage='nb' with plural entries")
         else:
             xc_keys = set(xc_data["strings"].keys())

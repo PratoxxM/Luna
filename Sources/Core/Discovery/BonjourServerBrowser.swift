@@ -7,6 +7,21 @@ public struct DiscoveredLunaCoreServer: Identifiable, Equatable, Sendable {
     public let name: String
     public let baseURL: URL
     public let apiPath: String
+    public let localHostnameURL: URL?
+
+    public init(
+        id: String,
+        name: String,
+        baseURL: URL,
+        apiPath: String,
+        localHostnameURL: URL? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.baseURL = baseURL
+        self.apiPath = apiPath
+        self.localHostnameURL = localHostnameURL
+    }
 
     public var displayAddress: String {
         baseURL.absoluteString
@@ -323,12 +338,32 @@ public final class BonjourServerBrowser {
 
         let rawApi = txt["api"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         let apiPath = (rawApi?.isEmpty == false) ? (rawApi ?? "/api/tv/v1") : "/api/tv/v1"
+        let localHostURL: URL? = {
+            if let rawMdns = txt["hostname"] ?? txt["host"] ?? txt["local_host"] {
+                var host = rawMdns.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                while host.hasSuffix(".") { host.removeLast() }
+                if !host.isEmpty {
+                    if !host.contains(".") {
+                        host += ".local"
+                    }
+                    if host.hasSuffix(".local"),
+                       let built = URL(string: "\(scheme)://\(host):\(effectivePort)") {
+                        return built
+                    }
+                }
+            }
+            if cleanHost.lowercased().hasSuffix(".local") {
+                return url
+            }
+            return nil
+        }()
 
         return DiscoveredLunaCoreServer(
             id: id,
             name: serviceName,
             baseURL: url,
-            apiPath: apiPath
+            apiPath: apiPath,
+            localHostnameURL: localHostURL
         )
     }
 }

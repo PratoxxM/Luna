@@ -60,7 +60,7 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.amber), 6.0)
         XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.warn, background: LunaTheme.canvas), 8.0)
         XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.danger, background: LunaTheme.canvas), 5.0)
-        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.focusGoldTop), 6.0)
+        XCTAssertGreaterThan(try contrastRatio(foreground: LunaTheme.canvas, background: LunaTheme.amber), 6.0)
         let focusMid = Color(red: 177.0 / 255.0, green: 125.0 / 255.0, blue: 49.0 / 255.0)
         XCTAssertGreaterThanOrEqual(try contrastRatio(foreground: LunaTheme.canvas, background: focusMid), 5.0)
     }
@@ -248,8 +248,7 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         )
         try assertRGB(primaryFocusedLabel, r: 10, g: 9, b: 8)
 
-        try assertRGB(LunaTheme.cardTitleColor(isFocused: false), r: 245, g: 240, b: 232)
-        try assertRGB(LunaTheme.cardTitleColor(isFocused: true), r: 245, g: 240, b: 232)
+        try assertRGB(LunaTheme.cardTitleColor(), r: 245, g: 240, b: 232)
         try assertRGB(LunaTheme.cardSubtitleColor(isFocused: false), r: 160, g: 150, b: 140)
         try assertRGB(LunaTheme.cardSubtitleColor(isFocused: true), r: 200, g: 191, b: 182)
         XCTAssertEqual(LunaTheme.horizontalGutter, 90)
@@ -268,35 +267,10 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         )
         try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: true, isFocused: false, isBarFocused: true), r: 160, g: 150, b: 140)
         try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: true, isFocused: false, isBarFocused: true), r: 160, g: 150, b: 140)
-        XCTAssertEqual(
-            try rgbaComponents(TopBarTabPillButton.resolveBorderColor(isActive: true, isFocused: false, isBarFocused: true)).a,
-            0.0,
-            accuracy: 0.001
-        )
-        XCTAssertEqual(
-            try rgbaComponents(TopBarTabPillButton.resolveBorderColor(isActive: true, isFocused: false, isBarFocused: false)).a,
-            0.0,
-            accuracy: 0.001
-        )
         try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: true, isBarFocused: true), r: 10, g: 9, b: 8)
         try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: true, isBarFocused: true), r: 10, g: 9, b: 8)
         try assertRGB(TopBarTabPillButton.resolveIconColor(isActive: false, isFocused: false, isBarFocused: true), r: 160, g: 150, b: 140)
         try assertRGB(TopBarTabPillButton.resolveTextColor(isActive: false, isFocused: false, isBarFocused: true), r: 160, g: 150, b: 140)
-        XCTAssertEqual(
-            try rgbaComponents(TopBarTabPillButton.resolveBorderColor(isActive: false, isFocused: false, isBarFocused: true)).a,
-            0.0,
-            accuracy: 0.001
-        )
-        XCTAssertEqual(
-            try rgbaComponents(TopBarTabPillButton.resolveBorderColor(isActive: true, isFocused: true, isBarFocused: true)).a,
-            0.0,
-            accuracy: 0.001
-        )
-        XCTAssertEqual(
-            try rgbaComponents(TopBarTabPillButton.resolveBorderColor(isActive: false, isFocused: true, isBarFocused: true)).a,
-            0.0,
-            accuracy: 0.001
-        )
 
         let topBarPillWithFocus = TopBarTabPillButton(
             tab: .movies,

@@ -126,19 +126,19 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
 
         XCTAssertEqual(comfort.audioDelayMs, 0)
         XCTAssertEqual(comfort.audioDelaySeconds, 0, accuracy: 0.0001)
-        XCTAssertEqual(comfort.formattedAudioDelayLabel, "0 ms")
+        XCTAssertEqual(ComfortPreferences.formatAudioDelayMs(comfort.audioDelayMs), "0 ms")
 
         comfort.adjustAudioDelay(byMs: -25)
         comfort.adjustAudioDelay(byMs: -10)
         XCTAssertEqual(comfort.audioDelayMs, -35)
         XCTAssertEqual(comfort.audioDelaySeconds, -0.035, accuracy: 0.0001)
-        XCTAssertEqual(comfort.formattedAudioDelayLabel, "-35 ms")
+        XCTAssertEqual(ComfortPreferences.formatAudioDelayMs(comfort.audioDelayMs), "-35 ms")
         XCTAssertEqual(syncCount, 0)
 
         let reloaded = ComfortPreferences(defaults: defaults)
         XCTAssertEqual(reloaded.audioDelayMs, -35)
         XCTAssertEqual(reloaded.audioDelaySeconds, -0.035, accuracy: 0.0001)
-        XCTAssertEqual(reloaded.formattedAudioDelayLabel, "-35 ms")
+        XCTAssertEqual(ComfortPreferences.formatAudioDelayMs(reloaded.audioDelayMs), "-35 ms")
 
         reloaded.adoptServerOverrides(TvDeviceOverrides(hdrSubtitlePreset: "soft_50"))
         XCTAssertEqual(reloaded.audioDelayMs, -35)
@@ -150,7 +150,7 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
 
         reloaded.resetAudioDelay()
         XCTAssertEqual(reloaded.audioDelayMs, 0)
-        XCTAssertEqual(reloaded.formattedAudioDelayLabel, "0 ms")
+        XCTAssertEqual(ComfortPreferences.formatAudioDelayMs(reloaded.audioDelayMs), "0 ms")
         XCTAssertEqual(syncCount, 0)
     }
 
@@ -342,9 +342,9 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
     func testIsolatedPlayerStartupStateDoesNotInvalidatePlayerViewModelAndPreservesLunaV1Keys() throws {
         XCTAssertEqual(SideloadSafeStorage.serverURLKey, "luna.v1.server_url")
         XCTAssertEqual(SideloadSafeStorage.deviceIDKey, "luna.v1.device_id")
-        XCTAssertEqual(SideloadSafeStorage.showCatCompanionsKey, "luna.v1.comfort.show_cat_companions")
-        XCTAssertEqual(SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey, "luna.v1.comfort.keep_display_mode_in_menu")
-        XCTAssertEqual(SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key, "luna.v1.comfort.migrated_menu_60hz_v240")
+        XCTAssertEqual(SideloadSafeStorage.serverLocalHostnameURLKey, "luna.v1.server_local_hostname_url")
+        XCTAssertEqual(SideloadSafeStorage.fallbackServerURLKey, "luna.v1.fallback_server_url")
+        XCTAssertEqual(SideloadSafeStorage.menuDisplayModeKey, "luna.v1.comfort.menu_display_mode")
 
         let suite = "luna.test.startup.isolation.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else {

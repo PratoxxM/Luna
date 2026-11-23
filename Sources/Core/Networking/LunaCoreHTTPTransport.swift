@@ -59,7 +59,8 @@ public struct LunaCoreClient: Sendable {
     private let session: URLSession
     private let imageSession: URLSession
     private let externalImageSession: URLSession
-    private let inflightGETRequests = InflightTaskCoalescer<String, any Sendable>()
+    private let hasInjectedSession: Bool
+    internal let inflightGETRequests: InflightTaskCoalescer<String, any Sendable>
 
     private static let sharedEncoder = Mutex(JSONEncoder())
 
@@ -81,6 +82,8 @@ public struct LunaCoreClient: Sendable {
         self.allowSelfSignedLanTLS = allowSelfSignedLanTLS
         self.appVersion = appVersion
         self.osVersion = osVersion
+        self.hasInjectedSession = false
+        self.inflightGETRequests = LunaCoreSessionPool.shared.inflightGETRequests
         self.session = LunaCoreSessionPool.shared.session(
             for: baseURL,
             allowSelfSignedLanTLS: allowSelfSignedLanTLS
@@ -113,6 +116,8 @@ public struct LunaCoreClient: Sendable {
         self.allowSelfSignedLanTLS = allowSelfSignedLanTLS
         self.appVersion = appVersion
         self.osVersion = osVersion
+        self.hasInjectedSession = true
+        self.inflightGETRequests = InflightTaskCoalescer<String, any Sendable>()
         self.session = session
         self.imageSession = imageSession ?? session
         self.externalImageSession = externalImageSession ?? session
@@ -181,7 +186,25 @@ public struct LunaCoreClient: Sendable {
         return Self.upgradeArtworkURL(url, target: target)
     }
 
-    private static func upgradeArtworkURL(_ url: URL, target: ArtworkTargetWidth) -> URL {
+    public static func upgradeArtworkURL(_ url: URL, target: ArtworkTargetWidth) -> URL {
+        let rawAbs = url.absoluteString
+        if !rawAbs.contains("?") {
+            if let imgRange = rawAbs.range(of: "/api/tv/v1/img/") {
+                if target == .hero4K {
+                    let suffix = rawAbs[imgRange.upperBound...]
+                    if suffix.hasPrefix("card/") {
+                        let replaced = rawAbs[..<imgRange.upperBound] + "backdrop/" + suffix.dropFirst("card/".count)
+                        return URL(string: String(replaced)) ?? url
+                    }
+                    if suffix.hasPrefix("still/") {
+                        let replaced = rawAbs[..<imgRange.upperBound] + "backdrop/" + suffix.dropFirst("still/".count)
+                        return URL(string: String(replaced)) ?? url
+                    }
+                }
+                return url
+            }
+        }
+
         guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return url
         }
@@ -255,18 +278,42 @@ public struct LunaCoreClient: Sendable {
         commonClientHeaders(includeAuth: true)
     }
 
+    public func streamHTTPHeaders(for url: URL) -> [String: String] {
+        isSameOrigin(url) ? commonClientHeaders(includeAuth: true) : [:]
+    }
+
     public func isSameOrigin(_ url: URL) -> Bool {
         guard let targetScheme = url.scheme?.lowercased(),
-              let baseScheme = baseURL.scheme?.lowercased(),
-              targetScheme == baseScheme,
+              (targetScheme == "http" || targetScheme == "https"),
               let targetHost = url.host?.lowercased(),
               let baseHost = baseURL.host?.lowercased(),
               targetHost == baseHost else {
             return false
         }
+        let baseScheme = baseURL.scheme?.lowercased() ?? "http"
         let targetPort = url.port ?? (targetScheme == "https" ? 443 : 80)
         let basePort = baseURL.port ?? (baseScheme == "https" ? 443 : 80)
-        return targetPort == basePort
+        let trustedPorts: Set<Int> = [basePort, 8090, 8920]
+        return trustedPorts.contains(targetPort)
+    }
+
+    public func probeReachability(timeoutSeconds: TimeInterval = 3.0) async throws -> TvBootstrapResponse {
+        guard let url = buildAbsoluteURL("/api/tv/v1/bootstrap") else {
+            throw LunaCoreError.invalidURL("/api/tv/v1/bootstrap")
+        }
+        var req = authorizedRequest(url: url, method: "GET", includeAuth: true)
+        req.timeoutInterval = timeoutSeconds
+        let targetSession = hasInjectedSession
+            ? session
+            : LunaCoreSessionPool.shared.probeSession(
+                for: baseURL,
+                allowSelfSignedLanTLS: allowSelfSignedLanTLS,
+                timeoutSeconds: timeoutSeconds
+            )
+        let (data, rawResp) = try await targetSession.data(for: req)
+        let status = (rawResp as? HTTPURLResponse)?.statusCode ?? 500
+        try validateHTTPStatus(status, data: data)
+        return try await Self.decodeJSONAsync(TvBootstrapResponse.self, from: data)
     }
 
     public func fetchRawImageData(from url: URL) async throws -> (Data, HTTPURLResponse?) {
@@ -280,7 +327,14 @@ public struct LunaCoreClient: Sendable {
                 req.setValue("Bearer \(deviceToken)", forHTTPHeaderField: "Authorization")
             }
         }
-        let targetSession = sameOrigin ? imageSession : externalImageSession
+        let targetSession: URLSession
+        if sameOrigin {
+            targetSession = hasInjectedSession
+                ? imageSession
+                : LunaCoreSessionPool.shared.artworkSession(for: url, allowSelfSignedLanTLS: allowSelfSignedLanTLS)
+        } else {
+            targetSession = externalImageSession
+        }
         let (data, resp) = try await targetSession.data(for: req)
         let http = resp as? HTTPURLResponse
         if let status = http?.statusCode, status >= 400 {
@@ -347,7 +401,8 @@ public struct LunaCoreClient: Sendable {
         }
 
         let immutableReq = req
-        let coalesceKey = "CONDGET|\(ObjectIdentifier(Payload.self))|\(etagHeader ?? "")|\(path)"
+        let originKey = "\(baseURL.scheme?.lowercased() ?? "http")://\(baseURL.host?.lowercased() ?? ""):\(baseURL.port ?? -1)"
+        let coalesceKey = "CONDGET|\(originKey)|\(ObjectIdentifier(Payload.self))|\(etagHeader ?? "")|\(path)"
         let outcome = try await inflightGETRequests.coalesce(key: coalesceKey) { [self] () -> any Sendable in
             let (data, rawResp) = try await self.session.data(for: immutableReq)
             let http = rawResp as? HTTPURLResponse
@@ -387,7 +442,8 @@ public struct LunaCoreClient: Sendable {
         guard method == "GET" else {
             return try await executeAndDecode(req).response
         }
-        let coalesceKey = "GET|\(ObjectIdentifier(Response.self))|auth:\(includeAuth)|\(path)"
+        let originKey = "\(baseURL.scheme?.lowercased() ?? "http")://\(baseURL.host?.lowercased() ?? ""):\(baseURL.port ?? -1)"
+        let coalesceKey = "GET|\(originKey)|\(ObjectIdentifier(Response.self))|auth:\(includeAuth)|\(path)"
         let outcome = try await inflightGETRequests.coalesce(key: coalesceKey) { [self] () -> any Sendable in
             let (_, decoded): (Int, Response) = try await self.executeAndDecode(req)
             return decoded

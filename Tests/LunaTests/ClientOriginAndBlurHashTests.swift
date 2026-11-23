@@ -32,6 +32,7 @@ private final class MockSourcePickerSessionClient: SourcePickerSessionClient, @u
     let heartbeatSignal = SourcePickerHeartbeatSignal()
     let log = TestLockedBox<[String]>([])
     let stoppedSessions = TestLockedBox<[String]>([])
+    let cancelledInflightTokens = TestLockedBox<[String]>([])
     let fetchAlternativesCount = TestLockedBox<Int>(0)
     let prepareCount = TestLockedBox<Int>(0)
     let sessionIdToReturn: String
@@ -55,7 +56,8 @@ private final class MockSourcePickerSessionClient: SourcePickerSessionClient, @u
         itemId: String,
         title: String,
         seriesTitle: String?,
-        startPositionSeconds: Double?
+        startPositionSeconds: Double?,
+        prepareToken: String?
     ) async throws -> TvPrepareResponse {
         let idx = prepareCount.withLock { count -> Int in
             count += 1
@@ -99,6 +101,17 @@ private final class MockSourcePickerSessionClient: SourcePickerSessionClient, @u
         }
         """
         return try JSONDecoder().decode(TvPrepareResponse.self, from: Data(json.utf8))
+    }
+
+    func cancelInflightPlayback(
+        sessionId: String?,
+        resolveId: String?,
+        itemId: String?,
+        prepareToken: String?
+    ) async throws {
+        if let prepareToken {
+            cancelledInflightTokens.withLock { $0.append(prepareToken) }
+        }
     }
 
     func fetchAlternatives(sessionId: String) async throws -> TvAlternativesResponse {
@@ -178,9 +191,17 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         )
 
         XCTAssertTrue(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "https://tv.example.test:8920/api/tv/v1/img/1"))))
+        XCTAssertTrue(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "http://tv.example.test:8090/api/tv/v1/stream/s1/tok/v.mkv"))))
         XCTAssertFalse(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "https://image.tmdb.example.net/t/p/original/a.jpg"))))
+        XCTAssertFalse(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "http://tv.example.test:9999/api/tv/v1/img/1"))))
         XCTAssertFalse(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "https://tv.example.test:8090/api/tv/v1/img/1"))))
         XCTAssertFalse(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "http://tv.example.test:8920/api/tv/v1/img/1"))))
+
+        let lanStreamURL = try XCTUnwrap(URL(string: "http://tv.example.test:8090/api/tv/v1/stream/s1/tok/v.mkv"))
+        let foreignStreamURL = try XCTUnwrap(URL(string: "https://cdn.example.net/video.mkv"))
+        XCTAssertEqual(tlsClient.streamHTTPHeaders(for: lanStreamURL)["Authorization"], "Bearer token-placeholder")
+        XCTAssertNil(tlsClient.streamHTTPHeaders(for: foreignStreamURL)["Authorization"])
+        XCTAssertNil(tlsClient.streamHTTPHeaders(for: foreignStreamURL)["X-Device-Id"])
 
         let defaultPortClient = LunaCoreClient(
             baseURL: try XCTUnwrap(URL(string: "https://cdn.example.net")),
@@ -222,7 +243,6 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
     func testBlurHashDecodeAsyncDeduplicatesConcurrentCallersAndPreservesActiveWaiterOnCancel() async throws {
         let sampleHash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj"
         BlurHashDecoder.clearCache()
-        BlurHashDecoder.resetMetrics()
         defer { BlurHashDecoder.clearCache() }
 
         let invalid = await BlurHashDecoder.decodeAsync("bad", width: 64, height: 48)
@@ -252,13 +272,9 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         for image in results {
             XCTAssertTrue(image === first, "Concurrent BlurHash callers should share one decoded CGImage")
         }
-        let metrics = BlurHashDecoder.metricsSnapshot()
-        XCTAssertEqual(metrics.actualDecodes, 1)
-        XCTAssertEqual(metrics.coalescedWaiters + metrics.cacheHits, 11)
 
         // Cancelling one waiter while a peer is active must still deliver the decoded image to the peer.
         BlurHashDecoder.clearCache()
-        BlurHashDecoder.resetMetrics()
         let cancelledTask = Task {
             await BlurHashDecoder.decodeAsync(sampleHash, width: 48, height: 36, punch: 1.0)
         }
@@ -271,13 +287,9 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         XCTAssertNotNil(activeImage)
         XCTAssertEqual(activeImage?.width, 48)
         XCTAssertEqual(activeImage?.height, 36)
-        let cancelMetrics = BlurHashDecoder.metricsSnapshot()
-        XCTAssertGreaterThanOrEqual(cancelMetrics.actualDecodes, 1)
-        XCTAssertLessThanOrEqual(cancelMetrics.actualDecodes, 2)
 
-        // Pre-cancelled caller returns nil deterministically without decoding.
+        // Pre-cancelled caller returns nil deterministically without caching.
         BlurHashDecoder.clearCache()
-        BlurHashDecoder.resetMetrics()
         let preCancelled = Task { () -> CGImage? in
             while !Task.isCancelled {
                 await Task.yield()
@@ -287,7 +299,7 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         preCancelled.cancel()
         let cancelledResult = await preCancelled.value
         XCTAssertNil(cancelledResult)
-        XCTAssertEqual(BlurHashDecoder.metricsSnapshot().actualDecodes, 0)
+        XCTAssertNil(BlurHashDecoder.cachedImage(sampleHash, width: 32, height: 24, punch: 1.0))
     }
 
     @MainActor
@@ -526,6 +538,14 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
             client.resolveArtworkURL("/api/tv/v1/artwork?src=test&width=320", target: .hero4K)?.absoluteString,
             "https://media.example.invalid/api/tv/v1/artwork?src=test&width=3840"
         )
+        XCTAssertEqual(
+            client.resolveArtworkURL("/api/tv/v1/img/card/tmdb/hero.jpg", target: .hero4K)?.absoluteString,
+            "https://media.example.invalid/api/tv/v1/img/backdrop/tmdb/hero.jpg"
+        )
+        XCTAssertEqual(
+            client.resolveArtworkURL("/api/tv/v1/img/card/tmdb/hero.jpg", target: .landscape2x)?.absoluteString,
+            "https://media.example.invalid/api/tv/v1/img/card/tmdb/hero.jpg"
+        )
         XCTAssertNil(client.resolveArtworkURL("   ", target: .poster2x))
     }
 
@@ -544,6 +564,13 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
             ArtworkPipeline.canonicalSubjectIdentity(for: orig4KURL)
         )
 
+        let lanCard = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v1/img/card/tmdb/severance_hero.jpg"))
+        let lanBackdrop = try XCTUnwrap(URL(string: "https://\(host):8920/api/tv/v1/img/backdrop/tmdb/severance_hero.jpg"))
+        XCTAssertEqual(
+            ArtworkPipeline.canonicalSubjectIdentity(for: lanCard),
+            ArtworkPipeline.canonicalSubjectIdentity(for: lanBackdrop)
+        )
+
         let lan1280 = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v1/artwork/backdrop?id=550&w=1280"))
         let lan3840 = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v1/artwork/backdrop?id=550&w=3840"))
         XCTAssertEqual(
@@ -557,7 +584,7 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         XCTAssertNotNil(bridgedHit, "4K original hero URL must immediately find cached w1280 shelf backdrop in 0 ms")
         XCTAssertTrue(bridgedHit?.image === sampleCG)
 
-        // Verify 8-bit grayscale PNG decodes cleanly through `downsampleAndDecode` + `byPreparingForDisplay()` fallback
+        // Verify 8-bit grayscale PNG decodes cleanly through `downsampleAndDecode` + native-dimension clamping (16px requested at 1920px stays 16x16)
         let graySpace = CGColorSpaceCreateDeviceGray()
         var grayPixels = [UInt8](repeating: 180, count: 16 * 16)
         let grayCG: CGImage = try grayPixels.withUnsafeMutableBytes { rawBuf in
@@ -587,7 +614,9 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         }
         let client = try MockURLProtocol.makeClient(host: host)
         let grayURL = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v1/img/grayscale.png"))
-        let loadedGray = await ArtworkPipeline.shared.loadImage(url: grayURL, maxPixelSize: 256, client: client)
+        let loadedGray = await ArtworkPipeline.shared.loadImage(url: grayURL, maxPixelSize: 1920, client: client)
         XCTAssertNotNil(loadedGray, "Grayscale artwork must never be lost if byPreparingForDisplay() returns nil")
+        XCTAssertEqual(loadedGray?.width, 16, "downsampleAndDecode must clamp maxPixelSize to native pixel dimensions")
+        XCTAssertEqual(loadedGray?.height, 16)
     }
 }

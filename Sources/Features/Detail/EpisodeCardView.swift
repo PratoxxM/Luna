@@ -108,7 +108,7 @@ struct EpisodeCardView: View {
             HStack(spacing: 10) {
                 Text(displayTitle)
                     .font(LunaTheme.Font.cardTitle)
-                    .foregroundStyle(LunaTheme.cardTitleColor(isFocused: isFocused))
+                    .foregroundStyle(LunaTheme.cardTitleColor())
                     .lineLimit(1)
 
                 Spacer(minLength: 6)

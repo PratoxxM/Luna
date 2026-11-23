@@ -134,8 +134,13 @@ extension PlayerViewModel {
         }
 
         do {
+            isWirelessAudioRouteActive = PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
+            let effectiveDelaySeconds = effectiveAudioDelaySecondsForActiveRoute()
+            let currentShaping = comfort.buildAudioShaping(enhancement: audioEnhancement)
             try await engine.reloadAtCurrentPosition { options in
                 options.autoplay = defaultShouldPlay
+                options.audioDelaySeconds = effectiveDelaySeconds
+                options.audioShaping = currentShaping
             }
             guard !Task.isCancelled, !isTeardownCompleted else { return }
 
@@ -213,7 +218,6 @@ extension PlayerViewModel {
                 await runResolveAndLoad(
                     request: retryReq,
                     client: client,
-                    isReplacement: false,
                     autoplay: capturedShouldPlay
                 )
                 guard !Task.isCancelled, !isTeardownCompleted, fatalError == nil else { return }

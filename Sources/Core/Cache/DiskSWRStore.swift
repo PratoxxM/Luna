@@ -3,18 +3,15 @@ import Synchronization
 
 public struct CachedHomeSnapshot: Sendable {
     public let etag: String?
-    public let savedAt: Date
     public let payload: TvHomeResponse
     public let visibleRows: [TvShelfRow]
 
     public init(
         etag: String?,
-        savedAt: Date,
         payload: TvHomeResponse,
         visibleRows: [TvShelfRow]? = nil
     ) {
         self.etag = etag
-        self.savedAt = savedAt
         self.payload = payload
         self.visibleRows = visibleRows ?? CatalogShelfIndexer.prepareVisibleRows(from: payload)
     }
@@ -22,7 +19,6 @@ public struct CachedHomeSnapshot: Sendable {
 
 private struct HomeCacheMetadata: Codable, Sendable {
     let etag: String?
-    let savedAt: Date
 }
 
 private actor DiskSWRStorageActor {
@@ -39,32 +35,26 @@ private actor DiskSWRStorageActor {
             .appendingPathComponent("swr", isDirectory: true)
     }
 
-    func loadFromDisk(primaryBaseName: String, legacyBaseName: String) -> CachedHomeSnapshot? {
+    func loadFromDisk(baseName: String) -> CachedHomeSnapshot? {
         let dir = swrDirectoryURL
-        let candidates = primaryBaseName == legacyBaseName ? [primaryBaseName] : [primaryBaseName, legacyBaseName]
-
-        for baseName in candidates {
-            let payloadURL = dir.appendingPathComponent("\(baseName).json")
-            let metaURL = dir.appendingPathComponent("\(baseName).meta.json")
-            guard let payloadData = try? Data(contentsOf: payloadURL),
-                  let decoded = try? decoder.decode(TvHomeResponse.self, from: payloadData) else {
-                continue
-            }
-            let meta: HomeCacheMetadata?
-            if let metaData = try? Data(contentsOf: metaURL) {
-                meta = try? decoder.decode(HomeCacheMetadata.self, from: metaData)
-            } else {
-                meta = nil
-            }
-            let rows = CatalogShelfIndexer.prepareVisibleRows(from: decoded)
-            return CachedHomeSnapshot(
-                etag: meta?.etag,
-                savedAt: meta?.savedAt ?? Date.distantPast,
-                payload: decoded,
-                visibleRows: rows
-            )
+        let payloadURL = dir.appendingPathComponent("\(baseName).json")
+        let metaURL = dir.appendingPathComponent("\(baseName).meta.json")
+        guard let payloadData = try? Data(contentsOf: payloadURL),
+              let decoded = try? decoder.decode(TvHomeResponse.self, from: payloadData) else {
+            return nil
         }
-        return nil
+        let meta: HomeCacheMetadata?
+        if let metaData = try? Data(contentsOf: metaURL) {
+            meta = try? decoder.decode(HomeCacheMetadata.self, from: metaData)
+        } else {
+            meta = nil
+        }
+        let rows = CatalogShelfIndexer.prepareVisibleRows(from: decoded)
+        return CachedHomeSnapshot(
+            etag: meta?.etag,
+            payload: decoded,
+            visibleRows: rows
+        )
     }
 
     func saveToDisk(rawPayloadData: Data, etag: String?, baseName: String) {
@@ -76,7 +66,7 @@ private actor DiskSWRStorageActor {
         let metaURL = dir.appendingPathComponent("\(baseName).meta.json")
 
         try? rawPayloadData.write(to: payloadURL, options: .atomic)
-        let meta = HomeCacheMetadata(etag: etag, savedAt: Date())
+        let meta = HomeCacheMetadata(etag: etag)
         if let encodedMeta = try? encoder.encode(meta) {
             try? encodedMeta.write(to: metaURL, options: .atomic)
         }
@@ -111,14 +101,10 @@ public enum DiskSWRStore {
         })
     }
 
-    private static func legacyFileBaseName(roomName: String, hardwareProfile: String) -> String {
-        "home-\(sanitize(roomName))-\(sanitize(hardwareProfile))"
-    }
-
     private static func fileBaseName(serverHost: String?, roomName: String, hardwareProfile: String) -> String {
         let trimmedHost = serverHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if trimmedHost.isEmpty {
-            return legacyFileBaseName(roomName: roomName, hardwareProfile: hardwareProfile)
+            return "home-\(sanitize(roomName))-\(sanitize(hardwareProfile))"
         }
         return "home-\(sanitize(trimmedHost))-\(sanitize(roomName))-\(sanitize(hardwareProfile))"
     }
@@ -143,11 +129,7 @@ public enum DiskSWRStore {
         if let cachedHit {
             return cachedHit
         }
-        let legacyKey = legacyFileBaseName(roomName: roomName, hardwareProfile: hardwareProfile)
-        guard let loaded = await DiskSWRStorageActor.shared.loadFromDisk(
-            primaryBaseName: primaryKey,
-            legacyBaseName: legacyKey
-        ) else {
+        guard let loaded = await DiskSWRStorageActor.shared.loadFromDisk(baseName: primaryKey) else {
             return nil
         }
         return state.withLock { s in
@@ -171,7 +153,7 @@ public enum DiskSWRStore {
         let primaryKey = fileBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
         let taskID = UUID()
         let immediateSnapshot: CachedHomeSnapshot? = decodedPayload.map {
-            CachedHomeSnapshot(etag: etag, savedAt: Date(), payload: $0, visibleRows: precomputedRows)
+            CachedHomeSnapshot(etag: etag, payload: $0, visibleRows: precomputedRows)
         }
         state.withLock { s in
             if let immediateSnapshot {
@@ -190,7 +172,6 @@ public enum DiskSWRStore {
                         guard s.clearEpoch == epoch, !Task.isCancelled else { return }
                         s.snapshots[primaryKey] = CachedHomeSnapshot(
                             etag: etag,
-                            savedAt: Date(),
                             payload: decoded,
                             visibleRows: computed
                         )

@@ -30,6 +30,7 @@ struct SearchView: View {
     @State private var didConsumeInitialQuery: Bool = false
     @State private var searchRetryNonce: Int = 0
     @State private var lastHandledRetryNonce: Int = 0
+    @State private var lastSeenRefreshNonce: Int = -1
     @State private var queryFocusNonce: Int = 0
 
     @State private var mountedTracker = MountedEntryCardTracker()
@@ -250,13 +251,14 @@ struct SearchView: View {
                 subpageVisibility.enterSubpage(subpageToken)
             }
         }
-        .task(id: "\(trimmedQuery)#\(searchRetryNonce)") {
+        .task(id: "\(trimmedQuery)#\(searchRetryNonce)#\(sessionStore.homeRefreshNonce)#active:\(isActiveTab)") {
             guard trimmedQuery.count >= 2 else {
                 results = []
                 localCount = 0
                 lastCompletedQuery = ""
                 errorMessage = nil
                 isSearching = false
+                lastSeenRefreshNonce = sessionStore.homeRefreshNonce
                 return
             }
 
@@ -265,14 +267,21 @@ struct SearchView: View {
             if isRetry {
                 lastHandledRetryNonce = searchRetryNonce
             }
-            let skipDebounce = (!didConsumeInitialQuery && !initialTrimmed.isEmpty && trimmedQuery == initialTrimmed) || isRetry
+            let nonceChanged = lastSeenRefreshNonce != -1 && lastSeenRefreshNonce != sessionStore.homeRefreshNonce
+            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
+            if nonceChanged && !isActiveTab && isRootTab {
+                // Invalidate cached query marker so returning to Search tab refreshes immediately
+                lastCompletedQuery = ""
+                return
+            }
+            let skipDebounce = (!didConsumeInitialQuery && !initialTrimmed.isEmpty && trimmedQuery == initialTrimmed) || isRetry || nonceChanged
             didConsumeInitialQuery = true
 
             if !skipDebounce {
                 try? await Task.sleep(nanoseconds: 180_000_000)
             }
             guard !Task.isCancelled else { return }
-            if !isRetry && trimmedQuery == lastCompletedQuery && !results.isEmpty && errorMessage == nil {
+            if !isRetry && !nonceChanged && trimmedQuery == lastCompletedQuery && !results.isEmpty && errorMessage == nil {
                 return
             }
             await executeSearch(trimmed: trimmedQuery)
@@ -370,6 +379,7 @@ struct SearchView: View {
         }
         do {
             if try await MediaCardMutator.setWatchlist(for: card, listed: nextListed, sessionStore: sessionStore) {
+                lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
                 sessionStore.notifyContentMutated()
             }
         } catch {
@@ -394,7 +404,13 @@ struct SearchView: View {
             )
         }
         do {
-            if try await MediaCardMutator.toggleWatched(for: card, watched: nextWatched, sessionStore: sessionStore) {
+            if try await MediaCardMutator.toggleWatched(
+                for: card,
+                watched: nextWatched,
+                preferSeriesEpisodeTarget: true,
+                sessionStore: sessionStore
+            ) {
+                lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
                 sessionStore.notifyContentMutated()
             }
         } catch {

@@ -76,7 +76,7 @@ struct MainNavigationShell: View {
             NavigationStack {
                 MediaDetailView(
                     mediaType: "series",
-                    itemId: "series:246810",
+                    itemId: "series:tmdb:246810",
                     initialTitle: "Luksusfellen"
                 )
             }
@@ -102,7 +102,7 @@ struct MainNavigationShell: View {
                     HomeView(
                         initialServerHost: sessionStore.serverBaseURL?.host,
                         initialRoomName: sessionStore.roomName,
-                        initialHardwareProfile: sessionStore.effectiveHardwareProfile,
+                        initialHardwareProfile: sessionStore.hardwareProfile,
                         isActiveTab: selectedTab == .home,
                         previewFocusPosterRow: focusPosterPreview,
                         allowInitialColdFocus: allowColdHomeCardFocus
@@ -208,7 +208,7 @@ struct MainNavigationShell: View {
 
             LunaTopBarView(
                 selectedTab: $selectedTab,
-                roomName: sessionStore.roomName,
+                roomName: sessionStore.isRoomUnassigned ? "Velg rom i Innstillinger" : sessionStore.roomName,
                 focusRequestNonce: navBarVisibility.focusRequestNonce,
                 isUpwardBridgeEnabled: !hideTopBar && !navBarVisibility.isTopBarFocused && !navBarVisibility.isModalActive && !isPlaybackActive,
                 onFocusPresenceChanged: { isFocused in
@@ -269,8 +269,11 @@ struct MainNavigationShell: View {
             await refreshBootstrapProfile()
         }
         .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                ArtworkPipeline.shared.handleSceneDidEnterBackground()
+            }
             if PlayerAudioSessionCoordinator.shouldResetHeldDisplayCriteriaOnScenePhase(
-                isActiveScene: phase == .active,
+                isBackgroundScene: phase == .background,
                 hasActivePlayback: sessionStore.activePlaybackTarget != nil,
                 engineState: engine.state
             ) {

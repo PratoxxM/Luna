@@ -63,7 +63,6 @@ final class PreviewMockURLProtocol: URLProtocol {
         if path == "/api/tv/v1/bootstrap" {
             let boot = TvBootstrapResponse(
                 ok: true,
-                server: TvServerBootstrapInfo(name: "LunaCore Preview", version: "5.1.1", apiVersion: 1, featureLevel: 5, capabilities: ["dvFel": false]),
                 device: TvPairedDeviceInfo(
                     deviceId: "luna-preview-appletv",
                     deviceName: "Apple TV 4K",
@@ -109,7 +108,6 @@ final class PreviewMockURLProtocol: URLProtocol {
                 page: 1,
                 limit: 24,
                 hasMore: false,
-                availableSorts: nil,
                 availableGenres: PreviewMockFixtures.genreChips,
                 items: isSeries ? PreviewMockFixtures.seriesCards : PreviewMockFixtures.catalogMovies
             )
@@ -132,10 +130,7 @@ final class PreviewMockURLProtocol: URLProtocol {
         if path == "/api/tv/v1/playback/prepare" {
             let prep = TvPrepareResponse(
                 ok: true,
-                status: "ready",
-                reused: true,
                 prepareToken: "preview-prep-token",
-                canClientPrewarmBytes: false,
                 playbackSession: PreviewMockFixtures.playerSession
             )
             return (try? LunaCoreClient.encodeJSON(prep)) ?? Data("{}".utf8)
@@ -143,8 +138,6 @@ final class PreviewMockURLProtocol: URLProtocol {
         if path == "/api/tv/v1/playback/resolve" {
             let start = TvResolveStartResponse(
                 ok: true,
-                status: "ready",
-                preResolved: true,
                 resolveId: "preview-resolve-1",
                 wsPath: nil,
                 playbackSession: PreviewMockFixtures.playerSession,
@@ -168,13 +161,8 @@ final class PreviewMockURLProtocol: URLProtocol {
                 ok: true,
                 sessionId: PreviewMockFixtures.playerSession.sessionId,
                 state: "paused",
-                watchCompleted: false,
-                vfsLockActive: true,
-                leaseExpiresAt: nil,
-                nextEpisodePrewarmStarted: false,
-                nextEpisodePrewarmReady: true,
                 pendingCommand: nil,
-                vfsTelemetry: TvVfsTelemetry(streamSource: "Strømmes ved start", vfsMountFolder: nil)
+                vfsTelemetry: TvVfsTelemetry(streamSource: "Strømmes ved start")
             )
             return (try? LunaCoreClient.encodeJSON(hb)) ?? Data("{}".utf8)
         }

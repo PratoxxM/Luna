@@ -5,16 +5,50 @@ import XCTest
 @testable import Luna
 
 final class NavigationSettingsAndDeleteTests: XCTestCase {
-    func testSettingsCategoriesOrderAndPreservedDisplayToggleStrings() {
+    @MainActor
+    func testSettingsCategoriesFailoverOrderAndSpeakerLayoutPreservation() throws {
         XCTAssertEqual(
             SettingsCategory.allCases.map(\.title),
             ["Rom og skjerm", "Undertekster", "Avspilling", "System", "Avansert"]
         )
         XCTAssertEqual(
-            SettingsView.keepDisplayModeToggleTitle,
-            "Behold filmens skjerm- og HDR-modus i menyen etter avspilling"
+            SpeakerLayoutOverrideMode.auto.displayTitle(forHardwareProfile: "hdr10-512"),
+            "Auto (5.1.2)"
         )
-        XCTAssertTrue(SettingsView.keepDisplayModeExplanationText.contains("24p-film"))
+        XCTAssertEqual(
+            SpeakerLayoutOverrideMode.auto.displayTitle(forHardwareProfile: "dv-fel-714"),
+            "Auto (7.1.4)"
+        )
+
+        let primary = try XCTUnwrap(URL(string: "https://lunacore.local:8920"))
+        let localHost = try XCTUnwrap(URL(string: "http://nas-tv.local:8090"))
+        let fallback = try XCTUnwrap(URL(string: "https://remote.example.net:8920"))
+        let candidates = AppSessionStore.orderedFailoverCandidates(
+            primary: primary,
+            localHostnameURL: localHost,
+            fallbackServerURL: fallback
+        )
+        XCTAssertEqual(
+            candidates.map(\.absoluteString),
+            [
+                "http://lunacore.local:8090",
+                "https://nas-tv.local:8920",
+                "http://nas-tv.local:8090",
+                "https://remote.example.net:8920",
+            ]
+        )
+
+        let suite = "luna.test.speaker512.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let comfort = ComfortPreferences(defaults: defaults)
+        comfort.adoptServerOverrides(TvDeviceOverrides(speakerLayoutOverride: "5.1.2"))
+        XCTAssertEqual(comfort.speakerLayoutOverride, .auto)
+        XCTAssertEqual(comfort.toDeviceOverrides().speakerLayoutOverride, "auto")
+        comfort.speakerLayoutOverride = .stereo
+        XCTAssertEqual(comfort.toDeviceOverrides().speakerLayoutOverride, "2.0")
+        comfort.speakerLayoutOverride = .auto
+        XCTAssertEqual(comfort.toDeviceOverrides().speakerLayoutOverride, "auto")
     }
 
     func testDecodeTvDeletePreflightWithPhysicalBytesAndBlockers() throws {
@@ -162,9 +196,6 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
         let lib = try JSONDecoder().decode(TvLibraryResponse.self, from: Data(libListsJson.utf8))
         XCTAssertEqual(lib.section, "lists")
         XCTAssertEqual(lib.counts.customLists, 2)
-        XCTAssertEqual(lib.customLists?.first?.name, "Nordic Noir")
-        XCTAssertEqual(lib.customLists?.first?.itemCount, 6)
-        XCTAssertEqual(lib.customLists?.first?.sourceType, nil)
     }
 
     func testCustomListSourceTypeAndOngoingContextPolicy() throws {
@@ -183,23 +214,11 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
           },
           "favorites": [],
           "watchlist": [],
-          "localItems": [],
-          "customLists": [
-            {
-              "id": "mine-pagaende-serier",
-              "name": "Mine pågående serier",
-              "mediaType": "series",
-              "sourceType": "active_series",
-              "listMode": "curated",
-              "rowStyle": "poster",
-              "itemCount": 3,
-              "browsePath": "/api/tv/v1/rows/custom:mine-pagaende-serier"
-            }
-          ]
+          "localItems": []
         }
         """
         let lib = try JSONDecoder().decode(TvLibraryResponse.self, from: Data(listsJson.utf8))
-        XCTAssertEqual(lib.customLists?.first?.sourceType, "active_series")
+        XCTAssertEqual(lib.counts.customLists, 1)
 
         let rowJson = """
         {
@@ -277,7 +296,6 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
         let detailView = MediaDetailView(mediaType: "movie", itemId: "movie:tmdb:550", initialTitle: "Fight Club")
 
         XCTAssertEqual(deleteSheet.target.tmdbId, 550)
-        XCTAssertEqual(SettingsView.keepDisplayModeToggleTitle.isEmpty, false)
         XCTAssertFalse(pushedSearchView.isRootTab)
         XCTAssertFalse(pushedCatalogView.isRootTab)
         XCTAssertEqual(customRowView.title, "Nordic Noir")

@@ -70,16 +70,12 @@ public struct TvDeleteTargetSummary: Decodable, Equatable, Sendable {
     public let title: String?
     public let year: Int?
     public let monitored: Bool?
-    public let canRemoveFromLibrary: Bool?
 }
 
 public struct TvDeleteFilesSummary: Decodable, Equatable, Sendable {
     public let count: Int
     public let logicalBytes: Int64
     public let physicalBytes: Int64
-    public let ssdBytes: Int64?
-    public let archiveBytes: Int64?
-    public let vfsCount: Int?
 
     public var freedDisplayBytes: Int64 {
         physicalBytes > 0 ? physicalBytes : logicalBytes
@@ -106,21 +102,9 @@ public struct TvDeleteBlocker: Decodable, Identifiable, Equatable, Sendable {
 }
 
 public struct TvDeletePreflightResponse: Decodable, Equatable, Sendable {
-    public let checkedAt: String?
     public let preflightId: String?
-    public let expiresAt: String?
     public let target: TvDeleteTargetSummary
     public let files: TvDeleteFilesSummary
     public let blockers: [TvDeleteBlocker]
     public let warnings: [String]?
-}
-
-public struct TvDeleteExecuteResponse: Decodable, Equatable, Sendable {
-    public let ok: Bool
-    public let action: String?
-    public let removedFromLibrary: Bool?
-    public let deletedFiles: Int?
-    public let mediaType: String?
-    public let tmdbId: Int?
-    public let scope: String?
 }

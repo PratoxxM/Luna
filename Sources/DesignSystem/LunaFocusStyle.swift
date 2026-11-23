@@ -47,7 +47,6 @@ public enum LunaFocusStyle {
     }
 
     public nonisolated static func borderColor(
-        for kind: LunaFocusKind,
         isFocused: Bool,
         accentColor: Color = LunaTheme.amber
     ) -> Color {
@@ -87,7 +86,6 @@ public struct LunaFocusSurfaceModifier: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         let borderBase = customAccent ? accentColor : LunaTheme.focusGoldBorder
         let activeBorderColor = LunaFocusStyle.borderColor(
-            for: kind,
             isFocused: isFocused,
             accentColor: borderBase
         )

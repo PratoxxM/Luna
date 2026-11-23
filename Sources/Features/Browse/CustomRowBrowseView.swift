@@ -57,6 +57,8 @@ struct CustomRowBrowseView: View {
     @State private var selectedCard: TvMediaCard?
     @State private var retryNonce: Int = 0
     @State private var suppressNextRefreshReload: Bool = false
+    @State private var reloadGeneration: UInt64 = 0
+    @State private var loadMoreTask: Task<Void, Never>?
 
     private let pageSize = 36
     private let columns = LunaTheme.posterGridColumns
@@ -127,7 +129,10 @@ struct CustomRowBrowseView: View {
                             }
                             .onAppear {
                                 if idx >= prefetchThreshold && hasMore && !isLoadingMore {
-                                    Task { await loadMore() }
+                                    loadMoreTask?.cancel()
+                                    loadMoreTask = Task { @MainActor in
+                                        await loadMore()
+                                    }
                                 }
                             }
                         }
@@ -164,9 +169,15 @@ struct CustomRowBrowseView: View {
                 suppressNextRefreshReload = false
                 return
             }
-            await loadInitial()
+            loadMoreTask?.cancel()
+            loadMoreTask = nil
+            reloadGeneration &+= 1
+            let gen = reloadGeneration
+            await loadInitial(generation: gen)
         }
         .onDisappear {
+            loadMoreTask?.cancel()
+            loadMoreTask = nil
             if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
                 hasPushedChildDestination: selectedCard != nil,
                 hasActivePlayback: sessionStore.activePlaybackTarget != nil
@@ -176,41 +187,52 @@ struct CustomRowBrowseView: View {
         }
     }
 
-    private func loadInitial() async {
+    private func loadInitial(generation: UInt64) async {
         guard let client = sessionStore.makeClient() else { return }
         isLoading = true
         errorMessage = nil
         offset = 0
         do {
             let res = try await client.fetchRow(pathOrRowId: pathOrRowId, offset: 0, limit: pageSize)
+            guard !Task.isCancelled, generation == reloadGeneration else { return }
             items = res.items
             if let sk = res.sourceKind {
                 rowSourceKind = sk
             }
             hasMore = res.hasMore
             offset = res.items.count
+        } catch where LunaCoreError.isCancellation(error) {
+            return
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
+            guard !Task.isCancelled, generation == reloadGeneration else { return }
             errorMessage = LunaCopy.friendlyErrorMessage(error)
         }
-        isLoading = false
+        if generation == reloadGeneration {
+            isLoading = false
+        }
     }
 
     private func loadMore() async {
         guard !isLoadingMore, hasMore, let client = sessionStore.makeClient() else { return }
+        let gen = reloadGeneration
         isLoadingMore = true
         defer { isLoadingMore = false }
 
         do {
             let res = try await client.fetchRow(pathOrRowId: pathOrRowId, offset: offset, limit: pageSize)
+            guard !Task.isCancelled, gen == reloadGeneration else { return }
             let existing = Set(items.map(\.id))
             items.append(contentsOf: res.items.filter { !existing.contains($0.id) })
             hasMore = res.hasMore
             offset += res.items.count
+        } catch where LunaCoreError.isCancellation(error) {
+            return
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
         } catch {
+            guard !Task.isCancelled, gen == reloadGeneration else { return }
             showMutationError(error)
         }
     }
@@ -279,7 +301,12 @@ struct CustomRowBrowseView: View {
             items[idx].progress = updated
         }
         do {
-            if try await MediaCardMutator.toggleWatched(for: card, watched: nextVal, sessionStore: sessionStore) {
+            if try await MediaCardMutator.toggleWatched(
+                for: card,
+                watched: nextVal,
+                preferSeriesEpisodeTarget: true,
+                sessionStore: sessionStore
+            ) {
                 suppressNextRefreshReload = true
                 sessionStore.notifyContentMutated()
             }

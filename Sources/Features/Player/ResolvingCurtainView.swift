@@ -43,10 +43,11 @@ struct ResolvingCurtainView: View {
                 CachedArtworkView(
                     url: backdropURL,
                     client: client,
-                    maxPixelSize: 3840,
+                    maxPixelSize: 1920,
                     placeholderSymbol: "film",
                     contentMode: .fill,
-                    reuseAnyCachedSize: true
+                    reuseAnyCachedSize: true,
+                    retainDuringPlayback: true
                 )
                 .equatable()
                 .ignoresSafeArea()
@@ -83,9 +84,10 @@ struct ResolvingCurtainView: View {
                     CachedArtworkView(
                         url: logoURL,
                         client: client,
-                        maxPixelSize: 1200,
+                        maxPixelSize: 800,
                         contentMode: .fit,
-                        reuseAnyCachedSize: true
+                        reuseAnyCachedSize: true,
+                        retainDuringPlayback: true
                     )
                     .equatable()
                     .frame(maxWidth: 520, maxHeight: 140)

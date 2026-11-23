@@ -10,13 +10,15 @@ extension LunaCoreClient {
         itemId: String,
         title: String,
         seriesTitle: String? = nil,
-        startPositionSeconds: Double? = nil
+        startPositionSeconds: Double? = nil,
+        prepareToken: String? = nil
     ) async throws -> TvPrepareResponse {
         struct PrepareBody: Encodable, Sendable {
             let itemId: String
             let title: String
             let seriesTitle: String?
             let startPositionSeconds: Double?
+            let prepareToken: String?
         }
         let sanitizedTitle = EpisodeTitleFormatter.apiEpisodeTitle(
             rawTitle: title,
@@ -32,7 +34,40 @@ extension LunaCoreClient {
                 itemId: itemId,
                 title: sanitizedTitle,
                 seriesTitle: seriesTitle,
-                startPositionSeconds: startPositionSeconds
+                startPositionSeconds: startPositionSeconds,
+                prepareToken: prepareToken
+            )
+        )
+    }
+
+    public func cancelInflightPlayback(
+        sessionId: String? = nil,
+        resolveId: String? = nil,
+        itemId: String? = nil,
+        prepareToken: String? = nil
+    ) async throws {
+        struct CancelInflightBody: Encodable, Sendable {
+            let sessionId: String?
+            let resolveId: String?
+            let itemId: String?
+            let prepareToken: String?
+            let state: String
+            let cancelInflight: Bool
+            let positionSeconds: Double
+            let durationSeconds: Double
+        }
+        let _: TvMutationAckResponse = try await sendJSON(
+            method: "POST",
+            path: "/api/tv/v1/playback/heartbeat",
+            body: CancelInflightBody(
+                sessionId: sessionId,
+                resolveId: resolveId,
+                itemId: itemId,
+                prepareToken: prepareToken,
+                state: "stopped",
+                cancelInflight: true,
+                positionSeconds: 0,
+                durationSeconds: 0
             )
         )
     }

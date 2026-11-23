@@ -87,10 +87,6 @@ final class DesignTokensAndCopyTests: XCTestCase {
         XCTAssertEqual(LunaCopy.plural(1, "mediefil", "mediefiler"), "1 mediefil")
         XCTAssertEqual(LunaCopy.plural(3, "mediefil", "mediefiler"), "3 mediefiler")
 
-        XCTAssertEqual(LunaCopy.pinnedCount(1), "1 tittel festet")
-        XCTAssertEqual(LunaCopy.pinnedCount(4), "4 titler festet")
-        XCTAssertEqual(LunaCopy.chaptersHeader(1), "1 kapittel")
-        XCTAssertEqual(LunaCopy.chaptersHeader(8), "8 kapitler")
         XCTAssertEqual(LunaCopy.searchHits(1), "1 treff")
         XCTAssertEqual(LunaCopy.episodesCount(1), "1 episode")
         XCTAssertEqual(LunaCopy.episodesCount(6), "6 episoder")
@@ -100,8 +96,6 @@ final class DesignTokensAndCopyTests: XCTestCase {
         XCTAssertEqual(LunaCopy.mediaFilesCount(2), "2 mediefiler")
         XCTAssertEqual(LunaCopy.formatListEpisodeCode("S28E06"), "S28 · E6")
 
-        XCTAssertEqual(LunaCopy.formatDays(1.0, suffix: "igjen"), "1 dag igjen")
-        XCTAssertEqual(LunaCopy.formatDays(4.8, suffix: "igjen"), "5 dager igjen")
         XCTAssertEqual(LunaCopy.formatDecimal(7.9), "7,9")
         XCTAssertEqual(LunaCopy.formatRating(8.4), "★ 8,4")
         XCTAssertEqual(LunaCopy.formatGigabytes(50.0), "50,0 GB")
@@ -111,11 +105,18 @@ final class DesignTokensAndCopyTests: XCTestCase {
         XCTAssertEqual(LunaCopy.tierBenefitLabel(tier: "archive"), "Fra arkivet")
         XCTAssertEqual(LunaCopy.tierBenefitLabel(tier: "vfs"), "Strømmes ved start")
         XCTAssertEqual(LunaCopy.tierBenefitLabel(tier: "usenet", state: "upcoming"), "Kommer")
-        XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "dv-fel-714"), "LG OLED · Dolby Vision · 7.1.4")
-        XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "hdr10-512"), "Samsung Frame · HDR10+ · 7.1.4")
-        XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "livingroom"), "Samsung Frame · HDR10+ · 7.1.4")
-        XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "living"), "Samsung Frame · HDR10+ · 7.1.4")
-        XCTAssertEqual(LunaCopy.roomEquipmentLabel(hardwareProfile: "Stua"), "Samsung Frame · HDR10+ · 7.1.4")
+        XCTAssertEqual(
+            LunaCopy.roomEquipmentLabel(hardwareProfile: "dv-fel-714"),
+            "LG OLED · Dolby Vision · Sonos 7.1.4"
+        )
+        XCTAssertEqual(
+            LunaCopy.roomEquipmentLabel(hardwareProfile: "hdr10-512"),
+            "Samsung Frame Pro · HDR10+ · Sonos 5.1.2"
+        )
+        XCTAssertEqual(
+            LunaCopy.roomEquipmentLabel(hardwareProfile: "Stua"),
+            "Samsung Frame Pro · HDR10+ · Sonos 5.1.2"
+        )
         XCTAssertEqual(
             LunaCopy.roomEquipmentLabel(hardwareProfile: "custom", roomName: "Gjestestue"),
             "Apple TV 4K · Direkte avspilling"
@@ -128,10 +129,5 @@ final class DesignTokensAndCopyTests: XCTestCase {
             LunaCopy.friendlyErrorMessage(URLError(.timedOut)),
             "LunaCore svarte ikke i tide. Prøv igjen om et øyeblikk."
         )
-
-        var osloCal = Calendar(identifier: .gregorian)
-        osloCal.timeZone = TimeZone(identifier: "Europe/Oslo") ?? .current
-        let friEvening = osloCal.date(from: DateComponents(year: 2026, month: 11, day: 20, hour: 19, minute: 0))!
-        XCTAssertEqual(LunaCopy.timeGreeting(for: friEvening, calendar: osloCal), "Fredagskveld")
     }
 }

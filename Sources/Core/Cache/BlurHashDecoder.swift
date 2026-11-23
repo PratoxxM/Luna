@@ -1,27 +1,11 @@
 import Foundation
 import CoreGraphics
-import Synchronization
-
-internal struct BlurHashDecodeMetrics: Equatable, Sendable {
-    var cacheHits: Int = 0
-    var coalescedWaiters: Int = 0
-    var actualDecodes: Int = 0
-}
 
 /// Fast pure-Swift BlurHash decoder producing tiny 32x18 smooth placeholders off or on demand,
 /// backed by `InflightTaskCoalescer` across concurrent shelf cards.
 public enum BlurHashDecoder {
     private static let cache = ThreadSafeImageMemoryCache(totalCostLimit: 4 * 1024 * 1024)
     private static let inflightDecodes = InflightTaskCoalescer<String, CGImage?>()
-    private static let metricsState = Mutex(BlurHashDecodeMetrics())
-
-    internal static func metricsSnapshot() -> BlurHashDecodeMetrics {
-        metricsState.withLock { $0 }
-    }
-
-    internal static func resetMetrics() {
-        metricsState.withLock { $0 = BlurHashDecodeMetrics() }
-    }
 
     private static let base83Table: [Int16] = {
         var table = [Int16](repeating: -1, count: 256)
@@ -70,7 +54,6 @@ public enum BlurHashDecoder {
         }
         let cacheKey = makeCacheKey(raw, width: width, height: height, punch: punch)
         if let hit = cache.image(forKey: cacheKey) {
-            metricsState.withLock { $0.cacheHits += 1 }
             return hit
         }
 
@@ -79,9 +62,6 @@ public enum BlurHashDecoder {
             return decode(raw, width: width, height: height, punch: punch)
         }) else {
             return nil
-        }
-        if outcome.wasCoalesced {
-            metricsState.withLock { $0.coalescedWaiters += 1 }
         }
         return outcome.value
     }
@@ -106,8 +86,6 @@ public enum BlurHashDecoder {
 
         guard let quantisedMaxValue = decode83(bytes, from: 1, to: 2) else { return nil }
         let maximumValue = Float(quantisedMaxValue + 1) / 166.0
-
-        metricsState.withLock { $0.actualDecodes += 1 }
 
         var colors: [(Float, Float, Float)] = []
         colors.reserveCapacity(numX * numY)

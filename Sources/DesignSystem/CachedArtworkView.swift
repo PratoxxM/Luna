@@ -22,9 +22,11 @@ public struct CachedArtworkView: View, Equatable {
     let contentMode: ContentMode
     let reuseAnyCachedSize: Bool
     let progressiveFallback: Bool
+    let retainDuringPlayback: Bool
 
-    @State private var loadedArtwork: TaggedCGImage? = nil
-    @State private var decodedBlur: TaggedCGImage? = nil
+    @State private var loadedArtwork: TaggedCGImage?
+    @State private var decodedBlur: TaggedCGImage?
+    @State private var rehydrateNonce: UInt64 = 0
 
     public init(
         url: URL?,
@@ -35,7 +37,8 @@ public struct CachedArtworkView: View, Equatable {
         placeholderSymbol: String = "film",
         contentMode: ContentMode = .fill,
         reuseAnyCachedSize: Bool = false,
-        progressiveFallback: Bool = false
+        progressiveFallback: Bool = false,
+        retainDuringPlayback: Bool = false
     ) {
         self.url = url
         self.client = client
@@ -46,6 +49,22 @@ public struct CachedArtworkView: View, Equatable {
         self.contentMode = contentMode
         self.reuseAnyCachedSize = reuseAnyCachedSize
         self.progressiveFallback = progressiveFallback
+        self.retainDuringPlayback = retainDuringPlayback
+
+        if retainDuringPlayback,
+           let url,
+           let slotKey = Self.imageSlotKey(url: url, maxPixelSize: maxPixelSize, reuseAnyCachedSize: reuseAnyCachedSize),
+           let immediateHit = Self.lookupMemoryImage(
+               url: url,
+               maxPixelSize: maxPixelSize,
+               reuseAnyCachedSize: reuseAnyCachedSize,
+               progressiveFallback: progressiveFallback
+           ) {
+            _loadedArtwork = State(initialValue: TaggedCGImage(key: slotKey, image: immediateHit))
+        } else {
+            _loadedArtwork = State(initialValue: nil)
+        }
+        _decodedBlur = State(initialValue: nil)
     }
 
     public nonisolated static func == (lhs: CachedArtworkView, rhs: CachedArtworkView) -> Bool {
@@ -57,6 +76,7 @@ public struct CachedArtworkView: View, Equatable {
             lhs.contentMode == rhs.contentMode &&
             lhs.reuseAnyCachedSize == rhs.reuseAnyCachedSize &&
             lhs.progressiveFallback == rhs.progressiveFallback &&
+            lhs.retainDuringPlayback == rhs.retainDuringPlayback &&
             lhs.client?.baseURL == rhs.client?.baseURL &&
             lhs.client?.deviceToken == rhs.client?.deviceToken
     }
@@ -127,7 +147,23 @@ public struct CachedArtworkView: View, Equatable {
                 placeholderLayer
             }
         }
-        .task(id: "\(currentImageKey ?? "nil")#\(currentBlurKey ?? "")") {
+        .onReceive(NotificationCenter.default.publisher(for: ArtworkPipeline.didPurgeMemoryNotification)) { _ in
+            guard !retainDuringPlayback else { return }
+            if loadedArtwork != nil {
+                loadedArtwork = nil
+            }
+            if decodedBlur != nil {
+                decodedBlur = nil
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ArtworkPipeline.didExitPlaybackMemoryModeNotification)) { _ in
+            guard loadedArtwork == nil, url != nil else { return }
+            rehydrateNonce &+= 1
+        }
+        .task(id: "\(currentImageKey ?? "nil")#\(currentBlurKey ?? "")#\(rehydrateNonce)") {
+            guard retainDuringPlayback || !ArtworkPipeline.shared.isPlaybackActive else {
+                return
+            }
             let targetBlurKey = currentBlurKey
             if let targetBlurKey {
                 if let cachedBlur = BlurHashDecoder.cachedImage(targetBlurKey, width: 32, height: 24) {

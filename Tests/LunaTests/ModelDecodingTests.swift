@@ -105,13 +105,11 @@ final class ModelDecodingTests: XCTestCase {
 
         let session = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(json.utf8))
         XCTAssertEqual(session.stream.canClientPrewarmBytes, true)
-        XCTAssertEqual(session.selectedCandidate.capabilityBadges, [
-            "På NVMe",
-            "2160P",
-            "DV P7 FEL",
-            "TrueHD Atmos",
-            "50,0 GB",
-        ])
+        XCTAssertEqual(
+            session.selectedCandidate.quickRowTitle(roomName: "Kjellerstua", isRecommended: true),
+            "Anbefalt for Kjellerstua · 4K Dolby Vision FEL TrueHD Atmos"
+        )
+        XCTAssertEqual(session.selectedCandidate.quickRowMetadata(activeLabel: nil), "På NVMe · 50,0 GB")
     }
 
     func testVfsCandidateSourceBadgeAndPhysicalAvailability() throws {
@@ -332,9 +330,6 @@ final class ModelDecodingTests: XCTestCase {
 
         let detail = try JSONDecoder().decode(TvItemDetail.self, from: detailJson)
         XCTAssertEqual(detail.imdbRating, 8.5)
-        XCTAssertEqual(detail.imdbVotes, 145000)
-        XCTAssertEqual(detail.rottenTomatoesScore, 97)
-        XCTAssertEqual(detail.metacriticScore, 85)
         XCTAssertEqual(detail.displayRating?.value, 8.5)
         XCTAssertEqual(detail.displayRating?.isImdb, true)
 
@@ -343,16 +338,27 @@ final class ModelDecodingTests: XCTestCase {
           "ok": true,
           "sessionId": "sess-1",
           "state": "playing",
-          "watchCompleted": false,
-          "vfsLockActive": true,
-          "nextEpisodePrewarmStarted": true,
-          "nextEpisodePrewarmReady": false
+          "nextEpisodePrewarm": {
+            "itemId": "episode:tmdb:95396:s1:e2",
+            "sessionId": "tvs_next",
+            "streamUrl": "/api/tv/v1/stream/tvs_next/sig/ep2.mkv",
+            "canClientPrewarmBytes": true,
+            "nextEpisode": {
+              "itemId": "episode:tmdb:95396:s1:e2",
+              "season": 1,
+              "episode": 2,
+              "title": "Episode 2"
+            }
+          }
         }
         """.data(using: .utf8)!
 
         let hb = try JSONDecoder().decode(TvHeartbeatResponse.self, from: hbJson)
-        XCTAssertEqual(hb.nextEpisodePrewarmStarted, true)
-        XCTAssertEqual(hb.nextEpisodePrewarmReady, false)
+        XCTAssertEqual(hb.sessionId, "sess-1")
+        XCTAssertEqual(hb.state, "playing")
+        XCTAssertEqual(hb.nextEpisodePrewarm?.sessionId, "tvs_next")
+        XCTAssertEqual(hb.nextEpisodePrewarm?.canClientPrewarmBytes, true)
+        XCTAssertEqual(hb.nextEpisodePrewarm?.nextEpisode?.episode, 2)
     }
 
     func testDecodeM7aPhoneOriginBenefitLabelAndNorwegianCandidateTiers() throws {
@@ -397,7 +403,7 @@ final class ModelDecodingTests: XCTestCase {
         """#
 
         let decoded = try JSONDecoder().decode(TvHomeResponse.self, from: Data(json.utf8))
-        XCTAssertEqual(decoded.effectiveLayout, "rows_first")
+        XCTAssertEqual(decoded.layout, "rows_first")
         XCTAssertEqual(decoded.atmosphere, "cinema")
         XCTAssertEqual(decoded.equipmentLabel, "LG OLED · Dolby Vision · 7.1.4")
         let phoneCard = try XCTUnwrap(decoded.tonight?.preparedFromPhone)
@@ -420,12 +426,20 @@ final class ModelDecodingTests: XCTestCase {
             "displayHeadline": "1080p",
             "releaseTitle": "Example.2026.1080p",
             "source": "remote"
+          },
+          {
+            "candidateId": "e-1",
+            "displayHeadline": "1080p Easynews",
+            "releaseTitle": "Example.2026.1080p.Easynews",
+            "source": "easynews",
+            "tier": "ssd"
           }
         ]
         """#
         let cands = try JSONDecoder().decode([TvCandidateInfo].self, from: Data(candJson.utf8))
         XCTAssertEqual(cands[0].sourceBadgeLabel, "Strømmes ved start")
         XCTAssertEqual(cands[1].sourceBadgeLabel, "Strømmes ved start")
+        XCTAssertEqual(cands[2].sourceBadgeLabel, "Arkiv-strøm (HTTPS)")
         XCTAssertFalse(cands.map(\.sourceBadgeLabel).contains("USENET"))
         XCTAssertFalse(cands.map(\.sourceBadgeLabel).contains("REMOTE"))
     }
@@ -448,9 +462,8 @@ final class ModelDecodingTests: XCTestCase {
         }
         """#
         let lib = try JSONDecoder().decode(TvLibraryResponse.self, from: Data(minimalLibraryJson.utf8))
-        XCTAssertNil(lib.favorites)
-        XCTAssertNil(lib.counts.favorites)
         XCTAssertEqual(lib.counts.watchlist, 2)
+        XCTAssertEqual(lib.counts.localTotal, 5)
 
         let nextCmdJson = #"{"type":"next_episode","issuedAt":"2026-11-19T19:00:00Z"}"#
         let nextCmd = try JSONDecoder().decode(TvPendingCommand.self, from: Data(nextCmdJson.utf8))

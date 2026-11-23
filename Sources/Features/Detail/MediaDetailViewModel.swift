@@ -4,7 +4,7 @@ import Observation
 @MainActor
 protocol MediaDetailSessionContext: AnyObject {
     var roomName: String { get }
-    var effectiveHardwareProfile: String { get }
+    var hardwareProfile: String { get }
     var homeRefreshNonce: Int { get }
     var activePlaybackTarget: PlaybackLaunchRequest? { get set }
     var keepDisplayModeInMenuAfterPlayback: Bool { get }
@@ -16,10 +16,6 @@ protocol MediaDetailSessionContext: AnyObject {
 extension AppSessionStore: MediaDetailSessionContext {
     var keepDisplayModeInMenuAfterPlayback: Bool {
         comfort.keepDisplayModeInMenuAfterPlayback
-    }
-
-    func makeClient() -> LunaCoreClient? {
-        makeClient(overrideBaseURL: nil)
     }
 }
 
@@ -53,7 +49,6 @@ final class MediaDetailViewModel {
     @ObservationIgnored var detailLoadGeneration: UInt64 = 0
     @ObservationIgnored var seasonLoadGeneration: UInt64 = 0
     @ObservationIgnored var loadedScopeKey: String?
-    @ObservationIgnored var awaitingPostPlaybackRefresh: Bool = false
 
     init(
         mediaType: String,
@@ -83,7 +78,7 @@ final class MediaDetailViewModel {
 
     var currentScopeKey: String {
         let room = sessionContext?.roomName ?? ""
-        let profile = sessionContext?.effectiveHardwareProfile ?? ""
+        let profile = sessionContext?.hardwareProfile ?? ""
         return "\(mediaType)#\(itemId)#\(room)#\(profile)"
     }
 
@@ -108,20 +103,17 @@ final class MediaDetailViewModel {
             loadedScopeKey: loadedScopeKey,
             currentScopeKey: scopeKey,
             lastSeenRefreshNonce: lastSeenRefreshNonce,
-            currentRefreshNonce: sessionContext.homeRefreshNonce,
-            awaitingPostPlaybackRefresh: awaitingPostPlaybackRefresh
+            currentRefreshNonce: sessionContext.homeRefreshNonce
         )
         switch action {
         case .skip:
             return
         case .loadInitial:
-            awaitingPostPlaybackRefresh = false
             postPlaybackReloadFallbackTask?.cancel()
             postPlaybackReloadFallbackTask = nil
             lastSeenRefreshNonce = sessionContext.homeRefreshNonce
             await runSerializedDetailLoad(preserveSeason: false, expectedScope: scopeKey)
         case .reloadPreservingSeason:
-            awaitingPostPlaybackRefresh = false
             postPlaybackReloadFallbackTask?.cancel()
             postPlaybackReloadFallbackTask = nil
             lastSeenRefreshNonce = sessionContext.homeRefreshNonce
@@ -131,7 +123,6 @@ final class MediaDetailViewModel {
 
     func handleHomeRefreshNonceChange(_ newNonce: Int) {
         guard newNonce != lastSeenRefreshNonce else { return }
-        awaitingPostPlaybackRefresh = false
         postPlaybackReloadFallbackTask?.cancel()
         postPlaybackReloadFallbackTask = nil
         lastSeenRefreshNonce = newNonce
@@ -143,7 +134,6 @@ final class MediaDetailViewModel {
         newTarget: PlaybackLaunchRequest?
     ) {
         if newTarget != nil {
-            awaitingPostPlaybackRefresh = false
             postPlaybackReloadFallbackTask?.cancel()
             postPlaybackReloadFallbackTask = nil
             detailLoadTask?.cancel()
@@ -151,7 +141,6 @@ final class MediaDetailViewModel {
         } else if oldTarget != nil {
             // Wait for PlayerViewModel.teardownAndStop()'s stopped heartbeat and notifyContentMutated()
             // so loadDetail(preserveSeason: true) pre-resolves with the fresh resume position & nextUp.
-            awaitingPostPlaybackRefresh = true
             postPlaybackReloadFallbackTask?.cancel()
             postPlaybackReloadFallbackTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 2_200_000_000)
@@ -160,7 +149,6 @@ final class MediaDetailViewModel {
                       self.sessionContext?.activePlaybackTarget == nil else {
                     return
                 }
-                self.awaitingPostPlaybackRefresh = false
                 await self.runSerializedDetailLoad(preserveSeason: true)
             }
         }
@@ -196,10 +184,11 @@ final class MediaDetailViewModel {
     }
 
     func selectSeason(_ seasonNumber: Int) async {
+        let previousSeason = selectedSeasonNumber
         selectedSeasonNumber = seasonNumber
         guard let detail else { return }
-        await loadSeasonEpisodes(detail: detail, seasonNumber: seasonNumber)
-        if sessionContext?.activePlaybackTarget == nil {
+        let loadedOk = await loadSeasonEpisodes(detail: detail, seasonNumber: seasonNumber, previousSeason: previousSeason)
+        if loadedOk, sessionContext?.activePlaybackTarget == nil {
             schedulePreResolve(for: detail, immediate: false)
         }
     }
@@ -225,6 +214,7 @@ final class MediaDetailViewModel {
             prepareToken: handoff.prepareToken,
             preparedSession: handoff.preparedSession,
             inflightPrepareTask: handoff.inflightPrepareTask,
+            inflightPrepareToken: handoff.inflightPrepareToken,
             backdropUrl: detail.backdropUrl ?? detail.cardBackdropUrl,
             logoUrl: detail.logoUrl
         )
@@ -255,6 +245,7 @@ final class MediaDetailViewModel {
             prepareToken: handoff.prepareToken,
             preparedSession: handoff.preparedSession,
             inflightPrepareTask: handoff.inflightPrepareTask,
+            inflightPrepareToken: handoff.inflightPrepareToken,
             backdropUrl: ep.stillUrl ?? detail.backdropUrl,
             logoUrl: detail.logoUrl
         )
@@ -313,6 +304,7 @@ final class MediaDetailViewModel {
         let currentClient = refreshedClient()
         var handedOverSession: TvPlaybackSession? = nil
         var handedOverInflight: Task<TvPrepareResponse?, Never>? = nil
+        var handedOverInflightToken: String? = nil
         if reusedToken != nil {
             let handoff = preResolve.consumeHandoffForPlayback(
                 itemId: target.itemId,
@@ -321,6 +313,7 @@ final class MediaDetailViewModel {
             )
             handedOverSession = handoff.preparedSession
             handedOverInflight = handoff.inflightPrepareTask
+            handedOverInflightToken = handoff.inflightPrepareToken
         } else {
             preResolve.discardPreparedSession(client: currentClient)
         }
@@ -336,6 +329,7 @@ final class MediaDetailViewModel {
             prepareToken: reusedToken,
             preparedSession: handedOverSession,
             inflightPrepareTask: handedOverInflight,
+            inflightPrepareToken: handedOverInflightToken,
             backdropUrl: target.backdropUrl ?? detail?.backdropUrl,
             logoUrl: target.logoUrl ?? detail?.logoUrl
         )
@@ -391,6 +385,12 @@ final class MediaDetailViewModel {
         pendingDeleteTarget = nil
         ItemDetailMemoryCache.invalidate(itemId: target.itemId, tmdbId: target.tmdbId ?? detail?.ids.tmdb)
         if target.isWholeTitle {
+            detailLoadTask?.cancel()
+            detailLoadTask = nil
+            if let sessionContext {
+                lastSeenRefreshNonce = sessionContext.homeRefreshNonce &+ 1
+                sessionContext.notifyContentMutated()
+            }
             return true
         }
         await markLocalMutationAndReload()
@@ -453,13 +453,6 @@ final class MediaDetailViewModel {
             return "Fortsett"
         }
         return "Spill av"
-    }
-
-    func watchedButtonTitle(_ item: TvItemDetail) -> String {
-        if item.mediaType == "series", !item.watched, let next = item.nextUp {
-            return "Sett S\(next.season) E\(next.episode)"
-        }
-        return item.watched ? "Sett" : "Marker som sett"
     }
 
     func primaryTargetInfo(_ item: TvItemDetail) -> (

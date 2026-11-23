@@ -20,7 +20,7 @@ enum PreviewMockFixtures {
             roomName: previewRoomName,
             hardwareProfile: previewHardwareProfile,
             allowSelfSignedLanTLS: true,
-            appVersion: "2.10.1",
+            appVersion: "2.11.0",
             osVersion: "tvOS 26.0",
             session: session,
             imageSession: session,
@@ -43,12 +43,11 @@ enum PreviewMockFixtures {
     // MARK: - Media Cards
 
     static let lykkelandCard = TvMediaCard(
-        itemId: "series:79291",
+        itemId: "series:tmdb:79291",
         mediaType: "series",
         ids: TvMediaIds(tmdb: 79291, imdb: "tt8177564"),
         title: "Lykkeland",
         year: 2018,
-        overview: "Stavanger, 1970-tallet. Oljen er funnet, og byen forandres for alltid.",
         posterUrl: "/preview-art/ochre-poster.png",
         backdropUrl: "/preview-art/ochre-backdrop.png",
         cardBackdropUrl: "/preview-art/ochre-backdrop.png",
@@ -61,15 +60,13 @@ enum PreviewMockFixtures {
         origin: "phone",
         originLabel: "Fra iPhone",
         directPlayTarget: TvDirectPlayTarget(
-            itemId: "episode:79291:s4:e6",
+            itemId: "episode:tmdb:79291:s4:e6",
             mediaType: "episode",
             tmdbId: 79291,
             season: 4,
             episode: 6,
             startPositionSeconds: 1390,
-            mode: "resume",
-            title: "Søndagsbarn",
-            seriesTitle: "Lykkeland"
+            mode: "resume"
         ),
         nextUp: TvNextUpPointer(season: 4, episode: 6),
         availability: TvAvailabilityInfo(state: "instant", tier: "nvme", benefitLabel: "Starter umiddelbart"),
@@ -77,12 +74,11 @@ enum PreviewMockFixtures {
     )
 
     static let dunePartTwoCard = TvMediaCard(
-        itemId: "movie:693134",
+        itemId: "movie:tmdb:693134",
         mediaType: "movie",
         ids: TvMediaIds(tmdb: 693134, imdb: "tt15239678"),
         title: "Dune: Part Two",
         year: 2024,
-        overview: "Paul Atreides slår seg sammen med Chani og fremenerne på Arrakis.",
         posterUrl: "/preview-art/sand-poster.png",
         backdropUrl: "/preview-art/sand-backdrop.png",
         cardBackdropUrl: "/preview-art/sand-backdrop.png",
@@ -92,24 +88,22 @@ enum PreviewMockFixtures {
         inWatchlist: true,
         contextSubtitle: "1 t 12 min igjen",
         directPlayTarget: TvDirectPlayTarget(
-            itemId: "movie:693134",
+            itemId: "movie:tmdb:693134",
             mediaType: "movie",
             tmdbId: 693134,
             startPositionSeconds: 5640,
-            mode: "resume",
-            title: "Dune: Part Two"
+            mode: "resume"
         ),
         availability: TvAvailabilityInfo(state: "instant", tier: "nvme", benefitLabel: "Starter umiddelbart"),
         progress: TvWatchProgress(positionSeconds: 5640, durationSeconds: 9960, percent: 56.6, watched: false)
     )
 
     static let severanceCard = TvMediaCard(
-        itemId: "series:95396",
+        itemId: "series:tmdb:95396",
         mediaType: "series",
         ids: TvMediaIds(tmdb: 95396, imdb: "tt11280740"),
         title: "Severance",
         year: 2022,
-        overview: "Mark leder et team på Lumon Industries der jobb- og privatminner er kirurgisk adskilt.",
         posterUrl: "/preview-art/navy-poster.png",
         backdropUrl: "/preview-art/navy-backdrop.png",
         cardBackdropUrl: "/preview-art/navy-backdrop.png",
@@ -122,15 +116,13 @@ enum PreviewMockFixtures {
         origin: "tonight",
         originLabel: "I kveld",
         directPlayTarget: TvDirectPlayTarget(
-            itemId: "episode:95396:s2:e4",
+            itemId: "episode:tmdb:95396:s2:e4",
             mediaType: "episode",
             tmdbId: 95396,
             season: 2,
             episode: 4,
             startPositionSeconds: 1122,
-            mode: "resume",
-            title: "Woe's Hollow",
-            seriesTitle: "Severance"
+            mode: "resume"
         ),
         nextUp: TvNextUpPointer(season: 2, episode: 4),
         availability: TvAvailabilityInfo(state: "instant", tier: "nvme", benefitLabel: "Starter umiddelbart"),
@@ -138,12 +130,11 @@ enum PreviewMockFixtures {
     )
 
     static let luksusfellenCard = TvMediaCard(
-        itemId: "series:246810",
+        itemId: "series:tmdb:246810",
         mediaType: "series",
         ids: TvMediaIds(tmdb: 246810, imdb: "tt1298765"),
         title: "Luksusfellen",
         year: 2008,
-        overview: "Norske familier får hjelp av erfarne økonomer til å snu gjeldskrise til trygg hverdag.",
         posterUrl: "/preview-art/teal-poster.png",
         backdropUrl: "/preview-art/teal-backdrop.png",
         cardBackdropUrl: "/preview-art/teal-backdrop.png",
@@ -159,12 +150,11 @@ enum PreviewMockFixtures {
     static let catalogMovies: [TvMediaCard] = [
         dunePartTwoCard,
         TvMediaCard(
-            itemId: "movie:426063",
+            itemId: "movie:tmdb:426063",
             mediaType: "movie",
             ids: TvMediaIds(tmdb: 426063, imdb: "tt5040012"),
             title: "Nosferatu",
             year: 2024,
-            overview: "Gotisk fortelling om besettelse og mørke skygger over Wisborg.",
             posterUrl: "/preview-art/aubergine-poster.png",
             backdropUrl: "/preview-art/aubergine-backdrop.png",
             dominantColor: "#22182b",
@@ -173,12 +163,11 @@ enum PreviewMockFixtures {
             availability: TvAvailabilityInfo(state: "instant", tier: "nvme")
         ),
         TvMediaCard(
-            itemId: "movie:335984",
+            itemId: "movie:tmdb:335984",
             mediaType: "movie",
             ids: TvMediaIds(tmdb: 335984, imdb: "tt1856101"),
             title: "Blade Runner 2049",
             year: 2017,
-            overview: "En ung blade runner avdekker en lenge begravd hemmelighet.",
             posterUrl: "/preview-art/teal-poster.png",
             backdropUrl: "/preview-art/teal-backdrop.png",
             dominantColor: "#152726",
@@ -187,12 +176,11 @@ enum PreviewMockFixtures {
             availability: TvAvailabilityInfo(state: "instant", tier: "archive")
         ),
         TvMediaCard(
-            itemId: "movie:872585",
+            itemId: "movie:tmdb:872585",
             mediaType: "movie",
             ids: TvMediaIds(tmdb: 872585, imdb: "tt15398776"),
             title: "Oppenheimer",
             year: 2023,
-            overview: "Historien om J. Robert Oppenheimer og Manhattan-prosjektet.",
             posterUrl: "/preview-art/ochre-poster.png",
             backdropUrl: "/preview-art/ochre-backdrop.png",
             dominantColor: "#2a1c10",
@@ -201,12 +189,11 @@ enum PreviewMockFixtures {
             availability: TvAvailabilityInfo(state: "instant", tier: "nvme")
         ),
         TvMediaCard(
-            itemId: "movie:539972",
+            itemId: "movie:tmdb:539972",
             mediaType: "movie",
             ids: TvMediaIds(tmdb: 539972, imdb: "tt1160419"),
             title: "Verdens verste menneske",
             year: 2021,
-            overview: "Fire år i livet til Julie i Oslo gjennom kjærlighet og veivalg.",
             posterUrl: "/preview-art/crimson-poster.png",
             backdropUrl: "/preview-art/crimson-backdrop.png",
             dominantColor: "#2a1216",
@@ -215,12 +202,11 @@ enum PreviewMockFixtures {
             availability: TvAvailabilityInfo(state: "instant", tier: "archive")
         ),
         TvMediaCard(
-            itemId: "movie:157336",
+            itemId: "movie:tmdb:157336",
             mediaType: "movie",
             ids: TvMediaIds(tmdb: 157336, imdb: "tt0816692"),
             title: "Interstellar",
             year: 2014,
-            overview: "En gruppe oppdagere reiser gjennom et ormehull i rommet.",
             posterUrl: "/preview-art/navy-poster.png",
             backdropUrl: "/preview-art/navy-backdrop.png",
             dominantColor: "#141d2e",
@@ -229,12 +215,11 @@ enum PreviewMockFixtures {
             availability: TvAvailabilityInfo(state: "instant", tier: "nvme")
         ),
         TvMediaCard(
-            itemId: "movie:27205",
+            itemId: "movie:tmdb:27205",
             mediaType: "movie",
             ids: TvMediaIds(tmdb: 27205),
             title: "Kon-Tiki",
             year: 2012,
-            overview: "Thor Heyerdahls dramatiske ferd over Stillehavet på en balsaflåte.",
             posterUrl: "/preview-art/sand-poster.png",
             backdropUrl: "/preview-art/sand-backdrop.png",
             dominantColor: "#2d1d12",
@@ -243,12 +228,11 @@ enum PreviewMockFixtures {
             availability: TvAvailabilityInfo(state: "instant", tier: "archive")
         ),
         TvMediaCard(
-            itemId: "movie:301337",
+            itemId: "movie:tmdb:301337",
             mediaType: "movie",
             ids: TvMediaIds(tmdb: 301337),
             title: "Bølgen",
             year: 2015,
-            overview: "Geologen Kristian varsler om fjellskred over Geiranger.",
             posterUrl: "/preview-art/teal-poster.png",
             backdropUrl: "/preview-art/teal-backdrop.png",
             dominantColor: "#152726",
@@ -257,12 +241,11 @@ enum PreviewMockFixtures {
             availability: TvAvailabilityInfo(state: "instant", tier: "nvme")
         ),
         TvMediaCard(
-            itemId: "movie:414906",
+            itemId: "movie:tmdb:414906",
             mediaType: "movie",
             ids: TvMediaIds(tmdb: 414906),
             title: "The Batman",
             year: 2022,
-            overview: "Etter to år i skyggene avdekker Bruce Wayne korrupsjon i Gotham.",
             posterUrl: "/preview-art/aubergine-poster.png",
             backdropUrl: "/preview-art/aubergine-backdrop.png",
             dominantColor: "#22182b",
@@ -271,12 +254,11 @@ enum PreviewMockFixtures {
             availability: TvAvailabilityInfo(state: "instant", tier: "archive")
         ),
         TvMediaCard(
-            itemId: "movie:329865",
+            itemId: "movie:tmdb:329865",
             mediaType: "movie",
             ids: TvMediaIds(tmdb: 329865),
             title: "Arrival",
             year: 2016,
-            overview: "En lingvist forsøker å tyde språket til utenomjordiske gjester.",
             posterUrl: "/preview-art/navy-poster.png",
             backdropUrl: "/preview-art/navy-backdrop.png",
             dominantColor: "#141d2e",
@@ -291,12 +273,11 @@ enum PreviewMockFixtures {
         severanceCard,
         luksusfellenCard,
         TvMediaCard(
-            itemId: "series:83867",
+            itemId: "series:tmdb:83867",
             mediaType: "series",
             ids: TvMediaIds(tmdb: 83867, imdb: "tt9253284"),
             title: "Andor",
             year: 2022,
-            overview: "Cassian Andors vei inn i opprøret mot Imperiet.",
             posterUrl: "/preview-art/teal-poster.png",
             backdropUrl: "/preview-art/teal-backdrop.png",
             dominantColor: "#152726",
@@ -305,12 +286,11 @@ enum PreviewMockFixtures {
             availability: TvAvailabilityInfo(state: "instant", tier: "nvme")
         ),
         TvMediaCard(
-            itemId: "series:126308",
+            itemId: "series:tmdb:126308",
             mediaType: "series",
             ids: TvMediaIds(tmdb: 126308),
             title: "Shōgun",
             year: 2024,
-            overview: "Maktkamp og ære i føydale Japan.",
             posterUrl: "/preview-art/crimson-poster.png",
             backdropUrl: "/preview-art/crimson-backdrop.png",
             dominantColor: "#2a1216",
@@ -319,12 +299,11 @@ enum PreviewMockFixtures {
             availability: TvAvailabilityInfo(state: "instant", tier: "nvme")
         ),
         TvMediaCard(
-            itemId: "series:136315",
+            itemId: "series:tmdb:136315",
             mediaType: "series",
             ids: TvMediaIds(tmdb: 136315),
             title: "The Bear",
             year: 2022,
-            overview: "En ung stjernekokk vender hjem til Chicago for å drive familiestedet.",
             posterUrl: "/preview-art/ochre-poster.png",
             backdropUrl: "/preview-art/ochre-backdrop.png",
             dominantColor: "#2d1d12",
@@ -353,7 +332,7 @@ enum PreviewMockFixtures {
     static var homeResponse: TvHomeResponse {
         let upcomingCards: [TvMediaCard] = [
             TvMediaCard(
-                itemId: "series:95396",
+                itemId: "series:tmdb:95396",
                 mediaType: "series",
                 ids: TvMediaIds(tmdb: 95396, imdb: "tt11280740"),
                 title: "Severance",
@@ -368,7 +347,7 @@ enum PreviewMockFixtures {
                 availability: TvAvailabilityInfo(state: "upcoming", tier: "usenet", benefitLabel: "Kommer")
             ),
             TvMediaCard(
-                itemId: "series:83867",
+                itemId: "series:tmdb:83867",
                 mediaType: "series",
                 ids: TvMediaIds(tmdb: 83867, imdb: "tt9253284"),
                 title: "Andor",
@@ -383,7 +362,7 @@ enum PreviewMockFixtures {
                 availability: TvAvailabilityInfo(state: "upcoming", tier: "usenet", benefitLabel: "Kommer")
             ),
             TvMediaCard(
-                itemId: "series:126308",
+                itemId: "series:tmdb:126308",
                 mediaType: "series",
                 ids: TvMediaIds(tmdb: 126308),
                 title: "Shōgun",
@@ -402,7 +381,6 @@ enum PreviewMockFixtures {
             ok: true,
             generatedAt: "2026-11-20T00:00:00Z",
             layout: "lampelys-v2",
-            layoutMode: "calm",
             roomName: previewRoomName,
             hardwareProfile: previewHardwareProfile,
             equipmentLabel: LunaCopy.roomEquipmentLabel(hardwareProfile: previewHardwareProfile),
@@ -427,8 +405,7 @@ enum PreviewMockFixtures {
                     listMode: "smart",
                     hasMore: false,
                     nextPath: nil,
-                    items: [lykkelandCard, dunePartTwoCard, severanceCard],
-                    genres: nil
+                    items: [lykkelandCard, dunePartTwoCard, severanceCard]
                 ),
                 TvShelfRow(
                     rowId: "upcoming-episodes",
@@ -438,8 +415,7 @@ enum PreviewMockFixtures {
                     listMode: "smart",
                     hasMore: false,
                     nextPath: nil,
-                    items: upcomingCards,
-                    genres: nil
+                    items: upcomingCards
                 ),
                 TvShelfRow(
                     rowId: "new-episodes",
@@ -449,8 +425,7 @@ enum PreviewMockFixtures {
                     listMode: "curated",
                     hasMore: true,
                     nextPath: "/api/tv/v1/catalog/series",
-                    items: seriesCards,
-                    genres: nil
+                    items: seriesCards
                 ),
                 TvShelfRow(
                     rowId: "atmospheric-films",
@@ -460,8 +435,7 @@ enum PreviewMockFixtures {
                     listMode: "curated",
                     hasMore: true,
                     nextPath: "/api/tv/v1/catalog/movies",
-                    items: catalogMovies,
-                    genres: nil
+                    items: catalogMovies
                 ),
             ]
         )
@@ -480,9 +454,7 @@ enum PreviewMockFixtures {
         return TvLibraryResponse(
             ok: true,
             section: "local",
-            activeFilters: TvLibraryActiveFilters(tier: "all", mediaType: mediaType, sort: "recent"),
             counts: TvLibraryCounts(
-                favorites: 2,
                 watchlist: 2,
                 localTotal: libraryLocalCards.count,
                 localMovies: libraryLocalMovies.count,
@@ -492,18 +464,16 @@ enum PreviewMockFixtures {
                 vfs: 0,
                 customLists: 0
             ),
-            favorites: [],
             watchlist: [dunePartTwoCard, lykkelandCard],
             localItems: items,
-            localHasMore: false,
-            customLists: []
+            localHasMore: false
         )
     }
 
     static var luksusfellenSeason28Episodes: [TvEpisodeCard] {
         [
             TvEpisodeCard(
-                itemId: "episode:246810:s28:e1",
+                itemId: "episode:tmdb:246810:s28:e1",
                 seasonNumber: 28,
                 episodeNumber: 1,
                 title: "Ny start i Drammen",
@@ -519,7 +489,7 @@ enum PreviewMockFixtures {
                 progress: nil
             ),
             TvEpisodeCard(
-                itemId: "episode:246810:s28:e2",
+                itemId: "episode:tmdb:246810:s28:e2",
                 seasonNumber: 28,
                 episodeNumber: 2,
                 title: "Drømmebilen som sprakk",
@@ -535,7 +505,7 @@ enum PreviewMockFixtures {
                 progress: TvWatchProgress(positionSeconds: 2640, durationSeconds: 2640, percent: 100, season: 28, episode: 2, watched: true)
             ),
             TvEpisodeCard(
-                itemId: "episode:246810:s28:e3",
+                itemId: "episode:tmdb:246810:s28:e3",
                 seasonNumber: 28,
                 episodeNumber: 3,
                 title: "Budsjettjakt i Bergen",
@@ -579,12 +549,10 @@ enum PreviewMockFixtures {
 
     static var luksusfellenDetail: TvItemDetail {
         TvItemDetail(
-            itemId: "series:246810",
+            itemId: "series:tmdb:246810",
             mediaType: "series",
             ids: TvMediaIds(tmdb: 246810, imdb: "tt1298765"),
             title: "Luksusfellen",
-            originalTitle: "Luksusfellen",
-            tagline: "Veien tilbake til økonomisk balanse.",
             overview: "Erfarne økonomieksperter hjelper vanlige mennesker med å ta tilbake styringen over gjeld, forbruk og hverdagsliv før problemene vokser over hodet på dem.",
             overviewNo: nil,
             overviewEn: nil,
@@ -595,9 +563,6 @@ enum PreviewMockFixtures {
             voteAverage: 7.8,
             rating: 7.8,
             imdbRating: 7.8,
-            imdbVotes: 14_200,
-            rottenTomatoesScore: nil,
-            metacriticScore: nil,
             posterUrl: "/preview-art/teal-poster.png",
             backdropUrl: "/preview-art/teal-backdrop.png",
             cardBackdropUrl: "/preview-art/teal-backdrop.png",
@@ -615,14 +580,13 @@ enum PreviewMockFixtures {
             selectedSeason: 1,
             nextUp: TvNextUpPointer(season: 28, episode: 1),
             seasons: luksusfellenSeasons,
-            episodes: luksusfellenSeason28Episodes,
-            network: "TV3 · Viaplay"
+            episodes: luksusfellenSeason28Episodes
         )
     }
 
     static var playerLaunchRequest: PlaybackLaunchRequest {
         PlaybackLaunchRequest(
-            itemId: "movie:preview-jul",
+            itemId: "movie:tmdb:99912",
             title: "Bara till jul",
             seriesTitle: nil,
             season: nil,
@@ -642,7 +606,7 @@ enum PreviewMockFixtures {
                 languageCode: "swe",
                 rawTitle: "Svensk",
                 codec: "eac3",
-                channelLayout: "7.1.4",
+                channelLayout: "5.1.2",
                 channels: 8,
                 isAtmos: true
             ),
@@ -738,7 +702,7 @@ enum PreviewMockFixtures {
             roomName: previewRoomName,
             hardwareProfile: previewHardwareProfile,
             item: TvPlaybackItemContext(
-                itemId: "movie:preview-jul",
+                itemId: "movie:tmdb:99912",
                 mediaType: "movie",
                 ids: TvMediaIds(tmdb: 99912),
                 title: "Bara till jul",
@@ -765,28 +729,22 @@ enum PreviewMockFixtures {
             chapters: probeChapters,
             aetherConfig: TvAetherConfig(
                 preferDualLayerDolbyVision: false,
-                dualLayerRoute: "direct",
                 foldsDolbyVisionFEL: false,
                 dolbyVisionHandling: "automatic",
-                panelPresentsDolbyVision: false,
-                panelIsInHDRMode: false,
                 matchContentEnabled: true,
-                displayCriteriaOwner: "engine",
                 attemptsHDRMasterOnUnprovenPanel: false,
-                objectAudioRendering: TvObjectAudioConfig(mode: "render", layout: "7.1.4"),
-                audioBridgeMode: "surroundCompat",
+                objectAudioRendering: TvObjectAudioConfig(mode: "render", layout: "5.1.2"),
+                audioBridgeMode: "lossless",
                 preferredAudioLanguages: ["swe", "nob", "eng"],
                 preferredSubtitleLanguages: ["nob", "eng"],
-                autoPlayNextEpisode: true,
-                smartNordicSubtitleRule: true,
                 skipsContainerAttachments: true,
                 generatesBackgroundScrubPreviews: false,
                 serveIFramePlaylist: false,
                 confirmAtmos: false,
-                maxConcurrentSourceRequests: 2,
+                maxConcurrentSourceRequests: 3,
                 declaredDurationSeconds: 6180
             ),
-            heartbeatIntervalSeconds: 30,
+            heartbeatIntervalSeconds: 15,
             nextEpisode: nil
         )
     }

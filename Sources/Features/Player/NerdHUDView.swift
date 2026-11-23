@@ -135,9 +135,17 @@ struct NerdHUDView: View {
     }
 
     private var sourceAndMemorySummary: String {
-        let tier = viewModel.activeSession?.selectedCandidate.sourceBadgeLabel
-            ?? viewModel.lastVfsTelemetry?.streamSource
-            ?? "Direkte"
+        let rawSource = (viewModel.activeSession?.selectedCandidate.source ?? viewModel.lastVfsTelemetry?.streamSource ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let tier: String
+        if rawSource.contains("easynews") {
+            tier = "Easynews HTTPS"
+        } else {
+            tier = viewModel.activeSession?.selectedCandidate.sourceBadgeLabel
+                ?? viewModel.lastVfsTelemetry?.streamSource
+                ?? "Direkte"
+        }
         let zeroCopy = viewModel.activeSession?.stream.zeroCopyMode ?? "206"
         let rss = telemetry.map { "\($0.rssMb) MB RAM" } ?? "-"
         return "\(tier) (\(zeroCopy)) · \(rss)"

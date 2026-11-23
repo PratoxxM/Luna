@@ -9,13 +9,22 @@ struct SettingsRoomDisplaySectionView: View {
 
     var body: some View {
         SettingsSectionPanel(title: "Rom og skjerm") {
+            if sessionStore.isRoomUnassigned {
+                LunaInfoRow(
+                    title: "Rom ikke valgt",
+                    value: "Velg rom i listen under"
+                )
+                LunaListDivider()
+            }
+
             let matchingProfileCount = Dictionary(
                 grouping: sessionStore.availableRooms,
                 by: \.hardwareProfile
             ).mapValues(\.count)
 
             ForEach(sessionStore.availableRooms) { room in
-                let isSelected = sessionStore.effectiveHardwareProfile == room.hardwareProfile &&
+                let isSelected = !sessionStore.isRoomUnassigned &&
+                    sessionStore.hardwareProfile == room.hardwareProfile &&
                     (sessionStore.roomName == room.roomName || (matchingProfileCount[room.hardwareProfile] ?? 0) == 1)
                 let fallbackPreset = HardwareProfilePreset(rawValue: room.hardwareProfile)
                 let eqLabel = LunaCopy.roomEquipmentLabel(

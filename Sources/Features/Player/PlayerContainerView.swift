@@ -149,6 +149,7 @@ struct PlayerContainerView: View {
                 SubtitleOverlayView(
                     engine: engine,
                     comfort: comfort,
+                    subtitleDelaySeconds: viewModel.subtitleDelaySeconds,
                     isBottomBarVisible: isBottomBarShown,
                     isQuickPanelOpen: isQuickPanelOpen,
                     isNerdHUDVisible: comfort.showNerdHUD
@@ -622,10 +623,11 @@ struct PlayerContainerView: View {
                 CachedArtworkView(
                     url: backdropURL,
                     client: client,
-                    maxPixelSize: 3840,
+                    maxPixelSize: 1920,
                     placeholderSymbol: "film",
                     contentMode: .fill,
-                    reuseAnyCachedSize: true
+                    reuseAnyCachedSize: true,
+                    retainDuringPlayback: true
                 )
             }
             LinearGradient(

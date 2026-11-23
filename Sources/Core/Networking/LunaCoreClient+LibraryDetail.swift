@@ -87,7 +87,8 @@ extension LunaCoreClient {
         )
     }
 
-    public func removeFromList(rowId: String, mediaType: String, itemId: String? = nil, ids: TvMediaIds, title: String?) async throws {
+    @discardableResult
+    public func removeFromList(rowId: String, mediaType: String, itemId: String? = nil, ids: TvMediaIds, title: String?) async throws -> Bool {
         struct BodyPayload: Encodable, Sendable {
             let itemId: String?
             let mediaType: String
@@ -96,11 +97,12 @@ extension LunaCoreClient {
         }
         let cleanId = rowId.split(separator: "/").last.map(String.init) ?? rowId
         let encodedRowId = cleanId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? cleanId
-        let _: TvMutationAckResponse = try await sendJSON(
+        let res: TvRowRemoveResponse = try await sendJSON(
             method: "POST",
             path: "/api/tv/v1/rows/\(encodedRowId)/remove",
             body: BodyPayload(itemId: itemId, mediaType: mediaType, ids: ids, title: title)
         )
+        return res.removed ?? res.ok
     }
 
     public func deletePreflight(target: TvDeleteRequestTarget) async throws -> TvDeletePreflightResponse {
@@ -132,7 +134,7 @@ extension LunaCoreClient {
         target: TvDeleteRequestTarget,
         preflightId: String,
         removeFromLibrary: Bool = true
-    ) async throws -> TvDeleteExecuteResponse {
+    ) async throws -> TvMutationAckResponse {
         struct BodyPayload: Encodable, Sendable {
             let itemId: String
             let mediaType: String

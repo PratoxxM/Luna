@@ -246,9 +246,9 @@ struct HomeView: View {
             .environment(sessionStore)
             .preferredColorScheme(.dark)
         }
-        .task(id: "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)#active:\(isActiveTab)") {
+        .task(id: "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.hardwareProfile)#active:\(isActiveTab)") {
             guard isActiveTab else { return }
-            let currentScope = "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
+            let currentScope = "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.hardwareProfile)"
             await syncDiskSnapshotIfRoomChanged()
             if validatedScopeKey == currentScope,
                TabContentFreshnessPolicy.isCacheFresh(
@@ -319,7 +319,7 @@ struct HomeView: View {
     private func syncDiskSnapshotIfRoomChanged() async {
         let targetHost = sessionStore.serverBaseURL?.host
         let targetRoom = sessionStore.roomName
-        let targetProfile = sessionStore.effectiveHardwareProfile
+        let targetProfile = sessionStore.hardwareProfile
         guard let current = homePayload else {
             if let snap = await DiskSWRStore.loadHomeAsync(
                 serverHost: targetHost,
@@ -364,7 +364,7 @@ struct HomeView: View {
         }
         let baseURL = sessionStore.serverBaseURL
         let room = sessionStore.roomName
-        let hwProfile = sessionStore.effectiveHardwareProfile
+        let hwProfile = sessionStore.hardwareProfile
         let pageSize = profile.catalogPageSize
 
         for kind in ["movie", "series"] {
@@ -424,7 +424,7 @@ struct HomeView: View {
 
     private func revalidateHome(forceUnconditional: Bool, scopeKey: String? = nil, generation: UInt64? = nil) async {
         guard let client = sessionStore.makeClient() else { return }
-        let resolvedScope = scopeKey ?? "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
+        let resolvedScope = scopeKey ?? "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(sessionStore.roomName)#\(sessionStore.hardwareProfile)"
         if homePayload == nil {
             isInitialColdFetch = true
         }
@@ -456,7 +456,7 @@ struct HomeView: View {
                     etag: newEtag,
                     serverHost: sessionStore.serverBaseURL?.host,
                     roomName: sessionStore.roomName,
-                    hardwareProfile: sessionStore.effectiveHardwareProfile,
+                    hardwareProfile: sessionStore.hardwareProfile,
                     decodedPayload: payload,
                     precomputedRows: computedRows
                 )
@@ -465,6 +465,14 @@ struct HomeView: View {
             return
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
+        } catch where AppSessionStore.isFailoverEligibleError(error) {
+            if await sessionStore.probeAndFailoverServerURLIfNeeded() {
+                return
+            }
+            guard !Task.isCancelled, (generation == nil || generation == reloadGeneration) else { return }
+            if homePayload == nil {
+                errorMessage = LunaCopy.friendlyErrorMessage(error)
+            }
         } catch {
             guard !Task.isCancelled, (generation == nil || generation == reloadGeneration) else { return }
             if homePayload == nil {
@@ -495,9 +503,13 @@ struct HomeView: View {
     }
 
     private func markLocalMutationAndRevalidate() async {
+        reloadTask?.cancel()
+        reloadTask = nil
+        reloadGeneration &+= 1
+        let gen = reloadGeneration
         lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
         sessionStore.notifyContentMutated()
-        await revalidateHome(forceUnconditional: true)
+        await revalidateHome(forceUnconditional: true, generation: gen)
     }
 
     private func toggleWatchlist(for card: TvMediaCard) async {

@@ -21,7 +21,10 @@ final class PlaybackTitleAndNowPlayingTests: XCTestCase {
             availability: nil,
             progress: nil
         )
-        XCTAssertEqual(genericEp.displayCardTitle, "Episode 4")
+        XCTAssertEqual(
+            EpisodeTitleFormatter.episodeCardTitle(episode: genericEp, seriesTitle: "Severance"),
+            "Episode 4"
+        )
 
         let e04Ep = TvEpisodeCard(
             itemId: "episode:tmdb:95396:s1:e4",
@@ -39,7 +42,10 @@ final class PlaybackTitleAndNowPlayingTests: XCTestCase {
             availability: nil,
             progress: nil
         )
-        XCTAssertEqual(e04Ep.displayCardTitle, "Episode 4")
+        XCTAssertEqual(
+            EpisodeTitleFormatter.episodeCardTitle(episode: e04Ep, seriesTitle: "Severance"),
+            "Episode 4"
+        )
 
         let namedEp = TvEpisodeCard(
             itemId: "episode:tmdb:62560:s4:e1",
@@ -57,7 +63,10 @@ final class PlaybackTitleAndNowPlayingTests: XCTestCase {
             availability: nil,
             progress: nil
         )
-        XCTAssertEqual(namedEp.displayCardTitle, "E01 · 401 Unauthorized")
+        XCTAssertEqual(
+            EpisodeTitleFormatter.episodeCardTitle(episode: namedEp, seriesTitle: "Mr. Robot"),
+            "E01 · 401 Unauthorized"
+        )
 
         let genericPicker = SourcePickerContext(
             itemId: "episode:tmdb:95396:s1:e4",
@@ -158,9 +167,7 @@ final class PlaybackTitleAndNowPlayingTests: XCTestCase {
                 season: 1,
                 episode: 4,
                 startPositionSeconds: 120,
-                mode: "resume",
-                title: nil,
-                seriesTitle: "Severance"
+                mode: "resume"
             ),
             nextUp: TvNextUpPointer(season: 1, episode: 4)
         )

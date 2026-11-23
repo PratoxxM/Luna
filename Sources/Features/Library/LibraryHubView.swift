@@ -31,14 +31,13 @@ struct LibraryHubView: View {
     @State private var pendingDeleteTarget: TvDeleteRequestTarget?
     @State private var modalToken = UUID()
     @State private var reloadTask: Task<Void, Never>?
+    @State private var loadMoreTask: Task<Void, Never>?
     @State private var reloadGeneration: UInt64 = 0
     @State private var mountedTracker = MountedEntryCardTracker()
     @State private var entryCardID: String?
     @State private var cardFocusNonce: Int = 0
 
-    @FocusState private var focusedFilterPill: LibraryFilterSection?
     @FocusState private var fallbackFocus: LibraryFallbackFocus?
-    @Namespace private var filterFocusNamespace
 
     init(isActiveTab: Bool = true, onSelectTab: ((MainNavigationTab) -> Void)? = nil) {
         self.isActiveTab = isActiveTab
@@ -49,7 +48,7 @@ struct LibraryHubView: View {
     private let columns = LunaTheme.posterGridColumns
 
     private var queryKey: String {
-        "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(activeSection.rawValue)#\(activeSection.apiMediaType)#\(sessionStore.roomName)#\(sessionStore.effectiveHardwareProfile)"
+        "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(activeSection.rawValue)#\(activeSection.apiMediaType)#\(sessionStore.roomName)#\(sessionStore.hardwareProfile)"
     }
 
     var body: some View {
@@ -63,33 +62,19 @@ struct LibraryHubView: View {
                         .frame(height: 0)
                         .id("luna-scroll-top")
 
-                    HStack(spacing: 14) {
-                        ForEach(LibraryFilterSection.allCases) { section in
-                            LunaPillButton(
-                                section.label,
-                                badgeText: section.countValue(from: counts).map(String.init),
-                                isSelected: activeSection == section,
-                                prominence: .glassPill,
-                                size: .compact
-                            ) {
-                                didApplyInitialSectionFallback = true
-                                guard activeSection != section else { return }
-                                activeSection = section
-                            }
-                            .focused($focusedFilterPill, equals: section)
-                            .prefersDefaultFocus(activeSection == section, in: filterFocusNamespace)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
-                    .padding(.vertical, 6)
-                    .focusScope(filterFocusNamespace)
-                    .focusSection()
-                    .onMoveCommand { direction in
-                        if direction == .down {
+                    LibraryFilterStripView(
+                        counts: counts,
+                        activeSection: $activeSection,
+                        didApplyInitialSectionFallback: $didApplyInitialSectionFallback,
+                        entryFocusNonce: contentEntryFocusNonce,
+                        isEntryActive: isActiveTab,
+                        onScrollToTop: {
+                            scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
+                        },
+                        onMoveDown: {
                             focusFirstLibraryContentItem(scrollProxy: scrollProxy)
                         }
-                    }
+                    )
 
                     Group {
                         if isLoading && libraryPayload == nil {
@@ -120,13 +105,6 @@ struct LibraryHubView: View {
                     scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
                 }
             }
-            .lunaEntryFocusTarget(
-                nonce: contentEntryFocusNonce,
-                isActive: isActiveTab,
-                focus: $focusedFilterPill,
-                target: { activeSection },
-                onTrigger: { scrollProxy.scrollTo("luna-scroll-top", anchor: .top) }
-            )
         }
         .lunaBottomToast(message: $mutationErrorBanner, tone: .danger)
         .navigationDestination(item: $selectedCard) { card in
@@ -158,6 +136,8 @@ struct LibraryHubView: View {
             guard isActiveTab else { return }
             reloadTask?.cancel()
             reloadTask = nil
+            loadMoreTask?.cancel()
+            loadMoreTask = nil
             reloadGeneration &+= 1
             let gen = reloadGeneration
             lastSeenRefreshNonce = sessionStore.homeRefreshNonce
@@ -171,6 +151,8 @@ struct LibraryHubView: View {
         .onDisappear {
             reloadTask?.cancel()
             reloadTask = nil
+            loadMoreTask?.cancel()
+            loadMoreTask = nil
             if pendingDeleteTarget == nil {
                 subpageVisibility.leaveModal(modalToken)
             }
@@ -262,7 +244,10 @@ struct LibraryHubView: View {
                            idx >= prefetchThreshold,
                            localHasMore,
                            !isLoadingMoreLocal {
-                            Task { await loadMoreLocalItems() }
+                            loadMoreTask?.cancel()
+                            loadMoreTask = Task { @MainActor in
+                                await loadMoreLocalItems()
+                            }
                         }
                     }
                 }
@@ -314,6 +299,8 @@ struct LibraryHubView: View {
 
     private func scheduleReloadLibrary(forceNetwork: Bool) {
         reloadTask?.cancel()
+        loadMoreTask?.cancel()
+        loadMoreTask = nil
         reloadGeneration &+= 1
         let gen = reloadGeneration
         reloadTask = Task { @MainActor in
@@ -400,27 +387,38 @@ struct LibraryHubView: View {
     private func loadMoreLocalItems() async {
         guard !isLoadingMoreLocal, localHasMore, let client = sessionStore.makeClient() else { return }
         let targetKey = queryKey
+        let gen = reloadGeneration
         isLoadingMoreLocal = true
         defer { isLoadingMoreLocal = false }
 
-        guard let res = try? await client.fetchLibrary(
-            section: "local",
-            tier: "all",
-            mediaType: activeSection.apiMediaType,
-            sort: "recent",
-            offset: localOffset,
-            limit: pageSize
-        ), queryKey == targetKey else {
+        do {
+            let res = try await client.fetchLibrary(
+                section: "local",
+                tier: "all",
+                mediaType: activeSection.apiMediaType,
+                sort: "recent",
+                offset: localOffset,
+                limit: pageSize
+            )
+            guard !Task.isCancelled, gen == reloadGeneration, queryKey == targetKey else {
+                return
+            }
+            let existing = Set(localItems.map(\.id))
+            let fresh = res.localItems.filter { !existing.contains($0.id) }
+            localItems.append(contentsOf: fresh)
+            localOffset += res.localItems.count
+            localHasMore = res.localHasMore ?? false
+            if let payload = libraryPayload {
+                persistLibrarySnapshot(for: targetKey, payload: payload)
+            }
+        } catch where LunaCoreError.isCancellation(error) {
             return
-        }
-
-        let existing = Set(localItems.map(\.id))
-        let fresh = res.localItems.filter { !existing.contains($0.id) }
-        localItems.append(contentsOf: fresh)
-        localOffset += res.localItems.count
-        localHasMore = res.localHasMore ?? false
-        if let payload = libraryPayload {
-            persistLibrarySnapshot(for: targetKey, payload: payload)
+        } catch LunaCoreError.unauthorized {
+            LibraryBrowseMemoryCache.shared.clear()
+            sessionStore.unpairDevice()
+        } catch {
+            guard !Task.isCancelled, gen == reloadGeneration else { return }
+            showMutationError(error)
         }
     }
 
@@ -429,10 +427,16 @@ struct LibraryHubView: View {
     }
 
     private func markLocalMutationAndReload() async {
+        reloadTask?.cancel()
+        reloadTask = nil
+        loadMoreTask?.cancel()
+        loadMoreTask = nil
+        reloadGeneration &+= 1
+        let gen = reloadGeneration
         LibraryBrowseMemoryCache.shared.clear()
         lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
         sessionStore.notifyContentMutated()
-        await loadLibrary(forceNetwork: true)
+        await loadLibrary(forceNetwork: true, generation: gen)
     }
 
     private func toggleWatchlist(_ card: TvMediaCard) async {
@@ -449,11 +453,68 @@ struct LibraryHubView: View {
     private func toggleWatched(_ card: TvMediaCard) async {
         let nextWatched = !(card.progress?.watched ?? false)
         do {
-            if try await MediaCardMutator.toggleWatched(for: card, watched: nextWatched, sessionStore: sessionStore) {
+            if try await MediaCardMutator.toggleWatched(
+                for: card,
+                watched: nextWatched,
+                preferSeriesEpisodeTarget: true,
+                sessionStore: sessionStore
+            ) {
                 await markLocalMutationAndReload()
             }
         } catch {
             showMutationError(error)
+        }
+    }
+}
+
+/// Focus-isolated horizontal filter pill strip so moving Siri Remote focus across library sections
+/// updates only this strip's `@FocusState` (`0` re-evaluations of `LibraryHubView` / `LazyVGrid`).
+private struct LibraryFilterStripView: View {
+    let counts: TvLibraryCounts?
+    @Binding var activeSection: LibraryFilterSection
+    @Binding var didApplyInitialSectionFallback: Bool
+    let entryFocusNonce: Int
+    let isEntryActive: Bool
+    let onScrollToTop: () -> Void
+    let onMoveDown: () -> Void
+
+    @FocusState private var focusedFilterPill: LibraryFilterSection?
+    @Namespace private var filterFocusNamespace
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ForEach(LibraryFilterSection.allCases) { section in
+                LunaPillButton(
+                    section.label,
+                    badgeText: section.countValue(from: counts).map(String.init),
+                    isSelected: activeSection == section,
+                    prominence: .glassPill,
+                    size: .compact
+                ) {
+                    didApplyInitialSectionFallback = true
+                    guard activeSection != section else { return }
+                    activeSection = section
+                }
+                .focused($focusedFilterPill, equals: section)
+                .prefersDefaultFocus(activeSection == section, in: filterFocusNamespace)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, LunaTheme.horizontalGutter)
+        .padding(.vertical, 6)
+        .focusScope(filterFocusNamespace)
+        .focusSection()
+        .lunaEntryFocusTarget(
+            nonce: entryFocusNonce,
+            isActive: isEntryActive,
+            focus: $focusedFilterPill,
+            target: { activeSection },
+            onTrigger: onScrollToTop
+        )
+        .onMoveCommand { direction in
+            if direction == .down {
+                onMoveDown()
+            }
         }
     }
 }

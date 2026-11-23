@@ -49,8 +49,36 @@ public struct TvEpisodeCard: Codable, Identifiable, Equatable, Hashable, Sendabl
         )
     }
 
-    public var displayCardTitle: String {
-        EpisodeTitleFormatter.episodeCardTitle(episode: self)
+    public init(
+        itemId: String,
+        seasonNumber: Int,
+        episodeNumber: Int,
+        title: String,
+        overview: String? = nil,
+        stillUrl: String? = nil,
+        airDate: String? = nil,
+        isUpcoming: Bool? = nil,
+        airDateBadge: String? = nil,
+        voteAverage: Double? = nil,
+        runtimeSeconds: Double? = nil,
+        watched: Bool,
+        availability: TvAvailabilityInfo? = nil,
+        progress: TvWatchProgress? = nil
+    ) {
+        self.itemId = itemId
+        self.seasonNumber = seasonNumber
+        self.episodeNumber = episodeNumber
+        self.title = title
+        self.overview = overview
+        self.stillUrl = stillUrl
+        self.airDate = airDate
+        self.isUpcoming = isUpcoming
+        self.airDateBadge = airDateBadge
+        self.voteAverage = voteAverage
+        self.runtimeSeconds = runtimeSeconds
+        self.watched = watched
+        self.availability = availability
+        self.progress = progress
     }
 
     public var formattedRuntime: String? {
@@ -65,8 +93,6 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
     public let mediaType: String
     public let ids: TvMediaIds
     public let title: String
-    public let originalTitle: String?
-    public let tagline: String?
     public let overview: String?
     public let overviewNo: String?
     public let overviewEn: String?
@@ -77,9 +103,6 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
     public let voteAverage: Double?
     public let rating: Double?
     public let imdbRating: Double?
-    public let imdbVotes: Int?
-    public let rottenTomatoesScore: Int?
-    public let metacriticScore: Int?
     public let posterUrl: String?
     public let backdropUrl: String?
     public let cardBackdropUrl: String?
@@ -98,16 +121,12 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
     public let nextUp: TvNextUpPointer?
     public let seasons: [TvSeasonSummary]?
     public let episodes: [TvEpisodeCard]?
-    public let network: String?
-    public let studio: String?
 
     public init(
         itemId: String,
         mediaType: String,
         ids: TvMediaIds,
         title: String,
-        originalTitle: String? = nil,
-        tagline: String? = nil,
         overview: String? = nil,
         overviewNo: String? = nil,
         overviewEn: String? = nil,
@@ -118,9 +137,6 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
         voteAverage: Double? = nil,
         rating: Double? = nil,
         imdbRating: Double? = nil,
-        imdbVotes: Int? = nil,
-        rottenTomatoesScore: Int? = nil,
-        metacriticScore: Int? = nil,
         posterUrl: String? = nil,
         backdropUrl: String? = nil,
         cardBackdropUrl: String? = nil,
@@ -138,16 +154,12 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
         selectedSeason: Int? = nil,
         nextUp: TvNextUpPointer? = nil,
         seasons: [TvSeasonSummary]? = nil,
-        episodes: [TvEpisodeCard]? = nil,
-        network: String? = nil,
-        studio: String? = nil
+        episodes: [TvEpisodeCard]? = nil
     ) {
         self.itemId = itemId
         self.mediaType = mediaType
         self.ids = ids
         self.title = title
-        self.originalTitle = originalTitle
-        self.tagline = tagline
         self.overview = overview
         self.overviewNo = overviewNo
         self.overviewEn = overviewEn
@@ -158,9 +170,6 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
         self.voteAverage = voteAverage
         self.rating = rating
         self.imdbRating = imdbRating
-        self.imdbVotes = imdbVotes
-        self.rottenTomatoesScore = rottenTomatoesScore
-        self.metacriticScore = metacriticScore
         self.posterUrl = posterUrl
         self.backdropUrl = backdropUrl
         self.cardBackdropUrl = cardBackdropUrl
@@ -179,8 +188,6 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
         self.nextUp = nextUp
         self.seasons = seasons
         self.episodes = episodes
-        self.network = network
-        self.studio = studio
     }
 
     public var isMonitoredFlag: Bool {
@@ -244,6 +251,20 @@ public struct TvSearchResponse: Codable, Equatable, Sendable {
 
 public struct TvMutationAckResponse: Codable, Equatable, Sendable {
     public let ok: Bool
+
+    public init(ok: Bool) {
+        self.ok = ok
+    }
+}
+
+public struct TvRowRemoveResponse: Codable, Equatable, Sendable {
+    public let ok: Bool
+    public let removed: Bool?
+
+    public init(ok: Bool, removed: Bool? = nil) {
+        self.ok = ok
+        self.removed = removed
+    }
 }
 
 public struct TvMonitorResponse: Codable, Equatable, Sendable {
@@ -251,4 +272,11 @@ public struct TvMonitorResponse: Codable, Equatable, Sendable {
     public let monitored: Bool?
     public let monitorMode: String?
     public let profileId: String?
+
+    public init(ok: Bool, monitored: Bool? = nil, monitorMode: String? = nil, profileId: String? = nil) {
+        self.ok = ok
+        self.monitored = monitored
+        self.monitorMode = monitorMode
+        self.profileId = profileId
+    }
 }

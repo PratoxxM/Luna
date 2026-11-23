@@ -11,7 +11,7 @@ struct DetailDeleteSheetView: View {
 
     let target: TvDeleteRequestTarget
     var onPrepareBeforePreflight: (@MainActor () -> Void)? = nil
-    let onDeleted: (TvDeleteExecuteResponse) -> Void
+    let onDeleted: (TvMutationAckResponse) -> Void
     let onCancel: () -> Void
 
     @State private var preflight: TvDeletePreflightResponse?
@@ -187,7 +187,6 @@ struct DetailDeleteSheetView: View {
             )
             ItemDetailMemoryCache.invalidate(itemId: target.itemId, tmdbId: target.tmdbId)
             AetherEngine.discardRetainedSessionCache()
-            sessionStore.notifyContentMutated()
             onDeleted(result)
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()

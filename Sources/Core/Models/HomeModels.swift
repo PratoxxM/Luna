@@ -103,8 +103,6 @@ public struct TvDirectPlayTarget: Codable, Equatable, Hashable, Sendable {
     public let episode: Int?
     public let startPositionSeconds: Double?
     public let mode: String?
-    public let title: String?
-    public let seriesTitle: String?
     public let prepareToken: String?
 
     public init(
@@ -115,8 +113,6 @@ public struct TvDirectPlayTarget: Codable, Equatable, Hashable, Sendable {
         episode: Int? = nil,
         startPositionSeconds: Double? = nil,
         mode: String? = nil,
-        title: String? = nil,
-        seriesTitle: String? = nil,
         prepareToken: String? = nil
     ) {
         self.itemId = itemId
@@ -126,8 +122,6 @@ public struct TvDirectPlayTarget: Codable, Equatable, Hashable, Sendable {
         self.episode = episode
         self.startPositionSeconds = startPositionSeconds
         self.mode = mode
-        self.title = title
-        self.seriesTitle = seriesTitle
         self.prepareToken = prepareToken
     }
 }
@@ -138,7 +132,6 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
     public let ids: TvMediaIds
     public let title: String
     public let year: Int?
-    public let overview: String?
     public let posterUrl: String?
     public let backdropUrl: String?
     public let cardBackdropUrl: String?
@@ -146,7 +139,6 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
     public let dominantColor: String?
     public let blurHash: String?
     public let imdbRating: Double?
-    public let imdbVotes: Int?
     public let badges: [String]?
     public var inWatchlist: Bool?
     public let contextSubtitle: String?
@@ -158,7 +150,6 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
     public let origin: String?
     public let originLabel: String?
     public let preparedSessionId: String?
-    public let tonightReason: String?
     public let directPlayTarget: TvDirectPlayTarget?
     public let nextUp: TvNextUpPointer?
     public let availability: TvAvailabilityInfo?
@@ -172,7 +163,6 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         ids: TvMediaIds,
         title: String,
         year: Int? = nil,
-        overview: String? = nil,
         posterUrl: String? = nil,
         backdropUrl: String? = nil,
         cardBackdropUrl: String? = nil,
@@ -180,7 +170,6 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         dominantColor: String? = nil,
         blurHash: String? = nil,
         imdbRating: Double? = nil,
-        imdbVotes: Int? = nil,
         badges: [String]? = nil,
         inWatchlist: Bool? = nil,
         contextSubtitle: String? = nil,
@@ -192,7 +181,6 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         origin: String? = nil,
         originLabel: String? = nil,
         preparedSessionId: String? = nil,
-        tonightReason: String? = nil,
         directPlayTarget: TvDirectPlayTarget? = nil,
         nextUp: TvNextUpPointer? = nil,
         availability: TvAvailabilityInfo? = nil,
@@ -203,7 +191,6 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         self.ids = ids
         self.title = title
         self.year = year
-        self.overview = overview
         self.posterUrl = posterUrl
         self.backdropUrl = backdropUrl
         self.cardBackdropUrl = cardBackdropUrl
@@ -211,7 +198,6 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         self.dominantColor = dominantColor
         self.blurHash = blurHash
         self.imdbRating = imdbRating
-        self.imdbVotes = imdbVotes
         self.badges = badges
         self.inWatchlist = inWatchlist
         self.contextSubtitle = contextSubtitle
@@ -223,7 +209,6 @@ public struct TvMediaCard: Codable, Identifiable, Equatable, Hashable, Sendable 
         self.origin = origin
         self.originLabel = originLabel
         self.preparedSessionId = preparedSessionId
-        self.tonightReason = tonightReason
         self.directPlayTarget = directPlayTarget
         self.nextUp = nextUp
         self.availability = availability
@@ -405,9 +390,28 @@ public struct TvShelfRow: Codable, Identifiable, Equatable, Hashable, Sendable {
     public let hasMore: Bool?
     public let nextPath: String?
     public let items: [TvMediaCard]
-    public let genres: [TvGenreChip]?
 
     public var id: String { rowId }
+
+    public init(
+        rowId: String,
+        title: String,
+        rowStyle: String,
+        sourceKind: String? = nil,
+        listMode: String? = nil,
+        hasMore: Bool? = nil,
+        nextPath: String? = nil,
+        items: [TvMediaCard]
+    ) {
+        self.rowId = rowId
+        self.title = title
+        self.rowStyle = rowStyle
+        self.sourceKind = sourceKind
+        self.listMode = listMode
+        self.hasMore = hasMore
+        self.nextPath = nextPath
+        self.items = items
+    }
 }
 
 public struct TvTonightPayload: Codable, Equatable, Sendable {
@@ -448,7 +452,6 @@ public struct TvHomeResponse: Codable, Equatable, Sendable {
     public let ok: Bool
     public let generatedAt: String?
     public let layout: String?
-    public let layoutMode: String?
     public let roomName: String
     public let hardwareProfile: String
     public let equipmentLabel: String?
@@ -456,15 +459,10 @@ public struct TvHomeResponse: Codable, Equatable, Sendable {
     public let tonight: TvTonightPayload?
     public let rows: [TvShelfRow]
 
-    public var effectiveLayout: String? {
-        layout ?? layoutMode
-    }
-
     public init(
         ok: Bool,
         generatedAt: String? = nil,
         layout: String? = nil,
-        layoutMode: String? = nil,
         roomName: String,
         hardwareProfile: String,
         equipmentLabel: String? = nil,
@@ -475,7 +473,6 @@ public struct TvHomeResponse: Codable, Equatable, Sendable {
         self.ok = ok
         self.generatedAt = generatedAt
         self.layout = layout
-        self.layoutMode = layoutMode
         self.roomName = roomName
         self.hardwareProfile = hardwareProfile
         self.equipmentLabel = equipmentLabel
@@ -488,7 +485,7 @@ public struct TvHomeResponse: Codable, Equatable, Sendable {
     /// response actually changed the visible shelves or room/profile state.
     public func isSemanticallyEqual(to other: TvHomeResponse) -> Bool {
         ok == other.ok
-            && effectiveLayout == other.effectiveLayout
+            && layout == other.layout
             && roomName == other.roomName
             && hardwareProfile == other.hardwareProfile
             && equipmentLabel == other.equipmentLabel
@@ -509,20 +506,46 @@ public struct TvRowPageResponse: Codable, Equatable, Sendable {
     public let hasMore: Bool
     public let nextPath: String?
     public let items: [TvMediaCard]
+
+    public init(
+        ok: Bool,
+        rowId: String,
+        sourceKind: String? = nil,
+        title: String,
+        offset: Int,
+        limit: Int,
+        totalEstimate: Int? = nil,
+        hasMore: Bool,
+        nextPath: String? = nil,
+        items: [TvMediaCard]
+    ) {
+        self.ok = ok
+        self.rowId = rowId
+        self.sourceKind = sourceKind
+        self.title = title
+        self.offset = offset
+        self.limit = limit
+        self.totalEstimate = totalEstimate
+        self.hasMore = hasMore
+        self.nextPath = nextPath
+        self.items = items
+    }
 }
 
 // MARK: - Catalog & Genre Filter Models (`/api/tv/v1/catalog/:kind`)
-
-public struct TvCatalogSortOption: Codable, Identifiable, Equatable, Hashable, Sendable {
-    public let id: String
-    public let label: String
-}
 
 public struct TvCatalogGenreInfo: Codable, Equatable, Hashable, Sendable {
     public let slug: String
     public let label: String
     public let icon: String?
     public let tmdbGenreIds: [Int]?
+
+    public init(slug: String, label: String, icon: String? = nil, tmdbGenreIds: [Int]? = nil) {
+        self.slug = slug
+        self.label = label
+        self.icon = icon
+        self.tmdbGenreIds = tmdbGenreIds
+    }
 }
 
 public struct TvCatalogResponse: Codable, Equatable, Sendable {
@@ -536,21 +559,41 @@ public struct TvCatalogResponse: Codable, Equatable, Sendable {
     public let page: Int
     public let limit: Int
     public let hasMore: Bool
-    public let availableSorts: [TvCatalogSortOption]?
     public let availableGenres: [TvGenreChip]?
     public let items: [TvMediaCard]
+
+    public init(
+        ok: Bool,
+        mediaType: String,
+        title: String,
+        genre: TvCatalogGenreInfo? = nil,
+        sort: String,
+        localOnly: Bool,
+        unwatchedOnly: Bool,
+        page: Int,
+        limit: Int,
+        hasMore: Bool,
+        availableGenres: [TvGenreChip]? = nil,
+        items: [TvMediaCard]
+    ) {
+        self.ok = ok
+        self.mediaType = mediaType
+        self.title = title
+        self.genre = genre
+        self.sort = sort
+        self.localOnly = localOnly
+        self.unwatchedOnly = unwatchedOnly
+        self.page = page
+        self.limit = limit
+        self.hasMore = hasMore
+        self.availableGenres = availableGenres
+        self.items = items
+    }
 }
 
 // MARK: - Unified Library Hub Models (`/api/tv/v1/library`)
 
-public struct TvLibraryActiveFilters: Codable, Equatable, Sendable {
-    public let tier: String
-    public let mediaType: String
-    public let sort: String
-}
-
 public struct TvLibraryCounts: Codable, Equatable, Sendable {
-    public let favorites: Int?
     public let watchlist: Int
     public let localTotal: Int
     public let localMovies: Int?
@@ -561,7 +604,6 @@ public struct TvLibraryCounts: Codable, Equatable, Sendable {
     public let customLists: Int
 
     public init(
-        favorites: Int? = nil,
         watchlist: Int,
         localTotal: Int,
         localMovies: Int? = nil,
@@ -569,9 +611,8 @@ public struct TvLibraryCounts: Codable, Equatable, Sendable {
         nvme: Int,
         archive: Int,
         vfs: Int,
-        customLists: Int
+        customLists: Int = 0
     ) {
-        self.favorites = favorites
         self.watchlist = watchlist
         self.localTotal = localTotal
         self.localMovies = localMovies
@@ -583,27 +624,29 @@ public struct TvLibraryCounts: Codable, Equatable, Sendable {
     }
 }
 
-public struct TvCustomListSummary: Codable, Identifiable, Equatable, Hashable, Sendable {
-    public let id: String
-    public let name: String
-    public let mediaType: String?
-    public let sourceType: String?
-    public let listMode: String?
-    public let rowStyle: String?
-    public let itemCount: Int
-    public let browsePath: String
-}
-
 public struct TvLibraryResponse: Codable, Equatable, Sendable {
     public let ok: Bool
     public let section: String
-    public let activeFilters: TvLibraryActiveFilters?
     public let counts: TvLibraryCounts
-    public let favorites: [TvMediaCard]?
     public let watchlist: [TvMediaCard]
     public let localItems: [TvMediaCard]
     public let localHasMore: Bool?
-    public let customLists: [TvCustomListSummary]?
+
+    public init(
+        ok: Bool,
+        section: String,
+        counts: TvLibraryCounts,
+        watchlist: [TvMediaCard],
+        localItems: [TvMediaCard],
+        localHasMore: Bool? = nil
+    ) {
+        self.ok = ok
+        self.section = section
+        self.counts = counts
+        self.watchlist = watchlist
+        self.localItems = localItems
+        self.localHasMore = localHasMore
+    }
 }
 
 // MARK: - Bootstrap & Room Profile Models
@@ -635,17 +678,18 @@ public struct TvRoomDefinition: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-public struct TvServerBootstrapInfo: Codable, Equatable, Sendable {
-    public let name: String
-    public let version: String
-    public let apiVersion: Int
-    public let featureLevel: Int?
-    public let capabilities: [String: Bool]?
-}
-
 public struct TvBootstrapResponse: Codable, Equatable, Sendable {
     public let ok: Bool
-    public let server: TvServerBootstrapInfo
     public let device: TvPairedDeviceInfo
     public let defaultRooms: [TvRoomDefinition]?
+
+    public init(
+        ok: Bool,
+        device: TvPairedDeviceInfo,
+        defaultRooms: [TvRoomDefinition]? = nil
+    ) {
+        self.ok = ok
+        self.device = device
+        self.defaultRooms = defaultRooms
+    }
 }

@@ -38,14 +38,13 @@ final class SeriesFlowAndHomePolicyTests: XCTestCase {
             listMode: "smart",
             hasMore: false,
             nextPath: nil,
-            items: [],
-            genres: nil
+            items: []
         )
 
         let first = TvHomeResponse(
             ok: true,
             generatedAt: "2026-11-13T10:00:00Z",
-            layoutMode: "rows_first",
+            layout: "rows_first",
             roomName: "Stua",
             hardwareProfile: "dv-fel-714",
             rows: [row]
@@ -53,7 +52,7 @@ final class SeriesFlowAndHomePolicyTests: XCTestCase {
         let refreshedSameContent = TvHomeResponse(
             ok: true,
             generatedAt: "2026-11-13T10:05:00Z",
-            layoutMode: "rows_first",
+            layout: "rows_first",
             roomName: "Stua",
             hardwareProfile: "dv-fel-714",
             rows: [row]
@@ -61,7 +60,7 @@ final class SeriesFlowAndHomePolicyTests: XCTestCase {
         let changedRoom = TvHomeResponse(
             ok: true,
             generatedAt: "2026-11-13T10:05:00Z",
-            layoutMode: "rows_first",
+            layout: "rows_first",
             roomName: "Loft",
             hardwareProfile: "dv-fel-714",
             rows: [row]
@@ -74,7 +73,15 @@ final class SeriesFlowAndHomePolicyTests: XCTestCase {
     @MainActor
     func testDetailPreResolveControllerConsumeAndDiscardResetSafely() {
         let controller = DetailPreResolveController()
-        XCTAssertNil(controller.consumeForPlayback(itemId: "tmdb:movie:1", client: nil))
+        let handoff = controller.consumeHandoffForPlayback(
+            itemId: "movie:tmdb:1",
+            startPosition: nil,
+            client: nil
+        )
+        XCTAssertNil(handoff.prepareToken)
+        XCTAssertNil(handoff.preparedSession)
+        XCTAssertNil(handoff.inflightPrepareTask)
+        XCTAssertNil(handoff.inflightPrepareToken)
         XCTAssertFalse(controller.isPreResolvedReady)
         XCTAssertNil(controller.preparedToken)
         XCTAssertNil(controller.preparedForItemId)
@@ -366,7 +373,7 @@ final class SeriesFlowAndHomePolicyTests: XCTestCase {
     }
 
     func testAetherBridgePinnedVersionMatchesUpgrade() {
-        XCTAssertEqual(AetherBridgeInfo.pinnedAetherEngineVersion, "7.72.1")
+        XCTAssertEqual(AetherBridgeInfo.pinnedAetherEngineVersion, "7.73.0")
     }
 
     @MainActor

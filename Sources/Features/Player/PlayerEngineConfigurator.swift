@@ -60,16 +60,15 @@ extension PlayerViewModel {
         return configuredLayout
     }
 
-    var effectiveSpeakerLayoutLabel: String {
-        effectiveSpeakerLayoutLabel(isDTSX: false)
-    }
-
     private func effectiveSpeakerLayoutLabel(isDTSX: Bool) -> String {
         if comfort.speakerLayoutOverride == .stereo {
             return "Stereo 2.0"
         }
         if let lay = activeSession?.aetherConfig.objectAudioRendering?.layout, !lay.isEmpty {
             return (lay == "5.1.2" && isDTSX) ? "7.1.4" : lay
+        }
+        if activeSession?.hardwareProfile == HardwareProfilePreset.hdr10512.rawValue {
+            return isDTSX ? "7.1.4" : "5.1.2"
         }
         return "7.1.4"
     }
@@ -107,8 +106,9 @@ extension PlayerViewModel {
         let cfg = session.aetherConfig
         var options = LoadOptions()
 
+        let resolvedStreamURL = client.buildAbsoluteURL(session.stream.url)
         options.autoplay = autoplay
-        options.httpHeaders = client.streamHTTPHeaders()
+        options.httpHeaders = resolvedStreamURL.map { client.streamHTTPHeaders(for: $0) } ?? client.streamHTTPHeaders()
 
         switch comfort.dualLayerOverride {
         case .auto:
@@ -127,7 +127,15 @@ extension PlayerViewModel {
             options.dolbyVisionHandling = .baseLayerOnly
         }
 
-        options.dualLayerRoute = cfg.dualLayerRoute == "avPlayerOutput" ? .avPlayerOutput : .softwareHost
+        let panelLacksDolbyVision = !displayCapabilities.supportsDolbyVision
+            || session.hardwareProfile == HardwareProfilePreset.hdr10512.rawValue
+        if panelLacksDolbyVision {
+            options.preferDualLayerDolbyVision = false
+            options.foldsDolbyVisionFEL = false
+            options.dolbyVisionHandling = .baseLayerOnly
+        }
+
+        options.dualLayerRoute = .softwareHost
         options.matchContentEnabled = cfg.matchContentEnabled
         options.displayCriteriaOwner = .engine
         options.untaggedVideoColor = Self.untaggedVideoColorHint(for: session.selectedCandidate)
@@ -162,7 +170,8 @@ extension PlayerViewModel {
                     options.objectAudioRendering = .render(layout)
                 }
             } else {
-                options.objectAudioRendering = .render(.l714)
+                let fallbackLayout: SpatialSpeakerLayout = session.hardwareProfile == HardwareProfilePreset.hdr10512.rawValue ? .l512 : .l714
+                options.objectAudioRendering = .render(fallbackLayout)
             }
         }
 
@@ -173,20 +182,23 @@ extension PlayerViewModel {
             ? []
             : (cfg.preferredSubtitleLanguages ?? ["nob", "nor", "no", "eng"])
         options.skipsContainerAttachments = cfg.skipsContainerAttachments ?? true
-        options.generatesBackgroundScrubPreviews = cfg.generatesBackgroundScrubPreviews ?? false
+        if options.preferDualLayerDolbyVision && memoryProfile.tier == .standard {
+            options.generatesBackgroundScrubPreviews = false
+        } else {
+            options.generatesBackgroundScrubPreviews = cfg.generatesBackgroundScrubPreviews ?? false
+        }
         options.serveIFramePlaylist = cfg.serveIFramePlaylist ?? false
         options.confirmAtmos = cfg.confirmAtmos ?? (memoryProfile.tier == .high2026)
 
+        let sourceLower = session.selectedCandidate.source
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let isEasynews = sourceLower.contains("easynews")
         let tierLower = (session.selectedCandidate.tier ?? session.selectedCandidate.source)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        let isFastLocalTier = (tierLower == "ssd" || tierLower == "nvme" || tierLower == "local")
-        let isSameOrigin: Bool = {
-            guard let resolvedStreamURL = client.buildAbsoluteURL(session.stream.url) else {
-                return true
-            }
-            return client.isSameOrigin(resolvedStreamURL)
-        }()
+        let isFastLocalTier = !isEasynews && (tierLower == "ssd" || tierLower == "nvme" || tierLower == "local")
+        let isSameOrigin = resolvedStreamURL.map { client.isSameOrigin($0) } ?? true
         options.maxConcurrentSourceRequests = memoryProfile.maxConcurrentSourceRequests(
             isFastLocalTier: isFastLocalTier,
             isSameOrigin: isSameOrigin,
@@ -214,8 +226,8 @@ extension PlayerViewModel {
                 isForced: sub.isForced ?? false,
                 isHearingImpaired: sub.isHearingImpaired ?? false,
                 isDefault: sub.isDefault ?? false,
-                httpHeaders: client.streamHTTPHeaders(),
-                formatHint: sub.formatHint ?? sub.format ?? "srt"
+                httpHeaders: client.streamHTTPHeaders(for: fullURL),
+                formatHint: sub.format ?? "srt"
             )
         }
         options.externalSubtitles = extSubs
@@ -243,6 +255,87 @@ extension PlayerViewModel {
         case "7.1.2": return .l712
         case "9.1.6": return .l916
         default: return .l714
+        }
+    }
+
+    nonisolated static func isLikelyHeavySoftwareSession(
+        _ session: TvPlaybackSession?,
+        dualLayerOverride: DualLayerOverrideMode = .auto,
+        lowResUpscaleMode: LowResUpscaleMode = .off,
+        supportsHardwareAV1: Bool = DeviceHardwareCapabilities.supportsHardwareAV1
+    ) -> Bool {
+        guard let session else { return false }
+        let candidate = session.selectedCandidate
+        if candidate.requiresSoftwareVideoDecode(supportsHardwareAV1: supportsHardwareAV1) {
+            return true
+        }
+        let forceBaseLayerOnly = (dualLayerOverride == .forceOff)
+            || (session.aetherConfig.dolbyVisionHandling == "baseLayerOnly" && dualLayerOverride != .forceOn)
+        if !forceBaseLayerOnly {
+            let layerUpper = (candidate.dvEnhancementLayer ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            if dualLayerOverride == .forceOn && candidate.allowsDualLayerDolbyVisionWhenForced {
+                if candidate.dvProfile == 7
+                    || layerUpper == "FEL"
+                    || (candidate.dvProfile == nil && candidate.canCarryDualLayerDolbyVision) {
+                    return true
+                }
+            } else if session.aetherConfig.preferDualLayerDolbyVision && candidate.canCarryDualLayerDolbyVision {
+                if candidate.dvProfile == 7 || layerUpper == "FEL" {
+                    return true
+                }
+            }
+        }
+        if lowResUpscaleMode != .off && candidate.isLikelyLowResolutionSDRForUpscale {
+            return true
+        }
+        return false
+    }
+
+    nonisolated static func canDirectMountPreparedSession(
+        _ request: PlaybackLaunchRequest,
+        candidateSession: TvPlaybackSession? = nil
+    ) -> Bool {
+        guard request.candidateId == nil,
+              let prep = candidateSession ?? request.preparedSession,
+              !prep.sessionId.isEmpty,
+              !prep.stream.url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        if let reqStart = request.startPositionSeconds,
+           let prepStart = prep.stream.startPositionSeconds {
+            return abs(max(0, reqStart) - max(0, prepStart)) <= 1.5
+        }
+        return true
+    }
+
+    func curtainPreservedURLs(
+        request: PlaybackLaunchRequest,
+        session: TvPlaybackSession?,
+        client: LunaCoreClient
+    ) -> [URL] {
+        let backdropRaw = request.backdropUrl ?? session?.item.backdropUrl ?? request.preparedSession?.item.backdropUrl
+        let logoRaw = session?.item.logoUrl ?? request.logoUrl ?? request.preparedSession?.item.logoUrl
+        return [
+            client.resolveArtworkURL(backdropRaw, target: .hero4K),
+            client.resolveArtworkURL(logoRaw),
+        ].compactMap { $0 }
+    }
+
+    nonisolated static func shouldPauseEngineOnDismiss(
+        engineState: PlaybackState,
+        playbackPhase: PlaybackPhase
+    ) -> Bool {
+        switch engineState {
+        case .playing, .loading, .seeking:
+            return true
+        case .paused, .idle, .ended, .error:
+            break
+        }
+        switch playbackPhase {
+        case .playing, .loading, .seeking, .rebuffering, .stalled:
+            return true
+        case .paused, .idle, .ended, .error:
+            return false
         }
     }
 }

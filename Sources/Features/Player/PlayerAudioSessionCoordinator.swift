@@ -39,12 +39,18 @@ private actor NativeAudioSessionActivator {
 }
 
 /// Aligns `AVAudioSession` native-layer activation, QMS menu refresh-rate preservation,
-/// and held HDMI display-criteria resets with `AetherEngine` 7.72.1's tvOS lifecycle contracts.
+/// wireless route lip-sync compensation, and held HDMI display-criteria resets with `AetherEngine` 7.73.0.
 @MainActor
 final class PlayerAudioSessionCoordinator {
     static let shared = PlayerAudioSessionCoordinator()
 
     nonisolated static let fallbackMenuRefreshRateHz: Float = 60.0
+    nonisolated static let wirelessCompensatedPortTypes: Set<AVAudioSession.Port> = [
+        .bluetoothA2DP,
+        .bluetoothLE,
+        .bluetoothHFP,
+        .airPlay,
+    ]
 
     private let activator = NativeAudioSessionActivator()
     private var activeEngineOwnerToken: UInt64 = 0
@@ -112,11 +118,27 @@ final class PlayerAudioSessionCoordinator {
     }
 
     nonisolated static func shouldResetHeldDisplayCriteriaOnScenePhase(
-        isActiveScene: Bool,
+        isBackgroundScene: Bool,
         hasActivePlayback: Bool,
         engineState: PlaybackState
     ) -> Bool {
-        !isActiveScene && !hasActivePlayback && engineState == .idle
+        isBackgroundScene && !hasActivePlayback && engineState == .idle
+    }
+
+    nonisolated static func isWirelessCompensatedRoute(portTypes: [AVAudioSession.Port]) -> Bool {
+        portTypes.contains { wirelessCompensatedPortTypes.contains($0) }
+    }
+
+    nonisolated static func effectiveAudioDelaySeconds(
+        configuredDelaySeconds: Double,
+        isWirelessRoute: Bool
+    ) -> Double {
+        isWirelessRoute ? 0.0 : configuredDelaySeconds
+    }
+
+    nonisolated static func currentOutputUsesWirelessCompensation() -> Bool {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        return isWirelessCompensatedRoute(portTypes: outputs.map(\.portType))
     }
 
     /// Snaps a measured VSync refresh rate strictly to valid tvOS HDMI menu rates
@@ -235,18 +257,31 @@ final class PlayerAudioSessionCoordinator {
         default:
             kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ
         }
-        let extensions: NSDictionary = [
+        var extDict: [CFString: Any] = [
             kCMFormatDescriptionExtension_ColorPrimaries: kCVImageBufferColorPrimaries_ITU_R_2020,
             kCMFormatDescriptionExtension_TransferFunction: transferFunction,
             kCMFormatDescriptionExtension_YCbCrMatrix: kCVImageBufferYCbCrMatrix_ITU_R_2020,
         ]
+        if videoFormat == .dolbyVision {
+            // Canonical 24-byte DOVIDecoderConfigurationRecord (`dvcC`) for Profile 8.1 @ Level 06 (4K60):
+            // major=1, minor=0, profile=8 (0b0001000), level=6 (0b000110), rpu=1, el=0, bl=1 -> 0x1035, compat=1 -> 0x10.
+            var doviConfig = [UInt8](repeating: 0, count: 24)
+            doviConfig[0] = 0x01
+            doviConfig[1] = 0x00
+            doviConfig[2] = 0x10
+            doviConfig[3] = 0x35
+            doviConfig[4] = 0x10
+            extDict[kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms] = [
+                "dvcC": Data(doviConfig),
+            ] as NSDictionary
+        }
         var formatDesc: CMVideoFormatDescription?
         CMVideoFormatDescriptionCreate(
             allocator: kCFAllocatorDefault,
             codecType: (videoFormat == .dolbyVision) ? CMVideoCodecType(0x64766831) : kCMVideoCodecType_HEVC,
             width: 3840,
             height: 2160,
-            extensions: extensions,
+            extensions: extDict as NSDictionary,
             formatDescriptionOut: &formatDesc
         )
         return formatDesc

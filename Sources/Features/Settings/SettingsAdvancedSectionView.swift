@@ -31,12 +31,12 @@ struct SettingsAdvancedSectionView: View {
 
             LunaControlRow(
                 title: "Høyttaleroppsett og objektlyd",
-                subtitle: "Auto 7.1.4 anbefales · Stereo for TV-høyttalere"
+                subtitle: "Auto tilpasser til rommet · Stereo for TV-høyttalere"
             ) {
                 HStack(spacing: 10) {
                     ForEach(SpeakerLayoutOverrideMode.allCases) { mode in
                         LunaPillButton(
-                            mode.displayTitle,
+                            mode.displayTitle(forHardwareProfile: sessionStore.hardwareProfile),
                             isSelected: comfort.speakerLayoutOverride == mode,
                             prominence: .glassPill,
                             size: .compact

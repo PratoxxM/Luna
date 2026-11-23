@@ -17,7 +17,7 @@ extension MediaDetailViewModel {
             mediaType: mediaType,
             itemId: itemId,
             roomName: sessionContext?.roomName ?? "",
-            hardwareProfile: sessionContext?.effectiveHardwareProfile ?? ""
+            hardwareProfile: sessionContext?.hardwareProfile ?? ""
         )
     }
 
@@ -171,13 +171,6 @@ extension MediaDetailViewModel {
                 if !preserveSeason {
                     selectedSeasonNumber = targetSeason
                 }
-                // Fire 0 ms initial pre-resolve immediately from `loaded.nextUp` / `loaded.progress`
-                // in parallel with any secondary season-episodes fetch!
-                if !Task.isCancelled,
-                   generation == detailLoadGeneration,
-                   sessionContext?.activePlaybackTarget == nil {
-                    schedulePreResolve(for: loaded, immediate: true)
-                }
                 if let inlineEpisodes = loaded.episodes,
                    !inlineEpisodes.isEmpty,
                    (loaded.selectedSeason == targetSeason || inlineEpisodes.first?.seasonNumber == targetSeason) {
@@ -186,7 +179,14 @@ extension MediaDetailViewModel {
                     episodes = inlineEpisodes
                     persistDetailSnapshot(loaded, season: targetSeason, seasonEpisodes: inlineEpisodes)
                 } else {
-                    await loadSeasonEpisodes(detail: loaded, seasonNumber: targetSeason)
+                    // Fire 0 ms initial pre-resolve immediately from `loaded.nextUp` / `loaded.progress`
+                    // in parallel with the secondary season-episodes fetch!
+                    if !Task.isCancelled,
+                       generation == detailLoadGeneration,
+                       sessionContext?.activePlaybackTarget == nil {
+                        schedulePreResolve(for: loaded, immediate: true)
+                    }
+                    _ = await loadSeasonEpisodes(detail: loaded, seasonNumber: targetSeason, previousSeason: nil)
                 }
                 guard !Task.isCancelled,
                       generation == detailLoadGeneration,
@@ -197,7 +197,6 @@ extension MediaDetailViewModel {
                     }
                     return
                 }
-                // Re-verify target in case loaded episode progress refined `startPositionSeconds`.
                 schedulePreResolve(for: loaded, immediate: true)
             }
         } catch where LunaCoreError.isCancellation(error) {
@@ -215,7 +214,12 @@ extension MediaDetailViewModel {
         }
     }
 
-    func loadSeasonEpisodes(detail: TvItemDetail, seasonNumber: Int) async {
+    @discardableResult
+    func loadSeasonEpisodes(
+        detail: TvItemDetail,
+        seasonNumber: Int,
+        previousSeason: Int? = nil
+    ) async -> Bool {
         let cacheKey = detailCacheKey
         if let cached = ItemDetailMemoryCache.shared.snapshot(for: cacheKey),
            cached.refreshNonce == (sessionContext?.homeRefreshNonce ?? -1),
@@ -224,28 +228,58 @@ extension MediaDetailViewModel {
             seasonLoadGeneration &+= 1
             episodes = cachedSeasonEps
             isLoadingEpisodes = false
-            return
+            return true
         }
 
         guard let client = refreshedClient(),
-              let tmdbId = detail.ids.tmdb else { return }
+              let tmdbId = detail.ids.tmdb else { return false }
         seasonLoadGeneration &+= 1
         let generation = seasonLoadGeneration
         isLoadingEpisodes = true
-        if let seasonRes = try? await client.fetchSeasonEpisodes(tmdbId: tmdbId, seasonNumber: seasonNumber),
-           !Task.isCancelled,
-           generation == seasonLoadGeneration,
-           selectedSeasonNumber == seasonNumber {
+        defer {
+            if generation == seasonLoadGeneration {
+                isLoadingEpisodes = false
+            }
+        }
+        do {
+            let seasonRes = try await client.fetchSeasonEpisodes(tmdbId: tmdbId, seasonNumber: seasonNumber)
+            guard !Task.isCancelled,
+                  generation == seasonLoadGeneration,
+                  selectedSeasonNumber == seasonNumber else {
+                return false
+            }
             episodes = seasonRes.episodes
             persistDetailSnapshot(detail, season: seasonNumber, seasonEpisodes: seasonRes.episodes)
-        }
-        if generation == seasonLoadGeneration {
-            isLoadingEpisodes = false
+            return true
+        } catch where LunaCoreError.isCancellation(error) {
+            return false
+        } catch {
+            if generation == seasonLoadGeneration {
+                if let previousSeason, previousSeason != seasonNumber {
+                    selectedSeasonNumber = previousSeason
+                }
+                mutationErrorBanner = "Kunne ikke hente episoder for sesong \(seasonNumber): \(LunaCopy.friendlyErrorMessage(error))"
+            }
+            return false
         }
     }
 
     private func showMutationError(_ error: Error) {
         mutationErrorBanner = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
+    }
+
+    private func persistOptimisticDetailMutation() {
+        if let sessionContext {
+            lastSeenRefreshNonce = sessionContext.homeRefreshNonce &+ 1
+            sessionContext.notifyContentMutated()
+        }
+        if let updated = detail {
+            persistDetailSnapshot(
+                updated,
+                season: updated.mediaType == "series" ? selectedSeasonNumber : nil,
+                seasonEpisodes: updated.mediaType == "series" ? episodes : nil
+            )
+        }
     }
 
     func markLocalMutationAndReload() async {
@@ -269,7 +303,7 @@ extension MediaDetailViewModel {
                 title: item.title,
                 year: item.year
             )
-            await markLocalMutationAndReload()
+            persistOptimisticDetailMutation()
         } catch {
             detail?.inWatchlist = item.inWatchlist
             showMutationError(error)
@@ -293,7 +327,7 @@ extension MediaDetailViewModel {
             )
             detail?.monitored = res.monitored ?? nextMonitored
             detail?.monitorMode = res.monitorMode ?? nextMode
-            await markLocalMutationAndReload()
+            persistOptimisticDetailMutation()
         } catch {
             detail?.monitored = item.monitored
             detail?.monitorMode = item.monitorMode

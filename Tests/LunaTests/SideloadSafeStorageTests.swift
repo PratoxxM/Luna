@@ -6,11 +6,12 @@ final class SideloadSafeStorageTests: XCTestCase {
     func testSideloadSafeStorageKeysPreserveLunaV1Namespace() {
         let allKeys = [
             SideloadSafeStorage.serverURLKey,
+            SideloadSafeStorage.serverLocalHostnameURLKey,
+            SideloadSafeStorage.fallbackServerURLKey,
             SideloadSafeStorage.deviceIDKey,
             SideloadSafeStorage.deviceNameKey,
             SideloadSafeStorage.roomNameKey,
             SideloadSafeStorage.hardwareProfileKey,
-            SideloadSafeStorage.localProfileOverrideKey,
             SideloadSafeStorage.allowSelfSignedLanTLSKey,
             SideloadSafeStorage.hdrSubtitlePresetKey,
             SideloadSafeStorage.subtitleFontScaleKey,
@@ -22,11 +23,8 @@ final class SideloadSafeStorageTests: XCTestCase {
             SideloadSafeStorage.showNerdHUDKey,
             SideloadSafeStorage.lowResUpscaleModeKey,
             SideloadSafeStorage.audioDelayMsKey,
-            SideloadSafeStorage.showCatCompanionsKey,
-            SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey,
-            SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key,
+            SideloadSafeStorage.menuDisplayModeKey,
             SideloadSafeStorage.recentSearchesKey,
-            SideloadSafeStorage.playerScrubHintCountKey,
         ]
 
         XCTAssertEqual(Set(allKeys).count, allKeys.count, "All persistence keys must be unique")
@@ -37,11 +35,12 @@ final class SideloadSafeStorageTests: XCTestCase {
         }
 
         XCTAssertEqual(SideloadSafeStorage.serverURLKey, "luna.v1.server_url")
+        XCTAssertEqual(SideloadSafeStorage.serverLocalHostnameURLKey, "luna.v1.server_local_hostname_url")
+        XCTAssertEqual(SideloadSafeStorage.fallbackServerURLKey, "luna.v1.fallback_server_url")
         XCTAssertEqual(SideloadSafeStorage.deviceIDKey, "luna.v1.device_id")
         XCTAssertEqual(SideloadSafeStorage.deviceNameKey, "luna.v1.device_name")
         XCTAssertEqual(SideloadSafeStorage.roomNameKey, "luna.v1.room_name")
         XCTAssertEqual(SideloadSafeStorage.hardwareProfileKey, "luna.v1.hardware_profile")
-        XCTAssertEqual(SideloadSafeStorage.localProfileOverrideKey, "luna.v1.local_profile_override")
         XCTAssertEqual(SideloadSafeStorage.allowSelfSignedLanTLSKey, "luna.v1.allow_lan_tls")
         XCTAssertEqual(SideloadSafeStorage.hdrSubtitlePresetKey, "luna.v1.comfort.hdr_subtitle_preset")
         XCTAssertEqual(SideloadSafeStorage.subtitleFontScaleKey, "luna.v1.comfort.subtitle_font_scale")
@@ -53,11 +52,8 @@ final class SideloadSafeStorageTests: XCTestCase {
         XCTAssertEqual(SideloadSafeStorage.showNerdHUDKey, "luna.v1.comfort.show_nerd_hud")
         XCTAssertEqual(SideloadSafeStorage.lowResUpscaleModeKey, "luna.v1.comfort.low_res_upscale_mode")
         XCTAssertEqual(SideloadSafeStorage.audioDelayMsKey, "luna.v1.comfort.audio_delay_ms")
-        XCTAssertEqual(SideloadSafeStorage.showCatCompanionsKey, "luna.v1.comfort.show_cat_companions")
-        XCTAssertEqual(SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey, "luna.v1.comfort.keep_display_mode_in_menu")
-        XCTAssertEqual(SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key, "luna.v1.comfort.migrated_menu_60hz_v240")
+        XCTAssertEqual(SideloadSafeStorage.menuDisplayModeKey, "luna.v1.comfort.menu_display_mode")
         XCTAssertEqual(SideloadSafeStorage.recentSearchesKey, "luna.v1.recent_searches")
-        XCTAssertEqual(SideloadSafeStorage.playerScrubHintCountKey, "luna.v1.player.scrub_hint_count")
         XCTAssertEqual(SideloadSafeStorage.keychainService, "luna.v1.credentials")
         XCTAssertEqual(SideloadSafeStorage.tokenAccount, "device_bearer_token")
         XCTAssertEqual(SideloadSafeStorage.fallbackPrefix, "luna.v1.keychain_fallback.")

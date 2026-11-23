@@ -38,7 +38,7 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
 
         XCTAssertEqual(
             AppSessionStore.currentAppVersionDisplayString(infoDictionary: nil),
-            "2.10.1"
+            "2.11.0"
         )
     }
 
@@ -51,9 +51,6 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
         )
         XCTAssertEqual(MainNavigationTab.primaryTabs, [.home, .movies, .series, .library])
         XCTAssertEqual(MainNavigationTab.utilityTabs, [.search, .settings])
-        XCTAssertTrue(MainNavigationTab.search.isIconOnlyInTopBar)
-        XCTAssertTrue(MainNavigationTab.settings.isIconOnlyInTopBar)
-        XCTAssertFalse(MainNavigationTab.home.isIconOnlyInTopBar)
 
         let visibility = LunaNavigationBarVisibility()
         XCTAssertFalse(visibility.isTopBarHidden)
@@ -92,8 +89,7 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
                 loadedScopeKey: nil,
                 currentScopeKey: scopeA,
                 lastSeenRefreshNonce: 0,
-                currentRefreshNonce: 0,
-                awaitingPostPlaybackRefresh: false
+                currentRefreshNonce: 0
             ),
             .loadInitial
         )
@@ -105,8 +101,7 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
                 loadedScopeKey: scopeA,
                 currentScopeKey: scopeB,
                 lastSeenRefreshNonce: 3,
-                currentRefreshNonce: 3,
-                awaitingPostPlaybackRefresh: false
+                currentRefreshNonce: 3
             ),
             .loadInitial
         )
@@ -118,8 +113,7 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
                 loadedScopeKey: scopeA,
                 currentScopeKey: scopeA,
                 lastSeenRefreshNonce: 3,
-                currentRefreshNonce: 3,
-                awaitingPostPlaybackRefresh: true
+                currentRefreshNonce: 3
             ),
             .skip
         )
@@ -131,19 +125,7 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
                 loadedScopeKey: scopeA,
                 currentScopeKey: scopeA,
                 lastSeenRefreshNonce: 3,
-                currentRefreshNonce: 4,
-                awaitingPostPlaybackRefresh: true
-            ),
-            .reloadPreservingSeason
-        )
-        XCTAssertEqual(
-            DetailReloadPolicy.actionForTaskAppearance(
-                hasLoadedDetail: true,
-                loadedScopeKey: scopeA,
-                currentScopeKey: scopeA,
-                lastSeenRefreshNonce: 3,
-                currentRefreshNonce: 4,
-                awaitingPostPlaybackRefresh: false
+                currentRefreshNonce: 4
             ),
             .reloadPreservingSeason
         )
@@ -155,8 +137,7 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
                 loadedScopeKey: scopeA,
                 currentScopeKey: scopeA,
                 lastSeenRefreshNonce: 4,
-                currentRefreshNonce: 4,
-                awaitingPostPlaybackRefresh: false
+                currentRefreshNonce: 4
             ),
             .skip
         )
@@ -342,12 +323,12 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
         XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
 
         // Mid-band jitter at top does NOT hide bar, while Menu still moves focus up to top bar
-        visibility.reportScrollZone(.midBand, for: .home)
+        visibility.reportScrollSample(nil, ScrollTopSample.capture(scrolledOffsetY: 54), for: .home)
         XCTAssertFalse(visibility.isTopBarHidden)
         XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
 
         // Downward scroll past 88 pt hides top bar and arms Menu wakeup
-        visibility.reportScrollZone(.scrolledDown, for: .home)
+        visibility.reportScrollSample(nil, ScrollTopSample.capture(scrolledOffsetY: 420), for: .home)
         XCTAssertTrue(visibility.isCollapsedByScroll)
         XCTAssertTrue(visibility.isTopBarHidden)
         XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
@@ -415,7 +396,7 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
         )
 
         // Reset movies back to top for subsequent tab-switch assertion
-        visibility.reportScrollZone(.atTop, for: .movies, now: secondPressAt.addingTimeInterval(0.30))
+        visibility.reportScrollSample(nil, s0, for: .movies, now: secondPressAt.addingTimeInterval(0.30))
 
         // After 140 ms grace window, scrolling UP keeps the revealed bar & re-arms Menu, while scrolling DOWN collapses
         visibility.reportScrollSample(s420, s360, for: .home, now: secondPressAt.addingTimeInterval(0.30))
@@ -430,7 +411,7 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
         XCTAssertFalse(visibility.isCollapsedByScroll)
         visibility.syncActiveTab(.home)
         XCTAssertTrue(visibility.isCollapsedByScroll)
-        visibility.reportScrollZone(.atTop, for: .home)
+        visibility.reportScrollSample(s490, s0, for: .home)
         XCTAssertFalse(visibility.isCollapsedByScroll)
 
         // Pressing Down from top bar requests deterministic left-axis content entry focus

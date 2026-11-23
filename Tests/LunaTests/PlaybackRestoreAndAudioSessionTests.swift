@@ -1,4 +1,5 @@
 import AetherBridge
+import AVFoundation
 import CoreMedia
 import CoreVideo
 import Foundation
@@ -112,6 +113,10 @@ final class PlaybackRestoreAndAudioSessionTests: XCTestCase {
         XCTAssertEqual(dvExts[kCMFormatDescriptionExtension_ColorPrimaries] as? String, kCVImageBufferColorPrimaries_ITU_R_2020 as String)
         XCTAssertEqual(dvExts[kCMFormatDescriptionExtension_TransferFunction] as? String, kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ as String)
         XCTAssertEqual(dvExts[kCMFormatDescriptionExtension_YCbCrMatrix] as? String, kCVImageBufferYCbCrMatrix_ITU_R_2020 as String)
+        let dvAtoms = try XCTUnwrap(dvExts[kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms] as? [String: Data])
+        let dvcC = try XCTUnwrap(dvAtoms["dvcC"])
+        XCTAssertEqual(dvcC.count, 24)
+        XCTAssertEqual(Array(dvcC.prefix(5)), [0x01, 0x00, 0x10, 0x35, 0x10])
 
         let hlgDesc = try XCTUnwrap(PlayerAudioSessionCoordinator.hdrMenuFormatDescription(for: .hlg))
         let hlgExts = try XCTUnwrap(CMFormatDescriptionGetExtensions(hlgDesc) as? [CFString: Any])
@@ -459,5 +464,130 @@ final class PlaybackRestoreAndAudioSessionTests: XCTestCase {
         XCTAssertFalse(viewModel.needsNativeAudioActivationAfterPausedRestore)
         XCTAssertFalse(viewModel.isRestoringFromBackground)
         XCTAssertNil(viewModel.userDesiredPlayingDuringRestore)
+    }
+
+    @MainActor
+    func testDvGuardsScrubPreviewMemoryGateZeroRttAndWirelessRouteLipSync() throws {
+        let suite = "luna.test.steg52.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let sessionJson = #"""
+        {
+          "sessionId": "tvs_fel_1",
+          "streamToken": "0123456789abcdef0123456789abcdef",
+          "roomName": "Kjellerstua",
+          "hardwareProfile": "dv-fel-714",
+          "item": {
+            "itemId": "movie:tmdb:550",
+            "mediaType": "movie",
+            "ids": { "tmdb": 550 },
+            "title": "Eksempelfilm"
+          },
+          "selectedCandidate": {
+            "candidateId": "cand-fel",
+            "displayHeadline": "4K Remux DV FEL",
+            "releaseTitle": "Eksempelfilm.2024.2160p.UHD.BluRay.REMUX",
+            "source": "local",
+            "tier": "ssd",
+            "videoCodec": "hevc",
+            "dvProfile": 7,
+            "dvEnhancementLayer": "FEL"
+          },
+          "stream": {
+            "url": "/api/tv/v1/stream/tvs_fel_1/0123456789abcdef0123456789abcdef/film.mkv",
+            "startPositionSeconds": 120,
+            "canClientPrewarmBytes": true
+          },
+          "aetherConfig": {
+            "preferDualLayerDolbyVision": true,
+            "foldsDolbyVisionFEL": true,
+            "dolbyVisionHandling": "automatic",
+            "matchContentEnabled": true,
+            "audioBridgeMode": "lossless",
+            "generatesBackgroundScrubPreviews": true
+          }
+        }
+        """#
+        let session = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(sessionJson.utf8))
+        let client = LunaCoreClient(
+            baseURL: try XCTUnwrap(URL(string: "http://lunacore.local:8090")),
+            deviceID: "luna-test-device",
+            deviceToken: nil,
+            roomName: "Kjellerstua",
+            hardwareProfile: "dv-fel-714",
+            allowSelfSignedLanTLS: true
+        )
+
+        // A-3: 4 GB `.standard` forces `generatesBackgroundScrubPreviews = false` on DV P7 FEL
+        let dvCaps = DisplayCapabilities(supportsHDR: true, supportsDolbyVision: true, supportsHDR10: true, supportsHLG: true)
+        let standard4GB = DeviceMemoryProfile(physicalMemoryBytes: 4 * 1_073_741_824, activeProcessorCount: 5)
+        let comfort = ComfortPreferences(defaults: defaults, memoryTier: .standard)
+        let opts4GB = PlayerViewModel.buildLoadOptions(
+            session: session,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0,
+            displayCapabilities: dvCaps,
+            memoryProfile: standard4GB,
+            availableMemoryBytes: 900 * 1_048_576
+        )
+        XCTAssertTrue(opts4GB.preferDualLayerDolbyVision)
+        XCTAssertFalse(opts4GB.generatesBackgroundScrubPreviews)
+
+        // A-8: `.forceOn` cannot force Dolby Vision onto a non-DV Samsung HDR10+ panel
+        comfort.dualLayerOverride = .forceOn
+        let nonDvCaps = DisplayCapabilities(supportsHDR: true, supportsDolbyVision: false, supportsHDR10: true, supportsHLG: true)
+        let optsNonDV = PlayerViewModel.buildLoadOptions(
+            session: session,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0,
+            displayCapabilities: nonDvCaps,
+            memoryProfile: standard4GB,
+            availableMemoryBytes: 900 * 1_048_576
+        )
+        XCTAssertFalse(optsNonDV.preferDualLayerDolbyVision)
+        XCTAssertFalse(optsNonDV.foldsDolbyVisionFEL)
+        XCTAssertEqual(optsNonDV.dolbyVisionHandling, .baseLayerOnly)
+
+        // A-1: 0-RTT direct-mount eligibility check
+        let warmReq = PlaybackLaunchRequest(
+            itemId: "movie:tmdb:550",
+            title: "Eksempelfilm",
+            startPositionSeconds: 120.5,
+            prepareToken: session.sessionId,
+            preparedSession: session
+        )
+        XCTAssertTrue(PlayerViewModel.canDirectMountPreparedSession(warmReq))
+        let explicitCandReq = PlaybackLaunchRequest(
+            itemId: "movie:tmdb:550",
+            title: "Eksempelfilm",
+            startPositionSeconds: 120,
+            candidateId: "other-cand",
+            preparedSession: session
+        )
+        XCTAssertFalse(PlayerViewModel.canDirectMountPreparedSession(explicitCandReq))
+
+        // A-15: Wireless Bluetooth/AirPods route zeroes manual HDMI lip-sync and restores on HDMI return
+        XCTAssertTrue(PlayerAudioSessionCoordinator.isWirelessCompensatedRoute(portTypes: [.bluetoothA2DP]))
+        XCTAssertFalse(PlayerAudioSessionCoordinator.isWirelessCompensatedRoute(portTypes: [.HDMI]))
+
+        let engine = try LunaApp.makeSharedEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+        let transport = MockPlayerTransport(state: .playing, playbackPhase: .playing)
+        comfort.audioDelayMs = -50
+        let vm = PlayerViewModel(engine: engine, comfort: comfort, transport: transport, bindOnInit: false)
+        vm.isResolving = false
+        vm.isWirelessAudioRouteActive = false
+        vm.handleAudioRouteChange(isWirelessOverride: true)
+        XCTAssertEqual(transport.events.last, "audioDelay(0ms)")
+        vm.handleAudioRouteChange(isWirelessOverride: false)
+        XCTAssertEqual(transport.events.last, "audioDelay(-50ms)")
     }
 }

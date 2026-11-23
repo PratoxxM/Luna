@@ -142,16 +142,9 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        defaults.set(true, forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey)
-        XCTAssertFalse(defaults.bool(forKey: SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key))
-
         let comfort = ComfortPreferences(defaults: defaults)
+        XCTAssertEqual(comfort.menuDisplayMode, .sdr60Hz)
         XCTAssertFalse(comfort.keepDisplayModeInMenuAfterPlayback)
-        XCTAssertTrue(comfort.returnTo60HzInMenuAfterPlayback)
-        XCTAssertTrue(defaults.bool(forKey: SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key))
-        XCTAssertTrue(SettingsView.keepDisplayModeToggleTitle.contains("HDR-modus"))
-        XCTAssertTrue(SettingsView.keepDisplayModeExplanationText.contains("60 Hz"))
-        XCTAssertTrue(SettingsView.keepDisplayModeExplanationText.contains("24 Hz"))
 
         let engine = try AetherEngine()
         defer {
@@ -165,18 +158,17 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
 
         var syncCalls = 0
         comfort.onSyncRequested = { _ in syncCalls += 1 }
-        comfort.keepDisplayModeInMenuAfterPlayback = true
+        comfort.menuDisplayMode = .preserveExactMatch
         XCTAssertEqual(syncCalls, 0)
         XCTAssertTrue(comfort.keepDisplayModeInMenuAfterPlayback)
-        XCTAssertFalse(comfort.returnTo60HzInMenuAfterPlayback)
         XCTAssertEqual(
-            defaults.object(forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey) as? Bool,
-            true
+            defaults.string(forKey: SideloadSafeStorage.menuDisplayModeKey),
+            MenuDisplayMode.preserveExactMatch.rawValue
         )
 
         let reloaded = ComfortPreferences(defaults: defaults)
+        XCTAssertEqual(reloaded.menuDisplayMode, .preserveExactMatch)
         XCTAssertTrue(reloaded.keepDisplayModeInMenuAfterPlayback)
-        XCTAssertFalse(reloaded.returnTo60HzInMenuAfterPlayback)
 
         XCTAssertFalse(
             PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
@@ -209,28 +201,29 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
         )
         XCTAssertTrue(
             PlayerAudioSessionCoordinator.shouldResetHeldDisplayCriteriaOnScenePhase(
-                isActiveScene: false,
+                isBackgroundScene: true,
+                hasActivePlayback: false,
+                engineState: .idle
+            )
+        )
+        // Control Center / Siri `.inactive` must NOT reset held QMS/HDR display criteria
+        XCTAssertFalse(
+            PlayerAudioSessionCoordinator.shouldResetHeldDisplayCriteriaOnScenePhase(
+                isBackgroundScene: false,
                 hasActivePlayback: false,
                 engineState: .idle
             )
         )
         XCTAssertFalse(
             PlayerAudioSessionCoordinator.shouldResetHeldDisplayCriteriaOnScenePhase(
-                isActiveScene: true,
-                hasActivePlayback: false,
-                engineState: .idle
-            )
-        )
-        XCTAssertFalse(
-            PlayerAudioSessionCoordinator.shouldResetHeldDisplayCriteriaOnScenePhase(
-                isActiveScene: false,
+                isBackgroundScene: true,
                 hasActivePlayback: true,
                 engineState: .idle
             )
         )
         XCTAssertFalse(
             PlayerAudioSessionCoordinator.shouldResetHeldDisplayCriteriaOnScenePhase(
-                isActiveScene: false,
+                isBackgroundScene: true,
                 hasActivePlayback: false,
                 engineState: .playing
             )

@@ -18,14 +18,15 @@ public enum LunaRoomAtmosphere: String, CaseIterable, Equatable, Sendable {
         if explicit == "neutral" { return .neutral }
 
         let prof = hardwareProfile.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if prof == "hdr10-512" || prof == "living" || prof == "livingroom" {
+        if prof == "hdr10-512" {
             return .living
         }
-        if prof == "dv-fel-714" || prof == "cinema" {
+        if prof == "dv-fel-714" {
             return .cinema
         }
 
         let room = roomName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if room == "neutral" || room == "unassigned" { return .neutral }
         if room.contains("stua") && !room.contains("kjeller") { return .living }
         if room.contains("kjeller") || room.contains("kino") { return .cinema }
         return .neutral
@@ -115,8 +116,7 @@ public enum LunaTheme {
     public static let warmBorder = LunaTokens.Edge.top2
     public static let warmBorderStrong = LunaTokens.Edge.top3
 
-    /// Calm antique bronze Siri Remote focus fill (`#C48C3A -> #9E6E27`) reserved for primary actions.
-    public static let focusGoldTop = amber
+    /// Calm antique bronze Siri Remote focus border & highlight tokens.
     public static let focusGoldBorder = LunaTokens.Accent.line
     /// Subtle warm bronze highlight reserved for focused `PrimaryPlayButton` («Spill av»).
     public static let playFocusTop = LunaTokens.Accent.playFocusTop
@@ -161,7 +161,7 @@ public enum LunaTheme {
         )
     }
 
-    public static func cardTitleColor(isFocused: Bool) -> Color {
+    public static func cardTitleColor() -> Color {
         linen
     }
 

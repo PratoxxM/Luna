@@ -5,6 +5,9 @@ import AetherBridge
 struct PendingStopSnapshot {
     let client: LunaCoreClient?
     let sessionId: String?
+    let resolveId: String?
+    let cancelItemId: String?
+    let cancelPrepareToken: String?
     let inflightPrepareTask: Task<TvPrepareResponse?, Never>?
     let finalPos: Double
     let finalDur: Double
@@ -14,47 +17,66 @@ struct PendingStopSnapshot {
 extension PlayerViewModel {
     // MARK: - Resolve & Engine Load Pipeline
 
-    nonisolated static func isLikelyHeavySoftwareSession(
-        _ session: TvPlaybackSession?,
-        dualLayerOverride: DualLayerOverrideMode = .auto,
-        lowResUpscaleMode: LowResUpscaleMode = .off,
-        supportsHardwareAV1: Bool = DeviceHardwareCapabilities.supportsHardwareAV1
-    ) -> Bool {
-        guard let session else { return false }
-        let candidate = session.selectedCandidate
-
-        if candidate.requiresSoftwareVideoDecode(supportsHardwareAV1: supportsHardwareAV1) {
-            return true
+    private func extractResolvedSession(
+        status: Int,
+        startRes: TvResolveStartResponse,
+        client: LunaCoreClient
+    ) async throws -> TvPlaybackSession {
+        if status == 200, let immediate = startRes.playbackSession {
+            activeResolveId = nil
+            return immediate
         }
-
-        let forceBaseLayerOnly = (dualLayerOverride == .forceOff)
-            || (session.aetherConfig.dolbyVisionHandling == "baseLayerOnly" && dualLayerOverride != .forceOn)
-        if !forceBaseLayerOnly {
-            let layerUpper = (candidate.dvEnhancementLayer ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-            if dualLayerOverride == .forceOn && candidate.allowsDualLayerDolbyVisionWhenForced {
-                if candidate.dvProfile == 7
-                    || layerUpper == "FEL"
-                    || (candidate.dvProfile == nil && candidate.canCarryDualLayerDolbyVision) {
-                    return true
-                }
-            } else if session.aetherConfig.preferDualLayerDolbyVision && candidate.canCarryDualLayerDolbyVision {
-                if candidate.dvProfile == 7 || layerUpper == "FEL" {
-                    return true
-                }
-            }
+        if let wsPath = startRes.wsPath {
+            activeResolveId = startRes.resolveId
+            let resolved = try await awaitWebSocketResolution(
+                wsPath: wsPath,
+                resolveId: startRes.resolveId,
+                client: client
+            )
+            activeResolveId = nil
+            return resolved
         }
+        activeResolveId = nil
+        throw LunaCoreError.serverMessage(status, startRes.error ?? "Uventet svar ved klargjøring av strøm.")
+    }
 
-        if lowResUpscaleMode != .off && candidate.isLikelyLowResolutionSDRForUpscale {
-            return true
+    private func finishColdMount(
+        _ resolvedSession: TvPlaybackSession,
+        request: PlaybackLaunchRequest,
+        client: LunaCoreClient,
+        autoplay: Bool
+    ) async throws {
+        pendingHandedOverSessionId = resolvedSession.sessionId
+        pendingInflightPrepareTask = nil
+        pendingInflightPrepareToken = nil
+        try Task.checkCancellation()
+        guard !isTeardownCompleted, !isDismissing else {
+            throw CancellationError()
         }
-
-        return false
+        ArtworkPipeline.shared.enterPlaybackMemoryMode(
+            isHeavySoftwareStream: Self.isLikelyHeavySoftwareSession(
+                resolvedSession,
+                dualLayerOverride: comfort.dualLayerOverride,
+                lowResUpscaleMode: comfort.lowResUpscaleMode
+            ),
+            preservedURLs: curtainPreservedURLs(request: request, session: resolvedSession, client: client)
+        )
+        resolveStageLabel = "Tilpasser skjerm og starter avspilling…"
+        resolvePercent = 95
+        try await mountSessionInEngine(
+            resolvedSession,
+            client: client,
+            overrideStartPosition: request.startPositionSeconds ?? resolvedSession.stream.startPositionSeconds,
+            autoplay: autoplay
+        )
+        isResolving = false
+        armFirstFrameFallbackWatchdog()
+        startHeartbeatLoop()
     }
 
     func runResolveAndLoad(
         request: PlaybackLaunchRequest,
         client: LunaCoreClient,
-        isReplacement: Bool,
         autoplay: Bool = true
     ) async {
         resetScrubStateOnSessionChange()
@@ -78,58 +100,129 @@ extension PlayerViewModel {
                 request.preparedSession,
                 dualLayerOverride: comfort.dualLayerOverride,
                 lowResUpscaleMode: comfort.lowResUpscaleMode
-            )
+            ),
+            preservedURLs: curtainPreservedURLs(request: request, session: request.preparedSession, client: client)
         )
         UIApplication.shared.isIdleTimerDisabled = true
 
         do {
+            var effectivePreparedSession = request.preparedSession
+            var effectivePrepareToken = request.prepareToken
+
+            if effectivePreparedSession == nil,
+               request.candidateId == nil,
+               let inflightPrep = pendingInflightPrepareTask {
+                resolveStageLabel = "Fullfører klargjort strøm…"
+                resolvePercent = 68
+                let prepResult = await withTaskCancellationHandler {
+                    await inflightPrep.value
+                } onCancel: {
+                    inflightPrep.cancel()
+                }
+                pendingInflightPrepareTask = nil
+                pendingInflightPrepareToken = nil
+                try Task.checkCancellation()
+                guard !isTeardownCompleted, !isDismissing else {
+                    throw CancellationError()
+                }
+                if let prepResult, let readySession = prepResult.playbackSession {
+                    effectivePreparedSession = readySession
+                    effectivePrepareToken = prepResult.prepareToken ?? readySession.sessionId
+                    pendingHandedOverSessionId = readySession.sessionId
+                }
+            }
+
+            if let prepSession = effectivePreparedSession,
+               Self.canDirectMountPreparedSession(request, candidateSession: prepSession) {
+                pendingHandedOverSessionId = prepSession.sessionId
+                ArtworkPipeline.shared.enterPlaybackMemoryMode(
+                    isHeavySoftwareStream: Self.isLikelyHeavySoftwareSession(
+                        prepSession,
+                        dualLayerOverride: comfort.dualLayerOverride,
+                        lowResUpscaleMode: comfort.lowResUpscaleMode
+                    ),
+                    preservedURLs: curtainPreservedURLs(request: request, session: prepSession, client: client)
+                )
+                resolveHeadline = prepSession.selectedCandidate.displayHeadline
+                resolveStageLabel = "Tilpasser skjerm og starter avspilling…"
+                resolvePercent = 95
+
+                let reqItemId = request.itemId
+                let reqApiTitle = request.apiTitle
+                let reqSeriesTitle = request.seriesTitle
+                let reqStartPos = request.startPositionSeconds
+                let tokenToPromote = effectivePrepareToken ?? prepSession.sessionId
+                let promoteTask = Task<(Int, TvResolveStartResponse), Error> {
+                    try await client.resolvePlayback(
+                        itemId: reqItemId,
+                        title: reqApiTitle,
+                        seriesTitle: reqSeriesTitle,
+                        startPositionSeconds: reqStartPos,
+                        candidateId: nil,
+                        prepareToken: tokenToPromote
+                    )
+                }
+                defer { promoteTask.cancel() }
+
+                do {
+                    try await mountSessionInEngine(
+                        prepSession,
+                        client: client,
+                        overrideStartPosition: reqStartPos ?? prepSession.stream.startPositionSeconds,
+                        autoplay: autoplay
+                    )
+                    isResolving = false
+                    armFirstFrameFallbackWatchdog()
+                    startHeartbeatLoop()
+
+                    if let (status, startRes) = try? await withTaskCancellationHandler(
+                        operation: { try await promoteTask.value },
+                        onCancel: { promoteTask.cancel() }
+                    ), !Task.isCancelled, !isTeardownCompleted, !isDismissing {
+                        let promoted = try? await extractResolvedSession(status: status, startRes: startRes, client: client)
+                        if let promoted, !Task.isCancelled, !isTeardownCompleted, !isDismissing {
+                            if promoted.sessionId == prepSession.sessionId {
+                                self.activeSession = promoted
+                                rebuildMergedChapters()
+                            } else {
+                                engine.prepareForItemReplacement()
+                                let livePos = max(0, transport.currentTime)
+                                try await mountSessionInEngine(
+                                    promoted,
+                                    client: client,
+                                    overrideStartPosition: livePos > 0.5 ? livePos : (reqStartPos ?? promoted.stream.startPositionSeconds),
+                                    autoplay: autoplay
+                                )
+                            }
+                        }
+                    }
+                    return
+                } catch where LunaCoreError.isCancellation(error) {
+                    promoteTask.cancel()
+                    return
+                } catch {
+                    try Task.checkCancellation()
+                    guard !isTeardownCompleted, !isDismissing else { return }
+                    let (status, startRes) = try await withTaskCancellationHandler(
+                        operation: { try await promoteTask.value },
+                        onCancel: { promoteTask.cancel() }
+                    )
+                    let fallbackSession = try await extractResolvedSession(status: status, startRes: startRes, client: client)
+                    try await finishColdMount(fallbackSession, request: request, client: client, autoplay: autoplay)
+                    return
+                }
+            }
+
             let (status, startRes) = try await client.resolvePlayback(
                 itemId: request.itemId,
                 title: request.apiTitle,
                 seriesTitle: request.seriesTitle,
                 startPositionSeconds: request.startPositionSeconds,
                 candidateId: request.candidateId,
-                prepareToken: request.prepareToken
+                prepareToken: effectivePrepareToken
             )
-
-            let resolvedSession: TvPlaybackSession
-            if status == 200, let immediate = startRes.playbackSession {
-                resolvedSession = immediate
-            } else if let wsPath = startRes.wsPath {
-                resolvedSession = try await awaitWebSocketResolution(
-                    wsPath: wsPath,
-                    resolveId: startRes.resolveId,
-                    client: client
-                )
-            } else {
-                throw LunaCoreError.serverMessage(status, startRes.error ?? "Uventet svar ved klargjøring av strøm.")
-            }
-
-            pendingHandedOverSessionId = resolvedSession.sessionId
-            pendingInflightPrepareTask = nil
-            try Task.checkCancellation()
-            guard !isTeardownCompleted, !isDismissing else {
-                throw CancellationError()
-            }
-
-            ArtworkPipeline.shared.enterPlaybackMemoryMode(
-                isHeavySoftwareStream: Self.isLikelyHeavySoftwareSession(
-                    resolvedSession,
-                    dualLayerOverride: comfort.dualLayerOverride,
-                    lowResUpscaleMode: comfort.lowResUpscaleMode
-                )
-            )
-            resolveStageLabel = "Tilpasser skjerm og starter avspilling…"
-            resolvePercent = 95
-            try await mountSessionInEngine(
-                resolvedSession,
-                client: client,
-                overrideStartPosition: request.startPositionSeconds ?? resolvedSession.stream.startPositionSeconds,
-                autoplay: autoplay
-            )
-            isResolving = false
-            armFirstFrameFallbackWatchdog()
-            startHeartbeatLoop()
+            let resolvedSession = try await extractResolvedSession(status: status, startRes: startRes, client: client)
+            try await finishColdMount(resolvedSession, request: request, client: client, autoplay: autoplay)
         } catch where LunaCoreError.isCancellation(error) {
             return
         } catch LunaCoreError.unauthorized {
@@ -242,7 +335,9 @@ extension PlayerViewModel {
         hasPendingAudioDelayCommit = false
         upscaleReloadTask?.cancel()
         upscaleReloadTask = nil
+        isWirelessAudioRouteActive = PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
         let initialAudioDelayMs = comfort.audioDelayMs
+        let initialWirelessRoute = isWirelessAudioRouteActive
         audioDelayMs = initialAudioDelayMs
 
         let options = Self.buildLoadOptions(
@@ -250,7 +345,7 @@ extension PlayerViewModel {
             client: client,
             comfort: comfort,
             audioEnhancement: audioEnhancement,
-            audioDelaySeconds: Double(initialAudioDelayMs) / 1000.0,
+            audioDelaySeconds: effectiveAudioDelaySecondsForActiveRoute(),
             autoplay: autoplay
         )
         let startPos = overrideStartPosition ?? session.stream.startPositionSeconds ?? 0
@@ -291,9 +386,11 @@ extension PlayerViewModel {
         }
 
         subtitleDelaySeconds = engine.softwareSubtitleDelaySeconds
-        if comfort.audioDelayMs != initialAudioDelayMs {
+        let currentWirelessRoute = PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
+        isWirelessAudioRouteActive = currentWirelessRoute
+        if comfort.audioDelayMs != initialAudioDelayMs || currentWirelessRoute != initialWirelessRoute {
             audioDelayMs = comfort.audioDelayMs
-            transport.setAudioDelay(comfort.audioDelaySeconds)
+            transport.setAudioDelay(effectiveAudioDelaySecondsForActiveRoute())
         } else {
             audioDelayMs = initialAudioDelayMs
         }
@@ -398,7 +495,7 @@ extension PlayerViewModel {
         resolveId: String,
         client: LunaCoreClient
     ) async throws -> TvPlaybackSession {
-        let maxAttempts = 60
+        let maxAttempts = 248
         for attempt in 0..<maxAttempts {
             try Task.checkCancellation()
             if attempt > 0 {
@@ -461,6 +558,55 @@ extension PlayerViewModel {
             if let vfs = hb.vfsTelemetry, lastVfsTelemetry != vfs {
                 lastVfsTelemetry = vfs
             }
+            if let prewarmInfo = hb.nextEpisodePrewarm {
+                if let fallbackNext = prewarmInfo.nextEpisode,
+                   let cur = activeSession,
+                   cur.nextEpisode == nil {
+                    activeSession = TvPlaybackSession(
+                        sessionId: cur.sessionId,
+                        streamToken: cur.streamToken,
+                        roomName: cur.roomName,
+                        hardwareProfile: cur.hardwareProfile,
+                        item: cur.item,
+                        selectedCandidate: cur.selectedCandidate,
+                        stream: cur.stream,
+                        tracks: cur.tracks,
+                        chapters: cur.chapters,
+                        aetherConfig: cur.aetherConfig,
+                        heartbeatIntervalSeconds: cur.heartbeatIntervalSeconds,
+                        nextEpisode: fallbackNext
+                    )
+                }
+                if prewarmInfo.canClientPrewarmBytes == true,
+                   let relPath = prewarmInfo.streamUrl,
+                   let streamURL = client.buildAbsoluteURL(relPath),
+                   prewarmedNextEpisodeURL != streamURL {
+                    prewarmedNextEpisodeURL = streamURL
+                    prewarmedNextEpisodeItemId = prewarmInfo.itemId ?? prewarmInfo.nextEpisode?.itemId ?? activeSession?.nextEpisode?.itemId
+                    prewarmedNextEpisodeSessionId = prewarmInfo.sessionId
+                    if let tok = prewarmInfo.streamToken, tok.count >= 8 {
+                        if let oldTok = prewarmedNextEpisodeStreamToken, oldTok.count >= 8, oldTok != tok {
+                            EngineLog.unregisterSecret(oldTok)
+                        }
+                        _ = EngineLog.registerSecret(tok)
+                        prewarmedNextEpisodeStreamToken = tok
+                    }
+                    if DeviceHardwareCapabilities.availableMemoryBytes() > 512 * 1024 * 1024 {
+                        let headers = client.streamHTTPHeaders(for: streamURL)
+                        nextEpisodePrewarmTask?.cancel()
+                        nextEpisodePrewarmTask = Task.detached(priority: .utility) {
+                            guard !Task.isCancelled else { return }
+                            if !AetherEngine.isPrewarmed(url: streamURL) {
+                                _ = await AetherEngine.prewarm(
+                                    url: streamURL,
+                                    httpHeaders: headers,
+                                    byteBudget: 8 * 1024 * 1024
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             if overrideState == nil,
                !isResolving,
                !isSwitchingSource,
@@ -469,6 +615,9 @@ extension PlayerViewModel {
             }
         } catch LunaCoreError.unauthorized {
             onUnauthorized?()
+        } catch let LunaCoreError.serverMessage(statusCode, _) where statusCode == 410 || statusCode == 404 {
+            heartbeatTask?.cancel()
+            heartbeatTask = nil
         } catch {
             // Heartbeats are periodic best-effort telemetry
         }
@@ -533,24 +682,6 @@ extension PlayerViewModel {
 
     // MARK: - Two-Phase Dismissal & Teardown Helpers
 
-    nonisolated static func shouldPauseEngineOnDismiss(
-        engineState: PlaybackState,
-        playbackPhase: PlaybackPhase
-    ) -> Bool {
-        switch engineState {
-        case .playing, .loading, .seeking:
-            return true
-        case .paused, .idle, .ended, .error:
-            break
-        }
-        switch playbackPhase {
-        case .playing, .loading, .seeking, .rebuffering, .stalled:
-            return true
-        case .paused, .idle, .ended, .error:
-            return false
-        }
-    }
-
     func cancelAllSessionTasks() {
         cancelPendingPausedRestoreResume()
         cancelPendingScrubCommit()
@@ -587,6 +718,8 @@ extension PlayerViewModel {
         remoteCommandToastMessage = nil
         nowPlayingArtworkTask?.cancel()
         nowPlayingArtworkTask = nil
+        nextEpisodePrewarmTask?.cancel()
+        nextEpisodePrewarmTask = nil
     }
 
     func captureStopSnapshot() -> PendingStopSnapshot {
@@ -600,6 +733,9 @@ extension PlayerViewModel {
         return PendingStopSnapshot(
             client: activeClient,
             sessionId: activeSession?.sessionId ?? pendingHandedOverSessionId,
+            resolveId: hasActiveSession ? nil : activeResolveId,
+            cancelItemId: hasActiveSession ? nil : currentRequest?.itemId,
+            cancelPrepareToken: hasActiveSession ? nil : pendingInflightPrepareToken,
             inflightPrepareTask: hasActiveSession ? nil : pendingInflightPrepareTask,
             finalPos: finalPos,
             finalDur: finalDur,
@@ -616,8 +752,10 @@ extension PlayerViewModel {
         resetScrubStateOnSessionChange()
         UIApplication.shared.isIdleTimerDisabled = false
         pendingStopSnapshot = captureStopSnapshot()
+        activeResolveId = nil
         pendingInflightPrepareTask?.cancel()
         pendingInflightPrepareTask = nil
+        pendingInflightPrepareToken = nil
         pendingHandedOverSessionId = nil
         // Disconnect Combine sinks first so pausing does not publish `.paused` and flash the bottom bar.
         cancellables.removeAll()

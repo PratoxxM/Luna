@@ -16,10 +16,10 @@ enum NowPlayingArtworkFactory {
 }
 
 /// Publishes tvOS Control Center / iPhone Remote Now Playing metadata
-/// and decoded poster/backdrop artwork via `AetherEngine 7.72.1`.
+/// and decoded poster/backdrop artwork via `AetherEngine 7.73.0`.
 @MainActor
 enum PlayerNowPlayingCoordinator {
-    static let nowPlayingArtworkMaxPixels = 780
+    static let nowPlayingArtworkMaxPixels = 900
 
     static func publish(
         session: TvPlaybackSession,
@@ -35,11 +35,13 @@ enum PlayerNowPlayingCoordinator {
             session.item.posterUrl ?? session.item.backdropUrl,
             target: .poster2x
         )
-        if let artURL = resolvedArtURL,
-           let cachedCGImage = ArtworkPipeline.shared.anyMemoryCachedImage(
-               for: artURL,
-               preferredMaxPixelSize: nowPlayingArtworkMaxPixels
-           )?.image {
+        let cachedCGImage = resolvedArtURL.flatMap { artURL in
+            ArtworkPipeline.shared.anyMemoryCachedImage(
+                for: artURL,
+                preferredMaxPixelSize: nowPlayingArtworkMaxPixels
+            )?.image
+        }
+        if let cachedCGImage {
             baseInfo[MPMediaItemPropertyArtwork] = NowPlayingArtworkFactory.makeArtwork(cgImage: cachedCGImage)
         }
         engine.setVideoNowPlayingInfo(baseInfo)
@@ -49,11 +51,7 @@ enum PlayerNowPlayingCoordinator {
         // as well as movies. Episode advancement is served via on-screen prompts & remote heartbeat.
         engine.setNowPlayingTrackCommands(next: nil, previous: nil)
 
-        guard let artURL = resolvedArtURL,
-              ArtworkPipeline.shared.memoryCachedImage(
-                  for: artURL,
-                  maxPixelSize: nowPlayingArtworkMaxPixels
-              ) == nil else {
+        guard let artURL = resolvedArtURL, cachedCGImage == nil else {
             return
         }
 

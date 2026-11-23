@@ -10,11 +10,12 @@ import Security
 /// runtime bundle identifier.
 public enum SideloadSafeStorage {
     public static let serverURLKey = "luna.v1.server_url"
+    public static let serverLocalHostnameURLKey = "luna.v1.server_local_hostname_url"
+    public static let fallbackServerURLKey = "luna.v1.fallback_server_url"
     public static let deviceIDKey = "luna.v1.device_id"
     public static let deviceNameKey = "luna.v1.device_name"
     public static let roomNameKey = "luna.v1.room_name"
     public static let hardwareProfileKey = "luna.v1.hardware_profile"
-    public static let localProfileOverrideKey = "luna.v1.local_profile_override"
     public static let allowSelfSignedLanTLSKey = "luna.v1.allow_lan_tls"
 
     // Comfort, HDR/OLED subtitle & playback preference keys (sideload-safe)
@@ -28,13 +29,8 @@ public enum SideloadSafeStorage {
     public static let showNerdHUDKey = "luna.v1.comfort.show_nerd_hud"
     public static let lowResUpscaleModeKey = "luna.v1.comfort.low_res_upscale_mode"
     public static let audioDelayMsKey = "luna.v1.comfort.audio_delay_ms"
-    // Retained strictly for "luna.v1.*" legacy UserDefaults migration compatibility.
-    public static let showCatCompanionsKey = "luna.v1.comfort.show_cat_companions"
-    public static let keepDisplayModeInMenuAfterPlaybackKey = "luna.v1.comfort.keep_display_mode_in_menu"
     public static let menuDisplayModeKey = "luna.v1.comfort.menu_display_mode"
-    public static let didMigrateMenu60HzDefaultV240Key = "luna.v1.comfort.migrated_menu_60hz_v240"
     public static let recentSearchesKey = "luna.v1.recent_searches"
-    public static let playerScrubHintCountKey = "luna.v1.player.scrub_hint_count"
 
     internal static let keychainService = "luna.v1.credentials"
     internal static let tokenAccount = "device_bearer_token"
@@ -83,7 +79,7 @@ public enum SideloadSafeStorage {
                 return trimmed
             }
         }
-        return "2.10.1"
+        return "2.11.0"
     }
 
     public nonisolated static func currentBuildNumberString(

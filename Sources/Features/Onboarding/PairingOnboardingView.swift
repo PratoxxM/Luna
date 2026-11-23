@@ -7,6 +7,7 @@ struct PairingOnboardingView: View {
     @State private var manualURLInput: String = ""
     @State private var showManualInput: Bool = false
     @State private var selectedBaseURL: URL?
+    @State private var selectedLocalHostnameURL: URL?
     @State private var pairingInfo: TvPairingRequestResponse?
     @State private var errorMessage: String?
     @State private var isRequestingCode: Bool = false
@@ -60,7 +61,7 @@ struct PairingOnboardingView: View {
                discovered.count == 1,
                let onlyServer = discovered.first,
                !showManualInput {
-                startPairing(against: onlyServer.baseURL)
+                startPairing(against: onlyServer.baseURL, localHostnameURL: onlyServer.localHostnameURL)
             }
         }
     }
@@ -87,7 +88,7 @@ struct PairingOnboardingView: View {
                             prominence: (!showManualInput && index == 0) ? .primary : .glassPill
                         ) {
                             guard !isRequestingCode else { return }
-                            startPairing(against: srv.baseURL)
+                            startPairing(against: srv.baseURL, localHostnameURL: srv.localHostnameURL)
                         }
                     }
                 }
@@ -153,24 +154,26 @@ struct PairingOnboardingView: View {
 
             HStack(spacing: 24) {
                 LunaPillButton("Ny kode", systemImage: "arrow.clockwise", prominence: .primary) {
-                    startPairing(against: baseURL)
+                    startPairing(against: baseURL, localHostnameURL: selectedLocalHostnameURL)
                 }
 
                 LunaPillButton("Bytt server", systemImage: "network", prominence: .subtleChip) {
                     pollTask?.cancel()
                     self.pairingInfo = nil
                     self.selectedBaseURL = nil
+                    self.selectedLocalHostnameURL = nil
                     self.showManualInput = true
                 }
             }
         }
     }
 
-    private func startPairing(against baseURL: URL) {
+    private func startPairing(against baseURL: URL, localHostnameURL: URL? = nil) {
         pollTask?.cancel()
         errorMessage = nil
         isCodeExpired = false
         selectedBaseURL = baseURL
+        selectedLocalHostnameURL = localHostnameURL
         isRequestingCode = true
 
         pollTask = Task { @MainActor in
@@ -204,7 +207,8 @@ struct PairingOnboardingView: View {
                             sessionStore.completePairing(
                                 baseURL: baseURL,
                                 token: token,
-                                pairedDevice: pairedDevice
+                                pairedDevice: pairedDevice,
+                                localHostnameURL: localHostnameURL
                             )
                             return
                         }

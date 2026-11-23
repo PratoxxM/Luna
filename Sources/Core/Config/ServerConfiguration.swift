@@ -21,7 +21,7 @@ public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable 
         case .dvFel714:
             return "Kjellerstua — Dolby Vision FEL + 7.1.4"
         case .hdr10512:
-            return "Stua — HDR10+ / HDR10 + 7.1.4"
+            return "Stua — HDR10+ / HDR10 + 5.1.2"
         }
     }
 
@@ -30,7 +30,7 @@ public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable 
         case .dvFel714:
             return "4K BluRay Remux · Dual-Layer DV P7 FEL / P8 · TrueHD Atmos og DTS:X (7.1.4)"
         case .hdr10512:
-            return "4K HDR10+ / HDR10 · DV Base-Layer · Atmos og tapsfri lyd (7.1.4)"
+            return "4K HDR10+ / HDR10 · DV Base-Layer · Atmos og tapsfri lyd (5.1.2)"
         }
     }
 
@@ -52,9 +52,12 @@ public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable 
 @Observable
 public final class AppSessionStore {
     public private(set) var serverBaseURL: URL?
+    public private(set) var serverLocalHostnameURL: URL?
+    public private(set) var fallbackServerURL: URL?
     public private(set) var deviceToken: String?
     public let deviceID: String
     public var roomName: String
+    public private(set) var isRoomUnassigned: Bool = false
     public var hardwareProfile: String
     public var serverAtmosphere: String? = nil
     public private(set) var availableRooms: [TvRoomDefinition] = HardwareProfilePreset.fallbackRooms
@@ -86,18 +89,17 @@ public final class AppSessionStore {
         serverBaseURL != nil && !(deviceToken ?? "").isEmpty
     }
 
-    public var effectiveHardwareProfile: String {
-        hardwareProfile
-    }
-
     public var effectiveRoomAtmosphere: LunaRoomAtmosphere {
+        if isRoomUnassigned {
+            return .neutral
+        }
         let matchedRoom = availableRooms.first {
-            $0.roomName == roomName && $0.hardwareProfile == effectiveHardwareProfile
-        } ?? availableRooms.first { $0.hardwareProfile == effectiveHardwareProfile }
+            $0.roomName == roomName && $0.hardwareProfile == hardwareProfile
+        } ?? availableRooms.first { $0.hardwareProfile == hardwareProfile }
         let rawAtmos = serverAtmosphere ?? matchedRoom?.atmosphere
         return LunaRoomAtmosphere.resolve(
             atmosphere: rawAtmos,
-            hardwareProfile: effectiveHardwareProfile,
+            hardwareProfile: hardwareProfile,
             roomName: roomName
         )
     }
@@ -115,6 +117,18 @@ public final class AppSessionStore {
         } else {
             self.serverBaseURL = nil
         }
+        if let rawLocal = defaults.string(forKey: SideloadSafeStorage.serverLocalHostnameURLKey),
+           let parsedLocal = Self.normalizeServerURL(rawLocal) {
+            self.serverLocalHostnameURL = parsedLocal
+        } else {
+            self.serverLocalHostnameURL = nil
+        }
+        if let rawFallback = defaults.string(forKey: SideloadSafeStorage.fallbackServerURLKey),
+           let parsedFallback = Self.normalizeServerURL(rawFallback) {
+            self.fallbackServerURL = parsedFallback
+        } else {
+            self.fallbackServerURL = nil
+        }
 
         let loadedToken = SideloadSafeStorage.loadDeviceToken(defaults: defaults)
         self.deviceToken = loadedToken
@@ -125,7 +139,6 @@ public final class AppSessionStore {
         self.deviceName = defaults.string(forKey: SideloadSafeStorage.deviceNameKey) ?? "Apple TV"
         self.roomName = defaults.string(forKey: SideloadSafeStorage.roomNameKey) ?? "Kjellerstua"
         self.hardwareProfile = defaults.string(forKey: SideloadSafeStorage.hardwareProfileKey) ?? HardwareProfilePreset.dvFel714.rawValue
-        defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
         self.activePlaybackTarget = nil
         self.allowSelfSignedLanTLS = defaults.object(forKey: SideloadSafeStorage.allowSelfSignedLanTLSKey) as? Bool ?? true
 
@@ -147,6 +160,8 @@ public final class AppSessionStore {
         self.cachedAppVersion = Self.currentAppVersionString()
         self.cachedOSVersion = Self.currentSystemVersionString()
         self.serverBaseURL = PreviewMockFixtures.previewBaseURL
+        self.serverLocalHostnameURL = nil
+        self.fallbackServerURL = nil
         self.deviceToken = "preview-device-token"
         self.deviceName = "Apple TV 4K"
         self.roomName = "Stua"
@@ -168,7 +183,7 @@ public final class AppSessionStore {
             deviceID: deviceID,
             deviceToken: deviceToken,
             roomName: roomName,
-            hardwareProfile: effectiveHardwareProfile,
+            hardwareProfile: hardwareProfile,
             allowSelfSignedLanTLS: allowSelfSignedLanTLS,
             appVersion: cachedAppVersion,
             osVersion: cachedOSVersion
@@ -194,23 +209,122 @@ public final class AppSessionStore {
         homeRefreshNonce &+= 1
     }
 
-    public func makeClient(overrideBaseURL: URL? = nil) -> LunaCoreClient? {
-        if let overrideBaseURL {
-            return LunaCoreClient(
-                baseURL: overrideBaseURL,
-                deviceID: deviceID,
-                deviceToken: deviceToken,
-                roomName: roomName,
-                hardwareProfile: effectiveHardwareProfile,
-                allowSelfSignedLanTLS: allowSelfSignedLanTLS,
-                appVersion: cachedAppVersion,
-                osVersion: cachedOSVersion
-            )
-        }
-        return cachedClient
+    public func makeClient() -> LunaCoreClient? {
+        cachedClient
     }
 
-    public func completePairing(baseURL: URL, token: String, pairedDevice: TvPairedDeviceInfo) {
+    public func makeClient(overrideBaseURL: URL) -> LunaCoreClient? {
+        LunaCoreClient(
+            baseURL: overrideBaseURL,
+            deviceID: deviceID,
+            deviceToken: deviceToken,
+            roomName: roomName,
+            hardwareProfile: hardwareProfile,
+            allowSelfSignedLanTLS: allowSelfSignedLanTLS,
+            appVersion: cachedAppVersion,
+            osVersion: cachedOSVersion
+        )
+    }
+
+    public func setFallbackServerURL(_ rawURL: String?) {
+        let trimmed = rawURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            fallbackServerURL = nil
+            defaults.removeObject(forKey: SideloadSafeStorage.fallbackServerURLKey)
+            return
+        }
+        if let parsed = Self.normalizeServerURL(trimmed) {
+            fallbackServerURL = parsed
+            defaults.set(parsed.absoluteString, forKey: SideloadSafeStorage.fallbackServerURLKey)
+        }
+    }
+
+    public nonisolated static func isFailoverEligibleError(_ error: any Error) -> Bool {
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
+                 .networkConnectionLost, .notConnectedToInternet, .secureConnectionFailed:
+                return true
+            default:
+                return false
+            }
+        }
+        return false
+    }
+
+    public nonisolated static func orderedFailoverCandidates(
+        primary: URL,
+        localHostnameURL: URL?,
+        fallbackServerURL: URL?
+    ) -> [URL] {
+        var seen: Set<String> = [primary.absoluteString.lowercased()]
+        var candidates: [URL] = []
+
+        func appendCandidate(_ candidate: URL?) {
+            guard let candidate else { return }
+            let norm = candidate.absoluteString.lowercased()
+            if seen.insert(norm).inserted {
+                candidates.append(candidate)
+            }
+        }
+
+        if let host = primary.host {
+            let scheme = primary.scheme?.lowercased() ?? "http"
+            let port = primary.port ?? (scheme == "https" ? 443 : 80)
+            if scheme == "https" && port == 8920 {
+                appendCandidate(URL(string: "http://\(host):8090"))
+            } else if scheme == "http" && port == 8090 {
+                appendCandidate(URL(string: "https://\(host):8920"))
+            }
+        }
+        appendCandidate(localHostnameURL)
+        appendCandidate(fallbackServerURL)
+        return candidates
+    }
+
+    @discardableResult
+    public func probeAndFailoverServerURLIfNeeded(timeoutSeconds: TimeInterval = 3.0) async -> Bool {
+        guard let currentPrimary = serverBaseURL, isPaired else { return false }
+        let candidates = Self.orderedFailoverCandidates(
+            primary: currentPrimary,
+            localHostnameURL: serverLocalHostnameURL,
+            fallbackServerURL: fallbackServerURL
+        )
+        guard !candidates.isEmpty else { return false }
+
+        for candidate in candidates {
+            guard !Task.isCancelled,
+                  let probeClient = makeClient(overrideBaseURL: candidate) else {
+                continue
+            }
+            do {
+                let boot = try await probeClient.probeReachability(timeoutSeconds: timeoutSeconds)
+                if serverBaseURL != currentPrimary {
+                    return true
+                }
+                self.serverBaseURL = candidate
+                defaults.set(candidate.absoluteString, forKey: SideloadSafeStorage.serverURLKey)
+                applyEngineTLSPolicy()
+                rebuildCachedClient()
+                syncFromBootstrap(boot.device, defaultRooms: boot.defaultRooms)
+                homeRefreshNonce &+= 1
+                return true
+            } catch LunaCoreError.unauthorized {
+                unpairDevice()
+                return false
+            } catch {
+                continue
+            }
+        }
+        return false
+    }
+
+    public func completePairing(
+        baseURL: URL,
+        token: String,
+        pairedDevice: TvPairedDeviceInfo,
+        localHostnameURL: URL? = nil
+    ) {
         if let old = deviceToken, old.count >= 8 {
             EngineLog.unregisterSecret(old)
         }
@@ -218,9 +332,17 @@ public final class AppSessionStore {
         SideloadSafeStorage.saveDeviceToken(token, defaults: defaults)
 
         self.serverBaseURL = baseURL
+        if let localHostnameURL {
+            self.serverLocalHostnameURL = localHostnameURL
+            defaults.set(localHostnameURL.absoluteString, forKey: SideloadSafeStorage.serverLocalHostnameURLKey)
+        } else if baseURL.host?.lowercased().hasSuffix(".local") == true {
+            self.serverLocalHostnameURL = baseURL
+            defaults.set(baseURL.absoluteString, forKey: SideloadSafeStorage.serverLocalHostnameURLKey)
+        }
         self.deviceToken = token
         self.deviceName = pairedDevice.deviceName
         self.roomName = pairedDevice.roomName
+        self.isRoomUnassigned = pairedDevice.roomUnassigned ?? false
         self.hardwareProfile = pairedDevice.hardwareProfile
         self.serverAtmosphere = pairedDevice.atmosphere
         self.comfort.adoptServerOverrides(pairedDevice.overrides)
@@ -230,7 +352,6 @@ public final class AppSessionStore {
         defaults.set(pairedDevice.deviceName, forKey: SideloadSafeStorage.deviceNameKey)
         defaults.set(pairedDevice.roomName, forKey: SideloadSafeStorage.roomNameKey)
         defaults.set(pairedDevice.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
-        defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
         applyEngineTLSPolicy()
         rebuildCachedClient()
         homeRefreshNonce &+= 1
@@ -241,6 +362,10 @@ public final class AppSessionStore {
         if device.deviceName != deviceName {
             self.deviceName = device.deviceName
             defaults.set(device.deviceName, forKey: SideloadSafeStorage.deviceNameKey)
+        }
+        let nextUnassigned = device.roomUnassigned ?? false
+        if nextUnassigned != isRoomUnassigned {
+            self.isRoomUnassigned = nextUnassigned
         }
         if device.roomName != roomName {
             self.roomName = device.roomName
@@ -277,6 +402,7 @@ public final class AppSessionStore {
 
     public func setRoomAndProfile(roomName: String, hardwareProfile: String) {
         self.roomName = roomName
+        self.isRoomUnassigned = false
         self.hardwareProfile = hardwareProfile
         let matchedRoom = availableRooms.first {
             $0.roomName == roomName && $0.hardwareProfile == hardwareProfile
@@ -284,7 +410,6 @@ public final class AppSessionStore {
         self.serverAtmosphere = matchedRoom?.atmosphere
         defaults.set(roomName, forKey: SideloadSafeStorage.roomNameKey)
         defaults.set(hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
-        defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
         profileSyncTask?.cancel()
         profileSyncTask = nil
         rebuildCachedClient()
@@ -305,13 +430,8 @@ public final class AppSessionStore {
     }
 
     public func refreshProfileFromServer() async {
-        let hadOverride = defaults.object(forKey: SideloadSafeStorage.localProfileOverrideKey) != nil
-        if hadOverride {
-            defaults.removeObject(forKey: SideloadSafeStorage.localProfileOverrideKey)
-            rebuildCachedClient()
-        }
         let previousRoom = roomName
-        let previousProfile = effectiveHardwareProfile
+        let previousProfile = hardwareProfile
         if let client = makeClient() {
             do {
                 let boot = try await client.fetchBootstrap()
@@ -319,11 +439,15 @@ public final class AppSessionStore {
             } catch LunaCoreError.unauthorized {
                 unpairDevice()
                 return
+            } catch where Self.isFailoverEligibleError(error) {
+                if await probeAndFailoverServerURLIfNeeded() {
+                    return
+                }
             } catch {
                 // Keep cached server values until next bootstrap succeeds
             }
         }
-        if hadOverride || roomName != previousRoom || effectiveHardwareProfile != previousProfile {
+        if roomName != previousRoom || hardwareProfile != previousProfile {
             homeRefreshNonce &+= 1
         }
     }
@@ -373,7 +497,12 @@ public final class AppSessionStore {
     public func resetAllConnectionSettings() {
         unpairDevice()
         serverBaseURL = nil
+        serverLocalHostnameURL = nil
+        fallbackServerURL = nil
+        isRoomUnassigned = false
         defaults.removeObject(forKey: SideloadSafeStorage.serverURLKey)
+        defaults.removeObject(forKey: SideloadSafeStorage.serverLocalHostnameURLKey)
+        defaults.removeObject(forKey: SideloadSafeStorage.fallbackServerURLKey)
         applyEngineTLSPolicy()
         rebuildCachedClient()
     }

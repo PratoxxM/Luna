@@ -38,7 +38,7 @@ extension PlayerViewModel {
             return
         }
 
-        let targetSeconds = Double(clamped) / 1000.0
+        let targetSeconds = effectiveAudioDelaySecondsForActiveRoute()
         if !debounceEngineCommit {
             hasPendingAudioDelayCommit = false
             transport.setAudioDelay(targetSeconds)
@@ -61,7 +61,20 @@ extension PlayerViewModel {
         guard !isResolving, !isSwitchingSource, !isDismissing, !isTeardownCompleted else {
             return
         }
-        transport.setAudioDelay(Double(audioDelayMs) / 1000.0)
+        transport.setAudioDelay(effectiveAudioDelaySecondsForActiveRoute())
+    }
+
+    func handleAudioRouteChange(isWirelessOverride: Bool? = nil) {
+        let nextWireless = isWirelessOverride ?? PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
+        guard nextWireless != isWirelessAudioRouteActive else { return }
+        isWirelessAudioRouteActive = nextWireless
+        guard !isResolving, !isSwitchingSource, !isDismissing, !isTeardownCompleted else {
+            return
+        }
+        audioDelayCommitTask?.cancel()
+        audioDelayCommitTask = nil
+        hasPendingAudioDelayCommit = false
+        transport.setAudioDelay(effectiveAudioDelaySecondsForActiveRoute())
     }
 
     func handleSystemCaptionRequest(_ request: SystemCaptionRequest) {
@@ -231,8 +244,12 @@ extension PlayerViewModel {
         upscaleReloadTask?.cancel()
         upscaleReloadTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            let effectiveDelaySeconds = self.effectiveAudioDelaySecondsForActiveRoute()
+            let currentShaping = self.comfort.buildAudioShaping(enhancement: self.audioEnhancement)
             _ = try? await self.engine.reloadAtCurrentPosition { options in
                 Self.applyLowResUpscaleMode(targetMode, to: &options)
+                options.audioDelaySeconds = effectiveDelaySeconds
+                options.audioShaping = currentShaping
             }
             if !Task.isCancelled {
                 self.upscaleReloadTask = nil

@@ -421,7 +421,7 @@ struct PlayerQuickPanelView: View {
                 let rowID = "src-\(cand.candidateId)"
                 SourceCandidateRowView(
                     candidate: cand,
-                    roomName: "",
+                    roomName: viewModel.activeSession?.roomName ?? "",
                     isRecommended: idx == 0,
                     isSelected: isCurrent,
                     activeStatusLabel: "Spilles nå",

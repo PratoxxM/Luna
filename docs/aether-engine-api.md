@@ -1,4 +1,4 @@
-# AetherEngine (`7.72.1`) — Extracted Host API Reference
+# AetherEngine (`7.73.0`) — Extracted Host API Reference
 
 Canonical signature reference extracted directly from `Luna`'s `Packages/AetherBridge` and `Sources/` integration. Use these exact signatures when modifying playback, subtitle, audio, or prewarm logic on Linux without local Xcode autocompletion.
 
@@ -10,7 +10,7 @@ Canonical signature reference extracted directly from `Luna`'s `Packages/AetherB
 // Packages/AetherBridge/Package.swift (swift-tools-version: 6.1)
 .package(
     url: "https://github.com/superuser404notfound/AetherEngine.git",
-    exact: "7.72.1",
+    exact: "7.73.0",
     traits: [
         "TrueHDObjectAudio",
         "DTSXObjectAudio",
@@ -24,7 +24,7 @@ Canonical signature reference extracted directly from `Luna`'s `Packages/AetherB
 @_exported import AetherEngine
 
 public enum AetherBridgeInfo {
-    public static let pinnedAetherEngineVersion = "7.72.1"
+    public static let pinnedAetherEngineVersion = "7.73.0"
 }
 ```
 

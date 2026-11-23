@@ -87,16 +87,19 @@ public struct DeviceMemoryProfile: Sendable, Equatable {
         }
     }
 
-    public func prewarmByteBudget(availableMemoryBytes: UInt64) -> Int {
+    public func prewarmByteBudget(
+        availableMemoryBytes: UInt64,
+        isFastLocalTier: Bool = true
+    ) -> Int {
         switch tier {
         case .high2026:
-            if availableMemoryBytes > 1_400 * 1024 * 1024 {
-                return 48 * 1024 * 1024
+            guard availableMemoryBytes > 640 * 1024 * 1024 else {
+                return 0
             }
-            if availableMemoryBytes > 640 * 1024 * 1024 {
-                return 28 * 1024 * 1024
+            if isFastLocalTier, availableMemoryBytes > 1_400 * 1024 * 1024 {
+                return 16 * 1024 * 1024
             }
-            return 0
+            return 8 * 1024 * 1024
         case .standard:
             return availableMemoryBytes > 512 * 1024 * 1024 ? (8 * 1024 * 1024) : 0
         }

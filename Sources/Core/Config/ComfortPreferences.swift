@@ -148,9 +148,16 @@ public enum SpeakerLayoutOverrideMode: String, CaseIterable, Identifiable, Senda
     public var id: String { rawValue }
 
     public var displayTitle: String {
+        displayTitle(forHardwareProfile: HardwareProfilePreset.dvFel714.rawValue)
+    }
+
+    public func displayTitle(forHardwareProfile hardwareProfile: String) -> String {
         switch self {
-        case .auto: return "Auto (7.1.4)"
-        case .stereo: return "Stereo 2.0 (TV-høyttalere)"
+        case .auto:
+            let norm = hardwareProfile.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return norm == HardwareProfilePreset.hdr10512.rawValue ? "Auto (5.1.2)" : "Auto (7.1.4)"
+        case .stereo:
+            return "Stereo 2.0 (TV-høyttalere)"
         }
     }
 
@@ -326,19 +333,12 @@ public final class ComfortPreferences {
         didSet {
             guard oldValue != menuDisplayMode else { return }
             defaults.set(menuDisplayMode.rawValue, forKey: SideloadSafeStorage.menuDisplayModeKey)
-            defaults.set(menuDisplayMode != .sdr60Hz, forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey)
         }
     }
 
     /// True when leaving playback keeps HDR/24p criteria active rather than immediately returning to SDR 60 Hz.
     public var keepDisplayModeInMenuAfterPlayback: Bool {
-        get { menuDisplayMode != .sdr60Hz }
-        set { menuDisplayMode = newValue ? .preserveExactMatch : .sdr60Hz }
-    }
-
-    public var returnTo60HzInMenuAfterPlayback: Bool {
-        get { menuDisplayMode == .sdr60Hz }
-        set { menuDisplayMode = newValue ? .sdr60Hz : .preserveExactMatch }
+        menuDisplayMode != .sdr60Hz
     }
 
     public var lowResUpscaleMode: LowResUpscaleMode {
@@ -387,28 +387,21 @@ public final class ComfortPreferences {
         let rawDL = defaults.string(forKey: SideloadSafeStorage.dualLayerOverrideKey) ?? DualLayerOverrideMode.auto.rawValue
         self.dualLayerOverride = DualLayerOverrideMode(rawValue: rawDL) ?? .auto
 
-        let rawSpk = defaults.string(forKey: SideloadSafeStorage.speakerLayoutOverrideKey)
-        self.speakerLayoutOverride = SpeakerLayoutOverrideMode.fromStored(rawSpk)
-        if let rawSpk, rawSpk == "5.1.2" || rawSpk == "7.1.4" {
+        let rawSpk = defaults.string(forKey: SideloadSafeStorage.speakerLayoutOverrideKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsedSpk = SpeakerLayoutOverrideMode.fromStored(rawSpk)
+        self.speakerLayoutOverride = parsedSpk
+        if parsedSpk == .auto, let rawSpk, rawSpk != SpeakerLayoutOverrideMode.auto.rawValue {
             defaults.set(SpeakerLayoutOverrideMode.auto.rawValue, forKey: SideloadSafeStorage.speakerLayoutOverrideKey)
         }
 
         self.autoPlayNextEpisode = defaults.object(forKey: SideloadSafeStorage.autoPlayNextEpisodeKey) as? Bool ?? true
         self.smartNordicSubtitleRule = defaults.object(forKey: SideloadSafeStorage.smartNordicSubtitleRuleKey) as? Bool ?? true
         self.showNerdHUD = defaults.object(forKey: SideloadSafeStorage.showNerdHUDKey) as? Bool ?? false
-        if !defaults.bool(forKey: SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key) {
-            defaults.set(false, forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey)
-            defaults.set(MenuDisplayMode.sdr60Hz.rawValue, forKey: SideloadSafeStorage.menuDisplayModeKey)
-            defaults.set(true, forKey: SideloadSafeStorage.didMigrateMenu60HzDefaultV240Key)
-        }
         if let rawMenuMode = defaults.string(forKey: SideloadSafeStorage.menuDisplayModeKey),
            let parsedMenuMode = MenuDisplayMode(rawValue: rawMenuMode) {
             self.menuDisplayMode = parsedMenuMode
         } else {
-            let legacyKeep = defaults.object(
-                forKey: SideloadSafeStorage.keepDisplayModeInMenuAfterPlaybackKey
-            ) as? Bool ?? false
-            self.menuDisplayMode = legacyKeep ? .preserveExactMatch : .sdr60Hz
+            self.menuDisplayMode = .sdr60Hz
         }
         if let rawUpscale = defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey),
            let savedUpscale = LowResUpscaleMode(rawValue: rawUpscale) {
@@ -425,10 +418,6 @@ public final class ComfortPreferences {
 
     public var audioDelaySeconds: Double {
         Double(audioDelayMs) / 1000.0
-    }
-
-    public var formattedAudioDelayLabel: String {
-        Self.formatAudioDelayMs(audioDelayMs)
     }
 
     public func adjustAudioDelay(byMs deltaMs: Int) {
@@ -475,9 +464,12 @@ public final class ComfortPreferences {
             dualLayerOverride = parsed
         }
         if let spk = ov.speakerLayoutOverride {
-            let parsed = SpeakerLayoutOverrideMode.fromStored(spk)
+            let cleanSpk = spk.trimmingCharacters(in: .whitespacesAndNewlines)
+            let parsed = SpeakerLayoutOverrideMode.fromStored(cleanSpk)
             if parsed != speakerLayoutOverride {
                 speakerLayoutOverride = parsed
+            } else if parsed == .auto {
+                defaults.set(SpeakerLayoutOverrideMode.auto.rawValue, forKey: SideloadSafeStorage.speakerLayoutOverrideKey)
             }
         }
         if let autoNext = ov.autoPlayNextEpisode, autoNext != autoPlayNextEpisode {

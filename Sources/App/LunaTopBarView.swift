@@ -245,14 +245,6 @@ struct TopBarTabPillButton: View {
         return LunaTheme.muted
     }
 
-    nonisolated static func resolveBorderColor(
-        isActive: Bool,
-        isFocused: Bool,
-        isBarFocused: Bool = false
-    ) -> Color {
-        Color.clear
-    }
-
     var body: some View {
         let showRestingBar = Self.shouldShowRestingActiveIndicator(
             isActive: isActive,

@@ -9,28 +9,15 @@ enum MediaCardMutator {
             let parsedFromId = EpisodeTitleFormatter.parseEpisodeFromItemId(direct.itemId)
             let s = direct.season ?? card.nextUp?.season ?? card.progress?.season ?? parsedFromId?.season
             let e = direct.episode ?? card.nextUp?.episode ?? card.progress?.episode ?? parsedFromId?.episode
+            let seriesName: String? = card.mediaType == "series" ? card.title : nil
             let isEpisode = EpisodeTitleFormatter.isEpisodeTarget(
                 itemId: direct.itemId,
                 mediaType: direct.mediaType ?? (card.mediaType == "series" ? "episode" : card.mediaType),
-                seriesTitle: direct.seriesTitle ?? (card.mediaType == "series" ? card.title : nil),
+                seriesTitle: seriesName,
                 season: s,
                 episode: e
             )
-            let seriesName = card.mediaType == "series" ? card.title : direct.seriesTitle
-            let displayTitle: String
-            if isEpisode {
-                let clean = card.nonGenericEpisodeTitle
-                    ?? EpisodeTitleFormatter.nonGenericEpisodeTitle(
-                        direct.title,
-                        seriesTitle: seriesName,
-                        season: s,
-                        episode: e,
-                        episodeCode: card.episodeCode
-                    )
-                displayTitle = clean ?? ""
-            } else {
-                displayTitle = direct.title ?? card.title
-            }
+            let displayTitle = isEpisode ? (card.nonGenericEpisodeTitle ?? "") : card.title
             return (
                 direct.itemId,
                 displayTitle,
@@ -149,15 +136,17 @@ enum MediaCardMutator {
     ) async throws -> Bool {
         guard let client = sessionStore.makeClient() else { return false }
         do {
-            try await client.removeFromList(
+            let wasRemoved = try await client.removeFromList(
                 rowId: rowId,
                 mediaType: card.mediaType,
                 itemId: card.itemId,
                 ids: card.ids,
                 title: card.title
             )
-            ItemDetailMemoryCache.invalidate(itemId: card.itemId, tmdbId: card.ids.tmdb)
-            return true
+            if wasRemoved {
+                ItemDetailMemoryCache.invalidate(itemId: card.itemId, tmdbId: card.ids.tmdb)
+            }
+            return wasRemoved
         } catch LunaCoreError.unauthorized {
             sessionStore.unpairDevice()
             return false

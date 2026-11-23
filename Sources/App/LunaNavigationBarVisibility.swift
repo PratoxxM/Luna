@@ -35,10 +35,6 @@ public enum MainNavigationTab: String, CaseIterable, Identifiable, Hashable, Sen
         case .settings: return "slider.horizontal.3"
         }
     }
-
-    public var isIconOnlyInTopBar: Bool {
-        self == .search || self == .settings
-    }
 }
 
 public enum ScrollTopZone: Equatable, Sendable {
@@ -191,11 +187,6 @@ final class LunaNavigationBarVisibility {
                 isCollapsedByScroll = shouldCollapse
             }
         }
-    }
-
-    func reportScrollZone(_ zone: ScrollTopZone, for tab: MainNavigationTab, now: Date = Date()) {
-        let syntheticBucket = zone == .scrolledDown ? 2 : 0
-        reportScrollSample(nil, ScrollTopSample(zone: zone, downwardBucket: syntheticBucket), for: tab, now: now)
     }
 
     func reportScrollSample(

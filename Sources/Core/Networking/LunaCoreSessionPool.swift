@@ -62,6 +62,7 @@ public final class LunaCoreSessionPool: Sendable {
     public static let shared = LunaCoreSessionPool()
 
     private let sessions = Mutex<[String: URLSession]>([:])
+    public let inflightGETRequests = InflightTaskCoalescer<String, any Sendable>()
 
     private init() {}
 
@@ -72,6 +73,21 @@ public final class LunaCoreSessionPool: Sendable {
             lane: "api",
             maxConnections: DeviceMemoryProfile.current.apiConnectionsPerHost,
             requestTimeout: 25
+        )
+    }
+
+    public func probeSession(
+        for baseURL: URL,
+        allowSelfSignedLanTLS: Bool,
+        timeoutSeconds: TimeInterval = 3.0
+    ) -> URLSession {
+        makeOrReuseSession(
+            for: baseURL,
+            allowSelfSignedLanTLS: allowSelfSignedLanTLS,
+            lane: "probe-\(Int((timeoutSeconds * 1000).rounded()))",
+            maxConnections: 2,
+            requestTimeout: timeoutSeconds,
+            resourceTimeout: timeoutSeconds
         )
     }
 
@@ -126,7 +142,9 @@ public final class LunaCoreSessionPool: Sendable {
         requestTimeout: TimeInterval,
         resourceTimeout: TimeInterval = 90
     ) -> URLSession {
-        let key = "\(lane)|\(baseURL.scheme?.lowercased() ?? "http")://\(baseURL.host?.lowercased() ?? ""):\(baseURL.port ?? -1)|tls:\(allowSelfSignedLanTLS)"
+        let scheme = baseURL.scheme?.lowercased() ?? "http"
+        let effectivePort = baseURL.port ?? (scheme == "https" ? 443 : 80)
+        let key = "\(lane)|\(scheme)://\(baseURL.host?.lowercased() ?? ""):\(effectivePort)|tls:\(allowSelfSignedLanTLS)"
         return sessions.withLock { map in
             if let existing = map[key] {
                 return existing
@@ -152,6 +170,7 @@ public final class LunaCoreSessionPool: Sendable {
     }
 
     public func invalidateAll() {
+        inflightGETRequests.cancelAll()
         let old = sessions.withLock { map in
             let values = Array(map.values)
             map.removeAll()

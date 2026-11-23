@@ -54,9 +54,39 @@ final class NetworkCacheAndMemoryProfileTests: XCTestCase {
         XCTAssertEqual(a19EightGB.itemDetailCacheMaxEntries, 32)
         XCTAssertEqual(a19EightGB.scrollPrefetchCardWindow, 18)
         XCTAssertTrue(a19EightGB.enableBackgroundCatalogMetadataWarmup)
-        XCTAssertEqual(a19EightGB.prewarmByteBudget(availableMemoryBytes: 2_000 * 1024 * 1024), 48 * 1024 * 1024)
-        XCTAssertEqual(a19EightGB.prewarmByteBudget(availableMemoryBytes: 900 * 1024 * 1024), 28 * 1024 * 1024)
-        XCTAssertEqual(a19EightGB.prewarmByteBudget(availableMemoryBytes: 500 * 1024 * 1024), 0)
+        XCTAssertEqual(a19EightGB.prewarmByteBudget(availableMemoryBytes: 2_000 * 1024 * 1024, isFastLocalTier: true), 16 * 1024 * 1024)
+        XCTAssertEqual(a19EightGB.prewarmByteBudget(availableMemoryBytes: 2_000 * 1024 * 1024, isFastLocalTier: false), 8 * 1024 * 1024)
+        XCTAssertEqual(a19EightGB.prewarmByteBudget(availableMemoryBytes: 900 * 1024 * 1024, isFastLocalTier: true), 8 * 1024 * 1024)
+        XCTAssertEqual(a19EightGB.prewarmByteBudget(availableMemoryBytes: 500 * 1024 * 1024, isFastLocalTier: true), 0)
+        XCTAssertEqual(SideloadSafeStorage.currentAppVersionString(), "2.11.0")
+    }
+
+    func testHeartbeatNextEpisodePrewarmPayloadDecoding() throws {
+        let raw = #"""
+        {
+          "ok": true,
+          "sessionId": "tvs_active",
+          "state": "playing",
+          "nextEpisodePrewarm": {
+            "itemId": "episode:tmdb:95396:s1:e2",
+            "sessionId": "tvs_next85",
+            "streamToken": "0123456789abcdef0123456789abcdef",
+            "streamUrl": "/api/tv/v1/stream/tvs_next85/0123456789abcdef0123456789abcdef/Severance.S01E02.mkv",
+            "canClientPrewarmBytes": true,
+            "nextEpisode": {
+              "itemId": "episode:tmdb:95396:s1:e2",
+              "season": 1,
+              "episode": 2,
+              "title": "Half Loop"
+            }
+          }
+        }
+        """#
+        let decoded = try JSONDecoder().decode(TvHeartbeatResponse.self, from: Data(raw.utf8))
+        XCTAssertEqual(decoded.nextEpisodePrewarm?.sessionId, "tvs_next85")
+        XCTAssertEqual(decoded.nextEpisodePrewarm?.canClientPrewarmBytes, true)
+        XCTAssertEqual(decoded.nextEpisodePrewarm?.nextEpisode?.episode, 2)
+        XCTAssertEqual(decoded.nextEpisodePrewarm?.nextEpisode?.title, "Half Loop")
     }
 
     func testInflightTaskCoalescerDeduplicatesConcurrentCallers() async throws {

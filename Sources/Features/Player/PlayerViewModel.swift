@@ -145,6 +145,7 @@ final class PlayerViewModel {
     @ObservationIgnored var didBindEnginePublishers: Bool = false
 
     nonisolated static let audioDelayDebounceNs: UInt64 = 220_000_000
+    nonisolated static let relativeSeekDebounceNs: UInt64 = 150_000_000
 
     @ObservationIgnored var cancellables = Set<AnyCancellable>()
     @ObservationIgnored var coalescedSeekTask: Task<Void, Never>?
@@ -153,6 +154,7 @@ final class PlayerViewModel {
     @ObservationIgnored var switchSourceTask: Task<Void, Never>?
     @ObservationIgnored var audioDelayCommitTask: Task<Void, Never>?
     @ObservationIgnored var hasPendingAudioDelayCommit: Bool = false
+    @ObservationIgnored var isWirelessAudioRouteActive: Bool = false
     @ObservationIgnored var upscaleReloadTask: Task<Void, Never>?
     @ObservationIgnored var foregroundRestoreTask: Task<Void, Never>?
     @ObservationIgnored private(set) var pausedRestoreResumeTask: Task<Void, Never>?
@@ -160,12 +162,19 @@ final class PlayerViewModel {
     @ObservationIgnored var scrubCommitTask: Task<Void, Never>?
     @ObservationIgnored var scrubCommitToken: UInt64 = 0
     @ObservationIgnored var ringHoldLoopTask: Task<Void, Never>?
+    @ObservationIgnored var nextEpisodePrewarmTask: Task<Void, Never>?
+    @ObservationIgnored var prewarmedNextEpisodeURL: URL?
+    @ObservationIgnored var prewarmedNextEpisodeItemId: String?
+    @ObservationIgnored var prewarmedNextEpisodeSessionId: String?
+    @ObservationIgnored var prewarmedNextEpisodeStreamToken: String?
     @ObservationIgnored private var didTeardown: Bool = false
     @ObservationIgnored var engineOwnerToken: UInt64 = 0
     @ObservationIgnored var isDismissing: Bool = false
     @ObservationIgnored var pendingStopSnapshot: PendingStopSnapshot?
     @ObservationIgnored var pendingHandedOverSessionId: String?
     @ObservationIgnored var pendingInflightPrepareTask: Task<TvPrepareResponse?, Never>?
+    @ObservationIgnored var pendingInflightPrepareToken: String?
+    @ObservationIgnored var activeResolveId: String?
     @ObservationIgnored var lastObservedPhase: PlaybackPhase = .idle
     @ObservationIgnored var isForegroundActive: Bool = true
     @ObservationIgnored var lastForegroundPlaybackWasPlaying: Bool = false
@@ -185,9 +194,17 @@ final class PlayerViewModel {
         self.comfort = comfort
         self.transport = transport ?? AetherEngineTransport(engine: engine)
         self.audioActivator = audioActivator
+        self.isWirelessAudioRouteActive = PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
         if bindOnInit {
             bindEnginePublishersIfNeeded()
         }
+    }
+
+    func effectiveAudioDelaySecondsForActiveRoute() -> Double {
+        PlayerAudioSessionCoordinator.effectiveAudioDelaySeconds(
+            configuredDelaySeconds: Double(audioDelayMs) / 1000.0,
+            isWirelessRoute: isWirelessAudioRouteActive
+        )
     }
 
     func bindEnginePublishersIfNeeded() {
@@ -287,8 +304,10 @@ final class PlayerViewModel {
         lastForegroundPlaybackWasPlaying = false
         isDismissing = false
         pendingStopSnapshot = nil
+        activeResolveId = nil
         pendingInflightPrepareTask?.cancel()
         pendingInflightPrepareTask = request.inflightPrepareTask
+        pendingInflightPrepareToken = request.inflightPrepareToken
         pendingHandedOverSessionId = request.preparedSession?.sessionId ?? request.prepareToken
         if let preTok = request.preparedSession?.streamToken, preTok.count >= 8 {
             if let oldTok = registeredStreamToken, oldTok.count >= 8, oldTok != preTok {
@@ -306,6 +325,7 @@ final class PlayerViewModel {
         guard let client else {
             pendingInflightPrepareTask?.cancel()
             pendingInflightPrepareTask = nil
+            pendingInflightPrepareToken = nil
             pendingHandedOverSessionId = nil
             fatalError = "Mangler tilkobling til LunaCore."
             isResolving = false
@@ -317,7 +337,7 @@ final class PlayerViewModel {
         resolveTask?.cancel()
         resolveTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.runResolveAndLoad(request: request, client: client, isReplacement: false)
+            await self.runResolveAndLoad(request: request, client: client)
         }
     }
 
@@ -325,9 +345,28 @@ final class PlayerViewModel {
         guard let client = activeClient, let current = activeSession else { return }
         resetTransientTransitionState()
         resolveTask?.cancel()
+        activeResolveId = nil
         pendingInflightPrepareTask?.cancel()
         pendingInflightPrepareTask = nil
-        pendingHandedOverSessionId = nil
+        pendingInflightPrepareToken = nil
+        let matchedNextPrepToken = prewarmedNextEpisodeItemId == next.itemId ? prewarmedNextEpisodeSessionId : nil
+        pendingHandedOverSessionId = matchedNextPrepToken
+        nextEpisodePrewarmTask?.cancel()
+        nextEpisodePrewarmTask = nil
+        prewarmedNextEpisodeURL = nil
+        prewarmedNextEpisodeItemId = nil
+        prewarmedNextEpisodeSessionId = nil
+        if let nextTok = prewarmedNextEpisodeStreamToken, nextTok.count >= 8 {
+            if matchedNextPrepToken != nil {
+                if let oldTok = registeredStreamToken, oldTok.count >= 8, oldTok != nextTok {
+                    EngineLog.unregisterSecret(oldTok)
+                }
+                registeredStreamToken = nextTok
+            } else {
+                EngineLog.unregisterSecret(nextTok)
+            }
+            prewarmedNextEpisodeStreamToken = nil
+        }
         switchSourceTask?.cancel()
         switchSourceTask = nil
         heartbeatTask?.cancel()
@@ -348,6 +387,7 @@ final class PlayerViewModel {
             season: next.season,
             episode: next.episode,
             startPositionSeconds: 0,
+            prepareToken: matchedNextPrepToken,
             backdropUrl: next.stillUrl ?? current.item.backdropUrl,
             logoUrl: current.item.logoUrl
         )
@@ -383,7 +423,7 @@ final class PlayerViewModel {
 
         resolveTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.runResolveAndLoad(request: req, client: client, isReplacement: true)
+            await self.runResolveAndLoad(request: req, client: client)
         }
     }
 
@@ -522,7 +562,7 @@ final class PlayerViewModel {
         chapterSeekTask = nil
         coalescedSeekTask?.cancel()
         coalescedSeekTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 220_000_000)
+            try? await Task.sleep(nanoseconds: Self.relativeSeekDebounceNs)
             guard !Task.isCancelled, let self else { return }
             let finalTarget = self.coalescedSeekPreviewTarget ?? max(0, self.transport.currentTime)
             await self.transport.seek(to: finalTarget, exact: false)
@@ -569,8 +609,10 @@ final class PlayerViewModel {
 
         let snapshot = pendingStopSnapshot ?? captureStopSnapshot()
         pendingStopSnapshot = nil
+        activeResolveId = nil
         pendingHandedOverSessionId = nil
         pendingInflightPrepareTask = nil
+        pendingInflightPrepareToken = nil
         ArtworkPipeline.shared.exitPlaybackMemoryMode()
         cancellables.removeAll()
         didBindEnginePublishers = false
@@ -597,13 +639,27 @@ final class PlayerViewModel {
             EngineLog.unregisterSecret(tok)
             registeredStreamToken = nil
         }
+        if let nextTok = prewarmedNextEpisodeStreamToken, nextTok.count >= 8 {
+            EngineLog.unregisterSecret(nextTok)
+            prewarmedNextEpisodeStreamToken = nil
+        }
+        prewarmedNextEpisodeURL = nil
+        prewarmedNextEpisodeItemId = nil
+        prewarmedNextEpisodeSessionId = nil
 
         if let client = snapshot.client, let sessionId = snapshot.sessionId, !sessionId.isEmpty {
             snapshot.inflightPrepareTask?.cancel()
             let finalPos = snapshot.finalPos
             let finalDur = snapshot.finalDur
             let isCompleted = snapshot.isCompleted
+            let cancelResolveId = snapshot.resolveId
             Task.detached {
+                if let cancelResolveId, !cancelResolveId.isEmpty {
+                    try? await client.cancelInflightPlayback(
+                        sessionId: sessionId,
+                        resolveId: cancelResolveId
+                    )
+                }
                 _ = try? await client.sendHeartbeat(
                     sessionId: sessionId,
                     state: "stopped",
@@ -615,10 +671,22 @@ final class PlayerViewModel {
                     await onComplete()
                 }
             }
-        } else if let client = snapshot.client, let inflightPrep = snapshot.inflightPrepareTask {
-            inflightPrep.cancel()
+        } else if let client = snapshot.client,
+                  (snapshot.resolveId != nil || snapshot.inflightPrepareTask != nil || snapshot.cancelItemId != nil) {
+            let inflightPrep = snapshot.inflightPrepareTask
+            inflightPrep?.cancel()
+            let cancelResolveId = snapshot.resolveId
+            let cancelItemId = snapshot.cancelItemId
+            let cancelPrepareToken = snapshot.cancelPrepareToken
             Task.detached {
-                if let latePrep = await inflightPrep.value {
+                if cancelResolveId != nil || cancelItemId != nil {
+                    try? await client.cancelInflightPlayback(
+                        resolveId: cancelResolveId,
+                        itemId: cancelItemId,
+                        prepareToken: cancelPrepareToken
+                    )
+                }
+                if let latePrep = await inflightPrep?.value {
                     if let lateTok = latePrep.playbackSession?.streamToken, lateTok.count >= 8 {
                         EngineLog.unregisterSecret(lateTok)
                     }

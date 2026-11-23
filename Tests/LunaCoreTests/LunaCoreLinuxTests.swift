@@ -6,127 +6,7 @@ import Synchronization
 import XCTest
 @testable import LunaCore
 
-// MARK: - Linux-Safe PlaybackEngine & IOReader Test Doubles
-
-actor MockPlaybackEngine: PlaybackEngine {
-    var state: CorePlaybackState = .idle
-    var phase: CorePlaybackPhase = .idle
-    var currentTime: Double = 0
-    var duration: Double = 7200
-    var bufferedPosition: Double = 0
-    var hasFirstFrameReadyForDisplay: Bool = false
-    var isAwaitingDisplaySwitch: Bool = false
-    var needsForegroundVideoRestore: Bool = false
-
-    private(set) var events: [String] = []
-    private(set) var loadedURLs: [URL] = []
-    private(set) var lastHeaders: [String: String] = [:]
-    var shouldFailNextLoad: Bool = false
-
-    func configureDisplayState(firstFrame: Bool, awaitingSwitch: Bool) {
-        hasFirstFrameReadyForDisplay = firstFrame
-        isAwaitingDisplaySwitch = awaitingSwitch
-    }
-
-    func configurePhase(_ nextPhase: CorePlaybackPhase, atTime seconds: Double? = nil) {
-        phase = nextPhase
-        if let seconds {
-            currentTime = seconds
-        }
-    }
-
-    func setFailNextLoad(_ fail: Bool) {
-        shouldFailNextLoad = fail
-    }
-
-    func load(
-        url: URL,
-        httpHeaders: [String: String],
-        startPosition: Double?,
-        autoplay: Bool
-    ) async throws {
-        if shouldFailNextLoad {
-            shouldFailNextLoad = false
-            state = .failed
-            phase = .error("Simulated transport failure")
-            throw LunaCoreError.serverMessage(502, "Simulated transport failure")
-        }
-        loadedURLs.append(url)
-        lastHeaders = httpHeaders
-        currentTime = startPosition ?? 0
-        bufferedPosition = currentTime + 24
-        state = autoplay ? .playing : .paused
-        phase = autoplay ? .playing : .paused
-        events.append("load(\(url.path),pos=\(Int(currentTime)),auto=\(autoplay))")
-    }
-
-    func prepareForItemReplacement() async {
-        events.append("prepareForItemReplacement")
-    }
-
-    func play() async {
-        state = .playing
-        phase = .playing
-        events.append("play")
-    }
-
-    func pause() async {
-        state = .paused
-        phase = .paused
-        events.append("pause")
-    }
-
-    func togglePlayPause() async {
-        if state == .playing {
-            await pause()
-        } else {
-            await play()
-        }
-    }
-
-    func seek(to seconds: Double, exact: Bool) async {
-        currentTime = seconds
-        events.append("seek(\(Int(seconds)),exact=\(exact))")
-    }
-
-    func stop(resetDisplayCriteria: Bool) async {
-        state = .idle
-        phase = .idle
-        hasFirstFrameReadyForDisplay = false
-        isAwaitingDisplaySwitch = false
-        events.append("stop(reset=\(resetDisplayCriteria))")
-    }
-}
-
-actor MockByteRangeIOReader: IOReader {
-    private var prewarmed: Set<URL> = []
-    private(set) var prewarmCallCount: Int = 0
-    private(set) var lastBudget: Int = 0
-
-    func isPrewarmed(url: URL) async -> Bool {
-        prewarmed.contains(url)
-    }
-
-    @discardableResult
-    func prewarm(url: URL, httpHeaders: [String: String], byteBudget: Int) async throws -> Int {
-        _ = httpHeaders
-        prewarmed.insert(url)
-        prewarmCallCount += 1
-        lastBudget = byteBudget
-        return byteBudget
-    }
-
-    func readRange(url: URL, httpHeaders: [String: String], offset: Int64, length: Int) async throws -> Data {
-        _ = url
-        _ = httpHeaders
-        _ = offset
-        return Data(repeating: 0x42, count: max(0, length))
-    }
-
-    func discardPrewarmedSources() async {
-        prewarmed.removeAll()
-    }
-}
+// MARK: - Linux-Safe URLProtocol Test Double
 
 private final class CoreURLProtocolMock: URLProtocol {
     typealias Handler = @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
@@ -228,20 +108,14 @@ final class LunaCoreLinuxTests: XCTestCase {
             chapters: nil,
             aetherConfig: TvAetherConfig(
                 preferDualLayerDolbyVision: true,
-                dualLayerRoute: "softwareHost",
                 foldsDolbyVisionFEL: true,
                 dolbyVisionHandling: "automatic",
-                panelPresentsDolbyVision: false,
-                panelIsInHDRMode: false,
                 matchContentEnabled: true,
-                displayCriteriaOwner: "engine",
                 attemptsHDRMasterOnUnprovenPanel: false,
                 objectAudioRendering: TvObjectAudioConfig(mode: "render", layout: "7.1.4"),
                 audioBridgeMode: "surroundCompat",
                 preferredAudioLanguages: ["nob", "eng"],
                 preferredSubtitleLanguages: ["nob", "eng"],
-                autoPlayNextEpisode: true,
-                smartNordicSubtitleRule: true,
                 skipsContainerAttachments: true,
                 generatesBackgroundScrubPreviews: false,
                 serveIFramePlaylist: false,
@@ -254,111 +128,42 @@ final class LunaCoreLinuxTests: XCTestCase {
         )
     }
 
-    func testPlaybackCoordinatorCurtainGateWatchdogAndSeamlessSwitch() async throws {
-        let engine = MockPlaybackEngine()
-        let reader = MockByteRangeIOReader()
-        let coordinator = PlaybackCoordinatorStateMachine(engine: engine, ioReader: reader)
-        let baseURL = try XCTUnwrap(URL(string: "https://luna.example.invalid"))
-        let headers = ["X-Device-Id": "appletv-test"]
+    func testPlaybackCurtainWatchdogReadinessAndFallbackDeadline() {
+        let session = makeSampleSession(sessionId: "nvme-1", tier: "nvme", canPrewarm: true)
+        XCTAssertEqual(session.sessionId, "nvme-1")
+        XCTAssertEqual(PlaybackCurtainWatchdog.defaultFallbackTimeoutSeconds, 5.0, accuracy: 0.001)
 
-        // 1. Archive tier with canClientPrewarmBytes == false MUST NOT wake HDDs via IOReader
-        let archiveSession = makeSampleSession(sessionId: "arch-1", tier: "archive", canPrewarm: false)
-        let didPrewarmArchive = try await coordinator.prewarmIfAllowed(
-            session: archiveSession,
-            canClientPrewarmBytes: false,
-            baseURL: baseURL,
-            headers: headers
-        )
-        XCTAssertFalse(didPrewarmArchive)
-        let archivePrewarmCalls = await reader.prewarmCallCount
-        XCTAssertEqual(archivePrewarmCalls, 0)
+        func reveal(
+            fatal: Bool = false,
+            switching: Bool = false,
+            resolving: Bool = false,
+            restoring: Bool = false,
+            needsRestore: Bool = false,
+            fallbackUnlocked: Bool = false,
+            firstFrame: Bool = true,
+            awaitingSwitch: Bool = false
+        ) -> Bool {
+            PlaybackCurtainWatchdog.isPictureReadyForReveal(
+                hasFatalError: fatal,
+                isSwitchingSource: switching,
+                isResolving: resolving,
+                isRestoringFromBackground: restoring,
+                needsForegroundVideoRestore: needsRestore,
+                firstFrameFallbackUnlocked: fallbackUnlocked,
+                hasFirstFrameReadyForDisplay: firstFrame,
+                isAwaitingDisplaySwitch: awaitingSwitch
+            )
+        }
 
-        // 2. NVMe tier with canClientPrewarmBytes == true prewarms 8 MiB once and deduplicates
-        let nvmeSession = makeSampleSession(sessionId: "nvme-1", tier: "nvme", canPrewarm: true)
-        let firstPrewarm = try await coordinator.prewarmIfAllowed(
-            session: nvmeSession,
-            canClientPrewarmBytes: true,
-            baseURL: baseURL,
-            headers: headers
-        )
-        let duplicatePrewarm = try await coordinator.prewarmIfAllowed(
-            session: nvmeSession,
-            canClientPrewarmBytes: true,
-            baseURL: baseURL,
-            headers: headers
-        )
-        XCTAssertTrue(firstPrewarm)
-        XCTAssertFalse(duplicatePrewarm)
-        let nvmePrewarmCalls = await reader.prewarmCallCount
-        let prewarmBudget = await reader.lastBudget
-        XCTAssertEqual(nvmePrewarmCalls, 1)
-        XCTAssertEqual(prewarmBudget, 8 * 1024 * 1024)
-
-        // 3. Start session while HDMI display switch is in progress -> curtain stays closed
-        await engine.configureDisplayState(firstFrame: true, awaitingSwitch: true)
-        try await coordinator.startSession(
-            nvmeSession,
-            baseURL: baseURL,
-            headers: headers,
-            nowSeconds: 10.0
-        )
-        let earlyReveal = await coordinator.isPictureReadyForReveal(nowSeconds: 12.0)
-        XCTAssertFalse(earlyReveal, "Curtain must hold while HDMI range/frame-rate switch is settling")
-
-        // 4. 5-second watchdog unlocks picture if display-switch callback never arrives
-        let watchdogReveal = await coordinator.isPictureReadyForReveal(nowSeconds: 15.1)
-        XCTAssertTrue(watchdogReveal, "5-second fallback watchdog must unlock curtain")
-
-        // 5. Seamless source switch calls prepareForItemReplacement() and preserves position
-        await engine.seek(to: 945, exact: true)
-        await engine.configureDisplayState(firstFrame: true, awaitingSwitch: false)
-        let altSession = TvPlaybackSession(
-            sessionId: nvmeSession.sessionId,
-            streamToken: nvmeSession.streamToken,
-            roomName: nvmeSession.roomName,
-            hardwareProfile: nvmeSession.hardwareProfile,
-            item: nvmeSession.item,
-            selectedCandidate: nvmeSession.selectedCandidate,
-            stream: TvStreamEndpoint(
-                url: "/api/tv/v1/stream/nvme-1/alt.mkv",
-                container: "mkv",
-                supportsByteRanges: true,
-                zeroCopyMode: "206",
-                canClientPrewarmBytes: true,
-                startPositionSeconds: nil,
-                declaredDurationSeconds: 9960
-            ),
-            tracks: nil,
-            chapters: nil,
-            aetherConfig: nvmeSession.aetherConfig,
-            heartbeatIntervalSeconds: 10,
-            nextEpisode: nil
-        )
-        try await coordinator.switchSource(
-            to: altSession,
-            baseURL: baseURL,
-            headers: headers,
-            nowSeconds: 20.0
-        )
-        let resumedAt = await engine.currentTime
-        XCTAssertEqual(resumedAt, 945, accuracy: 0.01)
-
-        // 6. Stall watchdog ignores scrubbing, triggers seek+play recovery after 8s stall
-        await engine.configurePhase(.stalled, atTime: 960)
-        let scrubCheck = await coordinator.pollStallRecoveryIfNeeded(nowSeconds: 30.0, isScrubbing: true)
-        XCTAssertFalse(scrubCheck)
-        let armStall = await coordinator.pollStallRecoveryIfNeeded(nowSeconds: 31.0, isScrubbing: false)
-        XCTAssertFalse(armStall)
-        let recoverStall = await coordinator.pollStallRecoveryIfNeeded(nowSeconds: 39.2, isScrubbing: false)
-        XCTAssertTrue(recoverStall)
-
-        // 7. Teardown resets display criteria cleanly
-        await coordinator.teardown(resetDisplayCriteria: true)
-        let finalState = await engine.state
-        let events = await engine.events
-        XCTAssertEqual(finalState, .idle)
-        XCTAssertTrue(events.contains("prepareForItemReplacement"))
-        XCTAssertTrue(events.contains("stop(reset=true)"))
+        XCTAssertFalse(reveal(resolving: true, fallbackUnlocked: true))
+        XCTAssertFalse(reveal(restoring: true, fallbackUnlocked: true))
+        XCTAssertFalse(reveal(needsRestore: true, fallbackUnlocked: true))
+        XCTAssertFalse(reveal(fatal: true, switching: true, fallbackUnlocked: true))
+        XCTAssertFalse(reveal(firstFrame: true, awaitingSwitch: true))
+        XCTAssertFalse(reveal(firstFrame: false, awaitingSwitch: false))
+        XCTAssertTrue(reveal(firstFrame: true, awaitingSwitch: false))
+        XCTAssertTrue(reveal(fallbackUnlocked: true, firstFrame: true, awaitingSwitch: true))
+        XCTAssertTrue(reveal(switching: true, resolving: true, firstFrame: false, awaitingSwitch: true))
     }
 
     func testCatalogShelfIndexerPrioritizesPhoneHandoffAndSuppressesDuplicateShelves() {
@@ -406,8 +211,7 @@ final class LunaCoreLinuxTests: XCTestCase {
                     listMode: nil,
                     hasMore: false,
                     nextPath: nil,
-                    items: [regularCard],
-                    genres: nil
+                    items: [regularCard]
                 ),
                 TvShelfRow(
                     rowId: "new-4k",
@@ -417,8 +221,7 @@ final class LunaCoreLinuxTests: XCTestCase {
                     listMode: nil,
                     hasMore: true,
                     nextPath: nil,
-                    items: [regularCard, phoneCard],
-                    genres: nil
+                    items: [regularCard, phoneCard]
                 ),
                 TvShelfRow(
                     rowId: "medialogg-continue",
@@ -428,8 +231,7 @@ final class LunaCoreLinuxTests: XCTestCase {
                     listMode: "smart",
                     hasMore: false,
                     nextPath: nil,
-                    items: [regularCard, tonightCard],
-                    genres: nil
+                    items: [regularCard, tonightCard]
                 ),
             ]
         )
@@ -447,8 +249,7 @@ final class LunaCoreLinuxTests: XCTestCase {
             listMode: "smart",
             hasMore: false,
             nextPath: nil,
-            items: [regularCard],
-            genres: nil
+            items: [regularCard]
         )
         let filteredUpcoming = CatalogShelfIndexer.filterVisibleRows([upcomingRow])
         XCTAssertEqual(filteredUpcoming.map(\.rowId), ["upcoming-episodes"])
@@ -463,18 +264,6 @@ final class LunaCoreLinuxTests: XCTestCase {
         )
         XCTAssertEqual(orderedWithoutHandoff.map(\.rowId), ["upcoming-episodes", "medialogg-continue"])
         XCTAssertEqual(orderedWithoutHandoff[1].title, "Fortsett")
-
-        let tiers = CatalogShelfIndexer.indexByTier([phoneCard, tonightCard, regularCard, phoneCard])
-        XCTAssertEqual(tiers.nvme.map(\.itemId), ["movie:1"])
-        XCTAssertEqual(tiers.archive.map(\.itemId), ["series:2"])
-        XCTAssertEqual(tiers.stream.map(\.itemId), ["movie:3"])
-
-        let filtered = CatalogShelfIndexer.filterAndSortCards(
-            [phoneCard, tonightCard, regularCard],
-            localOnly: true,
-            sort: "top_rated"
-        )
-        XCTAssertEqual(filtered.map(\.itemId), ["series:2", "movie:1"])
     }
 
     func testLunaCoreClientHTTPTransportConditionalHomeAndSocketHelpers() async throws {
@@ -514,7 +303,7 @@ final class LunaCoreLinuxTests: XCTestCase {
             roomName: "Stua",
             hardwareProfile: "hdr10-512",
             allowSelfSignedLanTLS: true,
-            appVersion: "2.10.1",
+            appVersion: "2.11.0",
             osVersion: "Linux-CI",
             session: session
         )
@@ -594,11 +383,11 @@ final class LunaCoreLinuxTests: XCTestCase {
             releaseGroup: "playWEB",
             isNorwegian: true
         )
-        let title = cand.humanDrawerTitle(roomName: "Stua", isRecommended: true, isActive: true)
-        XCTAssertEqual(title, "Anbefalt for Stua · 1080p Dolby Atmos ✓")
+        let title = cand.quickRowTitle(roomName: "Stua", isRecommended: true)
+        XCTAssertEqual(title, "Anbefalt for Stua · 1080p Dolby Atmos")
         XCTAssertFalse(title.contains("playWEB"))
         XCTAssertFalse(title.contains("NORVINE"))
-        let sub = cand.humanDrawerSubtitle(isActive: true)
+        let sub = cand.quickRowMetadata(activeLabel: "Spilles nå")
         XCTAssertEqual(sub, "Strømmes ved start · 5,1 GB · Spilles nå")
         XCTAssertFalse(sub.contains("InfiniDysk"))
 
@@ -729,8 +518,7 @@ final class LunaCoreLinuxTests: XCTestCase {
             sourceQuality: "Bluray-2160p",
             channels: "7.1"
         )
-        XCTAssertTrue(cand.capabilityBadges.contains("HEVC"))
-        XCTAssertEqual(cand.humanDrawerSubtitle(isActive: false), "På NVMe · HEVC · Bluray-2160p · 60,0 GB")
+        XCTAssertEqual(cand.quickRowMetadata(activeLabel: nil), "På NVMe · HEVC · Bluray-2160p · 60,0 GB")
         XCTAssertEqual(cand.quickRowTitle(roomName: "Stua", isRecommended: true), "Anbefalt for Stua · 4K HDR10+ TrueHD Atmos")
 
         // Numeric channel regression from live SQLite probe
@@ -783,5 +571,187 @@ final class LunaCoreLinuxTests: XCTestCase {
         XCTAssertEqual(relWidthHero?.absoluteString, "http://127.0.0.1:8090/api/tv/v1/artwork?src=a&width=3840")
         let preserved = client.resolveArtworkURL("/api/tv/v1/artwork?src=a&w=320", target: .preserve)
         XCTAssertEqual(preserved?.absoluteString, "http://127.0.0.1:8090/api/tv/v1/artwork?src=a&w=320")
+    }
+
+    func testSteg42SameOriginEasynewsArtworkUpgradeAndTokenCancelContract() async throws {
+        // 1. :8090 <-> :8920 dual-listener same-origin recognition + foreign-origin token stripping
+        let tlsClient = LunaCoreClient(
+            baseURL: try XCTUnwrap(URL(string: "https://lunacore.local:8920")),
+            deviceID: "luna-tv-stua",
+            deviceToken: "tok-same-origin",
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512",
+            allowSelfSignedLanTLS: true
+        )
+        let lanHttpStream = try XCTUnwrap(URL(string: "http://lunacore.local:8090/api/tv/v1/stream/s1/tok/video.mkv"))
+        let lanHttpsImg = try XCTUnwrap(URL(string: "https://lunacore.local:8920/api/tv/v1/img/poster/tmdb/p.jpg"))
+        let roguePort = try XCTUnwrap(URL(string: "http://lunacore.local:9999/api/tv/v1/stream/s1/tok/video.mkv"))
+        let foreignHost = try XCTUnwrap(URL(string: "https://cdn.example.net:8920/video.mkv"))
+
+        XCTAssertTrue(tlsClient.isSameOrigin(lanHttpStream))
+        XCTAssertTrue(tlsClient.isSameOrigin(lanHttpsImg))
+        XCTAssertFalse(tlsClient.isSameOrigin(roguePort))
+        XCTAssertFalse(tlsClient.isSameOrigin(foreignHost))
+
+        let lanStreamHeaders = tlsClient.streamHTTPHeaders(for: lanHttpStream)
+        XCTAssertEqual(lanStreamHeaders["Authorization"], "Bearer tok-same-origin")
+        XCTAssertEqual(lanStreamHeaders["X-Device-Id"], "luna-tv-stua")
+
+        let foreignHeaders = tlsClient.streamHTTPHeaders(for: foreignHost)
+        XCTAssertNil(foreignHeaders["Authorization"])
+        XCTAssertNil(foreignHeaders["X-Device-Id"])
+
+        // 2. Easynews HTTPS candidate badge & /api/tv/v1/img/{card,still}/ -> /backdrop/ hero4K upgrade
+        let easynewsCand = try JSONDecoder().decode(
+            TvCandidateInfo.self,
+            from: Data(#"{"candidateId":"easy-1","displayHeadline":"4K WEB-DL","releaseTitle":"Example.2026.2160p","source":"easynews","tier":"ssd"}"#.utf8)
+        )
+        XCTAssertEqual(easynewsCand.sourceBadgeLabel, "Arkiv-strøm (HTTPS)")
+
+        XCTAssertEqual(
+            tlsClient.resolveArtworkURL("/api/tv/v1/img/card/tmdb/hero.jpg", target: .hero4K)?.absoluteString,
+            "https://lunacore.local:8920/api/tv/v1/img/backdrop/tmdb/hero.jpg"
+        )
+        XCTAssertEqual(
+            tlsClient.resolveArtworkURL("/api/tv/v1/img/still/tmdb/ep.jpg", target: .hero4K)?.absoluteString,
+            "https://lunacore.local:8920/api/tv/v1/img/backdrop/tmdb/ep.jpg"
+        )
+        XCTAssertEqual(
+            tlsClient.resolveArtworkURL("/api/tv/v1/img/card/tmdb/hero.jpg", target: .landscape2x)?.absoluteString,
+            "https://lunacore.local:8920/api/tv/v1/img/card/tmdb/hero.jpg"
+        )
+
+        // 3. Stua Sonos 5.1.2 copy & TvPairedDeviceInfo.roomUnassigned decoding
+        XCTAssertEqual(
+            LunaCopy.roomEquipmentLabel(hardwareProfile: "hdr10-512"),
+            "Samsung Frame Pro · HDR10+ · Sonos 5.1.2"
+        )
+        XCTAssertEqual(
+            LunaCopy.roomEquipmentLabel(hardwareProfile: "dv-fel-714"),
+            "LG OLED · Dolby Vision · Sonos 7.1.4"
+        )
+        let unassignedDevice = try JSONDecoder().decode(
+            TvPairedDeviceInfo.self,
+            from: Data(#"{"deviceId":"d1","deviceName":"TV","roomName":"Stua","roomUnassigned":true,"hardwareProfile":"hdr10-512"}"#.utf8)
+        )
+        XCTAssertEqual(unassignedDevice.roomUnassigned, true)
+
+        // 4. prepareToken wire payload, cancelInflightPlayback wire payload, removeFromList removed:false, and shared GET coalescing
+        let host = "steg42-linux.invalid"
+        defer { CoreURLProtocolMock.unregister(host: host) }
+        let capturedBodies = Mutex<[String: String]>([:])
+        let homeGetCount = Mutex<Int>(0)
+
+        @Sendable func readBody(_ req: URLRequest) -> String {
+            if let data = req.httpBody, let str = String(data: data, encoding: .utf8) {
+                return str
+            }
+            guard let stream = req.httpBodyStream else { return "" }
+            stream.open()
+            defer { stream.close() }
+            var out = Data()
+            var buf = [UInt8](repeating: 0, count: 1024)
+            while stream.hasBytesAvailable {
+                let n = stream.read(&buf, maxLength: buf.count)
+                if n <= 0 { break }
+                out.append(buf, count: n)
+            }
+            return String(data: out, encoding: .utf8) ?? ""
+        }
+
+        CoreURLProtocolMock.register(host: host) { req in
+            let url = try XCTUnwrap(req.url)
+            let bodyStr = readBody(req)
+            capturedBodies.withLock { $0[url.path] = bodyStr }
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil))
+            switch url.path {
+            case "/api/tv/v1/home":
+                homeGetCount.withLock { $0 += 1 }
+                Thread.sleep(forTimeInterval: 0.03)
+                return (resp, Data(#"{"ok":true,"roomName":"Stua","hardwareProfile":"hdr10-512","rows":[]}"#.utf8))
+            case "/api/tv/v1/playback/prepare":
+                return (resp, Data(#"{"ok":true,"status":"prepared","prepareToken":"tvs-prep-1"}"#.utf8))
+            case "/api/tv/v1/rows/custom:test/remove":
+                let removed = bodyStr.contains("550")
+                return (resp, Data(#"{"ok":true,"removed":\#(removed)}"#.utf8))
+            default:
+                return (resp, Data(#"{"ok":true}"#.utf8))
+            }
+        }
+
+        let baseURL = try XCTUnwrap(URL(string: "https://\(host):8920"))
+        let prodClient1 = LunaCoreClient(
+            baseURL: baseURL,
+            deviceID: "luna-prod",
+            deviceToken: "tok-xyz",
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512",
+            allowSelfSignedLanTLS: true
+        )
+        let prodClient2 = LunaCoreClient(
+            baseURL: baseURL,
+            deviceID: "luna-prod",
+            deviceToken: "tok-xyz",
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512",
+            allowSelfSignedLanTLS: true
+        )
+        XCTAssertTrue(
+            prodClient1.inflightGETRequests === prodClient2.inflightGETRequests,
+            "Production LunaCoreClient instances must share LunaCoreSessionPool.shared.inflightGETRequests"
+        )
+
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [CoreURLProtocolMock.self]
+        let session = URLSession(configuration: config)
+        let clientA = LunaCoreClient(
+            baseURL: baseURL,
+            deviceID: "luna-ci-a",
+            deviceToken: "tok-xyz",
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512",
+            allowSelfSignedLanTLS: true,
+            session: session
+        )
+
+        async let h1 = clientA.fetchHomeConditional(ifNoneMatch: nil)
+        async let h2 = clientA.fetchHomeConditional(ifNoneMatch: nil)
+        _ = try await (h1, h2)
+        XCTAssertEqual(homeGetCount.withLock { $0 }, 1, "Concurrent fetchHomeConditional GETs must coalesce")
+
+        _ = try await clientA.preparePlayback(
+            itemId: "movie:tmdb:550",
+            title: "Fight Club",
+            prepareToken: "prep-uuid-42"
+        )
+        try await clientA.cancelInflightPlayback(
+            sessionId: nil,
+            resolveId: "res-77",
+            itemId: "movie:tmdb:550",
+            prepareToken: "prep-uuid-42"
+        )
+        let prepBody = capturedBodies.withLock { $0["/api/tv/v1/playback/prepare"] ?? "" }
+        let cancelBody = capturedBodies.withLock { $0["/api/tv/v1/playback/heartbeat"] ?? "" }
+        XCTAssertTrue(prepBody.contains("\"prepareToken\":\"prep-uuid-42\""))
+        XCTAssertTrue(cancelBody.contains("\"cancelInflight\":true"))
+        XCTAssertTrue(cancelBody.contains("\"resolveId\":\"res-77\""))
+        XCTAssertTrue(cancelBody.contains("\"prepareToken\":\"prep-uuid-42\""))
+
+        let didRemove550 = try await clientA.removeFromList(
+            rowId: "custom:test",
+            mediaType: "movie",
+            itemId: "movie:tmdb:550",
+            ids: TvMediaIds(tmdb: 550),
+            title: "Fight Club"
+        )
+        let didRemove999 = try await clientA.removeFromList(
+            rowId: "custom:test",
+            mediaType: "movie",
+            itemId: "movie:tmdb:999",
+            ids: TvMediaIds(tmdb: 999),
+            title: "Other"
+        )
+        XCTAssertTrue(didRemove550)
+        XCTAssertFalse(didRemove999)
     }
 }

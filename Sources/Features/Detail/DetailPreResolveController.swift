@@ -13,17 +13,13 @@ enum DetailReloadPolicy: Sendable {
         loadedScopeKey: String?,
         currentScopeKey: String,
         lastSeenRefreshNonce: Int,
-        currentRefreshNonce: Int,
-        awaitingPostPlaybackRefresh: Bool
+        currentRefreshNonce: Int
     ) -> DetailReloadAction {
         if !hasLoadedDetail || loadedScopeKey != currentScopeKey {
             return .loadInitial
         }
         if currentRefreshNonce != lastSeenRefreshNonce {
             return .reloadPreservingSeason
-        }
-        if awaitingPostPlaybackRefresh {
-            return .skip
         }
         return .skip
     }
@@ -33,6 +29,7 @@ struct ConsumedPreResolveHandoff: Sendable {
     let prepareToken: String?
     let preparedSession: TvPlaybackSession?
     let inflightPrepareTask: Task<TvPrepareResponse?, Never>?
+    let inflightPrepareToken: String?
 }
 
 /// Coordinates `0 ms` initial (or `180 ms` debounced) `/api/tv/v1/playback/prepare`
@@ -49,6 +46,7 @@ final class DetailPreResolveController {
     private var prewarmedStreamToken: String?
     private var debounceTask: Task<Void, Never>?
     private var inflightNetworkTask: Task<TvPrepareResponse?, Never>?
+    private var inflightTaskToken: UUID?
     private var inflightItemId: String?
     private var inflightStartPosition: Double?
     private var prewarmTask: Task<Void, Never>?
@@ -85,14 +83,6 @@ final class DetailPreResolveController {
             return nil
         }
         return preparedToken
-    }
-
-    func consumeForPlayback(itemId: String, client: LunaCoreClient?) -> String? {
-        consumeHandoffInternal(itemId: itemId, startPosition: nil, enforceStartPosition: false, client: client).prepareToken
-    }
-
-    func consumeForPlayback(itemId: String, startPosition: Double?, client: LunaCoreClient?) -> String? {
-        consumeHandoffInternal(itemId: itemId, startPosition: startPosition, enforceStartPosition: true, client: client).prepareToken
     }
 
     func consumeHandoffForPlayback(
@@ -140,7 +130,8 @@ final class DetailPreResolveController {
             return ConsumedPreResolveHandoff(
                 prepareToken: token,
                 preparedSession: session,
-                inflightPrepareTask: nil
+                inflightPrepareTask: nil,
+                inflightPrepareToken: nil
             )
         }
 
@@ -150,7 +141,9 @@ final class DetailPreResolveController {
         if let runningTask = inflightNetworkTask,
            inflightItemId == itemId,
            (!enforceStartPosition || Self.startPositionsMatch(inflightStartPosition, startPosition)) {
+            let handedToken = inflightTaskToken?.uuidString
             inflightNetworkTask = nil
+            inflightTaskToken = nil
             inflightItemId = nil
             inflightStartPosition = nil
             if preparedForItemId != nil || preparedSessionId != nil {
@@ -159,7 +152,8 @@ final class DetailPreResolveController {
             return ConsumedPreResolveHandoff(
                 prepareToken: nil,
                 preparedSession: nil,
-                inflightPrepareTask: runningTask
+                inflightPrepareTask: runningTask,
+                inflightPrepareToken: handedToken
             )
         }
 
@@ -170,7 +164,8 @@ final class DetailPreResolveController {
         return ConsumedPreResolveHandoff(
             prepareToken: nil,
             preparedSession: nil,
-            inflightPrepareTask: nil
+            inflightPrepareTask: nil,
+            inflightPrepareToken: nil
         )
     }
 
@@ -253,6 +248,8 @@ final class DetailPreResolveController {
             episode: nil
         )
         let taskToken = UUID()
+        let prepareTokenString = taskToken.uuidString
+        inflightTaskToken = taskToken
         inflightItemId = targetItemId
         inflightStartPosition = startPos
 
@@ -262,7 +259,8 @@ final class DetailPreResolveController {
                 itemId: targetItemId,
                 title: apiTitle,
                 seriesTitle: seriesTitle,
-                startPositionSeconds: startPos
+                startPositionSeconds: startPos,
+                prepareToken: prepareTokenString
             )
         }
         inflightNetworkTask = netTask
@@ -275,16 +273,22 @@ final class DetailPreResolveController {
                 }
                 return
             }
-            // If `inflightNetworkTask` was handed over to `PlayerViewModel` or superseded,
-            // do not overwrite state here; `PlayerViewModel` or `cancelAndCleanupInflightPrepare` owns it.
-            guard self.inflightItemId == targetItemId,
+            // Enforce exact `taskToken` identity so an `A -> B -> A` cycle never adopts stale `A1`
+            // over a newer `A2`, and handed-over tasks never overwrite controller state.
+            guard self.inflightTaskToken == taskToken,
+                  self.inflightItemId == targetItemId,
                   Self.startPositionsMatch(self.inflightStartPosition, startPos),
                   self.inflightNetworkTask != nil else {
-                _ = taskToken
+                if let orphanSid = prep?.playbackSession?.sessionId ?? prep?.prepareToken,
+                   !orphanSid.isEmpty,
+                   self.preparedSessionId != orphanSid {
+                    Self.stopSessionDetached(sessionId: orphanSid, client: client)
+                }
                 return
             }
 
             self.inflightNetworkTask = nil
+            self.inflightTaskToken = nil
             self.inflightItemId = nil
             self.inflightStartPosition = nil
 
@@ -309,12 +313,18 @@ final class DetailPreResolveController {
 
             // Strictly respect `canClientPrewarmBytes == true` so mechanical archive drives
             // are NEVER spun up merely by opening a detail page!
-            if prep.canClientPrewarmBytes == true,
+            if prep.playbackSession?.stream.canClientPrewarmBytes == true,
                let relStreamPath = prep.playbackSession?.stream.url,
                let streamURL = client.buildAbsoluteURL(relStreamPath) {
-                let headers = client.streamHTTPHeaders()
+                let headers = client.streamHTTPHeaders(for: streamURL)
+                let cand = prep.playbackSession?.selectedCandidate
+                let sourceLower = (cand?.source ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let tierLower = (cand?.tier ?? cand?.source ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let isFastLocal = !sourceLower.contains("easynews")
+                    && (tierLower == "ssd" || tierLower == "nvme" || tierLower == "local")
                 let prewarmBudget = DeviceMemoryProfile.current.prewarmByteBudget(
-                    availableMemoryBytes: DeviceHardwareCapabilities.availableMemoryBytes()
+                    availableMemoryBytes: DeviceHardwareCapabilities.availableMemoryBytes(),
+                    isFastLocalTier: isFastLocal
                 )
                 guard prewarmBudget > 0 else { return }
                 self.prewarmTask?.cancel()
@@ -347,16 +357,26 @@ final class DetailPreResolveController {
 
     private func cancelAndCleanupInflightPrepare(client: LunaCoreClient?) {
         guard let running = inflightNetworkTask else {
+            inflightTaskToken = nil
             inflightItemId = nil
             inflightStartPosition = nil
             return
         }
+        let cancelledItemId = inflightItemId
+        let cancelledToken = inflightTaskToken?.uuidString
         inflightNetworkTask = nil
+        inflightTaskToken = nil
         inflightItemId = nil
         inflightStartPosition = nil
         running.cancel()
         if let client {
             Task.detached(priority: .utility) {
+                if let cancelledItemId {
+                    try? await client.cancelInflightPlayback(
+                        itemId: cancelledItemId,
+                        prepareToken: cancelledToken
+                    )
+                }
                 if let latePrep = await running.value,
                    let orphanSid = latePrep.playbackSession?.sessionId ?? latePrep.prepareToken,
                    !orphanSid.isEmpty {

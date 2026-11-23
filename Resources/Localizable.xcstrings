@@ -1,52 +1,6 @@
 {
   "sourceLanguage" : "nb",
   "strings" : {
-    "chapters_count %lld" : {
-      "comment" : "Chapter count heading in player drawer",
-      "localizations" : {
-        "nb" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld kapittel"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld kapitler"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "days_count %lld" : {
-      "comment" : "Day count duration label",
-      "localizations" : {
-        "nb" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld dag"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld dager"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "episodes_count %lld" : {
       "comment" : "Episode count label",
       "localizations" : {
@@ -86,29 +40,6 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld mediefiler"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "pinned_items_count %lld" : {
-      "comment" : "Pinned items count on custom list card",
-      "localizations" : {
-        "nb" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld tittel festet"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld titler festet"
                 }
               }
             }

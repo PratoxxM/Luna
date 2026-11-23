@@ -42,6 +42,7 @@ internal enum SubtitleOverlayLayout {
 struct SubtitleOverlayView: View {
     let engine: AetherEngine
     let comfort: ComfortPreferences
+    var subtitleDelaySeconds: Double = 0
     var isBottomBarVisible: Bool = false
     var isQuickPanelOpen: Bool = false
     var isNerdHUDVisible: Bool = false
@@ -115,11 +116,15 @@ struct SubtitleOverlayView: View {
                 videoFormat = nextFormat
             }
         }
+        .onChange(of: subtitleDelaySeconds) { _, _ in
+            recomputeVisibleCues(at: clockBox.lastSourceTime)
+        }
     }
 
     private func recomputeVisibleCues(at sourceTime: Double, cueSource: [SubtitleCue]? = nil) {
         let activeCues = cueSource ?? clockBox.cues
-        let effectiveTime = sourceTime - engine.softwareSubtitleDelaySeconds
+        let delay = engine.softwareSubtitleDelaySeconds != 0 ? engine.softwareSubtitleDelaySeconds : subtitleDelaySeconds
+        let effectiveTime = sourceTime - delay
         let next = activeCues.filter { $0.startTime <= effectiveTime && effectiveTime < $0.endTime }
         let changed = next.count != visibleCues.count || zip(next, visibleCues).contains(where: { $0.id != $1.id })
         if changed {

@@ -105,8 +105,12 @@ private final class DiskTouchTracker: Sendable {
 public actor ArtworkPipeline {
     public static let shared = ArtworkPipeline()
 
+    public nonisolated static let didPurgeMemoryNotification = Notification.Name("LunaArtworkPipelineDidPurgeMemory")
+    public nonisolated static let didExitPlaybackMemoryModeNotification = Notification.Name("LunaArtworkPipelineDidExitPlaybackMemoryMode")
+
     private struct DecodeWaiter {
         let id: UUID
+        let key: String
         let continuation: CheckedContinuation<Bool, Never>
     }
 
@@ -119,7 +123,16 @@ public actor ArtworkPipeline {
     private nonisolated let inflightImages = InflightTaskCoalescer<String, CGImage?>()
     private nonisolated let inflightRawFetches = InflightTaskCoalescer<String, Data?>()
     private nonisolated let isPlaybackActiveFlag = Mutex(false)
+    private nonisolated let memoryEpochCounter = Mutex<UInt64>(0)
     private nonisolated let activePrefetchTasks = Mutex<[UUID: Task<Void, Never>]>([:])
+
+    public nonisolated var isPlaybackActive: Bool {
+        isPlaybackActiveFlag.withLock { $0 }
+    }
+
+    public nonisolated var memoryEpoch: UInt64 {
+        memoryEpochCounter.withLock { $0 }
+    }
 
     private var writesSinceLastTrim: Int = 0
     private var didEnsureCacheDir: Bool = false
@@ -137,12 +150,25 @@ public actor ArtworkPipeline {
 
     private init() {
         let cache = self.ramCache
+        let epochCounter = self.memoryEpochCounter
         NotificationCenter.default.addObserver(
             forName: Notification.Name("UIApplicationDidReceiveMemoryWarningNotification"),
             object: nil,
             queue: nil
         ) { _ in
             cache.removeAll()
+            BlurHashDecoder.clearCache()
+            epochCounter.withLock { $0 &+= 1 }
+            Task { @MainActor in
+                NotificationCenter.default.post(name: ArtworkPipeline.didPurgeMemoryNotification, object: nil)
+            }
+        }
+    }
+
+    private nonisolated func recordAndPostMemoryPurge() {
+        memoryEpochCounter.withLock { $0 &+= 1 }
+        Task { @MainActor in
+            NotificationCenter.default.post(name: Self.didPurgeMemoryNotification, object: nil)
         }
     }
 
@@ -173,10 +199,30 @@ public actor ArtworkPipeline {
         return "\(scheme)://\(host)\(pathPart)"
     }
 
-    /// Size-agnostic subject identity bridging TMDB `/t/p/w1280/...` <-> `/t/p/original/...`
-    /// and query-width `/api/tv/v1/artwork?...&w=1280` <-> `...&w=3840` for instant progressive 4K upgrades.
+    /// Size-agnostic subject identity bridging `/api/tv/v1/img/(card|still|backdrop)/<bucket>/<file>`,
+    /// TMDB `/t/p/w1280/...` <-> `/t/p/original/...`, and query-width `/api/tv/v1/artwork?...&w=1280`
+    /// for instant progressive upgrades.
     public nonisolated static func canonicalSubjectIdentity(for url: URL) -> String {
-        let segments = url.path.components(separatedBy: "/")
+        let path = url.path
+        if path.hasPrefix("/api/tv/v1/img/") {
+            let suffix = path.dropFirst("/api/tv/v1/img/".count)
+            let parts = suffix.split(separator: "/", maxSplits: 1)
+            if parts.count == 2 {
+                let variant = parts[0].lowercased()
+                let tail = parts[1]
+                switch variant {
+                case "card", "still", "backdrop":
+                    return "tvimg-landscape:\(tail)"
+                case "poster":
+                    return "tvimg-poster:\(tail)"
+                case "logo":
+                    return "tvimg-logo:\(tail)"
+                default:
+                    return "tvimg:\(variant)/\(tail)"
+                }
+            }
+        }
+        let segments = path.components(separatedBy: "/")
         if let pIdx = segments.firstIndex(of: "p"),
            pIdx >= 1,
            segments[pIdx - 1] == "t",
@@ -258,6 +304,9 @@ public actor ArtworkPipeline {
         let rawKey = Self.rawIdentity(for: url)
         let subjectKey = Self.canonicalSubjectIdentity(for: url)
         let ramCacheRef = self.ramCache
+        if priority == .interactive {
+            await promotePrefetchWaiterIfNeeded(forKey: key)
+        }
 
         guard let outcome = await inflightImages.coalesceNonThrowing(
             key: key,
@@ -276,7 +325,7 @@ public actor ArtworkPipeline {
                       !Task.isCancelled else {
                     return nil
                 }
-                guard await self.acquireDecodePermit(priority: priority) else {
+                guard await self.acquireDecodePermit(key: key, priority: priority) else {
                     return nil
                 }
                 let decoded: CGImage?
@@ -375,8 +424,12 @@ public actor ArtworkPipeline {
     }
 
     /// Cancels background artwork prefetches and proactively frees RAM bitmaps before heavy `.softwareHost`
-    /// (4K Dolby Vision Profile 7 FEL / AV1) frame pools allocate when headroom is tight.
-    public nonisolated func enterPlaybackMemoryMode(isHeavySoftwareStream: Bool) {
+    /// (4K Dolby Vision Profile 7 FEL / AV1) frame pools allocate when headroom is tight, while keeping
+    /// any active curtain backdrop/logo bitmaps resident (`0 ms` curtain reveal).
+    public nonisolated func enterPlaybackMemoryMode(
+        isHeavySoftwareStream: Bool,
+        preservedURLs: [URL] = []
+    ) {
         isPlaybackActiveFlag.withLock { $0 = true }
         cancelAllPrefetchTasks()
 
@@ -385,13 +438,44 @@ public actor ArtworkPipeline {
         let shouldShed = available < profile.playbackMemoryShedFloorBytes
             || (isHeavySoftwareStream && profile.tier == .standard)
         if shouldShed {
+            var preservedEntries: [(key: String, subjectKey: String, image: CGImage)] = []
+            for url in preservedURLs {
+                let subjectKey = Self.canonicalSubjectIdentity(for: url)
+                var matchedForURL = false
+                for px in Self.candidateCachedPixelSizes {
+                    let key = Self.cacheKey(for: url, maxPixelSize: px)
+                    if let img = ramCache.image(forKey: key) {
+                        preservedEntries.append((key: key, subjectKey: subjectKey, image: img))
+                        matchedForURL = true
+                    }
+                }
+                if !matchedForURL, let best = ramCache.bestImage(forSubjectKey: subjectKey) {
+                    let fallbackPx = max(best.width, best.height)
+                    let key = Self.cacheKey(for: url, maxPixelSize: fallbackPx)
+                    preservedEntries.append((key: key, subjectKey: subjectKey, image: best))
+                }
+            }
             ramCache.removeAll()
+            for entry in preservedEntries {
+                ramCache.insert(entry.image, forKey: entry.key, subjectKey: entry.subjectKey)
+            }
             BlurHashDecoder.clearCache()
+            recordAndPostMemoryPurge()
         }
     }
 
     public nonisolated func exitPlaybackMemoryMode() {
         isPlaybackActiveFlag.withLock { $0 = false }
+        Task { @MainActor in
+            NotificationCenter.default.post(name: Self.didExitPlaybackMemoryModeNotification, object: nil)
+        }
+    }
+
+    public nonisolated func handleSceneDidEnterBackground() {
+        cancelAllPrefetchTasks()
+        ramCache.removeAll()
+        BlurHashDecoder.clearCache()
+        recordAndPostMemoryPurge()
     }
 
     private nonisolated func cancelAllPrefetchTasks() {
@@ -464,7 +548,14 @@ public actor ArtworkPipeline {
         didEnsureCacheDir = true
     }
 
-    private func acquireDecodePermit(priority: ArtworkLoadPriority) async -> Bool {
+    private func promotePrefetchWaiterIfNeeded(forKey key: String) {
+        if let idx = prefetchDecodeWaiters.firstIndex(where: { $0.key == key }) {
+            let promoted = prefetchDecodeWaiters.remove(at: idx)
+            interactiveDecodeWaiters.append(promoted)
+        }
+    }
+
+    private func acquireDecodePermit(key: String, priority: ArtworkLoadPriority) async -> Bool {
         guard !Task.isCancelled else { return false }
         if activeDecodeCount < maxConcurrentDecodes {
             activeDecodeCount += 1
@@ -477,7 +568,7 @@ public actor ArtworkPipeline {
                     continuation.resume(returning: false)
                     return
                 }
-                let waiter = DecodeWaiter(id: waiterID, continuation: continuation)
+                let waiter = DecodeWaiter(id: waiterID, key: key, continuation: continuation)
                 switch priority {
                 case .interactive:
                     interactiveDecodeWaiters.append(waiter)
@@ -575,11 +666,21 @@ public actor ArtworkPipeline {
             return nil
         }
 
+        var effectiveMax = max(128, maxPixelSize)
+        if let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+            let nativeW = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue ?? 0
+            let nativeH = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue ?? 0
+            let nativeMax = max(nativeW, nativeH)
+            if nativeMax > 0 {
+                effectiveMax = max(1, min(effectiveMax, nativeMax))
+            }
+        }
+
         let thumbOpts: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: max(128, maxPixelSize)
+            kCGImageSourceThumbnailMaxPixelSize: effectiveMax
         ]
         guard let decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOpts as CFDictionary) else {
             return nil

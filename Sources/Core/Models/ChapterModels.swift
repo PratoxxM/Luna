@@ -89,12 +89,9 @@ public struct TvProbeChapter: Codable, Identifiable, Equatable, Sendable {
         case index
         case id
         case title
-        case name
         case startSeconds
         case endSeconds
-        case durationSeconds
         case kind
-        case type
         case source
     }
 
@@ -130,7 +127,6 @@ public struct TvProbeChapter: Codable, Identifiable, Equatable, Sendable {
         }
 
         let t = (try? c.decodeIfPresent(String.self, forKey: .title))
-            ?? (try? c.decodeIfPresent(String.self, forKey: .name))
             ?? "Kapittel \((decodedIndex ?? 0) + 1)"
         self.title = t
 
@@ -138,13 +134,10 @@ public struct TvProbeChapter: Codable, Identifiable, Equatable, Sendable {
         self.startSeconds = start
         if let end = try? c.decodeIfPresent(Double.self, forKey: .endSeconds), end > start {
             self.endSeconds = end
-        } else if let dur = try? c.decodeIfPresent(Double.self, forKey: .durationSeconds), dur > 0 {
-            self.endSeconds = start + dur
         } else {
             self.endSeconds = start + 1
         }
-        self.kind = (try? c.decodeIfPresent(String.self, forKey: .kind))
-            ?? (try? c.decodeIfPresent(String.self, forKey: .type))
+        self.kind = try? c.decodeIfPresent(String.self, forKey: .kind)
         self.source = try? c.decodeIfPresent(String.self, forKey: .source)
     }
 

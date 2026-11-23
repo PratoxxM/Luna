@@ -202,7 +202,6 @@ final class DynamicHomeRowTests: XCTestCase {
         XCTAssertEqual(LibraryFilterSection.allCases.map(\.label), ["Filmer", "Serier", "Huskeliste"])
 
         let zeroMoviesCounts = TvLibraryCounts(
-            favorites: 0,
             watchlist: 2,
             localTotal: 4,
             localMovies: 0,
@@ -221,7 +220,6 @@ final class DynamicHomeRowTests: XCTestCase {
         XCTAssertTrue(fallbackRes.didApplyInitialFallback)
 
         let normalCounts = TvLibraryCounts(
-            favorites: 0,
             watchlist: 2,
             localTotal: 9,
             localMovies: 5,

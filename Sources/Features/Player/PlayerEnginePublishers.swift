@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import Combine
 import AetherBridge
 
@@ -46,18 +47,20 @@ extension PlayerViewModel {
                         self.fatalError = cleaned.isEmpty ? "Avspillingsfeil i strømmen." : cleaned
                     }
                     Task { @MainActor [weak self] in
-                        await self?.sendHeartbeatOnce(overrideState: "stopped")
+                        guard let self, !self.isDismissing, !self.isTeardownCompleted else { return }
+                        await self.sendHeartbeatOnce(overrideState: "stopped")
                     }
                 } else if phase == .paused || phase == .ended {
-                    guard !self.isRestoringFromBackground, !self.isDismissing else { return }
+                    guard !self.isRestoringFromBackground, !self.isDismissing, !self.isTeardownCompleted else { return }
                     Task { @MainActor [weak self] in
-                        await self?.sendHeartbeatOnce(
+                        guard let self, !self.isDismissing, !self.isTeardownCompleted else { return }
+                        await self.sendHeartbeatOnce(
                             overrideState: phase == .ended ? "stopped" : "paused",
                             completed: phase == .ended
                         )
                     }
                 } else if phase == .playing, previousPhase != .playing {
-                    guard !self.isRestoringFromBackground, !self.isDismissing else { return }
+                    guard !self.isRestoringFromBackground, !self.isDismissing, !self.isTeardownCompleted else { return }
                     if self.needsNativeAudioActivationAfterPausedRestore {
                         self.needsNativeAudioActivationAfterPausedRestore = false
                         let videoRoute = self.transport.videoRoute
@@ -69,7 +72,7 @@ extension PlayerViewModel {
                     if self.lastReportedServerState != nil,
                        self.lastReportedServerState != "playing" {
                         Task { @MainActor [weak self] in
-                            guard let self, !self.isDismissing else { return }
+                            guard let self, !self.isDismissing, !self.isTeardownCompleted else { return }
                             await self.sendHeartbeatOnce(overrideState: "playing")
                         }
                     }
@@ -143,6 +146,14 @@ extension PlayerViewModel {
         engine.systemCaptionRequest
             .sink { [weak self] request in
                 self?.handleSystemCaptionRequest(request)
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.handleAudioRouteChange()
+                }
             }
             .store(in: &cancellables)
     }

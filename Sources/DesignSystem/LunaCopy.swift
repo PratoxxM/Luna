@@ -5,9 +5,10 @@ import FoundationNetworking
 
 /// Canonical Norwegian copy, pluralization, decimal formatting & glossary helpers (`LunaCopy`).
 public enum LunaCopy: Sendable {
-    #if canImport(Darwin)
+    private static let posixLocale = Locale(identifier: "en_US_POSIX")
     private static let norwegianLocale = Locale(identifier: "nb")
 
+    #if canImport(Darwin)
     private nonisolated static func localizedCount(
         _ value: String.LocalizationValue,
         fallbackCount: Int,
@@ -35,26 +36,9 @@ public enum LunaCopy: Sendable {
         abs(count) == 1 ? "\(count) \(singular)" : "\(count) \(pluralForm)"
     }
 
-    public nonisolated static func formatDays(_ rawDays: Double, suffix: String = "") -> String {
-        let rounded: Int
-        if rawDays > 0 && rawDays < 1 {
-            rounded = 1
-        } else {
-            rounded = max(0, Int(rawDays.rounded()))
-        }
-        let base = localizedCount(
-            "days_count \(Int64(rounded))",
-            fallbackCount: rounded,
-            singular: "dag",
-            pluralForm: "dager"
-        )
-        let cleanSuffix = suffix.trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleanSuffix.isEmpty ? base : "\(base) \(cleanSuffix)"
-    }
-
     public nonisolated static func formatDecimal(_ value: Double, decimals: Int = 1) -> String {
         let safeDecimals = max(0, min(4, decimals))
-        let formatted = String(format: "%.\(safeDecimals)f", locale: Locale(identifier: "en_US_POSIX"), value)
+        let formatted = String(format: "%.\(safeDecimals)f", locale: posixLocale, value)
         return formatted.replacingOccurrences(of: ".", with: ",")
     }
 
@@ -70,30 +54,12 @@ public enum LunaCopy: Sendable {
         "\(formatDecimal(mb, decimals: decimals)) MB"
     }
 
-    public nonisolated static func pinnedCount(_ count: Int) -> String {
-        localizedCount(
-            "pinned_items_count \(Int64(count))",
-            fallbackCount: count,
-            singular: "tittel festet",
-            pluralForm: "titler festet"
-        )
-    }
-
     public nonisolated static func searchHits(_ count: Int) -> String {
         localizedCount(
             "search_hits_total \(Int64(count))",
             fallbackCount: count,
             singular: "treff",
             pluralForm: "treff"
-        )
-    }
-
-    public nonisolated static func chaptersHeader(_ count: Int) -> String {
-        localizedCount(
-            "chapters_count \(Int64(count))",
-            fallbackCount: count,
-            singular: "kapittel",
-            pluralForm: "kapitler"
         )
     }
 
@@ -231,7 +197,7 @@ public enum LunaCopy: Sendable {
         if let mapped = norwegianLanguageNamesByCode[primary] {
             return mapped
         }
-        if let localized = Locale(identifier: "nb").localizedString(forLanguageCode: primary) {
+        if let localized = norwegianLocale.localizedString(forLanguageCode: primary) {
             let trimmed = localized.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
                 return trimmed.prefix(1).uppercased() + trimmed.dropFirst()
@@ -312,31 +278,19 @@ public enum LunaCopy: Sendable {
             }
         }
         let clean = hardwareProfile.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if clean == "hdr10-512" || clean == "livingroom" || clean == "living" || clean == "stua" {
-            return "Samsung Frame · HDR10+ · 7.1.4"
+        if clean == "hdr10-512" || clean == "stua" {
+            return "Samsung Frame Pro · HDR10+ · Sonos 5.1.2"
         }
-        if clean == "dv-fel-714" || clean == "cinema" || clean == "kjellerstua" {
-            return "LG OLED · Dolby Vision · 7.1.4"
+        if clean == "dv-fel-714" || clean == "kjellerstua" {
+            return "LG OLED · Dolby Vision · Sonos 7.1.4"
         }
         let roomClean = (roomName ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if roomClean.contains("stua") && !roomClean.contains("kjeller") {
-            return "Samsung Frame · HDR10+ · 7.1.4"
+            return "Samsung Frame Pro · HDR10+ · Sonos 5.1.2"
         }
         if roomClean.contains("kjeller") || roomClean.contains("kino") {
-            return "LG OLED · Dolby Vision · 7.1.4"
+            return "LG OLED · Dolby Vision · Sonos 7.1.4"
         }
         return "Apple TV 4K · Direkte avspilling"
-    }
-
-    public nonisolated static func timeGreeting(for date: Date = Date(), calendar: Calendar = .current) -> String {
-        let weekday = calendar.component(.weekday, from: date) // 1=Sun, 6=Fri, 7=Sat
-        let hour = calendar.component(.hour, from: date)
-        if weekday == 6 && hour >= 16 { return "Fredagskveld" }
-        if weekday == 7 && (5..<12).contains(hour) { return "God lørdag" }
-        if weekday == 7 && hour >= 17 { return "Lørdagskveld" }
-        if weekday == 1 && hour >= 17 { return "Søndagskveld" }
-        if (5..<11).contains(hour) { return "God morgen" }
-        if (11..<17).contains(hour) { return "God dag" }
-        return "God kveld"
     }
 }

@@ -1,7 +1,7 @@
 import Foundation
 
-/// Pure-Swift shelf indexing, row deduplication, continue-watching prioritization,
-/// and client-side catalog filtering shared across tvOS views and Linux `LunaCore` tests.
+/// Pure-Swift shelf indexing, row deduplication, and continue-watching prioritization
+/// shared across tvOS views and Linux `LunaCore` tests.
 public enum CatalogShelfIndexer: Sendable {
     public static let duplicateWatchlistRowIds: Set<String> = [
         "medialogg-watchlist",
@@ -12,11 +12,8 @@ public enum CatalogShelfIndexer: Sendable {
     ]
 
     public static let duplicateGenericLocalRowIds: Set<String> = [
-        "medialogg-local",
-        "custom:medialogg-local",
         "system-local",
         "custom:system-local",
-        "local-library",
     ]
 
     public static let duplicateGenericLocalTitles: Set<String> = [
@@ -78,8 +75,7 @@ public enum CatalogShelfIndexer: Sendable {
                 listMode: existing.listMode,
                 hasMore: existing.hasMore,
                 nextPath: existing.nextPath,
-                items: prioritizedItems,
-                genres: existing.genres
+                items: prioritizedItems
             )
             if preparedFromPhone != nil && idx != 0 {
                 rows.remove(at: idx)
@@ -96,8 +92,7 @@ public enum CatalogShelfIndexer: Sendable {
                 listMode: "smart",
                 hasMore: false,
                 nextPath: nil,
-                items: [prepared],
-                genres: nil
+                items: [prepared]
             )
             rows.insert(synthetic, at: 0)
         }
@@ -120,75 +115,5 @@ public enum CatalogShelfIndexer: Sendable {
         let tonight = merged.filter { $0.origin == "tonight" }
         let rest = merged.filter { $0.origin != "phone" && $0.origin != "tonight" }
         return phone + tonight + rest
-    }
-
-    /// Indexes a flat catalog slice by storage tier (`nvme`, `archive`, `stream`) and deduplicates by `itemId`.
-    public static func indexByTier(_ cards: [TvMediaCard]) -> (
-        nvme: [TvMediaCard],
-        archive: [TvMediaCard],
-        stream: [TvMediaCard]
-    ) {
-        var seen = Set<String>()
-        var nvme: [TvMediaCard] = []
-        var archive: [TvMediaCard] = []
-        var stream: [TvMediaCard] = []
-
-        for card in cards where seen.insert(card.itemId).inserted {
-            if card.availability?.isLocalNvme == true {
-                nvme.append(card)
-            } else if card.availability?.isLocalArchive == true {
-                archive.append(card)
-            } else {
-                stream.append(card)
-            }
-        }
-        return (nvme, archive, stream)
-    }
-
-    /// Pure client-side filter & sort helper for offline/cached catalog and search views.
-    public static func filterAndSortCards(
-        _ cards: [TvMediaCard],
-        mediaType: String? = nil,
-        localOnly: Bool = false,
-        unwatchedOnly: Bool = false,
-        query: String? = nil,
-        sort: String = "popular"
-    ) -> [TvMediaCard] {
-        let trimmedQuery = query?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
-        let normalizedType = mediaType?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
-        let filtered = cards.filter { card in
-            if let normalizedType, !normalizedType.isEmpty, normalizedType != "all" {
-                let target = (normalizedType == "tv" || normalizedType == "series") ? "series" : "movie"
-                if card.mediaType.lowercased() != target {
-                    return false
-                }
-            }
-            if localOnly && card.availability?.isPhysicalLocal != true {
-                return false
-            }
-            if unwatchedOnly && card.progress?.watched == true {
-                return false
-            }
-            if !trimmedQuery.isEmpty {
-                let inTitle = card.title.lowercased().contains(trimmedQuery)
-                let inOverview = (card.overview ?? "").lowercased().contains(trimmedQuery)
-                if !inTitle && !inOverview {
-                    return false
-                }
-            }
-            return true
-        }
-
-        switch sort {
-        case "top_rated":
-            return filtered.sorted { ($0.imdbRating ?? 0) > ($1.imdbRating ?? 0) }
-        case "newest":
-            return filtered.sorted { ($0.year ?? 0) > ($1.year ?? 0) }
-        case "title":
-            return filtered.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        default:
-            return filtered
-        }
     }
 }
