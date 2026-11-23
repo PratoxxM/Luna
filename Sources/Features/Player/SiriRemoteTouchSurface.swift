@@ -14,6 +14,7 @@ import UIKit
 struct SiriRemoteTouchSurface: UIViewRepresentable {
     var isPlayingProvider: () -> Bool = { false }
     var durationSecondsProvider: () -> Double = { 0 }
+    var cancelHoldNonce: Int = 0
     let onLightTouch: () -> Void
     let onScrubBegan: () -> Void
     let onScrubChanged: (_ deltaSeconds: Double) -> Void
@@ -48,6 +49,7 @@ struct SiriRemoteTouchSurface: UIViewRepresentable {
         view.onRingHoldEnded = onRingHoldEnded
         view.onUpClick = onUpClick
         view.onDownClick = onDownClick
+        view.applyCancelHoldNonce(cancelHoldNonce)
     }
 }
 
@@ -81,6 +83,7 @@ final class TouchCaptureUIView: UIView {
     private var activeRingDirection: Int?
     private var didEnterRingHold: Bool = false
     private var ringHoldTask: Task<Void, Never>?
+    private var appliedCancelHoldNonce: Int = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -258,6 +261,27 @@ final class TouchCaptureUIView: UIView {
         }
     }
 
+    /// Disarms any pending or active ring-hold state when `Menu` (`onExitCommand`) cancels
+    /// scrubbing externally, ensuring finger release will not fire a discrete `±10 s` seek
+    /// or a second `onRingHoldEnded(false)` commit.
+    func abortRingHoldWithoutCallback() {
+        ringHoldTask?.cancel()
+        ringHoldTask = nil
+        activeRingDirection = nil
+        didEnterRingHold = false
+        didCommitDuringCurrentPan = true
+    }
+
+    func applyCancelHoldNonce(_ nonce: Int) {
+        guard nonce != appliedCancelHoldNonce else { return }
+        appliedCancelHoldNonce = nonce
+        abortRingHoldWithoutCallback()
+    }
+
+    var hasActiveOrPendingRingPress: Bool {
+        activeRingDirection != nil || didEnterRingHold || ringHoldTask != nil
+    }
+
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         var passthrough = Set<UIPress>()
 
@@ -276,6 +300,9 @@ final class TouchCaptureUIView: UIView {
                 onUpClick?()
             case .downArrow:
                 onDownClick?()
+            case .menu:
+                abortRingHoldWithoutCallback()
+                passthrough.insert(press)
             default:
                 passthrough.insert(press)
             }

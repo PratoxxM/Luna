@@ -2,21 +2,6 @@ import SwiftUI
 import CoreGraphics
 import AetherBridge
 
-internal enum TimelineClockBucketer {
-    /// 0.5 s buckets (2 Hz max while playing, 0 Hz when paused) so 10 Hz engine clock ticks
-    /// never trigger unnecessary SwiftUI layout passes on the player timeline.
-    nonisolated static func timeBucket(_ seconds: Double) -> Int {
-        guard seconds.isFinite, seconds >= 0 else { return -1 }
-        return Int((seconds * 2.0).rounded(.down))
-    }
-
-    /// 2.0 s buckets (0.5 Hz max) for the subtle background forward-buffer bar.
-    nonisolated static func bufferBucket(_ seconds: Double) -> Int {
-        guard seconds.isFinite, seconds >= 0 else { return -1 }
-        return Int((seconds / 2.0).rounded(.down))
-    }
-}
-
 enum PlayerBottomBarAction: Hashable {
     case panel(PlayerQuickPanelTab)
     case nextEpisode
@@ -34,7 +19,8 @@ struct QuickActionAnchorFramesKey: PreferenceKey {
 }
 
 /// Evening-cinema transport OSD with bottom quick-action strip (`Tekst · Lyd · Kilde · Bilde · Kapitler`).
-/// Leaf timeline & chapter/clock observers remain isolated so 10 Hz engine ticks never re-render the strip.
+/// Leaf timeline & chapter/clock observers remain isolated so 10 Hz engine ticks and 60 Hz scrub updates
+/// never re-render `PlayerBottomBarView` or `PlayerContainerView`.
 struct PlayerBottomBarView: View {
     let viewModel: PlayerViewModel
     let fallbackRequest: PlaybackLaunchRequest
@@ -68,6 +54,7 @@ struct PlayerBottomBarView: View {
         let duration = viewModel.effectiveDurationSeconds
         let titles = titleDisplay
         let isMovie = (titles.seriesLine == nil)
+        let isScrubbing = viewModel.isScrubbing
 
         VStack(spacing: 0) {
             Spacer()
@@ -82,19 +69,19 @@ struct PlayerBottomBarView: View {
                                     .foregroundStyle(LunaTheme.moonlight)
                                     .lineLimit(1)
 
-                                if !viewModel.chapters.isEmpty && !viewModel.isScrubbing {
+                                if !viewModel.chapters.isEmpty && !isScrubbing {
                                     ActiveChapterLabelLeafView(
+                                        viewModel: viewModel,
                                         engine: viewModel.engine,
                                         chapters: viewModel.chapters,
-                                        prefix: "· ",
-                                        previewTimeOverride: viewModel.previewPlayheadOverrideSeconds
+                                        prefix: "· "
                                     )
                                 }
                             }
                         }
 
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            if isPaused && !viewModel.isScrubbing {
+                            if isPaused && !isScrubbing {
                                 Image(systemName: "pause.fill")
                                     .font(LunaTheme.Font.subtitle)
                                     .foregroundStyle(LunaTheme.pauseWarmLine)
@@ -111,13 +98,16 @@ struct PlayerBottomBarView: View {
                     .allowsHitTesting(false)
 
                     EndsAtLeafView(
+                        viewModel: viewModel,
+                        scrubState: viewModel.scrubState,
                         engine: viewModel.engine,
                         duration: duration,
-                        qualitySummary: viewModel.liveQualitySummaryBadge,
-                        previewTimeOverride: viewModel.previewPlayheadOverrideSeconds
+                        qualitySummary: viewModel.liveQualitySummaryBadge
                     )
                     .allowsHitTesting(false)
                 }
+                .opacity(isScrubbing ? 0 : 1)
+                .animation(.easeOut(duration: 0.14), value: isScrubbing)
 
                 TimelineScrubberLeafView(
                     viewModel: viewModel,
@@ -139,8 +129,8 @@ struct PlayerBottomBarView: View {
                 LinearGradient(
                     stops: [
                         .init(color: .clear, location: 0.0),
-                        .init(color: LunaTheme.canvas.opacity(0.35), location: 0.28),
-                        .init(color: LunaTheme.canvas.opacity(0.78), location: 0.65),
+                        .init(color: LunaTheme.canvas.opacity(0.52), location: 0.24),
+                        .init(color: LunaTheme.canvas.opacity(0.84), location: 0.60),
                         .init(color: LunaTheme.pureBlack.opacity(0.94), location: 1.0),
                     ],
                     startPoint: .top,
@@ -185,6 +175,7 @@ struct PlayerBottomBarView: View {
     @ViewBuilder
     private var quickActionsRow: some View {
         let tabs = PlayerQuickPanelTab.visibleTabs(hasChapters: !viewModel.chapters.isEmpty)
+        let interactive = (activeQuickPanel == nil && !viewModel.isScrubbing)
         HStack(spacing: 12) {
             ForEach(tabs) { tab in
                 let isOpenPopover = (activeQuickPanel == tab)
@@ -228,8 +219,8 @@ struct PlayerBottomBarView: View {
         }
         .focusScope(bottomBarFocusNamespace)
         .focusSection()
-        .allowsHitTesting(activeQuickPanel == nil)
-        .disabled(activeQuickPanel != nil)
+        .allowsHitTesting(interactive)
+        .disabled(!interactive)
         .onMoveCommand { direction in
             if direction == .up {
                 activeFocusNonce = 0
@@ -240,24 +231,26 @@ struct PlayerBottomBarView: View {
     }
 }
 
-// MARK: - Isolated & 0 Hz Steady-State Clock Leaf Views
+// MARK: - Isolated & Bucketed Clock Leaf Views
 
 private struct EndsAtLeafView: View {
+    let viewModel: PlayerViewModel
+    let scrubState: PlayerScrubState
     let engine: AetherEngine
     let duration: Double
     var qualitySummary: String? = nil
-    var previewTimeOverride: Double? = nil
 
     @State private var endsAtText: String?
+    @State private var lastFinishBucket: Int = -1
 
-    private static let formatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "nb_NO")
-        f.dateFormat = "HH.mm"
-        return f
-    }()
+    private var nonScrubOverrideSeconds: Double? {
+        viewModel.coalescedSeekPreviewTarget ?? viewModel.previewPlayheadOverrideSeconds
+    }
 
     var body: some View {
+        let activeScrubBucket: Int? = viewModel.isScrubbing
+            ? PlayerTimelinePolicy.finishTimeBucket(scrubState.targetSeconds)
+            : nil
         let combined = [qualitySummary, endsAtText]
             .compactMap { $0 }
             .filter { !$0.isEmpty }
@@ -267,32 +260,54 @@ private struct EndsAtLeafView: View {
             if !combined.isEmpty {
                 Text(combined)
                     .font(LunaTheme.Font.caption.monospacedDigit())
-                    .foregroundStyle(LunaTheme.muted)
+                    .foregroundStyle(LunaTheme.moonlight.opacity(0.82))
                     .lineLimit(1)
             }
         }
         .onAppear {
-            refreshEndsAt(for: previewTimeOverride ?? max(0, engine.currentTime))
+            let initial = viewModel.isScrubbing
+                ? scrubState.targetSeconds
+                : (nonScrubOverrideSeconds ?? max(0, engine.currentTime))
+            lastFinishBucket = PlayerTimelinePolicy.finishTimeBucket(initial)
+            refreshEndsAt(for: initial)
         }
         .onChange(of: duration) { _, _ in
-            refreshEndsAt(for: previewTimeOverride ?? max(0, engine.currentTime))
+            let current = viewModel.isScrubbing
+                ? scrubState.targetSeconds
+                : (nonScrubOverrideSeconds ?? max(0, engine.currentTime))
+            lastFinishBucket = PlayerTimelinePolicy.finishTimeBucket(current)
+            refreshEndsAt(for: current)
         }
-        .onChange(of: previewTimeOverride) { _, nextOverride in
-            refreshEndsAt(for: nextOverride ?? max(0, engine.currentTime))
+        .onChange(of: activeScrubBucket) { _, nextBucket in
+            if let nextBucket, viewModel.isScrubbing {
+                lastFinishBucket = nextBucket
+                refreshEndsAt(for: scrubState.targetSeconds)
+            } else if !viewModel.isScrubbing {
+                let settled = nonScrubOverrideSeconds ?? scrubState.targetSeconds
+                lastFinishBucket = PlayerTimelinePolicy.finishTimeBucket(settled)
+                refreshEndsAt(for: settled)
+            }
+        }
+        .onChange(of: nonScrubOverrideSeconds) { _, nextOverride in
+            guard !viewModel.isScrubbing else { return }
+            let target = nextOverride ?? max(0, engine.currentTime)
+            lastFinishBucket = PlayerTimelinePolicy.finishTimeBucket(target)
+            refreshEndsAt(for: target)
         }
         .onReceive(engine.clock.$currentTime) { t in
-            guard previewTimeOverride == nil else { return }
+            guard !viewModel.isScrubbing, nonScrubOverrideSeconds == nil else { return }
+            let bucket = PlayerTimelinePolicy.finishTimeBucket(t)
+            guard bucket != lastFinishBucket else { return }
+            lastFinishBucket = bucket
             refreshEndsAt(for: t)
         }
     }
 
     private func refreshEndsAt(for currentSeconds: Double) {
-        let nextText: String? = {
-            guard duration > 30 else { return nil }
-            let remaining = max(0, duration - max(0, currentSeconds))
-            let finishClock = Self.formatter.string(from: Date().addingTimeInterval(remaining))
-            return "Ferdig kl. \(finishClock)"
-        }()
+        let nextText = PlayerTimelinePolicy.formatFinishTimeText(
+            currentSeconds: currentSeconds,
+            durationSeconds: duration
+        )
         if endsAtText != nextText {
             endsAtText = nextText
         }
@@ -300,12 +315,17 @@ private struct EndsAtLeafView: View {
 }
 
 private struct ActiveChapterLabelLeafView: View {
+    let viewModel: PlayerViewModel
     let engine: AetherEngine
     let chapters: [PlaybackChapter]
     let prefix: String
-    var previewTimeOverride: Double? = nil
 
     @State private var activeTitle: String?
+    @State private var lastTimeBucket: Int = -1
+
+    private var effectiveTimeOverride: Double? {
+        viewModel.coalescedSeekPreviewTarget ?? viewModel.previewPlayheadOverrideSeconds
+    }
 
     var body: some View {
         Group {
@@ -321,16 +341,25 @@ private struct ActiveChapterLabelLeafView: View {
             }
         }
         .onAppear {
-            refreshActiveTitle(for: previewTimeOverride ?? max(0, engine.currentTime))
+            let initial = effectiveTimeOverride ?? max(0, engine.currentTime)
+            lastTimeBucket = PlayerTimelinePolicy.timeBucket(initial)
+            refreshActiveTitle(for: initial)
         }
         .onChange(of: chapters) { _, _ in
-            refreshActiveTitle(for: previewTimeOverride ?? max(0, engine.currentTime))
+            let current = effectiveTimeOverride ?? max(0, engine.currentTime)
+            lastTimeBucket = PlayerTimelinePolicy.timeBucket(current)
+            refreshActiveTitle(for: current)
         }
-        .onChange(of: previewTimeOverride) { _, nextOverride in
-            refreshActiveTitle(for: nextOverride ?? max(0, engine.currentTime))
+        .onChange(of: effectiveTimeOverride) { _, nextOverride in
+            let target = nextOverride ?? max(0, engine.currentTime)
+            lastTimeBucket = PlayerTimelinePolicy.timeBucket(target)
+            refreshActiveTitle(for: target)
         }
         .onReceive(engine.clock.$currentTime) { t in
-            guard previewTimeOverride == nil, !chapters.isEmpty else { return }
+            guard effectiveTimeOverride == nil, !chapters.isEmpty else { return }
+            let bucket = PlayerTimelinePolicy.timeBucket(t)
+            guard bucket != lastTimeBucket else { return }
+            lastTimeBucket = bucket
             refreshActiveTitle(for: t)
         }
     }
@@ -385,35 +414,57 @@ struct TimelineScrubberLeafView: View {
                 let originX = totalWidth * CGFloat(originRatio)
 
                 ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(LunaTokens.Edge.miniProgressTrack)
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(LunaTheme.pureBlack.opacity(0.52))
 
-                    Capsule()
-                        .fill(LunaTokens.Edge.grabber)
-                        .frame(width: totalWidth * CGFloat(bufferRatio))
+                        Capsule()
+                            .fill(LunaTokens.Edge.progressTrack)
 
-                    Capsule()
-                        .fill(
-                            isScrubbing
-                                ? AnyShapeStyle(LunaTheme.primaryAmberGradient)
-                                : AnyShapeStyle(LunaTheme.pauseWarmLine)
-                        )
-                        .frame(width: totalWidth * CGFloat(progressRatio))
+                        Capsule()
+                            .fill(LunaTokens.Edge.grabber)
+                            .frame(width: totalWidth * CGFloat(bufferRatio))
 
-                    ForEach(viewModel.chapters) { ch in
-                        if ch.startSeconds > 2 && ch.startSeconds < effectiveDuration - 2 {
-                            let xPos = totalWidth * CGFloat(ch.startSeconds / effectiveDuration)
-                            let isPlayedSegment = ch.startSeconds <= displayTime
-                            Rectangle()
-                                .fill(
-                                    isPlayedSegment
-                                        ? LunaTheme.pureBlack.opacity(0.75)
-                                        : LunaTheme.warmBorderBase.opacity(0.42)
-                                )
-                                .frame(width: 2.0, height: barHeight)
-                                .offset(x: xPos)
+                        if isExpanded,
+                           viewModel.chapters.count > 1,
+                           let activeChapter = viewModel.activeChapter(at: displayTime) {
+                            let chStart = max(0, min(effectiveDuration, activeChapter.startSeconds))
+                            let chEnd = max(chStart, min(effectiveDuration, activeChapter.endSeconds))
+                            if chEnd - chStart > 0.5 && (chStart > 0.5 || chEnd < effectiveDuration - 0.5) {
+                                let startX = totalWidth * CGFloat(chStart / effectiveDuration)
+                                let spanW = max(2, totalWidth * CGFloat((chEnd - chStart) / effectiveDuration))
+                                Rectangle()
+                                    .fill(LunaTheme.amber.opacity(isScrubbing ? 0.24 : 0.14))
+                                    .frame(width: spanW, height: barHeight)
+                                    .offset(x: startX)
+                            }
+                        }
+
+                        Capsule()
+                            .fill(
+                                isScrubbing
+                                    ? AnyShapeStyle(LunaTheme.primaryAmberGradient)
+                                    : AnyShapeStyle(LunaTheme.pauseWarmLine)
+                            )
+                            .frame(width: totalWidth * CGFloat(progressRatio))
+
+                        ForEach(viewModel.chapters) { ch in
+                            if ch.startSeconds > 2 && ch.startSeconds < effectiveDuration - 2 {
+                                let xPos = totalWidth * CGFloat(ch.startSeconds / effectiveDuration)
+                                let isPlayedSegment = ch.startSeconds <= displayTime
+                                Rectangle()
+                                    .fill(
+                                        isPlayedSegment
+                                            ? LunaTheme.pureBlack.opacity(0.84)
+                                            : LunaTheme.linen.opacity(0.58)
+                                    )
+                                    .frame(width: 2.5, height: barHeight)
+                                    .offset(x: xPos)
+                            }
                         }
                     }
+                    .frame(height: barHeight)
+                    .clipShape(Capsule())
 
                     if isScrubbing {
                         Capsule()
@@ -466,10 +517,10 @@ struct TimelineScrubberLeafView: View {
 
                     if inlineMovieChapterMode, !viewModel.chapters.isEmpty, !isScrubbing {
                         ActiveChapterLabelLeafView(
+                            viewModel: viewModel,
                             engine: viewModel.engine,
                             chapters: viewModel.chapters,
-                            prefix: "· ",
-                            previewTimeOverride: viewModel.previewPlayheadOverrideSeconds
+                            prefix: "· "
                         )
                     }
                 }
@@ -479,33 +530,33 @@ struct TimelineScrubberLeafView: View {
                 if isScrubbing {
                     Text("Klikk for å spille herfra")
                         .font(LunaTheme.Font.caption)
-                        .foregroundStyle(LunaTheme.muted)
+                        .foregroundStyle(LunaTheme.moonlight.opacity(0.78))
                 }
 
                 Spacer()
 
                 Text("−\(Self.formatSeconds(max(0, effectiveDuration - displayTime)))")
                     .font(LunaTheme.Font.subtitle.monospacedDigit())
-                    .foregroundStyle(LunaTheme.muted)
+                    .foregroundStyle(LunaTheme.moonlight.opacity(0.84))
             }
         }
         .onAppear {
             let initialTime = max(0, engine.currentTime)
             currentTime = initialTime
-            lastTimeBucket = TimelineClockBucketer.timeBucket(initialTime)
+            lastTimeBucket = PlayerTimelinePolicy.timeBucket(initialTime)
             let initialBuf = max(0, engine.bufferedPosition)
             bufferedTime = initialBuf
-            lastBufferBucket = TimelineClockBucketer.bufferBucket(initialBuf)
+            lastBufferBucket = PlayerTimelinePolicy.bufferBucket(initialBuf)
         }
         .onReceive(engine.clock.$currentTime) { t in
-            let bucket = TimelineClockBucketer.timeBucket(t)
+            let bucket = PlayerTimelinePolicy.timeBucket(t)
             if bucket != lastTimeBucket {
                 lastTimeBucket = bucket
                 currentTime = t
             }
         }
         .onReceive(engine.clock.$bufferedPosition) { b in
-            let bucket = TimelineClockBucketer.bufferBucket(b)
+            let bucket = PlayerTimelinePolicy.bufferBucket(b)
             if bucket != lastBufferBucket {
                 lastBufferBucket = bucket
                 bufferedTime = b

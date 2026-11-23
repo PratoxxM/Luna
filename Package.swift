@@ -66,6 +66,7 @@ let package = Package(
                 "Core/Networking/LunaCoreSessionPool.swift",
                 "Core/Networking/PlaybackResolveSocket.swift",
                 "Core/Playback/PlaybackCoreAbstractions.swift",
+                "Core/Playback/PlayerTimelinePolicy.swift",
                 "Core/Playback/RemoteScrubMath.swift",
                 "DesignSystem/LunaCopy.swift",
             ]

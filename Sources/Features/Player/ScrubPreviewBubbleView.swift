@@ -16,8 +16,8 @@ struct ScrubPreviewBubbleView: View {
     let drawsInCompositorView: Bool
     let onMountCompositorView: (AetherScrubPreviewView?) -> Void
 
-    static let frameWidth: CGFloat = 260
-    static let compactWidth: CGFloat = 220
+    static let frameWidth: CGFloat = 284
+    static let compactWidth: CGFloat = 252
 
     var hasVisualFrame: Bool {
         drawsInCompositorView || previewImage != nil
@@ -31,14 +31,14 @@ struct ScrubPreviewBubbleView: View {
         VStack(spacing: 8) {
             if drawsInCompositorView {
                 CompositorScrubPreviewRepresentable(onMount: onMountCompositorView)
-                    .frame(width: 236, height: 133)
+                    .frame(width: 260, height: 146)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else if let cg = previewImage {
                 Image(decorative: cg, scale: 1.0)
                     .resizable()
                     .interpolation(.medium)
                     .aspectRatio(16.0 / 9.0, contentMode: .fill)
-                    .frame(width: 236, height: 133)
+                    .frame(width: 260, height: 146)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
 
@@ -47,7 +47,6 @@ struct ScrubPreviewBubbleView: View {
                     .font(LunaTheme.Font.subtitle.monospacedDigit())
                     .foregroundStyle(LunaTheme.linen)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.82)
 
                 let delta = targetSeconds - originSeconds
                 if abs(delta) >= 1.0 {
@@ -55,22 +54,26 @@ struct ScrubPreviewBubbleView: View {
                         .font(LunaTheme.Font.badge.monospacedDigit())
                         .foregroundStyle(LunaTheme.amber)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.82)
                 }
             }
 
             if let chapterTitle, !chapterTitle.isEmpty {
                 Text(chapterTitle)
                     .font(LunaTheme.Font.badge)
-                    .foregroundStyle(LunaTheme.muted)
+                    .foregroundStyle(LunaTheme.moonlight.opacity(0.82))
                     .lineLimit(1)
                     .frame(maxWidth: preferredWidth - 20)
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(width: preferredWidth)
-        .lunaCinemaGlassSurface(cornerRadius: LunaTokens.Radius.poster)
+        .lunaCinemaGlassSurface(
+            cornerRadius: LunaTokens.Radius.poster,
+            shadowColor: LunaTheme.pureBlack.opacity(0.55),
+            shadowRadius: 12,
+            shadowY: 6
+        )
         .allowsHitTesting(false)
     }
 
@@ -222,6 +225,7 @@ extension PlayerViewModel {
         cancelPendingScrubCommit()
         let origin = scrubState.originSeconds
         let shouldResume = wasPlayingBeforeScrub
+        scrubState.targetSeconds = origin
         resetScrubStateOnSessionChange()
         if abs(transport.currentTime - origin) > 0.25 {
             performScrubSeekCommit(target: origin, exact: true, shouldPlayAfterSeek: shouldResume)
