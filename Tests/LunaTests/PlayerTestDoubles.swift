@@ -168,6 +168,25 @@ final class MockURLProtocol: URLProtocol {
         recordedRequests.withLock { $0[host.lowercased()] ?? [] }
     }
 
+    static func bodyData(for request: URLRequest) -> Data {
+        if let body = request.httpBody {
+            return body
+        }
+        guard let stream = request.httpBodyStream else {
+            return Data()
+        }
+        stream.open()
+        defer { stream.close() }
+        var out = Data()
+        var buf = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let n = stream.read(&buf, maxLength: buf.count)
+            if n <= 0 { break }
+            out.append(buf, count: n)
+        }
+        return out
+    }
+
     static func makeClient(
         host: String,
         scheme: String = "http",

@@ -107,7 +107,7 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(session.stream.canClientPrewarmBytes, true)
         XCTAssertEqual(
             session.selectedCandidate.quickRowTitle(roomName: "Kjellerstua", isRecommended: true),
-            "Anbefalt for Kjellerstua · 4K Dolby Vision FEL TrueHD Atmos"
+            "Anbefalt for Kjellerstua · 4K Dolby Vision P7 FEL TrueHD Atmos"
         )
         XCTAssertEqual(session.selectedCandidate.quickRowMetadata(activeLabel: nil), "På NVMe · 50,0 GB")
     }

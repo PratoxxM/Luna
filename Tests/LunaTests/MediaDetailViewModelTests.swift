@@ -632,7 +632,8 @@ final class MediaDetailViewModelTests: XCTestCase {
 
         MockURLProtocol.registerAsync(host: host) { request in
             let url = try XCTUnwrap(request.url)
-            let bodyStr = request.httpBody.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            let bodyData = MockURLProtocol.bodyData(for: request)
+            let bodyStr = String(data: bodyData, encoding: .utf8) ?? ""
             switch url.path {
             case "/api/tv/v1/items/series/series:tmdb:95396":
                 detailGetCount.withLock { $0 += 1 }

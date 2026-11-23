@@ -293,8 +293,12 @@ public struct LunaCoreClient: Sendable {
         let baseScheme = baseURL.scheme?.lowercased() ?? "http"
         let targetPort = url.port ?? (targetScheme == "https" ? 443 : 80)
         let basePort = baseURL.port ?? (baseScheme == "https" ? 443 : 80)
-        let trustedPorts: Set<Int> = [basePort, 8090, 8920]
-        return trustedPorts.contains(targetPort)
+        if targetScheme == baseScheme && targetPort == basePort {
+            return true
+        }
+        let isBaseCaddyOrigin = (baseScheme == "https" && basePort == 8920) || (baseScheme == "http" && basePort == 8090)
+        let isTargetCaddyOrigin = (targetScheme == "https" && targetPort == 8920) || (targetScheme == "http" && targetPort == 8090)
+        return isBaseCaddyOrigin && isTargetCaddyOrigin
     }
 
     public func probeReachability(timeoutSeconds: TimeInterval = 3.0) async throws -> TvBootstrapResponse {

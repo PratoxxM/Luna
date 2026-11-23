@@ -32,7 +32,6 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
             candidates.map(\.absoluteString),
             [
                 "http://lunacore.local:8090",
-                "https://nas-tv.local:8920",
                 "http://nas-tv.local:8090",
                 "https://remote.example.net:8920",
             ]

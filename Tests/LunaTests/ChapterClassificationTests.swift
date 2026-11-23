@@ -75,8 +75,8 @@ final class ChapterClassificationTests: XCTestCase {
     func testDecodeTheIntroDbSegmentAndMergeWithGenericEngineChapters() throws {
         let json = """
         [
-          {"id":"theintrodb-intro-0","title":"Intro","startSeconds":45,"endSeconds":118,"type":"intro","source":"theintrodb"},
-          {"id":"theintrodb-credits-1","title":"Rulletekst","startSeconds":2580,"endSeconds":2700,"type":"credits","source":"theintrodb"}
+          {"id":"theintrodb-intro-0","title":"Intro","startSeconds":45,"endSeconds":118,"kind":"intro","type":"intro","source":"theintrodb"},
+          {"id":"theintrodb-credits-1","title":"Rulletekst","startSeconds":2580,"endSeconds":2700,"kind":"credits","type":"credits","source":"theintrodb"}
         ]
         """.data(using: .utf8)!
 

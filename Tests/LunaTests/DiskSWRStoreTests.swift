@@ -98,7 +98,7 @@ final class DiskSWRStoreTests: XCTestCase {
             )
         )
 
-        // Legacy hostless fallback works when serverHost is nil
+        // Hostless saves stay isolated under the fallback scope and never bleed into a fresh serverHost
         DiskSWRStore.saveHomeInBackground(
             rawPayloadData: rawDataA,
             etag: "\"legacy-etag\"",
@@ -109,12 +109,18 @@ final class DiskSWRStoreTests: XCTestCase {
         )
         await DiskSWRStore.drainPendingWrites()
         DiskSWRStore.clearMemory()
-        let legacyLoaded = await DiskSWRStore.loadHomeAsync(
+        let freshHostLoaded = await DiskSWRStore.loadHomeAsync(
             serverHost: "fresh-host-\(UUID().uuidString).local",
             roomName: "Stua",
             hardwareProfile: "hdr10-512"
         )
-        XCTAssertEqual(legacyLoaded?.etag, "\"legacy-etag\"")
+        XCTAssertNil(freshHostLoaded)
+        let hostlessLoaded = await DiskSWRStore.loadHomeAsync(
+            serverHost: nil,
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512"
+        )
+        XCTAssertEqual(hostlessLoaded?.etag, "\"legacy-etag\"")
 
         await DiskSWRStore.clearAllAsync()
         let afterClear = await DiskSWRStore.diskUsageBytesAsync()
