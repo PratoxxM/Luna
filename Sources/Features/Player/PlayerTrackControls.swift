@@ -94,15 +94,15 @@ extension PlayerViewModel {
         guard activeSubtitleTrackIndex == nil && transport.activeSubtitleTrackIndex == nil else {
             return
         }
-        guard let match = SmartTrackRuleEngine.selectBestSubtitleTrack(
+        guard let matchID = SmartTrackRuleEngine.selectBestSubtitleID(
             forLanguage: request.language,
             in: descriptors
         ) else {
             return
         }
-        activeSubtitleTrackIndex = match.id
+        activeSubtitleTrackIndex = matchID
         if previewSubtitleOptions.isEmpty {
-            transport.selectSubtitleTrack(index: match.id)
+            transport.selectSubtitleTrack(index: matchID)
         }
     }
 
