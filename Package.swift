@@ -70,6 +70,7 @@ let package = Package(
                 "Core/Playback/PlaybackTrackIntent.swift",
                 "Core/Playback/PlayerTimelinePolicy.swift",
                 "Core/Playback/RemoteScrubMath.swift",
+                "Core/Playback/SeriesFlowPolicy.swift",
                 "DesignSystem/LunaCopy.swift",
             ]
         ),

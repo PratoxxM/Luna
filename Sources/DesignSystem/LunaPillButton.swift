@@ -49,6 +49,7 @@ public struct LunaPillButton: View {
     let prominence: LunaButtonProminence
     let accent: LunaButtonAccent
     let size: LunaButtonSize
+    let minWidth: CGFloat?
     let action: () -> Void
 
     @FocusState private var isDirectFocused: Bool
@@ -62,6 +63,7 @@ public struct LunaPillButton: View {
         prominence: LunaButtonProminence = .glassPill,
         accent: LunaButtonAccent = .amber,
         size: LunaButtonSize = .regular,
+        minWidth: CGFloat? = nil,
         action: @escaping () -> Void
     ) {
         self.title = title
@@ -72,6 +74,7 @@ public struct LunaPillButton: View {
         self.prominence = prominence
         self.accent = accent
         self.size = size
+        self.minWidth = minWidth
         self.action = action
     }
 
@@ -159,6 +162,7 @@ public struct LunaPillButton: View {
                 prominence: prominence,
                 accent: accent,
                 size: size,
+                minWidth: minWidth,
                 externalFocus: isDirectFocused
             )
         }
@@ -178,6 +182,7 @@ private struct LunaPillLabel: View {
     let prominence: LunaButtonProminence
     let accent: LunaButtonAccent
     let size: LunaButtonSize
+    let minWidth: CGFloat?
     let externalFocus: Bool
 
     private var effectiveFocused: Bool {
@@ -220,7 +225,7 @@ private struct LunaPillLabel: View {
         }
         .transaction { $0.animation = nil }
         .padding(.horizontal, title.isEmpty ? (isCompact ? 14 : 16) : (isCompact ? 18 : 24))
-        .frame(minHeight: minHeight)
+        .frame(minWidth: minWidth, minHeight: minHeight)
         .background(backgroundView)
         .overlay(
             Group {
@@ -248,9 +253,11 @@ private struct LunaPillLabel: View {
 
     private func labelFont(isCompact: Bool) -> SwiftUI.Font {
         if prominence == .primary {
-            return isCompact ? LunaTheme.Font.pillLabel.weight(.semibold) : LunaTheme.Font.primaryPlayLabel
+            let base = isCompact ? LunaTheme.Font.pillLabel.weight(.semibold) : LunaTheme.Font.primaryPlayLabel
+            return base.monospacedDigit()
         }
-        return isCompact ? LunaTheme.Font.compactPillLabel : LunaTheme.Font.pillLabel
+        let base = isCompact ? LunaTheme.Font.compactPillLabel : LunaTheme.Font.pillLabel
+        return base.monospacedDigit()
     }
 
     private var iconForegroundColor: Color {

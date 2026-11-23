@@ -1,9 +1,23 @@
 import SwiftUI
 import AetherBridge
 
-/// Isolated 1 Hz diagnostic HUD observing `engine.diagnostics.$liveTelemetry`
-/// in a leaf view so telemetry ticks never re-render the video player shell.
+/// Isolated 1 Hz diagnostic HUD (`740 pt` wide, `184 pt` single-line key column)
+/// observing `engine.diagnostics.$liveTelemetry` in a leaf view so telemetry ticks
+/// never re-render the video player shell.
 struct NerdHUDView: View {
+    static let cardWidth: CGFloat = 740
+    static let keyColumnWidth: CGFloat = 184
+    static let standardRowKeys: [String] = [
+        "Video",
+        "HDR / Rute",
+        "Dekoder",
+        "Skalering",
+        "Lydkjede",
+        "Bitrate",
+        "Nett / Buffer",
+        "Utgave / Minne",
+    ]
+
     let engine: AetherEngine
     let viewModel: PlayerViewModel
 
@@ -19,6 +33,7 @@ struct NerdHUDView: View {
                 Text("Teknisk oversikt")
                     .font(LunaTheme.Font.badge)
                     .foregroundStyle(LunaTheme.linen)
+                    .lineLimit(1)
             }
 
             hudRow("Video", value: videoSummary)
@@ -30,16 +45,19 @@ struct NerdHUDView: View {
                 hudRow("Objektlyd", value: "\(obj.layout.rawValue) · \(obj.activeObjects)/\(obj.objects) obj (\(obj.elevatedObjects) høyde)")
             }
             hudRow("Bitrate", value: bitrateSummary)
-            hudRow("HTTP 206 / Buffer", value: bufferAndNetworkSummary)
-            hudRow("Kilde / Minne", value: sourceAndMemorySummary)
+            hudRow("Nett / Buffer", value: bufferAndNetworkSummary)
+            hudRow("Utgave / Minne", value: editionAndMemorySummary)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
-        .frame(width: 580, alignment: .leading)
+        .frame(width: Self.cardWidth, alignment: .leading)
         .lunaCinemaGlassSurface(
             cornerRadius: LunaTokens.Radius.poster,
             topEdgeColor: LunaTokens.Edge.top2,
-            sideEdgeColor: .clear
+            sideEdgeColor: .clear,
+            shadowColor: LunaTheme.pureBlack.opacity(0.42),
+            shadowRadius: 10,
+            shadowY: 4
         )
         .allowsHitTesting(false)
         .onReceive(engine.diagnostics.$liveTelemetry) { telemetry = $0 }
@@ -102,10 +120,39 @@ struct NerdHUDView: View {
         return "Nativ (Venter på ≤ 1080p SDR)"
     }
 
+    private var speakerSetupLabel: String {
+        switch viewModel.comfort.speakerLayoutOverride {
+        case .auto:
+            return "Auto \(viewModel.sessionRoomAutoLayout)"
+        case .atmos512:
+            return "5.1.2"
+        case .atmos714:
+            return "7.1.4"
+        case .stereo:
+            return "Stereo 2.0"
+        }
+    }
+
     private var audioSummary: String {
+        let setup = speakerSetupLabel
+        let formatBadge = viewModel.audioFormatBadge
         let aDec = viewModel.activeAudioDecoder ?? viewModel.audioDelivery.rawValue
-        let delaySuffix = viewModel.audioDelayMs == 0 ? "" : " · \(ComfortPreferences.displayAudioDelayMs(viewModel.audioDelayMs))"
-        return "\(viewModel.audioFormatBadge) (\(aDec))\(delaySuffix)"
+        let formatPart: String = {
+            if formatBadge == setup || formatBadge == "Stereo 2.0" && setup == "Stereo 2.0" {
+                return setup
+            }
+            if viewModel.comfort.speakerLayoutOverride == .auto,
+               formatBadge.hasPrefix(viewModel.sessionRoomAutoLayout) {
+                return "Auto \(formatBadge)"
+            }
+            if formatBadge.hasPrefix(setup) {
+                return formatBadge
+            }
+            return "\(setup) · \(formatBadge)"
+        }()
+        let modePart = viewModel.audioEnhancement == .reference ? "" : " · \(viewModel.audioEnhancement.displayTitle)"
+        let delayPart = viewModel.audioDelayMs == 0 ? "" : " · \(ComfortPreferences.displayAudioDelayMs(viewModel.audioDelayMs))"
+        return "\(formatPart) (\(aDec))\(modePart)\(delayPart)"
     }
 
     private var bitrateSummary: String {
@@ -124,7 +171,7 @@ struct NerdHUDView: View {
         }()
         let winMiB: String = {
             if let ahead = telemetry?.readerWindowAheadBytes, ahead > 0 {
-                return " · +\(LunaCopy.formatDecimal(Double(ahead) / 1_048_576.0)) MiB lesevindu"
+                return " · +\(LunaCopy.formatDecimal(Double(ahead) / 1_048_576.0)) MiB vindu"
             }
             if cacheStatus.currentForwardBytes > 0 {
                 return " · +\(LunaCopy.formatDecimal(Double(cacheStatus.currentForwardBytes) / 1_048_576.0)) MiB cache"
@@ -134,7 +181,7 @@ struct NerdHUDView: View {
         return "\(link) · \(LunaCopy.formatDecimal(fwdSeconds))s buffer\(winMiB)"
     }
 
-    private var sourceAndMemorySummary: String {
+    private var editionAndMemorySummary: String {
         let rawSource = (viewModel.activeSession?.selectedCandidate.source ?? viewModel.lastVfsTelemetry?.streamSource ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
@@ -156,11 +203,14 @@ struct NerdHUDView: View {
             Text(key)
                 .font(LunaTheme.Font.badge.monospaced())
                 .foregroundStyle(LunaTheme.muted)
-                .frame(width: 152, alignment: .leading)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minWidth: Self.keyColumnWidth, alignment: .leading)
             Text(value)
                 .font(LunaTheme.Font.badge.monospacedDigit())
                 .foregroundStyle(LunaTheme.moonlight)
                 .lineLimit(1)
+                .truncationMode(.tail)
             Spacer(minLength: 0)
         }
     }

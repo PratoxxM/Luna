@@ -591,7 +591,7 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
             isNerdHUDVisible: true
         )
         XCTAssertTrue(popoverWithHud.relocateToTop)
-        XCTAssertEqual(popoverWithHud.topInset, 168)
+        XCTAssertEqual(popoverWithHud.topInset, 72)
     }
 
     @MainActor

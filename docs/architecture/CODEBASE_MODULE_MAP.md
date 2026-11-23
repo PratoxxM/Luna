@@ -24,10 +24,11 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Core/Cache/DiskSWRStore.swift` | `.cachesDirectory` ETag/JSON SWR snapshot persistence for cold start | `GET /api/tv/v1/home` (`If-None-Match` / `304`) | `DiskSWRStoreTests.swift`, `LunaCoreLinuxTests.swift` |
 | `Sources/Core/Cache/InflightTaskCoalescer.swift` | Waiter-isolated in-flight task deduplicator, `BoundedLRUMemoryCache` & directory byte counter | — | `NetworkCacheAndMemoryProfileTests.swift`, `LunaCoreHTTPTransportTests.swift` |
 | `Sources/Core/Catalog/CatalogShelfIndexer.swift` | Pure-Swift shelf deduplication, server-ordered shelves (`Kommende episoder`), `Fra iPhone`/`I kveld` continue ordering & tier indexing | — | `DynamicHomeRowTests.swift`, `LunaCoreLinuxTests.swift` |
-| `Sources/Core/Playback/PlaybackCoreAbstractions.swift` | Pure-Swift `PlaybackEngine`, `IOReader`, `PlaybackCurtainWatchdog` & coordinator state machine | — | `LunaCoreLinuxTests.swift` |
+| `Sources/Core/Playback/PlaybackCoreAbstractions.swift` | Pure-Swift `PlaybackCurtainWatchdog` & `180 ms` `0-RTT` `PlaybackCurtainPresentationPolicy` | — | `LunaCoreLinuxTests.swift`, `SeriesFlowAndCurtainPolicyTests.swift` |
 | `Sources/Core/Playback/PlaybackTrackIntent.swift` | Pure-Swift `PlaybackSyncTimingPolicy` (`ms` sync step/clamp/format) & `PlaybackTrackIntent` track/forced/off matcher across MKV switches | — | `PlaybackTrackIntentAndSyncTests.swift`, `PlayerQuickPanelAndSwitchTests.swift` |
 | `Sources/Core/Playback/PlayerTimelinePolicy.swift` | Pure-Swift `0.5 s` / `2.0 s` / `10.0 s` clock bucketing, 24h `Slutter kl. HH:mm` formatter & 6-step `Menu` (`PlayerExitAction`) resolver | — | `PlayerTimelinePolicyTests.swift`, `PlayerOverlayAndCacheTests.swift` |
 | `Sources/Core/Playback/RemoteScrubMath.swift` | Paused-only Siri Remote pan breakaway (`20 pt`), `0 pt` reversal deadzone, EMA velocity (`α=0.35`), 3-zone duration-adaptive scrub curve & `< 280 ms` ring-hold speeds | — | `LunaCoreLinuxTests.swift`, `RemoteScrubMathTests.swift` |
+| `Sources/Core/Playback/SeriesFlowPolicy.swift` | Pure-Swift `ActiveSeriesOverlayKind`, directional `SeriesFlowPolicy` (`Spill nå ↔ Skjul`), 1-click auto-focus & `10 s` `NextEpisodeCountdownState` | — | `SeriesFlowAndCurtainPolicyTests.swift`, `PlayerSeriesCurtainAndSubtitleTests.swift` |
 | `Sources/Core/Models/ChapterModels.swift` | Chapter & intro/recap/credits classification models | `chapters[]` metadata | `ChapterClassificationTests.swift` |
 | `Sources/Core/Models/DetailModels.swift` | `Codable` item detail, seasons, episodes & source candidate models | `GET /api/tv/v1/items/*` | `ModelDecodingTests.swift`, `MediaDetailViewModelTests.swift` |
 | `Sources/Core/Models/EpisodeTitleFormatter.swift` | Norwegian/Nordic episode label & air-date formatting helpers | — | `EpisodeTitleFormattingTests.swift` |
@@ -108,17 +109,18 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Features/Player/PlayerQuickPanelView.swift` | Floating quick-panel shell (*Tekst · Lyd · Velg utgave · Bilde · Kapitler*) with `16 pt` GPU shadow & focus anchoring | `GET /playback/:id/alternatives` | `PlayerOverlayAndCacheTests.swift`, `PlayerQuickPanelAndSwitchTests.swift` |
 | `Sources/Features/Player/PlayerQuickPanelSections.swift` | Quick-panel tab sections, Left/Right row tab-switcher, `Kveldslys`, `Høyttaleroppsett` & `ms` sync rows | — | `PlayerQuickPanelAndSwitchTests.swift` |
 | `Sources/Features/Player/SiriRemoteTouchSurface.swift` | `UIView` Siri Remote pan/tap/menu handler with `.focusEffectDisabled()` | — | `PausedScrubCommitTests.swift` |
-| `Sources/Features/Player/ResolvingCurtainView.swift` | Hold curtain preventing HDMI black flash on display-mode switches | — | `PlayerExitBlinkRegressionTests.swift` |
+| `Sources/Features/Player/ResolvingCurtainView.swift` | Shared `PlayerCurtainBackdropView` + `180 ms` `0-RTT` grace curtain preventing HDMI black flash | — | `PlayerExitBlinkRegressionTests.swift`, `SeriesFlowAndCurtainPolicyTests.swift` |
 | `Sources/Features/Player/ScrubPreviewBubbleView.swift` | Frame-accurate `284`/`252 pt` scrub thumbnail preview bubble (`>= 22 pt` typography) | — | `PlayerTimelineAndScrubUXTests.swift`, `ThemeAndArtworkViewTests.swift` |
-| `Sources/Features/Player/SubtitleOverlayView.swift` | Leaf HDR-dimmed subtitle renderer observing `engine.clock` | — | `PlayerOverlayAndCacheTests.swift` |
-| `Sources/Features/Player/SeriesFlowOverlays.swift` | Skip-intro/recap & next-episode countdown overlays | — | `SeriesFlowAndHomePolicyTests.swift` |
-| `Sources/Features/Player/NerdHUDView.swift` | 1 Hz telemetry diagnostics overlay observing `engine.diagnostics.$liveTelemetry` | — | — |
-| `Sources/Features/Player/PlayerFatalErrorOverlayView.swift` | Full-screen opaque playback fatal-error curtain (`LunaTheme.canvas`) & coalesced `±10 s` seek feedback pill | — | `PlayerExitBlinkRegressionTests.swift` |
+| `Sources/Features/Player/SubtitleOverlayView.swift` | Collision-free leaf subtitle renderer (OSD, series cards, quick-panel & `NerdHUDView` corridors + single-pass shadow) | — | `PlayerOverlayAndCacheTests.swift`, `PlayerSeriesCurtainAndSubtitleTests.swift` |
+| `Sources/Features/Player/SeriesFlowOverlays.swift` | 1-click auto-focused skip-intro/recap, isolated `10 s` next-episode countdown & resume banner coordinator | — | `SeriesFlowAndHomePolicyTests.swift`, `PlayerSeriesCurtainAndSubtitleTests.swift` |
+| `Sources/Features/Player/SeriesFlowCardViews.swift` | Lampelys `548 pt` `Neste episode` card (`152×86` `16:9` `stillUrl`, `Spill nå · 10 s` + `Skjul`), `Hopp over intro` & `Start på nytt` views | — | `PlayerSeriesCurtainAndSubtitleTests.swift` |
+| `Sources/Features/Player/NerdHUDView.swift` | `740 pt` 1 Hz telemetry diagnostics overlay (`184 pt` single-line keys) observing `engine.diagnostics.$liveTelemetry` | — | `PlayerSeriesCurtainAndSubtitleTests.swift` |
+| `Sources/Features/Player/PlayerFatalErrorOverlayView.swift` | Lampelys playback fatal-error recovery curtain (`PlayerCurtainBackdropView` + `Prøv på nytt`) & `±10 s` seek pill | — | `PlayerExitBlinkRegressionTests.swift`, `PlayerSeriesCurtainAndSubtitleTests.swift` |
 
 ## 4. Build, Guardrails, Actions & `LunaTests` (`Tests/LunaTests/`)
 
 - **Build, Tokens & CI**: `project.yml` (`MARKETING_VERSION: "2.11.0"`, `CURRENT_PROJECT_VERSION: "67"`, `bundleIdPrefix: local.lunacore`), `Package.swift` (Linux `LunaCore` test target), `design/tokens.json`, `Resources/Localizable.xcstrings`, `ops/bin/luna-design-tokens`, `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/workflows/tvos-vision.yml`, `scripts/test-core.sh`, `scripts/preview-capture.sh`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, `>= 22 pt` tvOS font floor, zero system `Material`, sideload, zero private infra leaks, token parity & bidirectional doc parity).
-- **25 XCTest Suites + Test Doubles (`Tests/LunaTests/`)**:
+- **26 XCTest Suites + Test Doubles (`Tests/LunaTests/`)**:
   - `Tests/LunaTests/BonjourServerBrowserTests.swift`
   - `Tests/LunaTests/ChapterClassificationTests.swift`
   - `Tests/LunaTests/ClientOriginAndBlurHashTests.swift`
@@ -139,6 +141,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
   - `Tests/LunaTests/PlayerExitBlinkRegressionTests.swift`
   - `Tests/LunaTests/PlayerOverlayAndCacheTests.swift`
   - `Tests/LunaTests/PlayerQuickPanelAndSwitchTests.swift`
+  - `Tests/LunaTests/PlayerSeriesCurtainAndSubtitleTests.swift`
   - `Tests/LunaTests/PlayerTimelineAndScrubUXTests.swift`
   - `Tests/LunaTests/SeriesFlowAndHomePolicyTests.swift`
   - `Tests/LunaTests/SideloadSafeStorageTests.swift`
@@ -151,3 +154,4 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
   - `Tests/LunaCoreTests/PlaybackTrackIntentAndSyncTests.swift` (native Linux x86_64 unit tests for `PlaybackTrackIntent` MKV track-ID permutation matching, `ms` sync step/clamp/format, `Kveldslys` warm RGB presets & quick-panel tab switching)
   - `Tests/LunaCoreTests/PlayerTimelinePolicyTests.swift` (native Linux x86_64 unit tests for `0.5 s`/`2.0 s`/`10.0 s` clock bucketers, 24h `Slutter kl. HH:mm` formatting & all 6 steps of `PlayerTimelinePolicy.resolveExitAction`)
   - `Tests/LunaCoreTests/RemoteScrubMathTests.swift` (native Linux x86_64 unit tests for paused-only 3-zone scrubbing, `20 pt` breakaway, `0 pt` reversal, EMA smoothing & `< 280 ms` ring-hold speeds)
+  - `Tests/LunaCoreTests/SeriesFlowAndCurtainPolicyTests.swift` (native Linux x86_64 unit tests for `SeriesFlowPolicy` directional matrix, 1-click auto-focus, `10 s` `NextEpisodeCountdownState` & `180 ms` `0-RTT` `PlaybackCurtainPresentationPolicy`)

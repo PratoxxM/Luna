@@ -59,22 +59,20 @@ internal enum SeriesFlowEligibility {
     }
 }
 
-/// Isolated 0 Hz steady-state leaf view for series continuity («Hopp over intro», «Neste episode» & «Start på nytt»).
-/// Never steals Siri Remote focus automatically on startup or during credits (`T-M1`); explicit Up press
-/// from `SiriRemoteTouchSurface` (`focusPromptNonce`) moves focus onto the active prompt button.
+/// Isolated leaf view for series continuity («Hopp over intro», «Neste episode» & «Start på nytt»).
+///
+/// - Automatically focuses newly revealed bottom-right series prompts (`Hopp over intro` / `Neste episode`)
+///   during normal playback for 1-click Center activation, while never auto-focusing `Start på nytt`.
+/// - Keeps the `10 → 0 s` `Neste episode` countdown completely isolated inside `@State` (`0 Hz` on `PlayerContainerView`).
 struct SeriesFlowOverlays: View {
-    private enum PromptFocusTarget: Hashable {
-        case restartFromBeginning
-        case skipIntro
-        case playNext
-        case dismissNext
-    }
-
-    @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
-
     let viewModel: PlayerViewModel
+    var client: LunaCoreClient? = nil
     let isBottomBarVisible: Bool
     var isResting: Bool = false
+    var isQuickPanelOpen: Bool = false
+    var isQuickActionsModeActive: Bool = false
+    var hasTopStatusToast: Bool = false
+    @Binding var activeOverlayKind: ActiveSeriesOverlayKind
     @Binding var hasActivePrompt: Bool
     @Binding var isPromptFocused: Bool
     @Binding var dismissedNextForSessionID: String?
@@ -85,10 +83,14 @@ struct SeriesFlowOverlays: View {
     var onFocusQuickActions: () -> Void = {}
     var onSeekRelative: (Double) -> Void = { _ in }
 
-    @FocusState private var focusedPromptControl: PromptFocusTarget?
+    @FocusState private var focusedPromptControl: SeriesPromptControl?
     @State private var clockBox = SeriesFlowClockBox()
     @State private var activeIntro: PlaybackChapter?
     @State private var showNextButton: Bool = false
+    @State private var countdownState = NextEpisodeCountdownState()
+    @State private var lastOverlayKind: ActiveSeriesOverlayKind = .none
+    @State private var autoFocusTarget: SeriesPromptControl?
+    @State private var autoFocusNonce: Int = 0
     @State private var dismissedIntroChapterIDs: Set<String> = []
     @State private var handledResumeSessionID: String?
     @State private var activeResumeStartSeconds: Double?
@@ -105,13 +107,23 @@ struct SeriesFlowOverlays: View {
     @ViewBuilder
     private var overlayCanvas: some View {
         let resumeSecs = showNextButton ? nil : activeResumeStartSeconds
+        let resumeTopPad = hasTopStatusToast
+            ? SeriesResumeBannerView.shiftedBelowStatusToastTopPadding
+            : SeriesResumeBannerView.standardTopPadding
 
         ZStack {
             if let resumeSecs {
                 VStack {
-                    resumeBannerView(seconds: resumeSecs)
-                        .padding(.top, 64)
-                        .transition(.scale(scale: 0.94).combined(with: .opacity))
+                    SeriesResumeBannerView(
+                        seconds: resumeSecs,
+                        focusBinding: $focusedPromptControl
+                    ) {
+                        hideResumeBanner(returningFocus: true)
+                        viewModel.seekToPosition(0, exact: true)
+                    }
+                    .padding(.top, resumeTopPad)
+                    .animation(.easeOut(duration: 0.18), value: hasTopStatusToast)
+                    .transition(.scale(scale: 0.94).combined(with: .opacity))
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
@@ -122,11 +134,36 @@ struct SeriesFlowOverlays: View {
                 HStack {
                     Spacer(minLength: 0)
                     if showNextButton, let next = viewModel.activeSession?.nextEpisode {
-                        nextEpisodeCard(next)
-                            .transition(.scale(scale: 0.94).combined(with: .opacity))
+                        SeriesNextEpisodeCardView(
+                            next: next,
+                            seriesTitle: viewModel.activeSession?.item.seriesTitle,
+                            client: client ?? viewModel.activeClient,
+                            autoPlayEnabled: viewModel.comfort.autoPlayNextEpisode,
+                            remainingCountdownSeconds: countdownState.remainingSeconds,
+                            focusBinding: $focusedPromptControl,
+                            onPlayNow: {
+                                triggerPlayNextEpisode(next)
+                            },
+                            onDismiss: {
+                                dismissCurrentPrompt()
+                            }
+                        )
+                        .transition(.scale(scale: 0.94).combined(with: .opacity))
                     } else if let intro = activeIntro {
-                        skipIntroButton(intro)
-                            .transition(.scale(scale: 0.94).combined(with: .opacity))
+                        SeriesSkipPromptPillView(
+                            chapter: intro,
+                            isPromptFocused: focusedPromptControl == .skipIntro,
+                            focusBinding: $focusedPromptControl
+                        ) {
+                            let target = max(chapterStartFloor(intro), intro.endSeconds - 0.15)
+                            dismissedIntroChapterIDs.insert(intro.id)
+                            activeIntro = nil
+                            focusedPromptControl = nil
+                            syncOverlayAndPromptFlags()
+                            onReturnFocusToCanvas()
+                            viewModel.seekToPosition(target, exact: true)
+                        }
+                        .transition(.scale(scale: 0.94).combined(with: .opacity))
                     }
                 }
                 .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -139,6 +176,10 @@ struct SeriesFlowOverlays: View {
         .opacity(isResting ? 0 : 1)
         .allowsHitTesting(!isResting)
         .disabled(isResting)
+    }
+
+    private func chapterStartFloor(_ chapter: PlaybackChapter) -> Double {
+        chapter.startSeconds + 1.0
     }
 
     private func withPromptObservers<Content: View>(_ content: Content) -> some View {
@@ -155,33 +196,86 @@ struct SeriesFlowOverlays: View {
             }
             .onChange(of: isResting) { _, resting in
                 if resting {
+                    autoFocusTarget = nil
                     focusedPromptControl = nil
                 }
+                syncOverlayAndPromptFlags()
             }
             .onChange(of: showNextButton) { _, visible in
-                syncActivePromptFlag()
-                if !visible, focusedPromptControl == .playNext {
-                    focusedPromptControl = nil
-                    onReturnFocusToCanvas()
+                if visible {
+                    countdownState.beginIfNeeded(autoPlayEnabled: viewModel.comfort.autoPlayNextEpisode)
+                } else {
+                    countdownState.hideWithoutCancellingSession()
+                    if focusedPromptControl == .playNext || focusedPromptControl == .dismissNext {
+                        autoFocusTarget = nil
+                        focusedPromptControl = nil
+                        onReturnFocusToCanvas()
+                    }
+                }
+                syncOverlayAndPromptFlags()
+            }
+            .onChange(of: viewModel.comfort.autoPlayNextEpisode) { _, enabled in
+                if showNextButton {
+                    countdownState.beginIfNeeded(autoPlayEnabled: enabled)
                 }
             }
             .onChange(of: activeIntro?.id) { _, newID in
-                syncActivePromptFlag()
                 if newID == nil && focusedPromptControl == .skipIntro {
+                    autoFocusTarget = nil
                     focusedPromptControl = nil
                     onReturnFocusToCanvas()
                 }
+                syncOverlayAndPromptFlags()
             }
             .onMoveCommand(perform: handleMoveCommand)
             .onChange(of: dismissNonce) { _, _ in
                 dismissCurrentPrompt()
+            }
+            .task(id: autoFocusNonce) {
+                guard autoFocusNonce > 0, let target = autoFocusTarget, !isResting else { return }
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                if isTargetStillMounted(target), focusedPromptControl != target {
+                    focusedPromptControl = target
+                }
+                for delayNs: UInt64 in [16_000_000, 48_000_000] {
+                    try? await Task.sleep(nanoseconds: delayNs)
+                    guard !Task.isCancelled, autoFocusTarget == target, isTargetStillMounted(target) else { return }
+                    if focusedPromptControl != target {
+                        focusedPromptControl = target
+                    } else {
+                        return
+                    }
+                }
+            }
+            .task(id: showNextButton ? "\(viewModel.activeSession?.sessionId ?? "")#\(viewModel.comfort.autoPlayNextEpisode)" : "off") {
+                guard showNextButton, viewModel.comfort.autoPlayNextEpisode else { return }
+                countdownState.beginIfNeeded(autoPlayEnabled: true)
+                while !Task.isCancelled && showNextButton {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    guard !Task.isCancelled, showNextButton, let next = viewModel.activeSession?.nextEpisode else {
+                        return
+                    }
+                    let shouldAdvance = countdownState.tickOneSecond(
+                        autoPlayEnabled: viewModel.comfort.autoPlayNextEpisode,
+                        isPlaying: viewModel.playbackPhase == .playing,
+                        isQuickPanelOpen: isQuickPanelOpen,
+                        isScrubbing: viewModel.isScrubbing,
+                        isQuickActionsModeActive: isQuickActionsModeActive,
+                        isSwitchingSource: viewModel.isSwitchingSource
+                    )
+                    if shouldAdvance {
+                        triggerPlayNextEpisode(next)
+                        return
+                    }
+                }
             }
     }
 
     private func withLifecycleObservers<Content: View>(_ content: Content) -> some View {
         content
             .onAppear {
-                clockBox.currentTime = max(0, viewModel.engine.currentTime)
+                clockBox.currentTime = viewModel.previewPlayheadOverrideSeconds ?? max(0, viewModel.engine.currentTime)
                 armResumeBannerIfEligible()
                 evaluateContinuityState(at: clockBox.currentTime)
             }
@@ -209,55 +303,110 @@ struct SeriesFlowOverlays: View {
             .onDisappear {
                 isResumeAutoHideArmed = false
                 activeResumeStartSeconds = nil
+                autoFocusTarget = nil
                 focusedPromptControl = nil
                 isPromptFocused = false
                 hasActivePrompt = false
+                activeOverlayKind = .none
             }
+    }
+
+    private func isTargetStillMounted(_ target: SeriesPromptControl) -> Bool {
+        switch target {
+        case .skipIntro:
+            return activeIntro != nil && !showNextButton && !isResting
+        case .playNext, .dismissNext:
+            return showNextButton && viewModel.activeSession?.nextEpisode != nil && !isResting
+        case .restartFromBeginning:
+            return activeResumeStartSeconds != nil && !showNextButton && !isResting
+        }
+    }
+
+    private func triggerPlayNextEpisode(_ next: TvNextEpisodeSummary) {
+        autoFocusTarget = nil
+        focusedPromptControl = nil
+        showNextButton = false
+        hasActivePrompt = false
+        activeOverlayKind = .none
+        viewModel.playNextEpisode(next)
     }
 
     private func handleFocusPromptRequest() {
         guard !isResting else { return }
         if activeResumeStartSeconds != nil && !showNextButton {
-            focusedPromptControl = .restartFromBeginning
+            requestPromptFocus(.restartFromBeginning)
         } else if showNextButton {
-            focusedPromptControl = .playNext
+            requestPromptFocus(.playNext)
         } else if activeIntro != nil {
-            focusedPromptControl = .skipIntro
+            requestPromptFocus(.skipIntro)
         }
     }
 
+    private func requestPromptFocus(_ target: SeriesPromptControl) {
+        isPromptFocused = true
+        autoFocusTarget = target
+        focusedPromptControl = target
+        autoFocusNonce &+= 1
+    }
+
     private func handleMoveCommand(_ direction: MoveCommandDirection) {
+        guard let currentControl = focusedPromptControl else { return }
+        let mappedDirection: SeriesPromptMoveDirection
         switch direction {
-        case .up:
+        case .up: mappedDirection = .up
+        case .down: mappedDirection = .down
+        case .left: mappedDirection = .left
+        case .right: mappedDirection = .right
+        @unknown default: return
+        }
+
+        let outcome = SeriesFlowPolicy.resolveMove(
+            from: currentControl,
+            direction: mappedDirection,
+            hasActiveResumeBanner: activeResumeStartSeconds != nil && !showNextButton
+        )
+
+        switch outcome {
+        case .focusControl(let nextControl):
+            autoFocusTarget = nextControl
+            focusedPromptControl = nextControl
+
+        case .silentReturnToCanvas(let dismissResumeBanner):
+            autoFocusTarget = nil
+            if dismissResumeBanner {
+                hideResumeBanner(returningFocus: false)
+            }
             focusedPromptControl = nil
-            onReturnFocusToCanvas()
-        case .down:
-            if activeResumeStartSeconds != nil {
+            onSilentReturnFocusToCanvas()
+
+        case .focusQuickActions(let dismissResumeBanner):
+            autoFocusTarget = nil
+            if dismissResumeBanner {
                 hideResumeBanner(returningFocus: false)
             }
             focusedPromptControl = nil
             onFocusQuickActions()
-        case .left:
-            if activeResumeStartSeconds != nil {
+
+        case .seekRelativeAndReturnToCanvas(let seconds, let dismissResumeBanner):
+            autoFocusTarget = nil
+            if dismissResumeBanner {
                 hideResumeBanner(returningFocus: false)
             }
             focusedPromptControl = nil
-            onSeekRelative(-10)
-        case .right:
-            if activeResumeStartSeconds != nil {
-                hideResumeBanner(returningFocus: false)
-            }
-            focusedPromptControl = nil
-            onSeekRelative(10)
-        @unknown default:
+            onSeekRelative(seconds)
+
+        case .noOp:
             break
         }
     }
 
     private func resetForNewSession() {
-        clockBox.reset(initialTime: max(0, viewModel.engine.currentTime))
+        clockBox.reset(initialTime: viewModel.previewPlayheadOverrideSeconds ?? max(0, viewModel.engine.currentTime))
         dismissedNextForSessionID = nil
         dismissedIntroChapterIDs.removeAll()
+        countdownState.resetForNewSession()
+        lastOverlayKind = .none
+        autoFocusTarget = nil
         isResumeAutoHideArmed = false
         activeResumeStartSeconds = nil
         activeIntro = nil
@@ -265,11 +414,13 @@ struct SeriesFlowOverlays: View {
         focusedPromptControl = nil
         isPromptFocused = false
         hasActivePrompt = false
+        activeOverlayKind = .none
         armResumeBannerIfEligible()
         evaluateContinuityState(at: clockBox.currentTime)
     }
 
     private func handleClockTick(_ t: Double) {
+        guard viewModel.previewPlayheadOverrideSeconds == nil else { return }
         let hasContinuityTargets = viewModel.activeSession?.nextEpisode != nil ||
             viewModel.chapters.contains(where: { $0.kind == .intro || $0.kind == .recap || $0.kind == .credits })
         guard hasContinuityTargets else { return }
@@ -278,7 +429,7 @@ struct SeriesFlowOverlays: View {
         evaluateContinuityState(at: t)
     }
 
-    // MARK: - 0 Hz Steady-State Continuity Evaluation
+    // MARK: - Continuity Evaluation
 
     private func evaluateContinuityState(at t: Double) {
         if let tracked = clockBox.trackedIntroChapterID,
@@ -308,7 +459,7 @@ struct SeriesFlowOverlays: View {
         if showNextButton != nextVisible {
             showNextButton = nextVisible
         }
-        syncActivePromptFlag()
+        syncOverlayAndPromptFlags()
     }
 
     private func computeSkippableChapter(at timeSeconds: Double) -> PlaybackChapter? {
@@ -358,8 +509,10 @@ struct SeriesFlowOverlays: View {
             declaredStreamDurationSeconds: session.stream.declaredDurationSeconds
         )
         let remaining = authoritativeDuration - timeSeconds
+        let isNextCardFocused = (focusedPromptControl == .playNext || focusedPromptControl == .dismissNext)
         if remaining > 30.0,
-           focusedPromptControl != .playNext,
+           !viewModel.comfort.autoPlayNextEpisode,
+           !isNextCardFocused,
            !isBottomBarVisible,
            let entered = clockBox.enteredCreditsAtWallTime,
            Date().timeIntervalSince(entered) > SeriesFlowEligibility.passiveCreditsDisplayCapSeconds {
@@ -368,125 +521,7 @@ struct SeriesFlowOverlays: View {
         return true
     }
 
-    // MARK: - Subviews
-
-    private func skipIntroButton(_ chapter: PlaybackChapter) -> some View {
-        let baseLabel = chapter.kind == .recap ? "Hopp over sammendrag" : "Hopp over intro"
-        return HStack(spacing: 10) {
-            Image(systemName: "chevron.up")
-                .font(LunaTheme.Font.caption)
-                .foregroundStyle(LunaTheme.muted)
-                .frame(width: 24)
-
-            LunaPillButton(
-                baseLabel,
-                systemImage: "forward.end.fill",
-                prominence: .glassPill
-            ) {
-                let target = max(chapter.startSeconds + 1.0, chapter.endSeconds - 0.15)
-                dismissedIntroChapterIDs.insert(chapter.id)
-                activeIntro = nil
-                focusedPromptControl = nil
-                hasActivePrompt = false
-                onReturnFocusToCanvas()
-                viewModel.seekToPosition(target, exact: true)
-            }
-            .focused($focusedPromptControl, equals: .skipIntro)
-        }
-    }
-
-    private func nextEpisodeCard(_ next: TvNextEpisodeSummary) -> some View {
-        let epLabel = "Neste episode · S\(next.season) E\(next.episode)"
-        let cleanTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
-            next.title,
-            seriesTitle: viewModel.activeSession?.item.seriesTitle,
-            season: next.season,
-            episode: next.episode
-        )
-
-        return VStack(alignment: .leading, spacing: 12) {
-            Text(epLabel)
-                .font(LunaTheme.Font.caption)
-                .foregroundStyle(LunaTheme.muted)
-
-            if let cleanTitle, !cleanTitle.isEmpty {
-                Text(cleanTitle)
-                    .font(LunaTheme.Font.cardTitle)
-                    .foregroundStyle(LunaTheme.linen)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-
-            HStack(spacing: 10) {
-                LunaPillButton(
-                    "Spill nå",
-                    systemImage: "play.fill",
-                    prominence: .primary,
-                    size: .compact
-                ) {
-                    focusedPromptControl = nil
-                    hasActivePrompt = false
-                    viewModel.playNextEpisode(next)
-                }
-                .focused($focusedPromptControl, equals: .playNext)
-
-                LunaPillButton(
-                    "Skjul",
-                    prominence: .glassPill,
-                    size: .compact
-                ) {
-                    dismissCurrentPrompt()
-                }
-                .focused($focusedPromptControl, equals: .dismissNext)
-            }
-        }
-        .padding(20)
-        .frame(width: 460, alignment: .leading)
-        .lunaCinemaGlassSurface(
-            shadowColor: roomAtmosphere.lampColor.opacity(0.14),
-            shadowRadius: 24,
-            shadowY: 10
-        )
-        .focusSection()
-    }
-
-    // MARK: - Dismissal & Resume Banner Helpers
-
-    private func resumeBannerView(seconds: Double) -> some View {
-        let timeText = TimelineScrubberLeafView.formatSeconds(seconds)
-        return HStack(spacing: 20) {
-            Text("Fortsetter fra \(timeText)")
-                .font(LunaTheme.Font.subtitle)
-                .foregroundStyle(LunaTheme.linen)
-
-            HStack(spacing: 8) {
-                Image(systemName: "chevron.up")
-                    .font(LunaTheme.Font.caption)
-                    .foregroundStyle(LunaTheme.muted)
-                    .frame(width: 20)
-
-                LunaPillButton(
-                    "Start på nytt",
-                    systemImage: "arrow.counterclockwise",
-                    prominence: .glassPill,
-                    size: .compact
-                ) {
-                    hideResumeBanner(returningFocus: true)
-                    viewModel.seekToPosition(0, exact: true)
-                }
-                .focused($focusedPromptControl, equals: .restartFromBeginning)
-            }
-        }
-        .padding(.leading, 26)
-        .padding(.trailing, 10)
-        .padding(.vertical, 8)
-        .lunaCinemaGlassSurface(
-            cornerRadius: LunaTokens.Radius.pill,
-            shadowColor: roomAtmosphere.lampColor.opacity(0.14),
-            shadowRadius: 20,
-            shadowY: 8
-        )
-    }
+    // MARK: - Dismissal & Auto-Focus Sync
 
     private func armResumeBannerIfEligible() {
         guard !viewModel.isSwitchingSource else { return }
@@ -501,7 +536,7 @@ struct SeriesFlowOverlays: View {
         }
         handledResumeSessionID = sid
         activeResumeStartSeconds = seconds
-        syncActivePromptFlag()
+        syncOverlayAndPromptFlags()
         scheduleResumeAutoHide(seconds: 4.5)
     }
 
@@ -517,7 +552,7 @@ struct SeriesFlowOverlays: View {
         if focusedPromptControl == .restartFromBeginning {
             focusedPromptControl = nil
         }
-        syncActivePromptFlag()
+        syncOverlayAndPromptFlags()
         if returningFocus {
             if silentFocusReturn {
                 onSilentReturnFocusToCanvas()
@@ -527,7 +562,32 @@ struct SeriesFlowOverlays: View {
         }
     }
 
-    private func syncActivePromptFlag() {
+    private func syncOverlayAndPromptFlags() {
+        let nextKind = ActiveSeriesOverlayKind.resolve(
+            showNextEpisodeCard: showNextButton && viewModel.activeSession?.nextEpisode != nil,
+            hasActiveIntro: activeIntro != nil,
+            isResting: isResting
+        )
+        let prevKind = lastOverlayKind
+        if activeOverlayKind != nextKind {
+            activeOverlayKind = nextKind
+        }
+        if prevKind != nextKind {
+            lastOverlayKind = nextKind
+            if let target = SeriesFlowPolicy.autoFocusTargetOnOverlayTransition(
+                previousKind: prevKind,
+                newKind: nextKind,
+                isPlaying: viewModel.playbackPhase == .playing,
+                isBottomBarVisible: isBottomBarVisible,
+                isResting: isResting,
+                isQuickPanelOpen: isQuickPanelOpen,
+                isQuickActionsModeActive: isQuickActionsModeActive,
+                isScrubbing: viewModel.isScrubbing
+            ) {
+                requestPromptFocus(target)
+            }
+        }
+
         let nextActive = showNextButton || activeResumeStartSeconds != nil || activeIntro != nil
         if hasActivePrompt != nextActive {
             hasActivePrompt = nextActive
@@ -535,11 +595,13 @@ struct SeriesFlowOverlays: View {
     }
 
     private func dismissCurrentPrompt() {
-        if activeResumeStartSeconds != nil {
+        autoFocusTarget = nil
+        if activeResumeStartSeconds != nil && !showNextButton {
             hideResumeBanner(returningFocus: true)
             return
         }
         if showNextButton, let sid = viewModel.activeSession?.sessionId {
+            countdownState.cancelForSession()
             dismissedNextForSessionID = sid
             showNextButton = false
         } else if let intro = activeIntro {
@@ -547,8 +609,8 @@ struct SeriesFlowOverlays: View {
             activeIntro = nil
         }
         focusedPromptControl = nil
-        hasActivePrompt = false
-        onReturnFocusToCanvas()
+        syncOverlayAndPromptFlags()
+        onSilentReturnFocusToCanvas()
     }
 }
 

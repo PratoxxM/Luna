@@ -24,8 +24,13 @@ struct CoalescedSeekFeedbackPillView: View {
     }
 }
 
-/// 100% opaque OLED-safe Lampelys error recovery card ensuring zero leaked video/subtitle frames behind errors.
+/// 100% opaque OLED-safe Lampelys error recovery curtain reusing `PlayerCurtainBackdropView`
+/// on startup errors so the background never hard-cuts to flat `#000000`.
 struct PlayerFatalErrorOverlayView: View {
+    static let cardShadowRadius: CGFloat = 18
+    static let cardShadowY: CGFloat = 8
+    static let primaryRetryTitle: String = "Prøv på nytt"
+
     private enum FatalErrorAction: Hashable {
         case retry
         case pickSource
@@ -34,6 +39,9 @@ struct PlayerFatalErrorOverlayView: View {
 
     let message: String
     let canPickSource: Bool
+    var showsCurtainBackdrop: Bool = true
+    var backdropURL: URL? = nil
+    var client: LunaCoreClient? = nil
     let onRetry: () -> Void
     let onPickSource: () -> Void
     let onDismiss: () -> Void
@@ -43,7 +51,14 @@ struct PlayerFatalErrorOverlayView: View {
 
     var body: some View {
         ZStack {
-            LunaTheme.canvas.ignoresSafeArea()
+            if showsCurtainBackdrop {
+                PlayerCurtainBackdropView(
+                    backdropURL: backdropURL,
+                    client: client
+                )
+            } else {
+                LunaTheme.canvas.ignoresSafeArea()
+            }
 
             VStack(spacing: 22) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -62,7 +77,11 @@ struct PlayerFatalErrorOverlayView: View {
                     .frame(maxWidth: 740)
 
                 HStack(spacing: 16) {
-                    LunaPillButton("Prøv igjen", systemImage: "arrow.clockwise", prominence: .primary) {
+                    LunaPillButton(
+                        Self.primaryRetryTitle,
+                        systemImage: "arrow.clockwise",
+                        prominence: .primary
+                    ) {
                         onRetry()
                     }
                     .focused($focusedButton, equals: .retry)
@@ -86,20 +105,32 @@ struct PlayerFatalErrorOverlayView: View {
             .frame(maxWidth: LunaTokens.Layout.sheetNarrowW)
             .lunaCinemaGlassSurface(
                 fill: LunaTokens.Surface.sheet,
-                shadowColor: LunaTheme.pureBlack.opacity(0.65),
-                shadowRadius: 36,
-                shadowY: 18
+                shadowColor: LunaTheme.pureBlack.opacity(0.58),
+                shadowRadius: Self.cardShadowRadius,
+                shadowY: Self.cardShadowY
             )
         }
         .focusScope(errorFocusNamespace)
+        .onExitCommand {
+            onDismiss()
+        }
         .onAppear {
             focusedButton = .retry
         }
         .task(id: message) {
-            try? await Task.sleep(nanoseconds: 24_000_000)
+            await Task.yield()
             guard !Task.isCancelled else { return }
             if focusedButton == nil {
                 focusedButton = .retry
+            }
+            for delayNs: UInt64 in [24_000_000, 60_000_000] {
+                try? await Task.sleep(nanoseconds: delayNs)
+                guard !Task.isCancelled else { return }
+                if focusedButton == nil {
+                    focusedButton = .retry
+                } else {
+                    return
+                }
             }
         }
     }

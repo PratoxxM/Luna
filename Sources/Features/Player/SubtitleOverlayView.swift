@@ -1,44 +1,96 @@
 import SwiftUI
 import AetherBridge
 
-/// Pure subtitle placement rules preventing collisions with both bottom OSD
-/// (`320 pt` clearance) and open quick-panel popovers (upper cinema safe zone `y = 84..168 pt`).
+/// Pure subtitle placement rules preventing collisions with bottom OSD (`320 pt`),
+/// series continuity overlays (`.skipPrompt` `152 pt`, `.nextEpisodeCard` `268 pt`, or
+/// relocated to top when bottom OSD + series card are visible simultaneously), open quick-panel
+/// popovers, and `NerdHUDView` (`x = 90..830 pt`, `y = 42..330 pt`).
 internal enum SubtitleOverlayLayout {
+    static let nerdHUDProtectedRect = CGRect(x: 90, y: 42, width: 740, height: 288)
+
     struct VerticalPlacement: Equatable, Sendable {
         let relocateToTop: Bool
         let topInset: CGFloat
         let bottomInset: CGFloat
+        let leadingInset: CGFloat
+        let trailingInset: CGFloat
+
+        init(
+            relocateToTop: Bool,
+            topInset: CGFloat,
+            bottomInset: CGFloat,
+            leadingInset: CGFloat = 120,
+            trailingInset: CGFloat = 120
+        ) {
+            self.relocateToTop = relocateToTop
+            self.topInset = topInset
+            self.bottomInset = bottomInset
+            self.leadingInset = leadingInset
+            self.trailingInset = trailingInset
+        }
     }
 
     nonisolated static func verticalPlacement(
         isBottomBarVisible: Bool,
         isQuickPanelOpen: Bool,
-        isNerdHUDVisible: Bool
+        isNerdHUDVisible: Bool,
+        activeSeriesOverlay: ActiveSeriesOverlayKind = .none
     ) -> VerticalPlacement {
         if isQuickPanelOpen {
+            if isNerdHUDVisible {
+                return VerticalPlacement(
+                    relocateToTop: true,
+                    topInset: 72,
+                    bottomInset: 0,
+                    leadingInset: 856,
+                    trailingInset: 90
+                )
+            }
             return VerticalPlacement(
                 relocateToTop: true,
-                topInset: isNerdHUDVisible ? 168 : 84,
-                bottomInset: 0
+                topInset: 84,
+                bottomInset: 0,
+                leadingInset: 120,
+                trailingInset: 120
             )
         }
+
+        if isBottomBarVisible && activeSeriesOverlay != .none {
+            return VerticalPlacement(
+                relocateToTop: true,
+                topInset: isNerdHUDVisible ? 340 : 84,
+                bottomInset: 0,
+                leadingInset: 120,
+                trailingInset: 120
+            )
+        }
+
+        let resolvedBottomInset: CGFloat = {
+            if isBottomBarVisible {
+                return 320
+            }
+            switch activeSeriesOverlay {
+            case .none:
+                return 74
+            case .skipPrompt:
+                return 152
+            case .nextEpisodeCard:
+                return 268
+            }
+        }()
+
         return VerticalPlacement(
             relocateToTop: false,
-            topInset: 72,
-            bottomInset: isBottomBarVisible ? 320 : 74
+            topInset: isNerdHUDVisible ? 340 : 72,
+            bottomInset: resolvedBottomInset,
+            leadingInset: 120,
+            trailingInset: 120
         )
     }
 }
 
 /// Leaf subtitle overlay subscribing exclusively to `engine.clock.$sourceTime`
 /// so 10 Hz clock ticks never re-render the surrounding player UI.
-///
-/// Implements HDR/Dolby Vision OLED luminance comfort:
-///  - Text & ASS cues keep a 95% opaque black outline/shadow while scaling only
-///    foreground glyph RGB to a warm-white luminance target (`75 % Varmhvit`, etc.).
-///  - PGS bitmap cues map proportionally within `bitmap.canvasSize` and apply GPU
-///    `.colorMultiply(...)`, keeping black `(0,0,0,α)` borders 100% jet-black while
-///    dimming bright white letter fills in dark HDR/DV scenes.
 struct SubtitleOverlayView: View {
     let engine: AetherEngine
     let comfort: ComfortPreferences
@@ -46,6 +98,7 @@ struct SubtitleOverlayView: View {
     var isBottomBarVisible: Bool = false
     var isQuickPanelOpen: Bool = false
     var isNerdHUDVisible: Bool = false
+    var activeSeriesOverlay: ActiveSeriesOverlayKind = .none
 
     @State private var clockBox = SubtitleClockBox()
     @State private var visibleCues: [SubtitleCue] = []
@@ -57,7 +110,8 @@ struct SubtitleOverlayView: View {
         let placement = SubtitleOverlayLayout.verticalPlacement(
             isBottomBarVisible: isBottomBarVisible,
             isQuickPanelOpen: isQuickPanelOpen,
-            isNerdHUDVisible: isNerdHUDVisible
+            isNerdHUDVisible: isNerdHUDVisible,
+            activeSeriesOverlay: activeSeriesOverlay
         )
 
         GeometryReader { geo in
@@ -168,11 +222,12 @@ struct SubtitleOverlayView: View {
                 renderTextCue(cue, isHDR: isHDR)
             }
         }
-        .padding(.horizontal, 120)
+        .padding(.leading, verticalSlot == .top ? placement.leadingInset : 120)
+        .padding(.trailing, verticalSlot == .top ? placement.trailingInset : 120)
         .padding(.top, verticalSlot == .top ? placement.topInset : 0)
         .padding(.bottom, verticalSlot == .bottom ? placement.bottomInset : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-        .animation(.easeOut(duration: 0.16), value: placement)
+        .animation(.easeOut(duration: 0.18), value: placement)
     }
 
     @ViewBuilder
@@ -213,24 +268,20 @@ struct SubtitleOverlayView: View {
                 canvasSize: bitmap.canvasSize,
                 containerSize: containerSize
             )
-            let adjustedMidY: CGFloat = {
-                if placement.relocateToTop, baseRect.midY > containerSize.height * 0.48 {
-                    return max(baseRect.height / 2.0 + 24, placement.topInset + baseRect.height / 2.0)
-                }
-                let safeBottomY = containerSize.height - placement.bottomInset
-                guard isBottomBarVisible, baseRect.maxY > safeBottomY else {
-                    return baseRect.midY
-                }
-                let shift = baseRect.maxY - safeBottomY
-                return max(baseRect.height / 2.0 + 24, baseRect.midY - shift)
-            }()
+            let adjusted = Self.adjustedBitmapRect(
+                baseRect: baseRect,
+                containerSize: containerSize,
+                placement: placement,
+                isNerdHUDVisible: isNerdHUDVisible
+            )
 
             Image(decorative: bitmap.cgImage, scale: 1.0)
                 .resizable()
                 .interpolation(.high)
                 .colorMultiply(comfort.hdrSubtitlePreset.bitmapMultiplyColor(isHDR: isHDR))
-                .frame(width: max(1, baseRect.width), height: max(1, baseRect.height))
-                .position(x: baseRect.midX, y: adjustedMidY)
+                .frame(width: max(1, adjusted.width), height: max(1, adjusted.height))
+                .position(x: adjusted.midX, y: adjusted.midY)
+                .animation(.easeOut(duration: 0.18), value: placement)
         }
     }
 
@@ -251,22 +302,31 @@ struct SubtitleOverlayView: View {
         return .bottom
     }
 
+    /// Halved GPU subtitle shadow pass for `AppleTV14,1` 4K DV P7 FEL `.softwareHost` headroom:
+    /// - When `boxAlpha > 0`, the dark rounded background box provides full contrast with **zero**
+    ///   per-glyph offscreen blur passes.
+    /// - When `boxAlpha == 0`, uses a single crisp `radius: 4` drop shadow instead of stacked passes.
+    @ViewBuilder
     private func styledTextBox<Content: View>(
         content: Content,
         boxAlpha: Double
     ) -> some View {
-        content
-            .multilineTextAlignment(.center)
-            .shadow(color: LunaTheme.pureBlack.opacity(0.96), radius: 2, x: 0, y: 1)
-            .shadow(color: LunaTheme.pureBlack.opacity(0.92), radius: 6, x: 0, y: 2)
-            .padding(.horizontal, boxAlpha > 0 ? 26 : 12)
-            .padding(.vertical, boxAlpha > 0 ? 10 : 4)
-            .background {
-                if boxAlpha > 0 {
+        if boxAlpha > 0 {
+            content
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 26)
+                .padding(.vertical, 10)
+                .background {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(LunaTheme.pureBlack.opacity(boxAlpha))
                 }
-            }
+        } else {
+            content
+                .multilineTextAlignment(.center)
+                .shadow(color: LunaTheme.pureBlack.opacity(0.95), radius: 4, x: 0, y: 2)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+        }
     }
 
     private func buildAttributedString(
@@ -333,6 +393,61 @@ struct SubtitleOverlayView: View {
             y: frameCenterY + (py - canvasCenterY) * scale,
             width: position.width * canvasSize.width * scale,
             height: position.height * canvasSize.height * scale
+        )
+    }
+
+    /// Lifts or relocates PGS/DVB bitmap subtitles cleanly above bottom OSD / series continuity
+    /// cards (`placement.bottomInset`) and outside `NerdHUDView` (`x = 90..830, y = 42..330`).
+    static func adjustedBitmapRect(
+        baseRect: CGRect,
+        containerSize: CGSize,
+        placement: SubtitleOverlayLayout.VerticalPlacement,
+        isNerdHUDVisible: Bool
+    ) -> CGRect {
+        let fw = max(1, containerSize.width)
+        let fh = max(1, containerSize.height)
+        var width = max(1, baseRect.width)
+        var height = max(1, baseRect.height)
+        var midX = baseRect.midX
+        var midY = baseRect.midY
+
+        let isRelocatedBottomCue = placement.relocateToTop && baseRect.midY > fh * 0.48
+        let isTopZoneCue = isRelocatedBottomCue || baseRect.minY < placement.topInset
+
+        if isTopZoneCue {
+            if placement.leadingInset > 120 {
+                let corridorMinX = placement.leadingInset
+                let corridorMaxX = max(corridorMinX + 60, fw - placement.trailingInset)
+                let corridorWidth = corridorMaxX - corridorMinX
+                if width > corridorWidth {
+                    let scale = corridorWidth / width
+                    width *= scale
+                    height *= scale
+                }
+                if isRelocatedBottomCue {
+                    midX = (corridorMinX + corridorMaxX) * 0.5
+                } else {
+                    midX = min(max(corridorMinX + width * 0.5, midX), corridorMaxX - width * 0.5)
+                }
+            }
+            if isRelocatedBottomCue {
+                midY = max(height * 0.5 + 24, placement.topInset + height * 0.5)
+            } else if isNerdHUDVisible && midY - height * 0.5 < placement.topInset && midX - width * 0.5 < 856 {
+                midY = max(height * 0.5 + 24, placement.topInset + height * 0.5)
+            }
+        } else if placement.bottomInset > 74 {
+            let safeBottomY = fh - placement.bottomInset
+            if baseRect.maxY > safeBottomY {
+                let shift = baseRect.maxY - safeBottomY
+                midY = max(height * 0.5 + 24, baseRect.midY - shift)
+            }
+        }
+
+        return CGRect(
+            x: midX - width * 0.5,
+            y: midY - height * 0.5,
+            width: width,
+            height: height
         )
     }
 }

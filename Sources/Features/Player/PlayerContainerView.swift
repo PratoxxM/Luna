@@ -58,6 +58,11 @@ struct PlayerContainerView: View {
         let isQuickPanelOpen = (osd.activeQuickPanel != nil)
         let isBottomBarShown = osd.isBottomBarShown(viewModel: viewModel)
         let isHUDResting = osd.isHUDResting(viewModel: viewModel)
+        let statusToast = osd.activeTopStatusToast(viewModel: viewModel)
+        let effectiveSeriesOverlay: ActiveSeriesOverlayKind =
+            (viewModel.isPictureReadyForReveal && !isQuickPanelOpen && !viewModel.isScrubbing && viewModel.fatalError == nil)
+            ? osd.activeSeriesOverlay
+            : .none
 
         ZStack {
             LunaTheme.pureBlack.ignoresSafeArea()
@@ -74,7 +79,8 @@ struct PlayerContainerView: View {
                     comfort: comfort,
                     activeQuickPanel: osd.activeQuickPanel,
                     isBottomBarShown: isBottomBarShown,
-                    isQuickPanelOpen: isQuickPanelOpen
+                    isQuickPanelOpen: isQuickPanelOpen,
+                    activeSeriesOverlay: effectiveSeriesOverlay
                 )
                 .ignoresSafeArea()
                 .zIndex(0.5)
@@ -93,7 +99,8 @@ struct PlayerContainerView: View {
                     subtitleDelaySeconds: viewModel.subtitleDelaySeconds,
                     isBottomBarVisible: isBottomBarShown,
                     isQuickPanelOpen: isQuickPanelOpen,
-                    isNerdHUDVisible: comfort.showNerdHUD
+                    isNerdHUDVisible: comfort.showNerdHUD,
+                    activeSeriesOverlay: effectiveSeriesOverlay
                 )
                 .ignoresSafeArea()
                 .zIndex(1)
@@ -154,8 +161,9 @@ struct PlayerContainerView: View {
                         if !viewModel.isScrubbing {
                             if osd.hasSeriesPrompt && !isHUDResting {
                                 osd.seriesPromptFocusNonce &+= 1
+                            } else {
+                                osd.revealBottomBarTemporarily(viewModel: viewModel)
                             }
-                            osd.revealBottomBarTemporarily(viewModel: viewModel)
                         }
                     },
                     onDownClick: {
@@ -206,8 +214,13 @@ struct PlayerContainerView: View {
             if viewModel.isPictureReadyForReveal && !isQuickPanelOpen && !viewModel.isScrubbing && viewModel.fatalError == nil {
                 SeriesFlowOverlays(
                     viewModel: viewModel,
+                    client: client,
                     isBottomBarVisible: isBottomBarShown,
                     isResting: isHUDResting,
+                    isQuickPanelOpen: isQuickPanelOpen,
+                    isQuickActionsModeActive: osd.isQuickActionsModeActive,
+                    hasTopStatusToast: statusToast != nil,
+                    activeOverlayKind: $osd.activeSeriesOverlay,
                     hasActivePrompt: $osd.hasSeriesPrompt,
                     isPromptFocused: $osd.isSeriesPromptFocused,
                     dismissedNextForSessionID: $osd.dismissedNextForSessionID,
@@ -298,7 +311,7 @@ struct PlayerContainerView: View {
                         .zIndex(5.5)
                 }
 
-                if let statusToast = osd.activeTopStatusToast(viewModel: viewModel) {
+                if let statusToast {
                     PlayerStatusPill(
                         message: statusToast.message,
                         tone: statusToast.tone,
@@ -323,11 +336,18 @@ struct PlayerContainerView: View {
                 .zIndex(6)
             }
 
-            // 7. Fatal Error Recovery Overlay (100% opaque Lampelys card)
+            // 7. Fatal Error Recovery Overlay (reuses PlayerCurtainBackdropView before first frame)
             if let err = viewModel.fatalError {
                 PlayerFatalErrorOverlayView(
                     message: err,
                     canPickSource: viewModel.activeSession != nil,
+                    showsCurtainBackdrop: !viewModel.isPictureReadyForReveal,
+                    backdropURL: PlayerCurtainBackdropView.resolveBackdropURL(
+                        request: effectiveRequest,
+                        session: viewModel.activeSession,
+                        client: client
+                    ),
+                    client: client,
                     onRetry: {
                         osd.suspendedFatalErrorForPanel = nil
                         let base = viewModel.currentRequest ?? initialRequest
@@ -457,6 +477,7 @@ struct PlayerContainerView: View {
                 )
                 if let previewFatalError {
                     viewModel.fatalError = previewFatalError
+                    viewModel.hasFirstFrameReadyForDisplay = false
                     viewModel.isResolving = false
                 } else if previewFocusDirection == .up {
                     osd.revealBottomBarAndFocusQuickActions(

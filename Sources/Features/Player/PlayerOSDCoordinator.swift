@@ -66,6 +66,7 @@ final class PlayerOSDCoordinator {
     var bottomBarFocusRequestNonce: Int = 0
     var bottomBarClearFocusNonce: Int = 0
     var requestedBottomBarAction: PlayerBottomBarAction = .panel(.subtitles)
+    var activeSeriesOverlay: ActiveSeriesOverlayKind = .none
     var hasSeriesPrompt: Bool = false
     var isSeriesPromptFocused: Bool = false
     var seriesPromptDismissNonce: Int = 0
@@ -265,7 +266,13 @@ final class PlayerOSDCoordinator {
               !viewModel.isRestoringFromBackground else {
             return
         }
-        if let next = viewModel.activeSession?.nextEpisode, autoPlayNextEpisode {
+        if let next = viewModel.activeSession?.nextEpisode,
+           SeriesFlowPolicy.shouldAutoPlayNextEpisodeOnEnded(
+               autoPlayEnabled: autoPlayNextEpisode,
+               hasNextEpisode: true,
+               activeSessionID: viewModel.activeSession?.sessionId,
+               dismissedNextForSessionID: dismissedNextForSessionID
+           ) {
             viewModel.playNextEpisode(next)
         } else {
             onClosePlayer()
@@ -407,12 +414,14 @@ struct PlayerPreviewCinemaStageView: View {
     let activeQuickPanel: PlayerQuickPanelTab?
     let isBottomBarShown: Bool
     let isQuickPanelOpen: Bool
+    var activeSeriesOverlay: ActiveSeriesOverlayKind = .none
 
     var body: some View {
         let placement = SubtitleOverlayLayout.verticalPlacement(
             isBottomBarVisible: isBottomBarShown,
             isQuickPanelOpen: isQuickPanelOpen,
-            isNerdHUDVisible: comfort.showNerdHUD
+            isNerdHUDVisible: comfort.showNerdHUD,
+            activeSeriesOverlay: activeSeriesOverlay
         )
 
         ZStack {
@@ -444,8 +453,9 @@ struct PlayerPreviewCinemaStageView: View {
                     .font(LunaTheme.Font.subtitleCue(size: comfort.subtitleFontSize.pointSize))
                     .foregroundStyle(comfort.hdrSubtitlePreset.foregroundColor(isHDR: true))
                     .multilineTextAlignment(.center)
-                    .shadow(color: LunaTheme.pureBlack.opacity(0.96), radius: 3, x: 0, y: 2)
-                    .padding(.horizontal, 120)
+                    .shadow(color: LunaTheme.pureBlack.opacity(0.95), radius: 4, x: 0, y: 2)
+                    .padding(.leading, placement.relocateToTop ? placement.leadingInset : 120)
+                    .padding(.trailing, placement.relocateToTop ? placement.trailingInset : 120)
                     .padding(.top, placement.relocateToTop ? placement.topInset : 0)
                     .padding(.bottom, placement.relocateToTop ? 0 : placement.bottomInset)
                 if placement.relocateToTop {

@@ -25,21 +25,29 @@ final class PlayerStartupState {
     }
 }
 
-/// Calm cinema curtain held above `AetherPlayerSurface` (`zIndex: 2`) until
-/// `hasFirstFrameReadyForDisplay == true && isAwaitingDisplaySwitch == false`,
-/// reusing already-cached detail/shelf backdrops with zero 4K Gaussian blur passes.
-struct ResolvingCurtainView: View {
-    let viewModel: PlayerViewModel
-    let initialRequest: PlaybackLaunchRequest
+/// Shared OLED-safe cinema backdrop (`opacity: 0.22` cached hero + warm/dark vignette)
+/// reused seamlessly across both `ResolvingCurtainView` and pre-reveal `PlayerFatalErrorOverlayView`
+/// so startup errors never hard-cut to flat `#000000`.
+struct PlayerCurtainBackdropView: View {
+    let backdropURL: URL?
     let client: LunaCoreClient?
 
-    var body: some View {
-        let display = curtainDisplay
+    static func resolveBackdropURL(
+        request: PlaybackLaunchRequest,
+        session: TvPlaybackSession?,
+        client: LunaCoreClient?
+    ) -> URL? {
+        let raw = request.backdropUrl
+            ?? session?.item.backdropUrl
+            ?? request.preparedSession?.item.backdropUrl
+        return client?.resolveArtworkURL(raw, target: .hero4K)
+    }
 
+    var body: some View {
         ZStack {
             LunaTheme.pureBlack.ignoresSafeArea()
 
-            if let backdropURL = resolvedBackdropURL {
+            if let backdropURL {
                 CachedArtworkView(
                     url: backdropURL,
                     client: client,
@@ -76,66 +84,125 @@ struct ResolvingCurtainView: View {
                 endPoint: .bottom
             )
             .ignoresSafeArea()
+        }
+    }
+}
 
-            VStack(spacing: 26) {
-                Spacer()
+/// Calm cinema curtain held above `AetherPlayerSurface` (`zIndex: 2`) until
+/// `hasFirstFrameReadyForDisplay == true && isAwaitingDisplaySwitch == false`.
+///
+/// Implements a `180 ms` pure-black `0-RTT` warm-start grace via `PlaybackCurtainPresentationPolicy`
+/// so already-prepared LAN sessions that decode their first frame within `180 ms` open directly
+/// into live video without flashing curtain chrome.
+struct ResolvingCurtainView: View {
+    let viewModel: PlayerViewModel
+    let initialRequest: PlaybackLaunchRequest
+    let client: LunaCoreClient?
 
-                if let logoURL = resolvedLogoURL {
-                    CachedArtworkView(
-                        url: logoURL,
-                        client: client,
-                        maxPixelSize: 800,
-                        contentMode: .fit,
-                        reuseAnyCachedSize: true,
-                        retainDuringPlayback: true
-                    )
-                    .equatable()
-                    .frame(maxWidth: 520, maxHeight: 140)
+    @State private var graceElapsed: Bool = false
 
-                    if let episodeContext = display.mainLine {
-                        Text(episodeContext)
-                            .font(LunaTheme.Font.cardTitle)
-                            .foregroundStyle(LunaTheme.moonlight)
-                    }
-                } else {
-                    VStack(spacing: 8) {
-                        if let series = display.seriesLine {
-                            Text(series)
+    private var hasWarmPreparedSession: Bool {
+        PlaybackCurtainPresentationPolicy.hasWarmPreparedSession(
+            prepareToken: initialRequest.prepareToken,
+            hasPreparedSession: initialRequest.preparedSession != nil
+        )
+    }
+
+    private var showCurtainDetails: Bool {
+        PlaybackCurtainPresentationPolicy.shouldShowCurtainContent(
+            hasWarmPreparedSession: hasWarmPreparedSession,
+            isAwaitingDisplaySwitch: viewModel.isAwaitingDisplaySwitch,
+            isRestoringFromBackground: viewModel.isRestoringFromBackground,
+            graceElapsed: graceElapsed
+        )
+    }
+
+    var body: some View {
+        let display = curtainDisplay
+
+        ZStack {
+            LunaTheme.pureBlack.ignoresSafeArea()
+
+            ZStack {
+                PlayerCurtainBackdropView(
+                    backdropURL: resolvedBackdropURL,
+                    client: client
+                )
+
+                VStack(spacing: 26) {
+                    Spacer()
+
+                    if let logoURL = resolvedLogoURL {
+                        CachedArtworkView(
+                            url: logoURL,
+                            client: client,
+                            maxPixelSize: 800,
+                            contentMode: .fit,
+                            reuseAnyCachedSize: true,
+                            retainDuringPlayback: true
+                        )
+                        .equatable()
+                        .frame(maxWidth: 520, maxHeight: 140)
+
+                        if let episodeContext = display.mainLine {
+                            Text(episodeContext)
                                 .font(LunaTheme.Font.cardTitle)
                                 .foregroundStyle(LunaTheme.moonlight)
                         }
-                        if let mainTitle = display.mainLine {
-                            Text(mainTitle)
-                                .font(LunaTheme.Font.titleSerif)
-                                .foregroundStyle(LunaTheme.linen)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2)
-                                .frame(maxWidth: 960)
+                    } else {
+                        VStack(spacing: 8) {
+                            if let series = display.seriesLine {
+                                Text(series)
+                                    .font(LunaTheme.Font.cardTitle)
+                                    .foregroundStyle(LunaTheme.moonlight)
+                            }
+                            if let mainTitle = display.mainLine {
+                                Text(mainTitle)
+                                    .font(LunaTheme.Font.titleSerif)
+                                    .foregroundStyle(LunaTheme.linen)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(2)
+                                    .frame(maxWidth: 960)
+                            }
                         }
                     }
+
+                    ResolvingProgressClusterLeafView(
+                        startupState: viewModel.startupState,
+                        isResolving: viewModel.isResolving,
+                        hasFirstFrameReadyForDisplay: viewModel.hasFirstFrameReadyForDisplay,
+                        isAwaitingDisplaySwitch: viewModel.isAwaitingDisplaySwitch,
+                        isRestoringFromBackground: viewModel.isRestoringFromBackground
+                    )
+                    .padding(.top, 8)
+
+                    Spacer()
                 }
-
-                ResolvingProgressClusterLeafView(
-                    startupState: viewModel.startupState,
-                    isResolving: viewModel.isResolving,
-                    hasFirstFrameReadyForDisplay: viewModel.hasFirstFrameReadyForDisplay,
-                    isAwaitingDisplaySwitch: viewModel.isAwaitingDisplaySwitch,
-                    isRestoringFromBackground: viewModel.isRestoringFromBackground
-                )
-                .padding(.top, 8)
-
-                Spacer()
+                .padding(.horizontal, 80)
             }
-            .padding(.horizontal, 80)
+            .opacity(showCurtainDetails ? 1 : 0)
         }
         .allowsHitTesting(false)
+        .task(id: initialRequest.id) {
+            graceElapsed = false
+            guard !showCurtainDetails else {
+                graceElapsed = true
+                return
+            }
+            try? await Task.sleep(nanoseconds: PlaybackCurtainPresentationPolicy.warmStartGraceNanoseconds)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: PlaybackCurtainPresentationPolicy.curtainFadeInDurationSeconds)) {
+                graceElapsed = true
+            }
+        }
     }
 
     private var resolvedBackdropURL: URL? {
-        let raw = initialRequest.backdropUrl
-            ?? viewModel.activeSession?.item.backdropUrl
-            ?? initialRequest.preparedSession?.item.backdropUrl
-        return client?.resolveArtworkURL(raw, target: .hero4K)
+        PlayerCurtainBackdropView.resolveBackdropURL(
+            request: initialRequest,
+            session: viewModel.activeSession,
+            client: client
+        )
     }
 
     private var resolvedLogoURL: URL? {
