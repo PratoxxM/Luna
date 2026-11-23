@@ -23,6 +23,7 @@ final class SideloadSafeStorageTests: XCTestCase {
             SideloadSafeStorage.showNerdHUDKey,
             SideloadSafeStorage.lowResUpscaleModeKey,
             SideloadSafeStorage.audioDelayMsKey,
+            SideloadSafeStorage.audioEnhancementModeKey,
             SideloadSafeStorage.menuDisplayModeKey,
             SideloadSafeStorage.recentSearchesKey,
         ]
@@ -52,6 +53,7 @@ final class SideloadSafeStorageTests: XCTestCase {
         XCTAssertEqual(SideloadSafeStorage.showNerdHUDKey, "luna.v1.comfort.show_nerd_hud")
         XCTAssertEqual(SideloadSafeStorage.lowResUpscaleModeKey, "luna.v1.comfort.low_res_upscale_mode")
         XCTAssertEqual(SideloadSafeStorage.audioDelayMsKey, "luna.v1.comfort.audio_delay_ms")
+        XCTAssertEqual(SideloadSafeStorage.audioEnhancementModeKey, "luna.v1.comfort.audio_enhancement_mode")
         XCTAssertEqual(SideloadSafeStorage.menuDisplayModeKey, "luna.v1.comfort.menu_display_mode")
         XCTAssertEqual(SideloadSafeStorage.recentSearchesKey, "luna.v1.recent_searches")
         XCTAssertEqual(SideloadSafeStorage.keychainService, "luna.v1.credentials")

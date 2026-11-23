@@ -497,11 +497,11 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
         }
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        // Legacy 5.1.2 speaker override migrates cleanly to .auto (7.1.4)
+        // Explicit 5.1.2 speaker override persists cleanly alongside Auto / 7.1.4 / Stereo 2.0
         defaults.set("5.1.2", forKey: SideloadSafeStorage.speakerLayoutOverrideKey)
         let comfort = ComfortPreferences(defaults: defaults)
-        XCTAssertEqual(comfort.speakerLayoutOverride, .auto)
-        XCTAssertEqual(SpeakerLayoutOverrideMode.allCases, [.auto, .stereo])
+        XCTAssertEqual(comfort.speakerLayoutOverride, .atmos512)
+        XCTAssertEqual(SpeakerLayoutOverrideMode.allCases, [.auto, .atmos512, .atmos714, .stereo])
 
         // QMS MenuDisplayMode policy
         XCTAssertFalse(
@@ -534,7 +534,7 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
 
         vm.videoFormat = .sdr
         vm.activeSubtitleTrackIndex = 1
-        XCTAssertEqual(vm.kveldslysLockReason, "Kun aktiv på HDR-innhold")
+        XCTAssertNil(vm.kveldslysLockReason)
 
         vm.videoFormat = .hdr10Plus
         XCTAssertNil(vm.kveldslysLockReason)

@@ -69,7 +69,7 @@ struct PlayerFatalErrorOverlayView: View {
                     .prefersDefaultFocus(true, in: errorFocusNamespace)
 
                     if canPickSource {
-                        LunaPillButton("Velg kilde", systemImage: "film.stack", prominence: .glassPill) {
+                        LunaPillButton("Velg utgave", systemImage: "film.stack", prominence: .glassPill) {
                             onPickSource()
                         }
                         .focused($focusedButton, equals: .pickSource)

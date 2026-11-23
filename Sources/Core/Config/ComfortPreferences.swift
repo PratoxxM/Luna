@@ -2,57 +2,18 @@ import Observation
 import SwiftUI
 import AetherBridge
 
-public enum HDRSubtitlePreset: String, CaseIterable, Identifiable, Sendable {
-    case white100 = "white_100"
-    case warm75 = "warm_75"
-    case warm60 = "warm_60"
-    case soft50 = "soft_50"
-
-    public var id: String { rawValue }
-
-    public var displayTitle: String {
-        switch self {
-        case .white100: return "Klar hvit 100 %"
-        case .warm75: return "Varm 75 % (Standard)"
-        case .warm60: return "Dempet 60 %"
-        case .soft50: return "Kveldsro 50 %"
-        }
-    }
-
-    public var settingsDescription: String {
-        switch self {
-        case .white100:
-            return "Full sRGB/HDR-grafikkhvit (~203 nits)"
-        case .warm75:
-            return "Anbefalt for OLED/HDR — behagelig varmhvit uten å blende i mørke scener"
-        case .warm60:
-            return "Mykere varmtone for kveldsvisning i mørkt rom"
-        case .soft50:
-            return "Maksimal øyekomfort i helt mørklagt hjemmekino"
-        }
-    }
-
-    /// Foreground RGB multipliers used when `videoFormat != .sdr`.
-    /// In `.sdr`, subtitles remain crisp standard white `(1.0, 1.0, 1.0)`.
-    public var hdrRGB: (r: Double, g: Double, b: Double) {
-        switch self {
-        case .white100: return (1.00, 1.00, 1.00)
-        case .warm75:   return (0.76, 0.72, 0.65)
-        case .warm60:   return (0.62, 0.58, 0.52)
-        case .soft50:   return (0.50, 0.47, 0.42)
-        }
-    }
-
-    public func foregroundColor(isHDR: Bool) -> Color {
-        guard isHDR else { return .white }
-        let c = hdrRGB
+public extension HDRSubtitlePreset {
+    /// Applies warm Lampelys subtitle dimming identically across SDR, HDR10, HDR10+, and Dolby Vision
+    /// without raw `#FFFFFF` glare.
+    func foregroundColor(isHDR _: Bool = true) -> Color {
+        let c = rgbComponents
         return Color(red: c.r, green: c.g, blue: c.b)
     }
 
     /// GPU `.colorMultiply` tint for PGS/DVB bitmap cues:
     /// multiplying black outline pixels `(0, 0, 0, α)` yields `(0, 0, 0, α)` (100 % jet black),
-    /// while bright white glyph fills `(1, 1, 1, α)` dim smoothly to warm white.
-    public func bitmapMultiplyColor(isHDR: Bool) -> Color {
+    /// while bright white glyph fills `(1, 1, 1, α)` dim smoothly to warm white across SDR and HDR.
+    func bitmapMultiplyColor(isHDR: Bool = true) -> Color {
         foregroundColor(isHDR: isHDR)
     }
 }
@@ -143,9 +104,22 @@ public enum DualLayerOverrideMode: String, CaseIterable, Identifiable, Sendable 
 
 public enum SpeakerLayoutOverrideMode: String, CaseIterable, Identifiable, Sendable {
     case auto = "auto"
+    case atmos512 = "5.1.2"
+    case atmos714 = "7.1.4"
     case stereo = "2.0"
 
+    public static let quickPanelCases: [SpeakerLayoutOverrideMode] = [.auto, .atmos512, .atmos714]
+
     public var id: String { rawValue }
+
+    public var quickPillTitle: String {
+        switch self {
+        case .auto: return "Auto"
+        case .atmos512: return "5.1.2"
+        case .atmos714: return "7.1.4"
+        case .stereo: return "Stereo 2.0"
+        }
+    }
 
     public var displayTitle: String {
         displayTitle(forHardwareProfile: HardwareProfilePreset.dvFel714.rawValue)
@@ -156,17 +130,40 @@ public enum SpeakerLayoutOverrideMode: String, CaseIterable, Identifiable, Senda
         case .auto:
             let norm = hardwareProfile.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return norm == HardwareProfilePreset.hdr10512.rawValue ? "Auto (5.1.2)" : "Auto (7.1.4)"
+        case .atmos512:
+            return "5.1.2"
+        case .atmos714:
+            return "7.1.4"
         case .stereo:
             return "Stereo 2.0 (TV-høyttalere)"
         }
     }
 
+    public func headerSummary(forAutoLayout autoLayout: String) -> String {
+        switch self {
+        case .auto:
+            return "Høyttaleroppsett · Auto (\(autoLayout))"
+        case .atmos512:
+            return "Høyttaleroppsett · 5.1.2"
+        case .atmos714:
+            return "Høyttaleroppsett · 7.1.4"
+        case .stereo:
+            return "Høyttaleroppsett · Stereo 2.0"
+        }
+    }
+
     public static func fromStored(_ raw: String?) -> SpeakerLayoutOverrideMode {
         let clean = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if clean == "2.0" || clean == "stereo" {
+        switch clean {
+        case "5.1.2", "512":
+            return .atmos512
+        case "7.1.4", "714":
+            return .atmos714
+        case "2.0", "stereo":
             return .stereo
+        default:
+            return .auto
         }
-        return .auto
     }
 }
 
@@ -252,10 +249,10 @@ public enum LowResUpscaleMode: String, CaseIterable, Identifiable, Sendable {
 @MainActor
 @Observable
 public final class ComfortPreferences {
-    public static let audioDelayRangeMs: ClosedRange<Int> = -2000...2000
+    public static let audioDelayRangeMs: ClosedRange<Int> = PlaybackSyncTimingPolicy.audioDelayRangeMs
 
     public static func clampAudioDelayMs(_ rawMs: Int) -> Int {
-        min(max(rawMs, audioDelayRangeMs.lowerBound), audioDelayRangeMs.upperBound)
+        PlaybackSyncTimingPolicy.clampAudioDelayMs(rawMs)
     }
 
     public static func formatAudioDelayMs(_ ms: Int) -> String {
@@ -263,7 +260,7 @@ public final class ComfortPreferences {
     }
 
     public static func displayAudioDelayMs(_ ms: Int) -> String {
-        formatAudioDelayMs(ms).replacingOccurrences(of: "-", with: "−")
+        PlaybackSyncTimingPolicy.formatSignedDelayMs(ms)
     }
 
     public var hdrSubtitlePreset: HDRSubtitlePreset {
@@ -360,6 +357,13 @@ public final class ComfortPreferences {
         }
     }
 
+    public var audioEnhancement: AudioEnhancementMode {
+        didSet {
+            guard oldValue != audioEnhancement else { return }
+            defaults.set(audioEnhancement.rawValue, forKey: SideloadSafeStorage.audioEnhancementModeKey)
+        }
+    }
+
     @ObservationIgnored public var onSyncRequested: ((TvDeviceOverrides) -> Void)?
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -413,6 +417,12 @@ public final class ComfortPreferences {
             self.audioDelayMs = Self.clampAudioDelayMs(defaults.integer(forKey: SideloadSafeStorage.audioDelayMsKey))
         } else {
             self.audioDelayMs = 0
+        }
+        if let rawEnhancement = defaults.string(forKey: SideloadSafeStorage.audioEnhancementModeKey),
+           let parsedEnhancement = AudioEnhancementMode(rawValue: rawEnhancement) {
+            self.audioEnhancement = parsedEnhancement
+        } else {
+            self.audioEnhancement = .reference
         }
     }
 

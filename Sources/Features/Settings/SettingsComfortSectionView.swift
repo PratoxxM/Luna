@@ -114,7 +114,7 @@ struct SettingsSubtitlesSectionView: View {
         SettingsSectionPanel(title: "Undertekster") {
             LunaControlRow(
                 title: "Kveldslys",
-                subtitle: "\(comfort.hdrSubtitlePreset.settingsDescription) · Gjelder HDR og Dolby Vision",
+                subtitle: "\(comfort.hdrSubtitlePreset.settingsDescription) · Gjelder både SDR, HDR og Dolby Vision",
                 axis: .vertical
             ) {
                 HStack(spacing: 10) {

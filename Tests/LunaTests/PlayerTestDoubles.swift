@@ -4,6 +4,8 @@ import Synchronization
 import XCTest
 @testable import Luna
 
+typealias FakePlayerTransport = MockPlayerTransport
+
 @MainActor
 final class MockPlayerTransport: PlayerTransportControlling {
     var state: PlaybackState
@@ -11,13 +13,23 @@ final class MockPlayerTransport: PlayerTransportControlling {
     var videoRoute: VideoRoute
     var currentTime: Double
     var needsForegroundVideoRestore: Bool
+    var audioTrackDescriptors: [PlaybackAudioTrackDescriptor] = []
+    var activeAudioTrackIndex: Int?
+    var subtitleTrackDescriptors: [SmartTrackDescriptor] = []
+    var activeSubtitleTrackIndex: Int?
     var events: [String] = []
     var lastAudioDelaySeconds: Double?
+    var lastAudioShaping: AudioShaping?
+    var lastSubtitleDelaySeconds: Double?
+    var lastLoadedURL: URL?
+    var lastLoadedStartPosition: Double?
+    var lastLoadedOptions: LoadOptions?
 
     var onPlay: (() -> Void)?
     var onPause: (() -> Void)?
     var onSeek: ((Double, Bool) async -> Void)?
     var onSetAudioDelay: ((Double) -> Void)?
+    var onLoadStream: ((URL, Double?, LoadOptions) async throws -> Void)?
     var onStop: ((Bool, Bool) -> Void)?
 
     init(
@@ -69,6 +81,51 @@ final class MockPlayerTransport: PlayerTransportControlling {
         let ms = Int((seconds * 1000.0).rounded())
         events.append("audioDelay(\(ms)ms)")
         onSetAudioDelay?(seconds)
+    }
+
+    func setAudioShaping(_ shaping: AudioShaping) {
+        lastAudioShaping = shaping
+        events.append("audioShaping(\(shaping.dialogueGainDB))")
+    }
+
+    func setSoftwareSubtitleDelay(_ seconds: Double) {
+        lastSubtitleDelaySeconds = seconds
+        let ms = Int((seconds * 1000.0).rounded())
+        events.append("subtitleDelay(\(ms)ms)")
+    }
+
+    func selectAudioTrack(index: Int) {
+        activeAudioTrackIndex = index
+        events.append("selectAudio(\(index))")
+    }
+
+    func selectSubtitleTrack(index: Int) {
+        activeSubtitleTrackIndex = index
+        events.append("selectSubtitle(\(index))")
+    }
+
+    func clearSubtitle() {
+        activeSubtitleTrackIndex = nil
+        events.append("clearSubtitle")
+    }
+
+    func prepareForItemReplacement() {
+        events.append("prepareForItemReplacement")
+    }
+
+    func loadStream(url: URL, startPosition: Double?, options: LoadOptions) async throws {
+        lastLoadedURL = url
+        lastLoadedStartPosition = startPosition
+        lastLoadedOptions = options
+        if let startPosition {
+            currentTime = startPosition
+        }
+        state = options.autoplay ? .playing : .paused
+        playbackPhase = options.autoplay ? .playing : .paused
+        events.append("loadStream(\(startPosition.map { String(format: "%.1f", $0) } ?? "nil"))")
+        if let onLoadStream {
+            try await onLoadStream(url, startPosition, options)
+        }
     }
 
     func stop(resetDisplayCriteria: Bool, finalTeardown: Bool) {

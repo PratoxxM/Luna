@@ -185,13 +185,15 @@ extension PlayerViewModel {
                                 self.activeSession = promoted
                                 rebuildMergedChapters()
                             } else {
-                                engine.prepareForItemReplacement()
+                                let promotedIntent = captureCurrentTrackIntent()
+                                transport.prepareForItemReplacement()
                                 let livePos = max(0, transport.currentTime)
                                 try await mountSessionInEngine(
                                     promoted,
                                     client: client,
                                     overrideStartPosition: livePos > 0.5 ? livePos : (reqStartPos ?? promoted.stream.startPositionSeconds),
-                                    autoplay: autoplay
+                                    autoplay: autoplay,
+                                    trackIntent: promotedIntent
                                 )
                             }
                         }
@@ -238,76 +240,12 @@ extension PlayerViewModel {
         }
     }
 
-    func switchSource(to candidateId: String) async {
-        guard let client = activeClient, let session = activeSession else {
-            isSwitchingSource = false
-            return
-        }
-        resetScrubStateOnSessionChange()
-        let currentPos = max(0, transport.currentTime)
-        isSwitchingSource = true
-        resolveStageLabel = "Bytter kilde sømløst på samme tidskode…"
-        resolvePercent = 70
-
-        do {
-            let updatedSession = try await client.switchCandidate(
-                sessionId: session.sessionId,
-                candidateId: candidateId,
-                positionSeconds: currentPos
-            )
-            // Freeze current decoded frame via HeldStillPresenter so there is zero black blink
-            engine.prepareForItemReplacement()
-            if !userManuallySelectedSubtitle {
-                didApplyInitialSmartRule = false
-            }
-            try await mountSessionInEngine(
-                updatedSession,
-                client: client,
-                overrideStartPosition: updatedSession.stream.startPositionSeconds ?? currentPos
-            )
-            isSwitchingSource = false
-        } catch LunaCoreError.unauthorized {
-            isSwitchingSource = false
-            onUnauthorized?()
-        } catch {
-            isSwitchingSource = false
-            guard !Task.isCancelled else { return }
-            showTransientBanner("Kildebytte feilet: \(LunaCopy.friendlyErrorMessage(error))")
-        }
-    }
-
-    func applyServerSwitchedSession(
-        _ switchedSession: TvPlaybackSession,
-        client: LunaCoreClient,
-        fallbackPosition: Double
-    ) async {
-        guard !isSwitchingSource, !isResolving else { return }
-        resetScrubStateOnSessionChange()
-        isSwitchingSource = true
-        resolveStageLabel = "Bytter kilde valgt fra iPhone…"
-        resolvePercent = 75
-        do {
-            engine.prepareForItemReplacement()
-            if !userManuallySelectedSubtitle {
-                didApplyInitialSmartRule = false
-            }
-            try await mountSessionInEngine(
-                switchedSession,
-                client: client,
-                overrideStartPosition: switchedSession.stream.startPositionSeconds ?? fallbackPosition
-            )
-            isSwitchingSource = false
-        } catch {
-            isSwitchingSource = false
-            showTransientBanner("Kildebytte feilet: \(LunaCopy.friendlyErrorMessage(error))")
-        }
-    }
-
     func mountSessionInEngine(
         _ session: TvPlaybackSession,
         client: LunaCoreClient,
         overrideStartPosition: Double?,
-        autoplay: Bool = true
+        autoplay: Bool = true,
+        trackIntent: PlaybackTrackIntent? = nil
     ) async throws {
         guard let streamURL = client.buildAbsoluteURL(session.stream.url) else {
             throw LunaCoreError.invalidURL(session.stream.url)
@@ -339,6 +277,7 @@ extension PlayerViewModel {
         let initialAudioDelayMs = comfort.audioDelayMs
         let initialWirelessRoute = isWirelessAudioRouteActive
         audioDelayMs = initialAudioDelayMs
+        audioEnhancement = comfort.audioEnhancement
 
         let options = Self.buildLoadOptions(
             session: session,
@@ -346,11 +285,12 @@ extension PlayerViewModel {
             comfort: comfort,
             audioEnhancement: audioEnhancement,
             audioDelaySeconds: effectiveAudioDelaySecondsForActiveRoute(),
-            autoplay: autoplay
+            autoplay: autoplay,
+            suppressInitialSubtitleSelection: trackIntent != nil
         )
         let startPos = overrideStartPosition ?? session.stream.startPositionSeconds ?? 0
         do {
-            _ = try await engine.load(
+            try await transport.loadStream(
                 url: streamURL,
                 startPosition: startPos > 0.5 ? startPos : nil,
                 options: options
@@ -385,7 +325,6 @@ extension PlayerViewModel {
             EngineLog.unregisterSecret(prev)
         }
 
-        subtitleDelaySeconds = engine.softwareSubtitleDelaySeconds
         let currentWirelessRoute = PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
         isWirelessAudioRouteActive = currentWirelessRoute
         if comfort.audioDelayMs != initialAudioDelayMs || currentWirelessRoute != initialWirelessRoute {
@@ -394,12 +333,29 @@ extension PlayerViewModel {
         } else {
             audioDelayMs = initialAudioDelayMs
         }
+
+        if !engine.audioTracks.isEmpty || transport.audioTrackDescriptors.isEmpty {
+            audioTracks = engine.audioTracks
+        }
+        activeAudioTrackIndex = transport.activeAudioTrackIndex ?? engine.activeAudioTrackIndex
+        if !engine.subtitleTracks.isEmpty || transport.subtitleTrackDescriptors.isEmpty {
+            subtitleTracks = engine.subtitleTracks
+        }
+        activeSubtitleTrackIndex = transport.activeSubtitleTrackIndex ?? engine.activeSubtitleTrackIndex
+
         rebuildMergedChapters()
         PlayerNowPlayingCoordinator.publish(session: session, client: client, viewModel: self)
 
-        if comfort.smartNordicSubtitleRule && !didApplyInitialSmartRule {
+        if let trackIntent {
             didApplyInitialSmartRule = true
-            applySmartSubtitleRule()
+            applyResolvedTrackIntent(trackIntent)
+        } else {
+            subtitleDelayMs = 0
+            transport.setSoftwareSubtitleDelay(0)
+            if comfort.smartNordicSubtitleRule && !didApplyInitialSmartRule {
+                didApplyInitialSmartRule = true
+                applySmartSubtitleRule()
+            }
         }
     }
 
@@ -511,173 +467,6 @@ extension PlayerViewModel {
             }
         }
         throw LunaCoreError.serverMessage(504, "Tidsavbrudd under klargjøring av strøm.")
-    }
-
-    // MARK: - 15s Pause-Safe VFS Heartbeat
-
-    func startHeartbeatLoop() {
-        heartbeatTask?.cancel()
-        let interval = max(10, activeSession?.heartbeatIntervalSeconds ?? 15)
-        heartbeatTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000_000)
-                guard !Task.isCancelled, let self else { return }
-                await self.sendHeartbeatOnce(overrideState: nil)
-            }
-        }
-    }
-
-    func sendHeartbeatOnce(overrideState: String?, completed: Bool = false) async {
-        guard let client = activeClient, let session = activeSession else { return }
-        let stateString: String
-        if let overrideState {
-            stateString = overrideState
-        } else {
-            switch playbackPhase {
-            case .paused:
-                stateString = "paused"
-            case .ended, .idle, .error:
-                stateString = "stopped"
-            default:
-                stateString = "playing"
-            }
-        }
-
-        let pos = max(0, transport.currentTime)
-        let dur = max(0, effectiveDurationSeconds)
-
-        do {
-            let hb = try await client.sendHeartbeat(
-                sessionId: session.sessionId,
-                state: stateString,
-                positionSeconds: pos,
-                durationSeconds: dur,
-                completed: completed ? true : nil
-            )
-            lastReportedServerState = stateString
-            if let vfs = hb.vfsTelemetry, lastVfsTelemetry != vfs {
-                lastVfsTelemetry = vfs
-            }
-            if let prewarmInfo = hb.nextEpisodePrewarm {
-                if let fallbackNext = prewarmInfo.nextEpisode,
-                   let cur = activeSession,
-                   cur.nextEpisode == nil {
-                    activeSession = TvPlaybackSession(
-                        sessionId: cur.sessionId,
-                        streamToken: cur.streamToken,
-                        roomName: cur.roomName,
-                        hardwareProfile: cur.hardwareProfile,
-                        item: cur.item,
-                        selectedCandidate: cur.selectedCandidate,
-                        stream: cur.stream,
-                        tracks: cur.tracks,
-                        chapters: cur.chapters,
-                        aetherConfig: cur.aetherConfig,
-                        heartbeatIntervalSeconds: cur.heartbeatIntervalSeconds,
-                        nextEpisode: fallbackNext
-                    )
-                }
-                if prewarmInfo.canClientPrewarmBytes == true,
-                   let relPath = prewarmInfo.streamUrl,
-                   let streamURL = client.buildAbsoluteURL(relPath),
-                   prewarmedNextEpisodeURL != streamURL {
-                    prewarmedNextEpisodeURL = streamURL
-                    prewarmedNextEpisodeItemId = prewarmInfo.itemId ?? prewarmInfo.nextEpisode?.itemId ?? activeSession?.nextEpisode?.itemId
-                    prewarmedNextEpisodeSessionId = prewarmInfo.sessionId
-                    if let tok = prewarmInfo.streamToken, tok.count >= 8 {
-                        if let oldTok = prewarmedNextEpisodeStreamToken, oldTok.count >= 8, oldTok != tok {
-                            EngineLog.unregisterSecret(oldTok)
-                        }
-                        _ = EngineLog.registerSecret(tok)
-                        prewarmedNextEpisodeStreamToken = tok
-                    }
-                    if DeviceHardwareCapabilities.availableMemoryBytes() > 512 * 1024 * 1024 {
-                        let headers = client.streamHTTPHeaders(for: streamURL)
-                        nextEpisodePrewarmTask?.cancel()
-                        nextEpisodePrewarmTask = Task.detached(priority: .utility) {
-                            guard !Task.isCancelled else { return }
-                            if !AetherEngine.isPrewarmed(url: streamURL) {
-                                _ = await AetherEngine.prewarm(
-                                    url: streamURL,
-                                    httpHeaders: headers,
-                                    byteBudget: 8 * 1024 * 1024
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            if overrideState == nil,
-               !isResolving,
-               !isSwitchingSource,
-               let cmd = hb.pendingCommand {
-                await handleHeartbeatPendingCommand(cmd, client: client, currentPosition: pos)
-            }
-        } catch LunaCoreError.unauthorized {
-            onUnauthorized?()
-        } catch let LunaCoreError.serverMessage(statusCode, _) where statusCode == 410 || statusCode == 404 {
-            heartbeatTask?.cancel()
-            heartbeatTask = nil
-        } catch {
-            // Heartbeats are periodic best-effort telemetry
-        }
-    }
-
-    func handleHeartbeatPendingCommand(
-        _ cmd: TvPendingCommand,
-        client: LunaCoreClient?,
-        currentPosition: Double
-    ) async {
-        guard !isDismissing, !isTeardownCompleted else { return }
-        switch cmd.type {
-        case "reload_switched_stream":
-            guard let switchedSession = cmd.playbackSession, let client else { return }
-            showRemoteCommandToast("Byttet kilde fra iPhone")
-            await applyServerSwitchedSession(switchedSession, client: client, fallbackPosition: currentPosition)
-
-        case "next_episode":
-            guard let next = activeSession?.nextEpisode else { return }
-            showRemoteCommandToast("Neste episode fra iPhone")
-            playNextEpisode(next)
-
-        case "subtitles_on":
-            let liveTracks = engine.subtitleTracks
-            if !liveTracks.isEmpty {
-                subtitleTracks = liveTracks
-            }
-            if let match = SmartTrackRuleEngine.selectBestSubtitleTrack(
-                forLanguage: cmd.language,
-                in: subtitleTracks
-            ) {
-                selectSubtitleManually(match.id)
-                showRemoteCommandToast("Undertekst slått på fra iPhone")
-            } else {
-                showRemoteCommandToast("Ingen undertekster tilgjengelig")
-            }
-
-        default:
-            break
-        }
-    }
-
-    func showRemoteCommandToast(_ message: String) {
-        remoteCommandToastTask?.cancel()
-        remoteCommandToastMessage = message
-        remoteCommandToastTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 3_200_000_000)
-            guard !Task.isCancelled, let self else { return }
-            self.remoteCommandToastMessage = nil
-        }
-    }
-
-    func showTransientBanner(_ message: String) {
-        transientBannerTask?.cancel()
-        transientBannerMessage = message
-        transientBannerTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-            guard !Task.isCancelled, let self else { return }
-            self.transientBannerMessage = nil
-        }
     }
 
     // MARK: - Two-Phase Dismissal & Teardown Helpers

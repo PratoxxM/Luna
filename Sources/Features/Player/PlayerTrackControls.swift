@@ -2,12 +2,12 @@ import Foundation
 import AetherBridge
 
 extension PlayerViewModel {
-    // MARK: - Audio & Subtitle Controls
+    // MARK: - Audio, Subtitle & Sync Controls
 
     func selectAudioTrack(_ index: Int) {
         activeAudioTrackIndex = index
         guard previewAudioOptions.isEmpty else { return }
-        engine.selectAudioTrack(index: index)
+        transport.selectAudioTrack(index: index)
         if comfort.smartNordicSubtitleRule && !userManuallySelectedSubtitle {
             smartRuleTask?.cancel()
             smartRuleTask = Task { @MainActor [weak self] in
@@ -19,7 +19,8 @@ extension PlayerViewModel {
     }
 
     func adjustAudioDelay(byMs deltaMs: Int) {
-        applyAudioDelayMs(audioDelayMs + deltaMs, debounceEngineCommit: true)
+        let nextMs = PlaybackSyncTimingPolicy.stepAudioDelayMs(from: audioDelayMs, deltaMs: deltaMs)
+        applyAudioDelayMs(nextMs, debounceEngineCommit: true)
     }
 
     func resetAudioDelay() {
@@ -81,82 +82,97 @@ extension PlayerViewModel {
         guard !isDismissing, !isTeardownCompleted, !isResolving, !isSwitchingSource else {
             return
         }
-        let availableTracks = !subtitleTracks.isEmpty ? subtitleTracks : engine.subtitleTracks
-        guard !availableTracks.isEmpty else {
+        if subtitleTracks.isEmpty, !engine.subtitleTracks.isEmpty {
+            subtitleTracks = engine.subtitleTracks
+        }
+        let descriptors = !transport.subtitleTrackDescriptors.isEmpty
+            ? transport.subtitleTrackDescriptors
+            : subtitleTracks.map(SmartTrackDescriptor.init(track:))
+        guard !descriptors.isEmpty else {
             return
         }
-        if subtitleTracks != availableTracks {
-            subtitleTracks = availableTracks
-        }
-        guard activeSubtitleTrackIndex == nil && engine.activeSubtitleTrackIndex == nil else {
+        guard activeSubtitleTrackIndex == nil && transport.activeSubtitleTrackIndex == nil else {
             return
         }
         guard let match = SmartTrackRuleEngine.selectBestSubtitleTrack(
             forLanguage: request.language,
-            in: availableTracks
+            in: descriptors
         ) else {
             return
         }
         activeSubtitleTrackIndex = match.id
         if previewSubtitleOptions.isEmpty {
-            engine.selectSubtitleTrack(index: match.id)
+            transport.selectSubtitleTrack(index: match.id)
         }
     }
 
     func setAudioEnhancement(_ mode: AudioEnhancementMode) {
         audioEnhancement = mode
-        engine.setAudioShaping(comfort.buildAudioShaping(enhancement: mode))
+        if comfort.audioEnhancement != mode {
+            comfort.audioEnhancement = mode
+        }
+        transport.setAudioShaping(comfort.buildAudioShaping(enhancement: mode))
     }
 
     func selectSubtitleManually(_ index: Int) {
         userManuallySelectedSubtitle = true
         activeSubtitleTrackIndex = index
         guard previewSubtitleOptions.isEmpty else { return }
-        engine.selectSubtitleTrack(index: index)
+        transport.selectSubtitleTrack(index: index)
     }
 
     func clearSubtitleManually() {
         userManuallySelectedSubtitle = true
         activeSubtitleTrackIndex = nil
         guard previewSubtitleOptions.isEmpty else { return }
-        engine.clearSubtitle()
+        transport.clearSubtitle()
     }
 
-    func adjustSubtitleDelay(by delta: Double) {
-        let rounded = ((subtitleDelaySeconds + delta) * 10).rounded() / 10
-        let updated = min(max(rounded, -10.0), 10.0)
-        engine.setSoftwareSubtitleDelay(updated)
-        subtitleDelaySeconds = engine.softwareSubtitleDelaySeconds
+    func adjustSubtitleDelay(byMs deltaMs: Int) {
+        let updatedMs = PlaybackSyncTimingPolicy.stepSubtitleDelayMs(from: subtitleDelayMs, deltaMs: deltaMs)
+        subtitleDelayMs = updatedMs
+        transport.setSoftwareSubtitleDelay(subtitleDelaySeconds)
+    }
+
+    func adjustSubtitleDelay(by deltaSeconds: Double) {
+        adjustSubtitleDelay(byMs: Int((deltaSeconds * 1000.0).rounded()))
     }
 
     func resetSubtitleDelay() {
-        engine.setSoftwareSubtitleDelay(0)
-        subtitleDelaySeconds = engine.softwareSubtitleDelaySeconds
+        subtitleDelayMs = 0
+        transport.setSoftwareSubtitleDelay(0)
     }
 
     func applySmartSubtitleRule() {
         guard comfort.smartNordicSubtitleRule, !userManuallySelectedSubtitle else { return }
-        let liveAudioTracks = engine.audioTracks
-        let liveAudioIdx = engine.activeAudioTrackIndex
-        let liveSubtitleTracks = engine.subtitleTracks
-        let liveSubIdx = engine.activeSubtitleTrackIndex
+        if !engine.audioTracks.isEmpty || audioTracks.isEmpty {
+            audioTracks = engine.audioTracks
+        }
+        if !engine.subtitleTracks.isEmpty || subtitleTracks.isEmpty {
+            subtitleTracks = engine.subtitleTracks
+        }
+        let liveAudioDescriptors = transport.audioTrackDescriptors
+        let liveAudioIdx = transport.activeAudioTrackIndex ?? activeAudioTrackIndex
+        let liveSubtitleDescriptors = transport.subtitleTrackDescriptors
+        let liveSubIdx = transport.activeSubtitleTrackIndex ?? activeSubtitleTrackIndex
 
-        audioTracks = liveAudioTracks
         activeAudioTrackIndex = liveAudioIdx
-        subtitleTracks = liveSubtitleTracks
         activeSubtitleTrackIndex = liveSubIdx
 
-        let activeAudio = liveAudioTracks.first(where: { $0.id == liveAudioIdx }) ?? liveAudioTracks.first
-        let decision = SmartTrackRuleEngine.evaluate(activeAudio: activeAudio, subtitleTracks: liveSubtitleTracks)
+        let activeAudio = liveAudioDescriptors.first(where: { $0.id == liveAudioIdx }) ?? liveAudioDescriptors.first
+        let decision = SmartTrackRuleEngine.evaluate(
+            activeAudio: activeAudio?.asSmartDescriptor,
+            subtitleTracks: liveSubtitleDescriptors
+        )
         switch decision {
         case .clearSubtitles:
             if liveSubIdx != nil {
-                engine.clearSubtitle()
+                transport.clearSubtitle()
                 activeSubtitleTrackIndex = nil
             }
         case .selectTrack(let trackID):
             if liveSubIdx != trackID {
-                engine.selectSubtitleTrack(index: trackID)
+                transport.selectSubtitleTrack(index: trackID)
                 activeSubtitleTrackIndex = trackID
             }
         case .keepCurrent:
@@ -164,7 +180,7 @@ extension PlayerViewModel {
         }
     }
 
-    // MARK: - Tillegg A: Live MetalFX & Kveldslys Diagnostics
+    // MARK: - Live MetalFX, Høyttaleroppsett & Kveldslys
 
     var isMetalFXActive: Bool {
         activeUpscale != nil && activeUpscale?.disabledReason == nil
@@ -225,35 +241,56 @@ extension PlayerViewModel {
         guard let activeSubtitleTrackIndex else {
             return "Slå på undertekst for å justere"
         }
-        if videoFormat == .sdr {
-            return "Kun aktiv på HDR-innhold"
-        }
         if subtitleTracks.first(where: { $0.id == activeSubtitleTrackIndex })?.isNativelyRenderedSubtitle == true {
             return "Gjelder kun overleggstekst"
         }
         return nil
     }
 
+    var speakerLayoutHeaderSummary: String {
+        comfort.speakerLayoutOverride.headerSummary(forAutoLayout: sessionRoomAutoLayout)
+    }
+
+    var wirelessAudioDelayNotice: String? {
+        isWirelessAudioRouteActive ? "Automatisk trådløs synk aktiv (AirPlay / Bluetooth)" : nil
+    }
+
+    func setSpeakerLayoutLive(_ targetMode: SpeakerLayoutOverrideMode) {
+        comfort.speakerLayoutOverride = targetMode
+        transport.setAudioShaping(comfort.buildAudioShaping(enhancement: audioEnhancement))
+        scheduleLiveEngineOptionsReload()
+    }
+
     func setMetalFXModeLive(_ targetMode: LowResUpscaleMode) {
         comfort.lowResUpscaleMode = targetMode
+        scheduleLiveEngineOptionsReload()
+    }
 
-        guard !isResolving, !isSwitchingSource, previewAudioOptions.isEmpty else {
+    private func scheduleLiveEngineOptionsReload() {
+        guard !isResolving, !isSwitchingSource, !isDismissing, !isTeardownCompleted, previewAudioOptions.isEmpty else {
             return
         }
 
         upscaleReloadTask?.cancel()
         upscaleReloadTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            let upscaleMode = self.comfort.lowResUpscaleMode
+            let speakerMode = self.comfort.speakerLayoutOverride
+            let session = self.activeSession
             let effectiveDelaySeconds = self.effectiveAudioDelaySecondsForActiveRoute()
             let currentShaping = self.comfort.buildAudioShaping(enhancement: self.audioEnhancement)
+            let preservedSubtitleDelay = self.subtitleDelaySeconds
             _ = try? await self.engine.reloadAtCurrentPosition { options in
-                Self.applyLowResUpscaleMode(targetMode, to: &options)
+                Self.applyLowResUpscaleMode(upscaleMode, to: &options)
+                Self.applySpeakerLayoutOverride(speakerMode, session: session, to: &options)
                 options.audioDelaySeconds = effectiveDelaySeconds
                 options.audioShaping = currentShaping
             }
-            if !Task.isCancelled {
-                self.upscaleReloadTask = nil
+            guard !Task.isCancelled else { return }
+            if self.subtitleDelayMs != 0 {
+                self.transport.setSoftwareSubtitleDelay(preservedSubtitleDelay)
             }
+            self.upscaleReloadTask = nil
         }
     }
 }

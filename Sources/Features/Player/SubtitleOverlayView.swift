@@ -123,7 +123,7 @@ struct SubtitleOverlayView: View {
 
     private func recomputeVisibleCues(at sourceTime: Double, cueSource: [SubtitleCue]? = nil) {
         let activeCues = cueSource ?? clockBox.cues
-        let delay = engine.softwareSubtitleDelaySeconds != 0 ? engine.softwareSubtitleDelaySeconds : subtitleDelaySeconds
+        let delay = subtitleDelaySeconds != 0 ? subtitleDelaySeconds : engine.softwareSubtitleDelaySeconds
         let effectiveTime = sourceTime - delay
         let next = activeCues.filter { $0.startTime <= effectiveTime && effectiveTime < $0.endTime }
         let changed = next.count != visibleCues.count || zip(next, visibleCues).contains(where: { $0.id != $1.id })
@@ -275,7 +275,7 @@ struct SubtitleOverlayView: View {
         isHDR: Bool
     ) -> AttributedString {
         var result = AttributedString()
-        let mult = isHDR ? comfort.hdrSubtitlePreset.hdrRGB : (r: 1.0, g: 1.0, b: 1.0)
+        let mult = comfort.hdrSubtitlePreset.rgbComponents
 
         for run in runs {
             var part = AttributedString(run.text)

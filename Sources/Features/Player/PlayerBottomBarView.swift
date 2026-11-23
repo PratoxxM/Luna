@@ -18,7 +18,7 @@ struct QuickActionAnchorFramesKey: PreferenceKey {
     }
 }
 
-/// Evening-cinema transport OSD with bottom quick-action strip (`Tekst · Lyd · Kilde · Bilde · Kapitler`).
+/// Evening-cinema transport OSD with bottom quick-action strip (`Tekst · Lyd · Utgave · Bilde · Kapitler`).
 /// Leaf timeline & chapter/clock observers remain isolated so 10 Hz engine ticks and 60 Hz scrub updates
 /// never re-render `PlayerBottomBarView` or `PlayerContainerView`.
 struct PlayerBottomBarView: View {
@@ -179,11 +179,21 @@ struct PlayerBottomBarView: View {
         HStack(spacing: 12) {
             ForEach(tabs) { tab in
                 let isOpenPopover = (activeQuickPanel == tab)
-                let showsSubtitlesDot = !isOpenPopover && tab == .subtitles && viewModel.activeSubtitleTrackIndex != nil
+                let showsActiveDot: Bool = {
+                    guard !isOpenPopover else { return false }
+                    switch tab {
+                    case .subtitles:
+                        return viewModel.activeSubtitleTrackIndex != nil
+                    case .audio:
+                        return viewModel.audioEnhancement != .reference || viewModel.audioDelayMs != 0
+                    case .source, .picture, .chapters:
+                        return false
+                    }
+                }()
                 LunaPillButton(
                     tab.title,
                     systemImage: tab.systemImage,
-                    showsTrailingDot: showsSubtitlesDot,
+                    showsTrailingDot: showsActiveDot,
                     isSelected: isOpenPopover,
                     prominence: .glassPill,
                     size: .compact

@@ -60,17 +60,28 @@ extension PlayerViewModel {
         return configuredLayout
     }
 
-    private func effectiveSpeakerLayoutLabel(isDTSX: Bool) -> String {
-        if comfort.speakerLayoutOverride == .stereo {
-            return "Stereo 2.0"
-        }
+    var sessionRoomAutoLayout: String {
         if let lay = activeSession?.aetherConfig.objectAudioRendering?.layout, !lay.isEmpty {
-            return (lay == "5.1.2" && isDTSX) ? "7.1.4" : lay
+            return lay
         }
         if activeSession?.hardwareProfile == HardwareProfilePreset.hdr10512.rawValue {
-            return isDTSX ? "7.1.4" : "5.1.2"
+            return "5.1.2"
         }
         return "7.1.4"
+    }
+
+    private func effectiveSpeakerLayoutLabel(isDTSX: Bool) -> String {
+        switch comfort.speakerLayoutOverride {
+        case .stereo:
+            return "Stereo 2.0"
+        case .atmos512:
+            return isDTSX ? "7.1.4" : "5.1.2"
+        case .atmos714:
+            return "7.1.4"
+        case .auto:
+            let base = sessionRoomAutoLayout
+            return (base == "5.1.2" && isDTSX) ? "7.1.4" : base
+        }
     }
 
     // MARK: - AetherEngine LoadOptions
@@ -99,6 +110,7 @@ extension PlayerViewModel {
         audioEnhancement: AudioEnhancementMode,
         audioDelaySeconds: Double,
         autoplay: Bool = true,
+        suppressInitialSubtitleSelection: Bool = false,
         displayCapabilities: DisplayCapabilities = AetherEngine.displayCapabilities,
         memoryProfile: DeviceMemoryProfile = DeviceHardwareCapabilities.memoryProfile,
         availableMemoryBytes: UInt64 = DeviceHardwareCapabilities.availableMemoryBytes()
@@ -152,33 +164,12 @@ extension PlayerViewModel {
         options.audioBridgeMode = cfg.audioBridgeMode == "lossless" ? .lossless : .surroundCompat
         options.audioDelaySeconds = audioDelaySeconds
         options.audioShaping = comfort.buildAudioShaping(enhancement: audioEnhancement)
-
-        switch comfort.speakerLayoutOverride {
-        case .stereo:
-            options.objectAudioRendering = .off
-        case .auto:
-            if let obj = cfg.objectAudioRendering {
-                let layout = Self.mapSpeakerLayout(obj.layout)
-                switch obj.mode.lowercased() {
-                case "off":
-                    options.objectAudioRendering = .off
-                case "apac":
-                    options.objectAudioRendering = .apac(layout)
-                case "lpcm":
-                    options.objectAudioRendering = .lpcm(layout)
-                default:
-                    options.objectAudioRendering = .render(layout)
-                }
-            } else {
-                let fallbackLayout: SpatialSpeakerLayout = session.hardwareProfile == HardwareProfilePreset.hdr10512.rawValue ? .l512 : .l714
-                options.objectAudioRendering = .render(fallbackLayout)
-            }
-        }
+        Self.applySpeakerLayoutOverride(comfort.speakerLayoutOverride, session: session, to: &options)
 
         options.preferredAudioLanguages = cfg.preferredAudioLanguages ?? ["nob", "nor", "no", "eng"]
-        // When smart Nordic rule is enabled, let SmartTrackRuleEngine evaluate tracks once loaded
-        // so Norwegian audio never flashes an initial subtitle before clearSubtitles() runs.
-        options.preferredSubtitleLanguages = comfort.smartNordicSubtitleRule
+        // When smart Nordic rule is enabled or an in-place source switch carries explicit track intent,
+        // evaluate/select subtitles deterministically right after load so no unwanted initial subtitle flashes.
+        options.preferredSubtitleLanguages = (comfort.smartNordicSubtitleRule || suppressInitialSubtitleSelection)
             ? []
             : (cfg.preferredSubtitleLanguages ?? ["nob", "nor", "no", "eng"])
         options.skipsContainerAttachments = cfg.skipsContainerAttachments ?? true
@@ -233,6 +224,45 @@ extension PlayerViewModel {
         options.externalSubtitles = extSubs
 
         return options
+    }
+
+    nonisolated static func applySpeakerLayoutOverride(
+        _ overrideMode: SpeakerLayoutOverrideMode,
+        session: TvPlaybackSession?,
+        to options: inout LoadOptions
+    ) {
+        if overrideMode == .stereo {
+            options.objectAudioRendering = .off
+            return
+        }
+        let cfgObj = session?.aetherConfig.objectAudioRendering
+        let targetLayout: SpatialSpeakerLayout = {
+            switch overrideMode {
+            case .atmos512:
+                return .l512
+            case .atmos714:
+                return .l714
+            case .auto, .stereo:
+                if let explicit = cfgObj?.layout, !explicit.isEmpty {
+                    return mapSpeakerLayout(explicit)
+                }
+                return session?.hardwareProfile == HardwareProfilePreset.hdr10512.rawValue ? .l512 : .l714
+            }
+        }()
+        if let cfgObj {
+            switch cfgObj.mode.lowercased() {
+            case "off" where overrideMode == .auto:
+                options.objectAudioRendering = .off
+            case "apac":
+                options.objectAudioRendering = .apac(targetLayout)
+            case "lpcm":
+                options.objectAudioRendering = .lpcm(targetLayout)
+            default:
+                options.objectAudioRendering = .render(targetLayout)
+            }
+        } else {
+            options.objectAudioRendering = .render(targetLayout)
+        }
     }
 
     nonisolated static func applyLowResUpscaleMode(_ mode: LowResUpscaleMode, to options: inout LoadOptions) {

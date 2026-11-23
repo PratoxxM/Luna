@@ -94,7 +94,7 @@ public struct LunaPillButton: View {
             if accent == .coral { return LunaTheme.coral }
             if accent == .warn { return LunaTheme.warn }
             if isSelected {
-                return accent == .emerald ? LunaTheme.emerald : LunaTheme.linen
+                return accent == .emerald ? LunaTheme.emerald : LunaTheme.amber
             }
             return LunaTheme.moonlight
         }
@@ -118,7 +118,9 @@ public struct LunaPillButton: View {
         case .glassPill, .subtleChip:
             if accent == .coral { return LunaTheme.coral }
             if accent == .warn { return LunaTheme.warn }
-            if isSelected { return LunaTheme.linen }
+            if isSelected {
+                return accent == .emerald ? LunaTheme.emerald : LunaTheme.amber
+            }
             return LunaTheme.moonlight
         }
     }
@@ -139,7 +141,8 @@ public struct LunaPillButton: View {
         case .primary:
             return LunaTokens.Accent.border
         case .glassPill:
-            return isSelected ? LunaTheme.warmBorderStrong : LunaTheme.warmBorder
+            guard isSelected else { return .clear }
+            return accent == .emerald ? LunaTokens.Status.okBorder : LunaTokens.Accent.border
         case .subtleChip:
             return .clear
         }
@@ -200,7 +203,6 @@ private struct LunaPillLabel: View {
                     .font(labelFont(isCompact: isCompact))
                     .foregroundStyle(labelForegroundColor)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.88)
             }
             if let badgeText, !badgeText.isEmpty {
                 Text(badgeText)
@@ -212,7 +214,7 @@ private struct LunaPillLabel: View {
             }
             if showsTrailingDot {
                 Circle()
-                    .fill(effectiveFocused && !isDestructiveFocus ? LunaTokens.Text.onAccent : LunaTheme.moonlight)
+                    .fill(effectiveFocused && !isDestructiveFocus ? LunaTokens.Text.onAccent : LunaTheme.amber)
                     .frame(width: 8, height: 8)
             }
         }

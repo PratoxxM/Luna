@@ -33,6 +33,21 @@ internal enum PlayerOSDVisibilityPolicy {
     ) -> Bool {
         playbackPhase == .paused && isPausedOSDResting && !isScrubbing && !isQuickPanelOpen
     }
+
+    /// Active subtitles remain visible (`opacity = 1`, lifted to top when any quick-panel tab is open)
+    /// across `Tekst`, `Lyd`, `Utgave`, `Bilde`, and `Kapitler`, while staying suppressed behind
+    /// fatal errors or pre-reveal emergency recovery panels.
+    nonisolated static func shouldShowSubtitleOverlay(
+        hasFatalError: Bool,
+        hasSuspendedFatalError: Bool,
+        isPictureReadyForReveal: Bool,
+        isPreviewMode: Bool = false
+    ) -> Bool {
+        guard !hasFatalError, !hasSuspendedFatalError else {
+            return false
+        }
+        return isPictureReadyForReveal || isPreviewMode
+    }
 }
 
 /// Coordinates bottom-OSD visibility, `12 s` OLED pause rest, quick-panel popovers,
@@ -96,7 +111,7 @@ final class PlayerOSDCoordinator {
         viewModel: PlayerViewModel
     ) -> (message: String, tone: LunaToastTone, showsSpinner: Bool)? {
         if viewModel.isSwitchingSource {
-            return ("Bytter kilde…", .ok, true)
+            return ("Bytter utgave…", .ok, true)
         }
         switch viewModel.playbackPhase {
         case .rebuffering, .stalled:
@@ -284,6 +299,19 @@ final class PlayerOSDCoordinator {
         }
     }
 
+    func switchQuickPanelTab(direction: QuickPanelHorizontalDirection, hasChapters: Bool) {
+        guard suspendedFatalErrorForPanel == nil,
+              let current = activeQuickPanel,
+              let next = current.adjacentTab(direction: direction, hasChapters: hasChapters) else {
+            return
+        }
+        lastSelectedQuickTab = next
+        requestedBottomBarAction = .panel(next)
+        withAnimation(LunaFocusStyle.focusSpring) {
+            activeQuickPanel = next
+        }
+    }
+
     func closeQuickPanel(viewModel: PlayerViewModel, returnFocusToPill: Bool) {
         viewModel.flushPendingAudioDelayCommitIfNeeded()
         isQuickActionsModeActive = returnFocusToPill
@@ -408,22 +436,20 @@ struct PlayerPreviewCinemaStageView: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            if activeQuickPanel == nil || activeQuickPanel == .subtitles {
-                VStack {
-                    if !placement.relocateToTop {
-                        Spacer()
-                    }
-                    Text("Velkommen tilbake til Lumon. Avdelingen venter på dere.")
-                        .font(LunaTheme.Font.subtitleCue(size: comfort.subtitleFontSize.pointSize))
-                        .foregroundStyle(comfort.hdrSubtitlePreset.foregroundColor(isHDR: true))
-                        .multilineTextAlignment(.center)
-                        .shadow(color: LunaTheme.pureBlack.opacity(0.96), radius: 3, x: 0, y: 2)
-                        .padding(.horizontal, 120)
-                        .padding(.top, placement.relocateToTop ? placement.topInset : 0)
-                        .padding(.bottom, placement.relocateToTop ? 0 : placement.bottomInset)
-                    if placement.relocateToTop {
-                        Spacer()
-                    }
+            VStack {
+                if !placement.relocateToTop {
+                    Spacer()
+                }
+                Text("Velkommen tilbake til Lumon. Avdelingen venter på dere.")
+                    .font(LunaTheme.Font.subtitleCue(size: comfort.subtitleFontSize.pointSize))
+                    .foregroundStyle(comfort.hdrSubtitlePreset.foregroundColor(isHDR: true))
+                    .multilineTextAlignment(.center)
+                    .shadow(color: LunaTheme.pureBlack.opacity(0.96), radius: 3, x: 0, y: 2)
+                    .padding(.horizontal, 120)
+                    .padding(.top, placement.relocateToTop ? placement.topInset : 0)
+                    .padding(.bottom, placement.relocateToTop ? 0 : placement.bottomInset)
+                if placement.relocateToTop {
+                    Spacer()
                 }
             }
         }

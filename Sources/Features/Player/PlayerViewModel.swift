@@ -38,6 +38,10 @@ final class PlayerViewModel {
     var alternatives: [TvCandidateInfo] = []
     private(set) var alternativesSessionId: String?
     var isLoadingAlternatives: Bool = false
+
+    func markAlternativesLoaded(forSessionId sessionId: String) {
+        alternativesSessionId = sessionId
+    }
     var isSwitchingSource: Bool = false
     var lastVfsTelemetry: TvVfsTelemetry?
 
@@ -71,7 +75,10 @@ final class PlayerViewModel {
 
     var subtitleTracks: [TrackInfo] = []
     var activeSubtitleTrackIndex: Int?
-    var subtitleDelaySeconds: Double = 0
+    var subtitleDelayMs: Int = 0
+    var subtitleDelaySeconds: Double {
+        Double(subtitleDelayMs) / 1000.0
+    }
 
     var previewAudioOptions: [PlayerDrawerAudioOption] = []
     var previewSubtitleOptions: [PlayerDrawerSubtitleOption] = []
@@ -192,6 +199,7 @@ final class PlayerViewModel {
     ) {
         self.engine = engine
         self.comfort = comfort
+        self.audioEnhancement = comfort.audioEnhancement
         self.transport = transport ?? AetherEngineTransport(engine: engine)
         self.audioActivator = audioActivator
         self.isWirelessAudioRouteActive = PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
@@ -301,6 +309,8 @@ final class PlayerViewModel {
         PlayerAudioSessionCoordinator.shared.sampleMenuRefreshRateIfIdle(hasActivePlayback: false)
         engineOwnerToken = PlayerAudioSessionCoordinator.shared.claimEngineOwnership()
         resetTransientTransitionState()
+        audioEnhancement = comfort.audioEnhancement
+        subtitleDelayMs = 0
         lastForegroundPlaybackWasPlaying = false
         isDismissing = false
         pendingStopSnapshot = nil
@@ -394,6 +404,8 @@ final class PlayerViewModel {
         currentRequest = req
         alternatives = []
         alternativesSessionId = nil
+        audioEnhancement = comfort.audioEnhancement
+        subtitleDelayMs = 0
         userManuallySelectedSubtitle = false
         didApplyInitialSmartRule = false
         resolveHeadline = nil
@@ -409,7 +421,7 @@ final class PlayerViewModel {
         let inCredits = chapters.contains { $0.kind == .credits && finalPos >= $0.startSeconds }
         let isCompleted = playbackPhase == .ended || inCredits || (finalDur > 0 && finalPos / finalDur >= 0.75)
         activeSession = nil
-        engine.prepareForItemReplacement()
+        transport.prepareForItemReplacement()
 
         Task.detached(priority: .utility) {
             _ = try? await client.sendHeartbeat(
@@ -521,27 +533,6 @@ final class PlayerViewModel {
                 playbackPhase: transport.playbackPhase,
                 engineState: transport.state
             )
-        }
-    }
-
-    func triggerSourceSwitch(to candidateId: String) {
-        guard activeClient != nil, activeSession != nil else { return }
-        resetTransientTransitionState()
-        fatalError = nil
-        isSwitchingSource = true
-        switchSourceTask?.cancel()
-        switchSourceTask = Task { @MainActor [weak self] in
-            await self?.switchSource(to: candidateId)
-        }
-    }
-
-    func loadAlternatives() async {
-        guard let client = activeClient, let sessionId = activeSession?.sessionId else { return }
-        isLoadingAlternatives = true
-        defer { isLoadingAlternatives = false }
-        if let res = try? await client.fetchAlternatives(sessionId: sessionId) {
-            alternatives = res.alternatives
-            alternativesSessionId = sessionId
         }
     }
 

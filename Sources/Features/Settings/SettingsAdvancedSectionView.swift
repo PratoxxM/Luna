@@ -31,7 +31,8 @@ struct SettingsAdvancedSectionView: View {
 
             LunaControlRow(
                 title: "Høyttaleroppsett og objektlyd",
-                subtitle: "Auto tilpasser til rommet · Stereo for TV-høyttalere"
+                subtitle: "Auto tilpasser til rommet · 5.1.2 / 7.1.4 Atmos · Stereo for TV-høyttalere",
+                axis: .vertical
             ) {
                 HStack(spacing: 10) {
                     ForEach(SpeakerLayoutOverrideMode.allCases) { mode in

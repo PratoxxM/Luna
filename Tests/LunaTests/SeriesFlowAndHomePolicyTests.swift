@@ -380,12 +380,13 @@ final class SeriesFlowAndHomePolicyTests: XCTestCase {
     func testPlayerQuickPanelFiveTabsSmartSubtitleLookupAndRemoteCommandToast() async throws {
         XCTAssertEqual(
             PlayerQuickPanelTab.allCases.map(\.title),
-            ["Tekst", "Lyd", "Kilde", "Bilde", "Kapitler"]
+            ["Tekst", "Lyd", "Utgave", "Bilde", "Kapitler"]
         )
         XCTAssertEqual(
             PlayerQuickPanelTab.visibleTabs(hasChapters: false).map(\.title),
-            ["Tekst", "Lyd", "Kilde", "Bilde"]
+            ["Tekst", "Lyd", "Utgave", "Bilde"]
         )
+        XCTAssertEqual(PlayerQuickPanelTab.source.panelHeaderTitle, "Velg utgave")
 
         let tracks: [SmartTrackDescriptor] = [
             SmartTrackDescriptor(id: 0, name: "Norwegian SDH", codec: "srt", language: "nb", isHearingImpaired: true),

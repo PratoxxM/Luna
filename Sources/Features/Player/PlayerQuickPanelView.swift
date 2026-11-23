@@ -1,69 +1,28 @@
 import SwiftUI
 import AetherBridge
 
-public enum PlayerQuickPanelTab: String, CaseIterable, Identifiable, Sendable {
-    case subtitles
-    case audio
-    case source
-    case picture
-    case chapters
-
-    public var id: String { rawValue }
-
-    public var title: String {
-        switch self {
-        case .subtitles: return "Tekst"
-        case .audio: return "Lyd"
-        case .source: return "Kilde"
-        case .picture: return "Bilde"
-        case .chapters: return "Kapitler"
-        }
-    }
-
-    public var systemImage: String {
-        switch self {
-        case .subtitles: return "captions.bubble"
-        case .audio: return "waveform"
-        case .source: return "film.stack"
-        case .picture: return "sparkles.tv"
-        case .chapters: return "list.bullet"
-        }
-    }
-
-    public static func visibleTabs(hasChapters: Bool) -> [PlayerQuickPanelTab] {
-        allCases.filter { hasChapters || $0 != .chapters }
-    }
-
-    public var fallbackTriggerMinX: CGFloat {
-        switch self {
-        case .subtitles: return 90
-        case .audio: return 242
-        case .source: return 384
-        case .picture: return 530
-        case .chapters: return 676
-        }
-    }
-}
-
 /// Button-anchored Lampelys popover positioned directly above the triggering bottom-bar pill.
-/// Focus starts deterministically on the active (`✓`) item inside each list and closes back cleanly.
+/// Supports direct Left/Right tab switching from full-width rows, starts deterministically on the
+/// active (`✓`) item inside each list, and uses a lightweight `16 pt` shadow for 4K DV P7 FEL headroom.
 struct PlayerQuickPanelView: View {
     let viewModel: PlayerViewModel
     let comfort: ComfortPreferences
     let tab: PlayerQuickPanelTab
     var triggerFrame: CGRect? = nil
+    var canSwitchTabs: Bool = true
+    var onSwitchTab: (QuickPanelHorizontalDirection) -> Void = { _ in }
     let onClose: (_ returnFocusToPill: Bool) -> Void
 
-    @FocusState private var focusedItemID: String?
+    @FocusState var focusedItemID: String?
     @State private var chapterSnapshotTime: Double?
     @State private var contentHeight: CGFloat = 280
-    @Namespace private var panelFocusNamespace
+    @Namespace var panelFocusNamespace
 
     private static let topScrollFadeHeight: CGFloat = 12
     private static let bottomScrollFadeHeight: CGFloat = 14
 
     private var maxScrollContentHeight: CGFloat {
-        tab == .subtitles ? 500 : 610
+        tab == .subtitles ? 520 : 610
     }
 
     nonisolated static func panelWidth(for tab: PlayerQuickPanelTab) -> CGFloat {
@@ -86,7 +45,7 @@ struct PlayerQuickPanelView: View {
             if let frame = triggerFrame, frame.width > 1 {
                 return frame.minX
             }
-            return tab.fallbackTriggerMinX
+            return CGFloat(tab.fallbackTriggerMinX)
         }()
         return min(max(gutter, rawMinX), max(gutter, containerWidth - gutter - width))
     }
@@ -95,11 +54,11 @@ struct PlayerQuickPanelView: View {
         Self.panelWidth(for: tab)
     }
 
-    private var currentPlayheadSnapshotSeconds: Double {
+    var currentPlayheadSnapshotSeconds: Double {
         viewModel.previewPlayheadOverrideSeconds ?? max(0, viewModel.engine.currentTime)
     }
 
-    private func preferredActiveItemID(at snapshotSeconds: Double) -> String {
+    func preferredActiveItemID(at snapshotSeconds: Double) -> String {
         switch tab {
         case .subtitles:
             if let subIdx = viewModel.activeSubtitleTrackIndex {
@@ -135,11 +94,11 @@ struct PlayerQuickPanelView: View {
         }
     }
 
-    private var effectiveChapterSnapshotSeconds: Double {
+    var effectiveChapterSnapshotSeconds: Double {
         chapterSnapshotTime ?? currentPlayheadSnapshotSeconds
     }
 
-    private var preferredActiveItemID: String {
+    var preferredActiveItemID: String {
         preferredActiveItemID(at: effectiveChapterSnapshotSeconds)
     }
 
@@ -220,13 +179,14 @@ struct PlayerQuickPanelView: View {
         .padding(.vertical, 20)
         .frame(width: panelWidth, alignment: .leading)
         .lunaCinemaGlassSurface(
-            shadowColor: LunaTheme.pureBlack.opacity(0.68),
-            shadowRadius: 34,
-            shadowY: 16
+            shadowColor: LunaTheme.pureBlack.opacity(0.58),
+            shadowRadius: 16,
+            shadowY: 8
         )
         .padding(.leading, leadingX)
         .padding(.bottom, 248)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        .animation(LunaFocusStyle.focusSpring, value: tab)
         .task(id: tab) {
             guard tab == .source,
                   viewModel.alternativesSessionId != viewModel.activeSession?.sessionId || viewModel.alternatives.isEmpty else {
@@ -237,7 +197,7 @@ struct PlayerQuickPanelView: View {
     }
 
     private var panelHeader: some View {
-        Text(tab.title)
+        Text(tab.panelHeaderTitle)
             .font(LunaTheme.Font.cardTitle)
             .foregroundStyle(LunaTheme.moonlight)
             .lineLimit(1)
@@ -257,307 +217,5 @@ struct PlayerQuickPanelView: View {
         case .chapters:
             chaptersList
         }
-    }
-
-    // MARK: - Tekst
-
-    @ViewBuilder
-    private var subtitlesList: some View {
-        LunaListRow(
-            title: "Av",
-            isSelected: viewModel.activeSubtitleTrackIndex == nil,
-            dimUnfocusedTitle: true,
-            externalIsFocused: focusedItemID == "sub-off"
-        ) {
-            viewModel.clearSubtitleManually()
-            onClose(false)
-        }
-        .id("sub-off")
-        .focused($focusedItemID, equals: "sub-off")
-        .prefersDefaultFocus(preferredActiveItemID == "sub-off", in: panelFocusNamespace)
-
-        ForEach(viewModel.drawerSubtitleOptions) { sub in
-            let rowID = "sub-\(sub.id)"
-            let selected = viewModel.activeSubtitleTrackIndex == sub.id
-            LunaListRow(
-                title: sub.humanLanguageTitle,
-                subtitle: sub.humanSubtitleDescription,
-                isSelected: selected,
-                dimUnfocusedTitle: true,
-                externalIsFocused: focusedItemID == rowID
-            ) {
-                viewModel.selectSubtitleManually(sub.id)
-                onClose(false)
-            }
-            .id(rowID)
-            .focused($focusedItemID, equals: rowID)
-            .prefersDefaultFocus(preferredActiveItemID == rowID, in: panelFocusNamespace)
-        }
-
-        LunaListDivider()
-            .padding(.vertical, 4)
-
-        if let lockReason = viewModel.kveldslysLockReason {
-            HStack(spacing: 12) {
-                Text("Kveldslys")
-                    .font(LunaTheme.Font.caption)
-                    .foregroundStyle(LunaTheme.muted)
-                Spacer(minLength: 8)
-                Text(lockReason)
-                    .font(LunaTheme.Font.caption)
-                    .foregroundStyle(LunaTheme.muted)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Kveldslys")
-                    .font(LunaTheme.Font.caption)
-                    .foregroundStyle(LunaTheme.muted)
-
-                HStack(spacing: 8) {
-                    ForEach(HDRSubtitlePreset.allCases) { preset in
-                        LunaPillButton(
-                            compactNightLightLabel(preset),
-                            isSelected: comfort.hdrSubtitlePreset == preset,
-                            prominence: .glassPill,
-                            size: .compact
-                        ) {
-                            comfort.hdrSubtitlePreset = preset
-                        }
-                        .focused($focusedItemID, equals: "sub-kveldslys-\(preset.rawValue)")
-                    }
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
-            .focusSection()
-        }
-
-        syncDelayStepperRow(
-            title: "Tekstsynk",
-            minusLabel: "−0,1 s",
-            centerLabel: formatSubtitleDelay(viewModel.subtitleDelaySeconds),
-            plusLabel: "+0,1 s",
-            focusPrefix: "sub-sync",
-            onMinus: { viewModel.adjustSubtitleDelay(by: -0.1) },
-            onReset: { viewModel.resetSubtitleDelay() },
-            onPlus: { viewModel.adjustSubtitleDelay(by: 0.1) }
-        )
-    }
-
-    // MARK: - Lyd
-
-    @ViewBuilder
-    private var audioList: some View {
-        ForEach(viewModel.drawerAudioOptions) { track in
-            let rowID = "aud-\(track.id)"
-            let selected = viewModel.activeAudioTrackIndex == track.id
-            LunaListRow(
-                title: track.humanLanguageTitle,
-                subtitle: track.humanFormatSubtitle,
-                isSelected: selected,
-                dimUnfocusedTitle: true,
-                externalIsFocused: focusedItemID == rowID
-            ) {
-                viewModel.selectAudioTrack(track.id)
-                onClose(false)
-            }
-            .id(rowID)
-            .focused($focusedItemID, equals: rowID)
-            .prefersDefaultFocus(preferredActiveItemID == rowID, in: panelFocusNamespace)
-        }
-
-        LunaListDivider()
-            .padding(.vertical, 4)
-
-        ForEach(AudioEnhancementMode.allCases) { mode in
-            let rowID = "aud-mode-\(mode.rawValue)"
-            LunaListRow(
-                title: mode.displayTitle,
-                subtitle: mode.subtitle,
-                isSelected: viewModel.audioEnhancement == mode,
-                dimUnfocusedTitle: true,
-                externalIsFocused: focusedItemID == rowID
-            ) {
-                viewModel.setAudioEnhancement(mode)
-            }
-            .id(rowID)
-            .focused($focusedItemID, equals: rowID)
-        }
-
-        syncDelayStepperRow(
-            title: "Lydsynk",
-            minusLabel: "−25 ms",
-            centerLabel: ComfortPreferences.displayAudioDelayMs(viewModel.audioDelayMs),
-            plusLabel: "+25 ms",
-            focusPrefix: "aud-sync",
-            onMinus: { viewModel.adjustAudioDelay(byMs: -25) },
-            onReset: { viewModel.resetAudioDelay() },
-            onPlus: { viewModel.adjustAudioDelay(byMs: 25) }
-        )
-    }
-
-    // MARK: - Kilde
-
-    @ViewBuilder
-    private var sourceList: some View {
-        let activeCandidateId = viewModel.activeSession?.selectedCandidate.candidateId
-
-        if viewModel.isLoadingAlternatives && viewModel.alternatives.isEmpty {
-            LunaLoadingRow(message: "Henter tilgjengelige kilder…")
-                .padding(.horizontal, 12)
-        } else if viewModel.alternatives.isEmpty {
-            Text("Ingen alternative kilder funnet for denne tittelen.")
-                .font(LunaTheme.Font.subtitle)
-                .foregroundStyle(LunaTheme.muted)
-                .padding(20)
-        } else {
-            ForEach(Array(viewModel.alternatives.enumerated()), id: \.element.id) { idx, cand in
-                let isCurrent = activeCandidateId != nil
-                    ? (cand.candidateId == activeCandidateId)
-                    : (cand.isActive == true)
-                let rowID = "src-\(cand.candidateId)"
-                SourceCandidateRowView(
-                    candidate: cand,
-                    roomName: viewModel.activeSession?.roomName ?? "",
-                    isRecommended: idx == 0,
-                    isSelected: isCurrent,
-                    activeStatusLabel: "Spilles nå",
-                    isFocused: focusedItemID == rowID,
-                    dimUnfocusedTitle: true
-                ) {
-                    if !isCurrent {
-                        viewModel.triggerSourceSwitch(to: cand.candidateId)
-                    }
-                    onClose(false)
-                }
-                .id(rowID)
-                .focused($focusedItemID, equals: rowID)
-                .prefersDefaultFocus(preferredActiveItemID == rowID, in: panelFocusNamespace)
-            }
-        }
-    }
-
-    // MARK: - Bilde
-
-    @ViewBuilder
-    private var pictureList: some View {
-        ForEach(LowResUpscaleMode.allCases) { mode in
-            let rowID = "pic-metalfx-\(mode.rawValue)"
-            LunaListRow(
-                title: "MetalFX: \(mode.displayTitle)",
-                subtitle: mode.shortDescription,
-                isSelected: comfort.lowResUpscaleMode == mode,
-                dimUnfocusedTitle: true,
-                externalIsFocused: focusedItemID == rowID
-            ) {
-                viewModel.setMetalFXModeLive(mode)
-            }
-            .id(rowID)
-            .focused($focusedItemID, equals: rowID)
-            .prefersDefaultFocus(preferredActiveItemID == rowID, in: panelFocusNamespace)
-        }
-
-        LunaListDivider()
-            .padding(.vertical, 4)
-
-        LunaListRow(
-            title: "Teknisk oversikt",
-            trailingText: comfort.showNerdHUD ? "På" : "Av",
-            trailingTextProminent: comfort.showNerdHUD,
-            dimUnfocusedTitle: true,
-            externalIsFocused: focusedItemID == "pic-hud"
-        ) {
-            comfort.showNerdHUD.toggle()
-        }
-        .id("pic-hud")
-        .focused($focusedItemID, equals: "pic-hud")
-
-        Text(viewModel.videoFormatSummaryLine)
-            .font(LunaTheme.Font.caption)
-            .foregroundStyle(LunaTheme.muted)
-            .lineLimit(1)
-            .padding(.horizontal, 12)
-            .padding(.top, 2)
-    }
-
-    // MARK: - Kapitler
-
-    @ViewBuilder
-    private var chaptersList: some View {
-        let activeChapterID = viewModel.activeChapter(at: effectiveChapterSnapshotSeconds)?.id
-        ForEach(viewModel.chapters) { ch in
-            let rowID = "ch-\(ch.id)"
-            let isCurrent = ch.id == activeChapterID
-            LunaListRow(
-                title: ch.title,
-                subtitle: chapterSubtitle(ch, isActive: isCurrent),
-                trailingText: TimelineScrubberLeafView.formatSeconds(ch.startSeconds),
-                isSelected: isCurrent,
-                dimUnfocusedTitle: true,
-                externalIsFocused: focusedItemID == rowID
-            ) {
-                viewModel.seekToChapter(ch)
-                onClose(false)
-            }
-            .id(rowID)
-            .focused($focusedItemID, equals: rowID)
-            .prefersDefaultFocus(preferredActiveItemID == rowID, in: panelFocusNamespace)
-        }
-    }
-
-    // MARK: - Helpers
-
-    private func syncDelayStepperRow(
-        title: String,
-        minusLabel: String,
-        centerLabel: String,
-        plusLabel: String,
-        focusPrefix: String,
-        onMinus: @escaping () -> Void,
-        onReset: @escaping () -> Void,
-        onPlus: @escaping () -> Void
-    ) -> some View {
-        HStack(spacing: 10) {
-            Text(title)
-                .font(LunaTheme.Font.caption)
-                .foregroundStyle(LunaTheme.muted)
-
-            Spacer(minLength: 8)
-
-            LunaPillButton(minusLabel, prominence: .glassPill, size: .compact, action: onMinus)
-                .focused($focusedItemID, equals: "\(focusPrefix)-minus")
-
-            LunaPillButton(centerLabel, isSelected: true, prominence: .glassPill, size: .compact, action: onReset)
-                .focused($focusedItemID, equals: "\(focusPrefix)-zero")
-
-            LunaPillButton(plusLabel, prominence: .glassPill, size: .compact, action: onPlus)
-                .focused($focusedItemID, equals: "\(focusPrefix)-plus")
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 4)
-        .focusSection()
-    }
-
-    private func compactNightLightLabel(_ preset: HDRSubtitlePreset) -> String {
-        switch preset {
-        case .white100: return "100 %"
-        case .warm75: return "75 %"
-        case .warm60: return "60 %"
-        case .soft50: return "50 %"
-        }
-    }
-
-    private func formatSubtitleDelay(_ seconds: Double) -> String {
-        if abs(seconds) < 0.05 { return "0 s" }
-        let formatted = String(format: "%.1f", abs(seconds)).replacingOccurrences(of: ".", with: ",")
-        return seconds >= 0 ? "+\(formatted) s" : "−\(formatted) s"
-    }
-
-    private func chapterSubtitle(_ chapter: PlaybackChapter, isActive: Bool) -> String? {
-        if isActive { return "Spilles nå" }
-        return chapter.kind.badgeLabel
     }
 }

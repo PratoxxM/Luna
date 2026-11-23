@@ -42,8 +42,8 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let comfort = ComfortPreferences(defaults: defaults)
         comfort.adoptServerOverrides(TvDeviceOverrides(speakerLayoutOverride: "5.1.2"))
-        XCTAssertEqual(comfort.speakerLayoutOverride, .auto)
-        XCTAssertEqual(comfort.toDeviceOverrides().speakerLayoutOverride, "auto")
+        XCTAssertEqual(comfort.speakerLayoutOverride, .atmos512)
+        XCTAssertEqual(comfort.toDeviceOverrides().speakerLayoutOverride, "5.1.2")
         comfort.speakerLayoutOverride = .stereo
         XCTAssertEqual(comfort.toDeviceOverrides().speakerLayoutOverride, "2.0")
         comfort.speakerLayoutOverride = .auto

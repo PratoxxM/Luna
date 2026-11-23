@@ -170,8 +170,16 @@ final class ThemeAndArtworkViewTests: XCTestCase {
             prominence: .glassPill,
             accent: .amber
         )
-        try assertRGB(selectedSecondaryIcon, r: 245, g: 240, b: 232)
-        XCTAssertEqual(try rgbaComponents(selectedSecondaryBorder).a, 0.18, accuracy: 0.015)
+        try assertRGB(selectedSecondaryIcon, r: 196, g: 140, b: 58)
+        XCTAssertEqual(try rgbaComponents(selectedSecondaryBorder).a, 0.45, accuracy: 0.015)
+
+        let restingUnselectedBorder = LunaPillButton.resolveBorderColor(
+            isFocused: false,
+            isSelected: false,
+            prominence: .glassPill,
+            accent: .amber
+        )
+        XCTAssertEqual(try rgbaComponents(restingUnselectedBorder).a, 0.0, accuracy: 0.005)
 
         let watchedButton = LunaPillButton(
             "Sett",
@@ -196,7 +204,7 @@ final class ThemeAndArtworkViewTests: XCTestCase {
             accent: .emerald
         )
         try assertRGB(watchedIcon, r: 94, g: 191, b: 142)
-        XCTAssertEqual(try rgbaComponents(watchedBorder).a, 0.18, accuracy: 0.015)
+        XCTAssertEqual(try rgbaComponents(watchedBorder).a, 0.38, accuracy: 0.015)
 
         let destructiveAction = LunaPillButton(
             "Nullstill tilkobling",

@@ -123,7 +123,7 @@ extension PlayerViewModel {
                 if self.audioTracks != tracks {
                     self.audioTracks = tracks
                 }
-                if self.comfort.smartNordicSubtitleRule && !self.userManuallySelectedSubtitle && !self.subtitleTracks.isEmpty {
+                if self.comfort.smartNordicSubtitleRule && !self.isSwitchingSource && !self.userManuallySelectedSubtitle && !self.subtitleTracks.isEmpty {
                     self.applySmartSubtitleRule()
                 }
             }
@@ -136,7 +136,7 @@ extension PlayerViewModel {
                 if self.subtitleTracks != tracks {
                     self.subtitleTracks = tracks
                 }
-                if self.comfort.smartNordicSubtitleRule && !self.userManuallySelectedSubtitle && !tracks.isEmpty {
+                if self.comfort.smartNordicSubtitleRule && !self.isSwitchingSource && !self.userManuallySelectedSubtitle && !tracks.isEmpty {
                     self.applySmartSubtitleRule()
                 }
             }

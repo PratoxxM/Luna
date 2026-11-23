@@ -80,8 +80,13 @@ struct PlayerContainerView: View {
                 .zIndex(0.5)
             }
 
-            // 1. Leaf-isolated HDR/OLED Subtitle Overlay (never mounted behind fatal error)
-            if viewModel.fatalError == nil {
+            // 1. Leaf-isolated Lampelys Subtitle Overlay (visible across all quick-panel tabs, relocated to top)
+            if PlayerOSDVisibilityPolicy.shouldShowSubtitleOverlay(
+                hasFatalError: viewModel.fatalError != nil,
+                hasSuspendedFatalError: osd.suspendedFatalErrorForPanel != nil,
+                isPictureReadyForReveal: viewModel.isPictureReadyForReveal,
+                isPreviewMode: isPreviewMode
+            ) {
                 SubtitleOverlayView(
                     engine: engine,
                     comfort: comfort,
@@ -90,7 +95,6 @@ struct PlayerContainerView: View {
                     isQuickPanelOpen: isQuickPanelOpen,
                     isNerdHUDVisible: comfort.showNerdHUD
                 )
-                .opacity(osd.activeQuickPanel == nil || osd.activeQuickPanel == .subtitles ? 1 : 0)
                 .ignoresSafeArea()
                 .zIndex(1)
             }
@@ -274,6 +278,13 @@ struct PlayerContainerView: View {
                         comfort: comfort,
                         tab: activeQuickPanel,
                         triggerFrame: osd.quickActionFrames[activeQuickPanel],
+                        canSwitchTabs: osd.suspendedFatalErrorForPanel == nil,
+                        onSwitchTab: { direction in
+                            osd.switchQuickPanelTab(
+                                direction: direction,
+                                hasChapters: !viewModel.chapters.isEmpty
+                            )
+                        },
                         onClose: { returnFocusToPill in
                             osd.closeQuickPanel(viewModel: viewModel, returnFocusToPill: returnFocusToPill)
                         }
@@ -297,12 +308,13 @@ struct PlayerContainerView: View {
                     .zIndex(5.6)
                 }
             } else if let activeQuickPanel = osd.activeQuickPanel, viewModel.fatalError == nil {
-                // Recovery case: "Velg kilde" opened from fatalErrorOverlay before first frame was revealed
+                // Recovery case: "Velg utgave" opened from fatalErrorOverlay before first frame was revealed
                 PlayerQuickPanelView(
                     viewModel: viewModel,
                     comfort: comfort,
                     tab: activeQuickPanel,
                     triggerFrame: osd.quickActionFrames[activeQuickPanel],
+                    canSwitchTabs: false,
                     onClose: { returnFocusToPill in
                         osd.closeQuickPanel(viewModel: viewModel, returnFocusToPill: returnFocusToPill)
                     }

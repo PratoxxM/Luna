@@ -137,12 +137,19 @@ extension PlayerViewModel {
             isWirelessAudioRouteActive = PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
             let effectiveDelaySeconds = effectiveAudioDelaySecondsForActiveRoute()
             let currentShaping = comfort.buildAudioShaping(enhancement: audioEnhancement)
+            let speakerMode = comfort.speakerLayoutOverride
+            let currentSession = activeSession
+            let preservedSubtitleDelay = subtitleDelaySeconds
             try await engine.reloadAtCurrentPosition { options in
                 options.autoplay = defaultShouldPlay
+                Self.applySpeakerLayoutOverride(speakerMode, session: currentSession, to: &options)
                 options.audioDelaySeconds = effectiveDelaySeconds
                 options.audioShaping = currentShaping
             }
             guard !Task.isCancelled, !isTeardownCompleted else { return }
+            if subtitleDelayMs != 0 {
+                transport.setSoftwareSubtitleDelay(preservedSubtitleDelay)
+            }
 
             needsNativeAudioActivationAfterPausedRestore = false
             let initialShouldPlay = Self.resolvedPostRestorePlayingIntent(
