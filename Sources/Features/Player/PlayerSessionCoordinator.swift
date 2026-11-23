@@ -152,7 +152,7 @@ extension PlayerViewModel {
                 let reqSeriesTitle = request.seriesTitle
                 let reqStartPos = request.startPositionSeconds
                 let tokenToPromote = effectivePrepareToken ?? prepSession.sessionId
-                let promoteTask = Task<(Int, TvResolveStartResponse), Error> {
+                let promoteTask = Task {
                     try await client.resolvePlayback(
                         itemId: reqItemId,
                         title: reqApiTitle,

@@ -123,7 +123,7 @@ public actor ArtworkPipeline {
     private nonisolated let inflightImages = InflightTaskCoalescer<String, CGImage?>()
     private nonisolated let inflightRawFetches = InflightTaskCoalescer<String, Data?>()
     private nonisolated let isPlaybackActiveFlag = Mutex(false)
-    private nonisolated let memoryEpochCounter = Mutex<UInt64>(0)
+    private static let memoryEpochCounter = Mutex<UInt64>(0)
     private nonisolated let activePrefetchTasks = Mutex<[UUID: Task<Void, Never>]>([:])
 
     public nonisolated var isPlaybackActive: Bool {
@@ -131,7 +131,7 @@ public actor ArtworkPipeline {
     }
 
     public nonisolated var memoryEpoch: UInt64 {
-        memoryEpochCounter.withLock { $0 }
+        Self.memoryEpochCounter.withLock { $0 }
     }
 
     private var writesSinceLastTrim: Int = 0
@@ -150,7 +150,6 @@ public actor ArtworkPipeline {
 
     private init() {
         let cache = self.ramCache
-        let epochCounter = self.memoryEpochCounter
         NotificationCenter.default.addObserver(
             forName: Notification.Name("UIApplicationDidReceiveMemoryWarningNotification"),
             object: nil,
@@ -158,7 +157,7 @@ public actor ArtworkPipeline {
         ) { _ in
             cache.removeAll()
             BlurHashDecoder.clearCache()
-            epochCounter.withLock { $0 &+= 1 }
+            ArtworkPipeline.memoryEpochCounter.withLock { $0 &+= 1 }
             Task { @MainActor in
                 NotificationCenter.default.post(name: ArtworkPipeline.didPurgeMemoryNotification, object: nil)
             }
@@ -166,7 +165,7 @@ public actor ArtworkPipeline {
     }
 
     private nonisolated func recordAndPostMemoryPurge() {
-        memoryEpochCounter.withLock { $0 &+= 1 }
+        Self.memoryEpochCounter.withLock { $0 &+= 1 }
         Task { @MainActor in
             NotificationCenter.default.post(name: Self.didPurgeMemoryNotification, object: nil)
         }
