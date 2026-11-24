@@ -55,6 +55,7 @@ struct PlayerBottomBarView: View {
         let titles = titleDisplay
         let isMovie = (titles.seriesLine == nil)
         let isScrubbing = viewModel.isScrubbing
+        let hideHeaderForOverlay = isScrubbing || activeQuickPanel != nil
 
         VStack(spacing: 0) {
             Spacer()
@@ -106,8 +107,8 @@ struct PlayerBottomBarView: View {
                     )
                     .allowsHitTesting(false)
                 }
-                .opacity(isScrubbing ? 0 : 1)
-                .animation(.easeOut(duration: 0.14), value: isScrubbing)
+                .opacity(hideHeaderForOverlay ? 0 : 1)
+                .animation(.easeOut(duration: 0.14), value: hideHeaderForOverlay)
 
                 TimelineScrubberLeafView(
                     viewModel: viewModel,

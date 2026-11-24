@@ -36,9 +36,10 @@ internal enum SubtitleOverlayLayout {
         isBottomBarVisible: Bool,
         isQuickPanelOpen: Bool,
         isNerdHUDVisible: Bool,
-        activeSeriesOverlay: ActiveSeriesOverlayKind = .none
+        activeSeriesOverlay: ActiveSeriesOverlayKind = .none,
+        isScrubbing: Bool = false
     ) -> VerticalPlacement {
-        if isQuickPanelOpen {
+        if isQuickPanelOpen || isScrubbing {
             if isNerdHUDVisible {
                 return VerticalPlacement(
                     relocateToTop: true,
@@ -101,6 +102,7 @@ struct SubtitleOverlayView: View {
     var isQuickPanelOpen: Bool = false
     var isNerdHUDVisible: Bool = false
     var activeSeriesOverlay: ActiveSeriesOverlayKind = .none
+    var isScrubbing: Bool = false
 
     @State private var clockBox = SubtitleClockBox()
     @State private var visibleCues: [SubtitleCue] = []
@@ -113,7 +115,8 @@ struct SubtitleOverlayView: View {
             isBottomBarVisible: isBottomBarVisible,
             isQuickPanelOpen: isQuickPanelOpen,
             isNerdHUDVisible: isNerdHUDVisible,
-            activeSeriesOverlay: activeSeriesOverlay
+            activeSeriesOverlay: activeSeriesOverlay,
+            isScrubbing: isScrubbing
         )
 
         GeometryReader { geo in

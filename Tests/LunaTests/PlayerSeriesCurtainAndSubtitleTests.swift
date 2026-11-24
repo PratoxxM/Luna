@@ -81,6 +81,17 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
             subtitleCorridorRect.intersects(SubtitleOverlayLayout.nerdHUDProtectedRect),
             "Relocated top subtitle corridor must never overlap NerdHUDView (x=90..830, y=42..330)"
         )
+
+        // 6. Interactive scrubbing relocates subtitles to top so ScrubPreviewBubbleView never overlaps cues
+        let scrubbingPlacement = SubtitleOverlayLayout.verticalPlacement(
+            isBottomBarVisible: true,
+            isQuickPanelOpen: false,
+            isNerdHUDVisible: false,
+            activeSeriesOverlay: .none,
+            isScrubbing: true
+        )
+        XCTAssertTrue(scrubbingPlacement.relocateToTop)
+        XCTAssertEqual(scrubbingPlacement.topInset, 84)
     }
 
     @MainActor

@@ -83,7 +83,8 @@ struct PlayerContainerView: View {
                     activeQuickPanel: osd.activeQuickPanel,
                     isBottomBarShown: isBottomBarShown,
                     isQuickPanelOpen: isQuickPanelOpen,
-                    activeSeriesOverlay: effectiveSeriesOverlay
+                    activeSeriesOverlay: effectiveSeriesOverlay,
+                    isScrubbing: viewModel.isScrubbing
                 )
                 .ignoresSafeArea()
                 .zIndex(0.5)
@@ -103,7 +104,8 @@ struct PlayerContainerView: View {
                     isBottomBarVisible: isBottomBarShown,
                     isQuickPanelOpen: isQuickPanelOpen,
                     isNerdHUDVisible: comfort.showNerdHUD,
-                    activeSeriesOverlay: effectiveSeriesOverlay
+                    activeSeriesOverlay: effectiveSeriesOverlay,
+                    isScrubbing: viewModel.isScrubbing
                 )
                 .ignoresSafeArea()
                 .zIndex(1)

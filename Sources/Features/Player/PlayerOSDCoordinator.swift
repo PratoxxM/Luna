@@ -417,13 +417,15 @@ struct PlayerPreviewCinemaStageView: View {
     let isBottomBarShown: Bool
     let isQuickPanelOpen: Bool
     var activeSeriesOverlay: ActiveSeriesOverlayKind = .none
+    var isScrubbing: Bool = false
 
     var body: some View {
         let placement = SubtitleOverlayLayout.verticalPlacement(
             isBottomBarVisible: isBottomBarShown,
             isQuickPanelOpen: isQuickPanelOpen,
             isNerdHUDVisible: comfort.showNerdHUD,
-            activeSeriesOverlay: activeSeriesOverlay
+            activeSeriesOverlay: activeSeriesOverlay,
+            isScrubbing: isScrubbing
         )
         let boxAlpha = comfort.subtitleBoxOpacity.alpha
         let cueText = Text(Self.previewTwoLineCue)
