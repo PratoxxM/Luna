@@ -9,6 +9,7 @@ struct PlayerContainerView: View {
     let comfort: ComfortPreferences
     let initialRequest: PlaybackLaunchRequest
     let isPreviewMode: Bool
+    let previewScreenTarget: PreviewScreenTarget?
     let previewFocusDirection: PreviewFocusDirection?
     let previewQuickPanel: PlayerQuickPanelTab?
     let previewFatalError: String?
@@ -25,6 +26,7 @@ struct PlayerContainerView: View {
         comfort: ComfortPreferences,
         initialRequest: PlaybackLaunchRequest,
         isPreviewMode: Bool = false,
+        previewScreenTarget: PreviewScreenTarget? = nil,
         previewFocusDirection: PreviewFocusDirection? = nil,
         previewQuickPanel: PlayerQuickPanelTab? = nil,
         previewFatalError: String? = nil,
@@ -34,6 +36,7 @@ struct PlayerContainerView: View {
         self.comfort = comfort
         self.initialRequest = initialRequest
         self.isPreviewMode = isPreviewMode
+        self.previewScreenTarget = previewScreenTarget
         self.previewFocusDirection = previewFocusDirection
         self.previewQuickPanel = previewQuickPanel
         self.previewFatalError = previewFatalError
@@ -387,13 +390,13 @@ struct PlayerContainerView: View {
         .focusScope(playerFocusNamespace)
         .animation(.easeOut(duration: 0.28), value: viewModel.isPictureReadyForReveal)
         .onChange(of: viewModel.isPictureReadyForReveal) { _, ready in
-            if ready && osd.activeQuickPanel == nil && !osd.isQuickActionsModeActive {
+            if !isPreviewMode && ready && osd.activeQuickPanel == nil && !osd.isQuickActionsModeActive {
                 osd.revealBottomBarTemporarily(viewModel: viewModel)
                 osd.restoreCanvasFocusSoon()
             }
         }
         .onChange(of: shouldEnableCanvasAnchor) { _, enabled in
-            if enabled {
+            if !isPreviewMode && enabled {
                 osd.restoreCanvasFocusSoon()
             }
         }
@@ -470,15 +473,31 @@ struct PlayerContainerView: View {
             }
             viewModel.updateInitialScenePhase(scenePhase)
             if isPreviewMode {
+                let targetScreen = previewScreenTarget ?? .playerSubtitles
                 viewModel.configurePreviewPlayback(
                     request: initialRequest,
-                    session: PreviewMockFixtures.playerSession,
+                    session: PreviewMockFixtures.playerSession(for: targetScreen),
                     client: client
                 )
                 if let previewFatalError {
                     viewModel.fatalError = previewFatalError
                     viewModel.hasFirstFrameReadyForDisplay = false
                     viewModel.isResolving = false
+                } else if targetScreen == .playerScrub {
+                    osd.beginInteractiveScrub()
+                    viewModel.configurePreviewScrub(
+                        originSeconds: 1122,
+                        targetSeconds: 2145,
+                        previewImage: PreviewMockURLProtocol.makeScrubPreviewImage()
+                    )
+                } else if targetScreen == .playerSkipIntro {
+                    viewModel.playbackPhase = .playing
+                    viewModel.previewPlayheadOverrideSeconds = 68
+                    osd.showBottomBar = false
+                } else if targetScreen == .playerNextEpisode {
+                    viewModel.playbackPhase = .playing
+                    viewModel.previewPlayheadOverrideSeconds = 3158
+                    osd.showBottomBar = false
                 } else if previewFocusDirection == .up {
                     osd.revealBottomBarAndFocusQuickActions(
                         target: .panel(.subtitles),
@@ -487,8 +506,12 @@ struct PlayerContainerView: View {
                 } else if let previewQuickPanel {
                     osd.openQuickPanel(previewQuickPanel)
                 } else {
-                    osd.revealBottomBarTemporarily(viewModel: viewModel)
+                    osd.revealBottomBarAndFocusQuickActions(
+                        target: .panel(.subtitles),
+                        viewModel: viewModel
+                    )
                 }
+                osd.disarmAllTimers()
             } else {
                 viewModel.start(request: initialRequest, client: client)
             }

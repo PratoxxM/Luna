@@ -168,12 +168,14 @@ struct HomeView: View {
             }
             .task(id: previewFocusPosterRow ? focusRowId : nil) {
                 guard previewFocusPosterRow, let focusRowId else { return }
-                try? await Task.sleep(nanoseconds: 250_000_000)
-                guard !Task.isCancelled else { return }
-                scrollProxy.scrollTo(focusRowId, anchor: .center)
-                if let focusTargetKey {
-                    entryCardKey = focusTargetKey
-                    entryFocusNonce &+= 1
+                for delayNs: UInt64 in [220_000_000, 480_000_000] {
+                    try? await Task.sleep(nanoseconds: delayNs)
+                    guard !Task.isCancelled else { return }
+                    scrollProxy.scrollTo(focusRowId, anchor: .center)
+                    if let focusTargetKey {
+                        entryCardKey = focusTargetKey
+                        entryFocusNonce &+= 1
+                    }
                 }
             }
             .onChange(of: focusTargetKey) { _, nextKey in

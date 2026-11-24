@@ -408,6 +408,8 @@ final class PlayerOSDCoordinator {
 }
 
 struct PlayerPreviewCinemaStageView: View {
+    private static let previewTwoLineCue = "Velkommen tilbake til avdelingen.\nHele etasjen har ventet på dere i hele kveld."
+
     let client: LunaCoreClient?
     let backdropPath: String?
     let comfort: ComfortPreferences
@@ -423,41 +425,48 @@ struct PlayerPreviewCinemaStageView: View {
             isNerdHUDVisible: comfort.showNerdHUD,
             activeSeriesOverlay: activeSeriesOverlay
         )
+        let boxAlpha = comfort.subtitleBoxOpacity.alpha
+        let cueText = Text(Self.previewTwoLineCue)
+            .font(LunaTheme.Font.subtitleCue(size: comfort.subtitleFontSize.pointSize))
+            .foregroundStyle(comfort.hdrSubtitlePreset.foregroundColor(isHDR: true))
+            .multilineTextAlignment(.center)
 
         ZStack {
             if let backdropURL = client?.resolveArtworkURL(backdropPath, target: .hero4K) {
                 CachedArtworkView(
                     url: backdropURL,
                     client: client,
-                    maxPixelSize: 1920,
+                    maxPixelSize: 3840,
                     placeholderSymbol: "film",
                     contentMode: .fill,
                     reuseAnyCachedSize: true,
                     retainDuringPlayback: true
                 )
             }
-            LinearGradient(
-                colors: [
-                    LunaTheme.pureBlack.opacity(0.45),
-                    Color.clear,
-                    LunaTheme.pureBlack.opacity(0.68),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
             VStack {
                 if !placement.relocateToTop {
                     Spacer()
                 }
-                Text("Velkommen tilbake til Lumon. Avdelingen venter på dere.")
-                    .font(LunaTheme.Font.subtitleCue(size: comfort.subtitleFontSize.pointSize))
-                    .foregroundStyle(comfort.hdrSubtitlePreset.foregroundColor(isHDR: true))
-                    .multilineTextAlignment(.center)
-                    .shadow(color: LunaTheme.pureBlack.opacity(0.95), radius: 4, x: 0, y: 2)
-                    .padding(.leading, placement.relocateToTop ? placement.leadingInset : 120)
-                    .padding(.trailing, placement.relocateToTop ? placement.trailingInset : 120)
-                    .padding(.top, placement.relocateToTop ? placement.topInset : 0)
-                    .padding(.bottom, placement.relocateToTop ? 0 : placement.bottomInset)
+                Group {
+                    if boxAlpha > 0 {
+                        cueText
+                            .padding(.horizontal, 26)
+                            .padding(.vertical, 10)
+                            .background {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(LunaTheme.pureBlack.opacity(boxAlpha))
+                            }
+                    } else {
+                        cueText
+                            .shadow(color: LunaTheme.pureBlack.opacity(0.95), radius: 4, x: 0, y: 2)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                    }
+                }
+                .padding(.leading, placement.relocateToTop ? placement.leadingInset : 120)
+                .padding(.trailing, placement.relocateToTop ? placement.trailingInset : 120)
+                .padding(.top, placement.relocateToTop ? placement.topInset : 0)
+                .padding(.bottom, placement.relocateToTop ? 0 : placement.bottomInset)
                 if placement.relocateToTop {
                     Spacer()
                 }

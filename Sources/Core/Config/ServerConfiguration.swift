@@ -168,7 +168,12 @@ public final class AppSessionStore {
         let ephemeralDefaults = UserDefaults(suiteName: suiteName) ?? .standard
         ephemeralDefaults.removePersistentDomain(forName: suiteName)
         self.defaults = ephemeralDefaults
-        self.comfort = ComfortPreferences(defaults: ephemeralDefaults)
+        let previewComfort = ComfortPreferences(defaults: ephemeralDefaults)
+        if previewConfiguration.screen == .playerNextEpisode {
+            previewComfort.showNerdHUD = true
+            previewComfort.autoPlayNextEpisode = true
+        }
+        self.comfort = previewComfort
         self.deviceID = "luna-preview-appletv"
         self.cachedAppVersion = Self.currentAppVersionString()
         self.cachedOSVersion = Self.currentSystemVersionString()

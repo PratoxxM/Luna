@@ -251,6 +251,7 @@ struct SeriesFlowOverlays: View {
             .task(id: showNextButton ? "\(viewModel.activeSession?.sessionId ?? "")#\(viewModel.comfort.autoPlayNextEpisode)" : "off") {
                 guard showNextButton, viewModel.comfort.autoPlayNextEpisode else { return }
                 countdownState.beginIfNeeded(autoPlayEnabled: true)
+                guard viewModel.previewPlayheadOverrideSeconds == nil else { return }
                 while !Task.isCancelled && showNextButton {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                     guard !Task.isCancelled, showNextButton, let next = viewModel.activeSession?.nextEpisode else {

@@ -7,7 +7,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | Module Path | Responsibility | `/api/tv/v1` Endpoints & Protocols | Unit Test Coverage |
 | :--- | :--- | :--- | :--- |
 | `Sources/App/LunaApp.swift` | Owns single `@MainActor AetherEngine`, root `AppSessionStore`, `ComfortPreferences` & `--preview-screen` boot | — | `LunaCoreLinuxTests.swift` |
-| `Sources/App/PreviewLaunchConfiguration.swift` | Parses `--preview-screen` (`home`, `home-poster`, `catalog`, `library`, `search`, `details`, `settings`, `player-subtitles`, `player-audio`, `player-source`, `player-picture`, `player-chapters`, `player-error`) & `--preview-focus` CLI arguments | — | `LunaCoreLinuxTests.swift` |
+| `Sources/App/PreviewLaunchConfiguration.swift` | Parses `--preview-screen` (`home`, `home-poster`, `catalog`, `catalog-series`, `library`, `search`, `details`, `detail-movie`, `detail-source-picker`, `settings`, `player-osd`, `player-scrub`, `player-subtitles`, `player-audio`, `player-source`, `player-picture`, `player-chapters`, `player-skip-intro`, `player-next-episode`, `player-error`) & `--preview-focus` CLI arguments | — | `CatalogShelfAndStorageLinuxTests.swift` |
 | `Sources/App/PreviewMockFixtures.swift` | Deterministic offline Lampelys Home, catalog & library fixtures | Mock `/api/tv/v1/*` | — |
 | `Sources/App/PreviewMockDetailAndPlayerFixtures.swift` | Deterministic 28-season detail & playback session fixtures | Mock `/api/tv/v1/*` | — |
 | `Sources/App/PreviewMockURLProtocol.swift` | Offline `URLProtocol` router & procedural cinema artwork PNG generator for preview mode | Mock `/api/tv/v1/*`, `/preview-art/*` | — |

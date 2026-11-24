@@ -8,6 +8,7 @@ struct MediaDetailView: View {
     let mediaType: String
     let itemId: String
     let initialTitle: String
+    var previewAutoOpenSourcePicker: Bool = false
 
     @State private var viewModel: MediaDetailViewModel
     @State private var subpageToken = UUID()
@@ -17,6 +18,7 @@ struct MediaDetailView: View {
     @State private var preserveEpisodeFocusAfterAction: Bool = false
     @State private var restoreFocusEpisodeID: String?
     @State private var restoreFocusNonce: Int = 0
+    @State private var didAutoOpenPreviewSourcePicker: Bool = false
 
     private enum PendingMoreSheetAction {
         case readOverview
@@ -29,10 +31,16 @@ struct MediaDetailView: View {
 
     private let detailGutter: CGFloat = LunaTheme.horizontalGutter
 
-    init(mediaType: String, itemId: String, initialTitle: String) {
+    init(
+        mediaType: String,
+        itemId: String,
+        initialTitle: String,
+        previewAutoOpenSourcePicker: Bool = false
+    ) {
         self.mediaType = mediaType
         self.itemId = itemId
         self.initialTitle = initialTitle
+        self.previewAutoOpenSourcePicker = previewAutoOpenSourcePicker
         _viewModel = State(
             initialValue: MediaDetailViewModel(
                 mediaType: mediaType,
@@ -283,6 +291,10 @@ struct MediaDetailView: View {
         }
         .task(id: scopeKey) {
             await viewModel.handleTaskAppearance(scopeKey: scopeKey, sessionContext: sessionStore)
+            if previewAutoOpenSourcePicker, !didAutoOpenPreviewSourcePicker, viewModel.detail != nil {
+                didAutoOpenPreviewSourcePicker = true
+                viewModel.openPrimarySourcePicker()
+            }
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
             viewModel.handleHomeRefreshNonceChange(newNonce)

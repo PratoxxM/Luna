@@ -125,6 +125,10 @@ jobs:
             exit "$RC"
           fi
 
+          mkdir -p .ci-screenshots
+          grep -E "Test Suite .* (passed|failed)|Test Case .* (passed|failed)|Executed [0-9]+ test" xcodebuild-vision.log > .ci-screenshots/xcodebuild-test-summary.txt || true
+          tail -n 30 .ci-screenshots/xcodebuild-test-summary.txt || true
+
       - name: Boot Simulator, Install Luna.app & Capture Screenshots
         env:
           TVOS_SIM_UDID: ${{ steps.sim.outputs.udid }}
@@ -144,7 +148,7 @@ jobs:
           mkdir -p .ci-screenshots
           BUNDLE_ID="local.lunacore.luna"
 
-          for SCREEN in home home-poster catalog library search details settings player-subtitles player-audio player-source player-picture player-chapters player-error; do
+          for SCREEN in home home-poster catalog catalog-series library search details detail-movie detail-source-picker settings player-osd player-scrub player-subtitles player-audio player-source player-picture player-chapters player-skip-intro player-next-episode player-error; do
             echo "==> Terminating prior instance and launching ${BUNDLE_ID} --preview-screen ${SCREEN}..."
             xcrun simctl terminate "$TVOS_SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
             sleep 1
@@ -176,7 +180,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tvos-screenshots
-          path: .ci-screenshots/*.png
+          path: |
+            .ci-screenshots/*.png
+            .ci-screenshots/xcodebuild-test-summary.txt
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14

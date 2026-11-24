@@ -150,6 +150,17 @@ extension PlayerViewModel {
         }
     }
 
+    func configurePreviewScrub(
+        originSeconds: Double = 1122,
+        targetSeconds: Double = 2145,
+        previewImage: CGImage?
+    ) {
+        scrubState.originSeconds = originSeconds
+        scrubState.targetSeconds = targetSeconds
+        scrubState.previewImage = previewImage
+        isScrubbing = true
+    }
+
     func updateTouchScrub(deltaSeconds: Double) {
         guard isScrubbing else { return }
         let dur = max(1, effectiveDurationSeconds)

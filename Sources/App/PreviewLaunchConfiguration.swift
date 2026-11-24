@@ -4,15 +4,22 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
     case home
     case homePoster = "home-poster"
     case catalog
+    case catalogSeries = "catalog-series"
     case library
     case search
     case details
+    case detailMovie = "detail-movie"
+    case detailSourcePicker = "detail-source-picker"
     case settings
+    case playerOsd = "player-osd"
+    case playerScrub = "player-scrub"
     case playerSubtitles = "player-subtitles"
     case playerAudio = "player-audio"
     case playerSource = "player-source"
     case playerPicture = "player-picture"
     case playerChapters = "player-chapters"
+    case playerSkipIntro = "player-skip-intro"
+    case playerNextEpisode = "player-next-episode"
     case playerError = "player-error"
 
     public static func parse(_ raw: String) -> PreviewScreenTarget? {
@@ -23,14 +30,24 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
             return .homePoster
         case "catalog", "movies", "browse", "filmer":
             return .catalog
+        case "catalog-series", "catalog_series", "series", "serier":
+            return .catalogSeries
         case "library", "bibliotek":
             return .library
         case "search", "sok", "søk":
             return .search
         case "details", "detail", "detalj", "detaljer":
             return .details
+        case "detail-movie", "detail_movie", "movie-detail":
+            return .detailMovie
+        case "detail-source-picker", "detail_source_picker", "source-picker":
+            return .detailSourcePicker
         case "settings", "innstillinger":
             return .settings
+        case "player-osd", "player_osd", "osd":
+            return .playerOsd
+        case "player-scrub", "player_scrub", "scrub":
+            return .playerScrub
         case "player", "playback", "avspiller", "player-subtitles", "player_subtitles":
             return .playerSubtitles
         case "player-audio", "player_audio":
@@ -41,6 +58,10 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
             return .playerPicture
         case "player-chapters", "player_chapters":
             return .playerChapters
+        case "player-skip-intro", "player_skip_intro", "skip-intro":
+            return .playerSkipIntro
+        case "player-next-episode", "player_next_episode", "next-episode":
+            return .playerNextEpisode
         case "player-error", "player_error":
             return .playerError
         default:
@@ -50,9 +71,11 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
 
     public var isPlayerScreen: Bool {
         switch self {
-        case .playerSubtitles, .playerAudio, .playerSource, .playerPicture, .playerChapters, .playerError:
+        case .playerOsd, .playerScrub, .playerSubtitles, .playerAudio, .playerSource,
+             .playerPicture, .playerChapters, .playerSkipIntro, .playerNextEpisode, .playerError:
             return true
-        case .home, .homePoster, .catalog, .library, .search, .details, .settings:
+        case .home, .homePoster, .catalog, .catalogSeries, .library, .search,
+             .details, .detailMovie, .detailSourcePicker, .settings:
             return false
         }
     }
@@ -83,7 +106,7 @@ public enum PreviewFocusDirection: String, CaseIterable, Equatable, Sendable {
     }
 }
 
-/// Parses `--preview-screen` (`home|home-poster|catalog|library|search|details|settings|player-*`)
+/// Parses `--preview-screen` (`home|home-poster|catalog|catalog-series|library|search|details|detail-movie|detail-source-picker|settings|player-*`)
 /// and optional `--preview-focus <up|down|left|right|select>` launch arguments for deterministic
 /// tvOS Simulator visual verification without live network dependencies.
 public struct PreviewLaunchConfiguration: Equatable, Sendable {

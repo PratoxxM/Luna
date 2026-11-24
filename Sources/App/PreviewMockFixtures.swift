@@ -311,6 +311,58 @@ enum PreviewMockFixtures {
             badges: ["4K", "HDR10+"],
             availability: TvAvailabilityInfo(state: "instant", tier: "archive")
         ),
+        TvMediaCard(
+            itemId: "series:tmdb:214592",
+            mediaType: "series",
+            ids: TvMediaIds(tmdb: 214592),
+            title: "Makta",
+            year: 2023,
+            posterUrl: "/preview-art/sand-poster.png",
+            backdropUrl: "/preview-art/sand-backdrop.png",
+            dominantColor: "#2d1d12",
+            imdbRating: 8.3,
+            badges: ["4K", "Norsk"],
+            availability: TvAvailabilityInfo(state: "instant", tier: "nvme")
+        ),
+        TvMediaCard(
+            itemId: "series:tmdb:124834",
+            mediaType: "series",
+            ids: TvMediaIds(tmdb: 124834),
+            title: "Pørni",
+            year: 2021,
+            posterUrl: "/preview-art/crimson-poster.png",
+            backdropUrl: "/preview-art/crimson-backdrop.png",
+            dominantColor: "#2a1216",
+            imdbRating: 8.1,
+            badges: ["4K", "Norsk"],
+            availability: TvAvailabilityInfo(state: "instant", tier: "nvme")
+        ),
+        TvMediaCard(
+            itemId: "series:tmdb:76331",
+            mediaType: "series",
+            ids: TvMediaIds(tmdb: 76331),
+            title: "Succession",
+            year: 2018,
+            posterUrl: "/preview-art/navy-poster.png",
+            backdropUrl: "/preview-art/navy-backdrop.png",
+            dominantColor: "#141d2e",
+            imdbRating: 8.8,
+            badges: ["4K", "Dolby Vision", "Atmos"],
+            availability: TvAvailabilityInfo(state: "instant", tier: "nvme")
+        ),
+        TvMediaCard(
+            itemId: "series:tmdb:87108",
+            mediaType: "series",
+            ids: TvMediaIds(tmdb: 87108),
+            title: "Chernobyl",
+            year: 2019,
+            posterUrl: "/preview-art/aubergine-poster.png",
+            backdropUrl: "/preview-art/aubergine-backdrop.png",
+            dominantColor: "#22182b",
+            imdbRating: 9.3,
+            badges: ["4K", "HDR10", "Atmos"],
+            availability: TvAvailabilityInfo(state: "instant", tier: "archive")
+        ),
     ]
 
     static let libraryLocalMovies: [TvMediaCard] = Array(catalogMovies.prefix(8))

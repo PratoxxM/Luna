@@ -1,6 +1,6 @@
 import Foundation
 
-/// Deterministic 28-season detail and playback session fixtures extracted from `PreviewMockFixtures`.
+/// Deterministic 28-season detail, movie detail, and playback session fixtures extracted from `PreviewMockFixtures`.
 extension PreviewMockFixtures {
     static var luksusfellenSeason28Episodes: [TvEpisodeCard] {
         [
@@ -116,17 +116,71 @@ extension PreviewMockFixtures {
         )
     }
 
+    static var duneMovieDetail: TvItemDetail {
+        TvItemDetail(
+            itemId: "movie:tmdb:693134",
+            mediaType: "movie",
+            ids: TvMediaIds(tmdb: 693134, imdb: "tt15239678"),
+            title: "Dune: Part Two",
+            overview: "Paul Atreides forener krefter med Chani og fremenerne på ørkenplaneten Arrakis for å konfrontere konspirasjonen som utslettet familien hans, mens han tvinges til å velge mellom sitt livs kjærlighet og universets skjebne.",
+            overviewNo: nil,
+            overviewEn: nil,
+            year: 2024,
+            status: "Released",
+            runtimeSeconds: 9960,
+            genres: ["Sci-Fi", "Eventyr"],
+            voteAverage: 8.5,
+            rating: 8.5,
+            imdbRating: 8.5,
+            posterUrl: "/preview-art/sand-poster.png",
+            backdropUrl: "/preview-art/sand-backdrop.png",
+            cardBackdropUrl: "/preview-art/sand-backdrop.png",
+            logoUrl: nil,
+            dominantColor: "#3b2614",
+            blurHash: nil,
+            badges: ["4K", "Dolby Vision P7 FEL", "TrueHD Atmos 7.1.4"],
+            nextAirDateBadge: nil,
+            inWatchlist: true,
+            watched: false,
+            monitored: true,
+            monitorMode: "all",
+            availability: TvAvailabilityInfo(state: "instant", tier: "nvme", benefitLabel: "Starter umiddelbart"),
+            progress: TvWatchProgress(
+                positionSeconds: 5640,
+                durationSeconds: 9960,
+                percent: 56.6,
+                watched: false
+            ),
+            selectedSeason: nil,
+            nextUp: nil,
+            seasons: nil,
+            episodes: nil
+        )
+    }
+
     static var playerLaunchRequest: PlaybackLaunchRequest {
-        PlaybackLaunchRequest(
-            itemId: "movie:tmdb:99912",
-            title: "Bara till jul",
-            seriesTitle: nil,
-            season: nil,
-            episode: nil,
-            startPositionSeconds: 1840,
-            candidateId: "cand-playweb-atmos",
+        playerLaunchRequest(for: .playerSubtitles)
+    }
+
+    static func playerLaunchRequest(for screen: PreviewScreenTarget) -> PlaybackLaunchRequest {
+        let startSeconds: Double? = {
+            switch screen {
+            case .playerSkipIntro, .playerNextEpisode:
+                return 0
+            default:
+                return 1122
+            }
+        }()
+        return PlaybackLaunchRequest(
+            itemId: "episode:tmdb:95396:s2:e4",
+            title: "Woe's Hollow",
+            seriesTitle: "Severance",
+            season: 2,
+            episode: 4,
+            startPositionSeconds: startSeconds,
+            candidateId: "cand-framestor-dv7",
             prepareToken: "preview-prep-token",
-            backdropUrl: "/preview-art/crimson-backdrop.png",
+            backdropUrl: "/preview-art/cinema-stage-backdrop.png",
             logoUrl: nil
         )
     }
@@ -135,17 +189,17 @@ extension PreviewMockFixtures {
         [
             PlayerDrawerAudioOption(
                 id: 0,
-                languageCode: "swe",
-                rawTitle: "Svensk",
-                codec: "eac3",
-                channelLayout: "5.1.2",
+                languageCode: "eng",
+                rawTitle: "Original",
+                codec: "truehd",
+                channelLayout: "7.1.4",
                 channels: 8,
                 isAtmos: true
             ),
             PlayerDrawerAudioOption(
                 id: 1,
-                languageCode: "eng",
-                rawTitle: "Original",
+                languageCode: "nob",
+                rawTitle: "Norsk",
                 codec: "eac3",
                 channelLayout: "5.1",
                 channels: 6,
@@ -156,128 +210,140 @@ extension PreviewMockFixtures {
 
     static var previewSubtitleOptions: [PlayerDrawerSubtitleOption] {
         [
-            PlayerDrawerSubtitleOption(id: 10, languageCode: "swe", rawTitle: "Svensk", isForced: true),
-            PlayerDrawerSubtitleOption(id: 11, languageCode: "nob", rawTitle: "Norsk"),
+            PlayerDrawerSubtitleOption(id: 10, languageCode: "nob", rawTitle: "Norsk"),
+            PlayerDrawerSubtitleOption(id: 11, languageCode: "eng", rawTitle: "Engelsk", isHearingImpaired: true),
+            PlayerDrawerSubtitleOption(id: 12, languageCode: "swe", rawTitle: "Svensk"),
         ]
     }
 
     static var previewCandidates: [TvCandidateInfo] {
         [
             TvCandidateInfo(
-                candidateId: "cand-playweb-atmos",
-                displayHeadline: "1080p · WEB-DL · DDP Atmos 5.1 · playWEB",
-                releaseTitle: "Bara.till.jul.2026.1080p.WEB-DL.DDP5.1.Atmos-playWEB",
-                source: "infinidysk",
-                tier: "vfs",
-                resolution: "1080p",
-                videoRangeType: "SDR",
-                dvProfile: nil,
-                dvEnhancementLayer: nil,
-                audioCodec: "DDP Atmos",
-                sizeBytes: 5_476_083_302,
-                tvScore: 980,
+                candidateId: "cand-framestor-dv7",
+                displayHeadline: "4K · Remux · Dolby Vision P7 FEL · TrueHD Atmos 7.1.4 · FraMeSToR",
+                releaseTitle: "Dune.Part.Two.2024.2160p.UHD.BluRay.REMUX.DV.HDR.TrueHD.7.1.Atmos-FraMeSToR",
+                source: "nvme",
+                tier: "nvme",
+                resolution: "2160p",
+                videoRangeType: "Dolby Vision",
+                dvProfile: 7,
+                dvEnhancementLayer: "FEL",
+                audioCodec: "TrueHD Atmos",
+                sizeBytes: 77_738_909_696,
+                tvScore: 1280,
                 isActive: true,
-                explanationChips: ["Strømmes ved start", "DDP Atmos"],
-                releaseGroup: "playWEB",
+                explanationChips: ["På NVMe", "DV P7 FEL", "TrueHD Atmos"],
+                releaseGroup: "FraMeSToR",
                 isNorwegian: true
             ),
             TvCandidateInfo(
-                candidateId: "cand-flux-atmos",
-                displayHeadline: "1080p · WEB-DL · DDP Atmos 5.1 · FLUX",
-                releaseTitle: "Bara.till.jul.2026.1080p.WEB-DL.DDP5.1.Atmos-FLUX",
+                candidateId: "cand-flux-dv8",
+                displayHeadline: "4K · WEB-DL · Dolby Vision P8 · DDP Atmos 5.1 · FLUX",
+                releaseTitle: "Dune.Part.Two.2024.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR-FLUX",
                 source: "infinidysk",
                 tier: "vfs",
-                resolution: "1080p",
-                videoRangeType: "SDR",
-                dvProfile: nil,
+                resolution: "2160p",
+                videoRangeType: "Dolby Vision",
+                dvProfile: 8,
                 dvEnhancementLayer: nil,
                 audioCodec: "DDP Atmos",
-                sizeBytes: 5_368_709_120,
-                tvScore: 940,
+                sizeBytes: 26_628_797_235,
+                tvScore: 1040,
                 isActive: false,
                 explanationChips: ["Strømmes ved start", "DDP Atmos"],
                 releaseGroup: "FLUX",
                 isNorwegian: true
             ),
             TvCandidateInfo(
-                candidateId: "cand-norvine-std",
-                displayHeadline: "1080p · WEB-DL · NORVINE",
-                releaseTitle: "Bara.till.jul.2026.1080p.WEB-DL-NORVINE",
-                source: "infinidysk",
-                tier: "vfs",
+                candidateId: "cand-ctrlhd-1080p",
+                displayHeadline: "1080p · BluRay · DTS-HD MA 5.1 · CtrlHD",
+                releaseTitle: "Dune.Part.Two.2024.1080p.BluRay.DTS-HD.MA.5.1-CtrlHD",
+                source: "archive",
+                tier: "archive",
                 resolution: "1080p",
                 videoRangeType: "SDR",
                 dvProfile: nil,
                 dvEnhancementLayer: nil,
-                audioCodec: "AAC",
-                sizeBytes: 3_221_225_472,
-                tvScore: 860,
+                audioCodec: "DTS-HD MA",
+                sizeBytes: 15_247_133_900,
+                tvScore: 890,
                 isActive: false,
-                explanationChips: ["Strømmes ved start"],
-                releaseGroup: "NORVINE",
+                explanationChips: ["I arkiv", "Tapsfri lyd"],
+                releaseGroup: "CtrlHD",
                 isNorwegian: true
             ),
         ]
     }
 
     static var playerSession: TvPlaybackSession {
+        playerSession(for: .playerSubtitles)
+    }
+
+    static func playerSession(for screen: PreviewScreenTarget) -> TvPlaybackSession {
         let primaryCandidate = previewCandidates[0]
+        let startSeconds: Double = (screen == .playerSkipIntro || screen == .playerNextEpisode) ? 0 : 1122
         let probeChapters = [
-            TvProbeChapter(index: 0, idString: "ch-0", title: "Prolog", startSeconds: 0, endSeconds: 240, kind: "chapter"),
-            TvProbeChapter(index: 1, idString: "ch-1", title: "Introduksjon", startSeconds: 240, endSeconds: 320, kind: "intro"),
-            TvProbeChapter(index: 2, idString: "ch-2", title: "Hjemreise", startSeconds: 320, endSeconds: 5600, kind: "chapter"),
-            TvProbeChapter(index: 3, idString: "ch-3", title: "Rulletekst", startSeconds: 5600, endSeconds: 6180, kind: "credits"),
+            TvProbeChapter(index: 0, idString: "ch-0", title: "Sammendrag", startSeconds: 0, endSeconds: 45, kind: "recap"),
+            TvProbeChapter(index: 1, idString: "ch-1", title: "Introduksjon", startSeconds: 45, endSeconds: 135, kind: "intro"),
+            TvProbeChapter(index: 2, idString: "ch-2", title: "Woe's Hollow", startSeconds: 135, endSeconds: 2940, kind: "chapter"),
+            TvProbeChapter(index: 3, idString: "ch-3", title: "Rulletekst", startSeconds: 2940, endSeconds: 3180, kind: "credits"),
         ]
         return TvPlaybackSession(
-            sessionId: "preview-session-jul",
+            sessionId: "preview-session-severance",
             streamToken: "preview-stream-token-0001",
             roomName: previewRoomName,
             hardwareProfile: previewHardwareProfile,
             item: TvPlaybackItemContext(
-                itemId: "movie:tmdb:99912",
-                mediaType: "movie",
-                ids: TvMediaIds(tmdb: 99912),
-                title: "Bara till jul",
-                seriesTitle: nil,
-                season: nil,
-                episode: nil,
-                year: 2026,
-                runtimeSeconds: 6180,
-                posterUrl: "/preview-art/crimson-poster.png",
-                backdropUrl: "/preview-art/crimson-backdrop.png",
+                itemId: "episode:tmdb:95396:s2:e4",
+                mediaType: "episode",
+                ids: TvMediaIds(tmdb: 95396),
+                title: "Woe's Hollow",
+                seriesTitle: "Severance",
+                season: 2,
+                episode: 4,
+                year: 2025,
+                runtimeSeconds: 3180,
+                posterUrl: "/preview-art/navy-poster.png",
+                backdropUrl: "/preview-art/cinema-stage-backdrop.png",
                 logoUrl: nil
             ),
             selectedCandidate: primaryCandidate,
             stream: TvStreamEndpoint(
-                url: "/preview-stream/jul.mkv",
+                url: "/preview-stream/severance-s02e04.mkv",
                 container: "mkv",
                 supportsByteRanges: true,
                 zeroCopyMode: "206",
                 canClientPrewarmBytes: false,
-                startPositionSeconds: 1840,
-                declaredDurationSeconds: 6180
+                startPositionSeconds: startSeconds,
+                declaredDurationSeconds: 3180
             ),
             tracks: TvSessionTracks(probeConfidence: "high", externalSubtitles: nil, chapters: probeChapters),
             chapters: probeChapters,
             aetherConfig: TvAetherConfig(
-                preferDualLayerDolbyVision: false,
+                preferDualLayerDolbyVision: true,
                 foldsDolbyVisionFEL: false,
                 dolbyVisionHandling: "automatic",
                 matchContentEnabled: true,
                 attemptsHDRMasterOnUnprovenPanel: false,
                 objectAudioRendering: TvObjectAudioConfig(mode: "render", layout: "5.1.2"),
                 audioBridgeMode: "lossless",
-                preferredAudioLanguages: ["swe", "nob", "eng"],
+                preferredAudioLanguages: ["nob", "eng"],
                 preferredSubtitleLanguages: ["nob", "eng"],
                 skipsContainerAttachments: true,
                 generatesBackgroundScrubPreviews: false,
                 serveIFramePlaylist: false,
                 confirmAtmos: false,
                 maxConcurrentSourceRequests: 3,
-                declaredDurationSeconds: 6180
+                declaredDurationSeconds: 3180
             ),
             heartbeatIntervalSeconds: 15,
-            nextEpisode: nil
+            nextEpisode: TvNextEpisodeSummary(
+                itemId: "episode:tmdb:95396:s2:e5",
+                season: 2,
+                episode: 5,
+                title: "Trojan's Horse",
+                stillUrl: "/preview-art/teal-backdrop.png"
+            )
         )
     }
 }

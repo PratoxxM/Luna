@@ -15,6 +15,7 @@ struct SearchView: View {
     let initialQuery: String
     let isRootTab: Bool
     let isActiveTab: Bool
+    let previewFocusFirstResult: Bool
 
     @State private var subpageToken = UUID()
 
@@ -36,6 +37,7 @@ struct SearchView: View {
     @State private var mountedTracker = MountedEntryCardTracker()
     @State private var entryCardID: String?
     @State private var cardFocusNonce: Int = 0
+    @State private var didApplyPreviewResultFocus: Bool = false
 
     @FocusState private var isQueryFieldFocused: Bool
     @FocusState private var controlFocus: SearchControlFocus?
@@ -46,10 +48,16 @@ struct SearchView: View {
         isFocused ? LunaTokens.Accent.border : .clear
     }
 
-    init(initialQuery: String = "", isRootTab: Bool = false, isActiveTab: Bool = true) {
+    init(
+        initialQuery: String = "",
+        isRootTab: Bool = false,
+        isActiveTab: Bool = true,
+        previewFocusFirstResult: Bool = false
+    ) {
         self.initialQuery = initialQuery
         self.isRootTab = isRootTab
         self.isActiveTab = isActiveTab
+        self.previewFocusFirstResult = previewFocusFirstResult
         _query = State(initialValue: initialQuery)
     }
 
@@ -289,6 +297,15 @@ struct SearchView: View {
                 return
             }
             await executeSearch(trimmed: trimmedQuery)
+            if previewFocusFirstResult, !didApplyPreviewResultFocus, let firstID = results.first?.id {
+                didApplyPreviewResultFocus = true
+                entryCardID = firstID
+                cardFocusNonce &+= 1
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                if !Task.isCancelled {
+                    cardFocusNonce &+= 1
+                }
+            }
         }
         .onDisappear {
             if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(

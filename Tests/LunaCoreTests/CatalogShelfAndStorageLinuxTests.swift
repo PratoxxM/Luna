@@ -226,6 +226,39 @@ final class CatalogShelfAndStorageLinuxTests: XCTestCase {
         let detailCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "details"])
         XCTAssertEqual(detailCfg?.screen, .details)
         XCTAssertNil(detailCfg?.focusDirection)
+
+        let seriesCatCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "catalog-series"])
+        XCTAssertEqual(seriesCatCfg?.screen, .catalogSeries)
+        XCTAssertEqual(seriesCatCfg?.screen.isPlayerScreen, false)
+
+        let movieDetailCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "detail-movie"])
+        XCTAssertEqual(movieDetailCfg?.screen, .detailMovie)
+        XCTAssertEqual(movieDetailCfg?.screen.isPlayerScreen, false)
+
+        let sourcePickerCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "detail-source-picker"])
+        XCTAssertEqual(sourcePickerCfg?.screen, .detailSourcePicker)
+        XCTAssertEqual(sourcePickerCfg?.screen.isPlayerScreen, false)
+
+        let osdCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "player-osd"])
+        XCTAssertEqual(osdCfg?.screen, .playerOsd)
+        XCTAssertEqual(osdCfg?.screen.isPlayerScreen, true)
+
+        let scrubCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "player-scrub"])
+        XCTAssertEqual(scrubCfg?.screen, .playerScrub)
+        XCTAssertEqual(scrubCfg?.screen.isPlayerScreen, true)
+
+        let skipIntroCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "player-skip-intro"])
+        XCTAssertEqual(skipIntroCfg?.screen, .playerSkipIntro)
+        XCTAssertEqual(skipIntroCfg?.screen.isPlayerScreen, true)
+
+        let nextEpCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "player-next-episode"])
+        XCTAssertEqual(nextEpCfg?.screen, .playerNextEpisode)
+        XCTAssertEqual(nextEpCfg?.screen.isPlayerScreen, true)
+
+        for target in PreviewScreenTarget.allCases {
+            let roundtrip = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", target.rawValue])
+            XCTAssertEqual(roundtrip?.screen, target)
+        }
     }
 
     func testCrossRowSeriesDeduplicationHidesEmptyActiveSeriesShelfAndPreservesDiscoveryShelves() {

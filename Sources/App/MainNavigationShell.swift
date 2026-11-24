@@ -23,14 +23,14 @@ struct MainNavigationShell: View {
         switch previewConfiguration?.screen {
         case .catalog:
             initialTab = .movies
+        case .catalogSeries, .details:
+            initialTab = .series
         case .library:
             initialTab = .library
         case .search:
             initialTab = .search
         case .settings:
             initialTab = .settings
-        case .details:
-            initialTab = .series
         default:
             initialTab = .home
         }
@@ -61,8 +61,9 @@ struct MainNavigationShell: View {
             PlayerContainerView(
                 engine: engine,
                 comfort: sessionStore.comfort,
-                initialRequest: PreviewMockFixtures.playerLaunchRequest,
+                initialRequest: PreviewMockFixtures.playerLaunchRequest(for: screen),
                 isPreviewMode: true,
+                previewScreenTarget: screen,
                 previewFocusDirection: previewConfiguration?.focusDirection ?? .down,
                 previewQuickPanel: previewPanel,
                 previewFatalError: previewError,
@@ -78,6 +79,19 @@ struct MainNavigationShell: View {
                     mediaType: "series",
                     itemId: "series:tmdb:246810",
                     initialTitle: "Luksusfellen"
+                )
+            }
+            .ignoresSafeArea()
+            .environment(\.lunaSubpageVisibility, navBarVisibility.sink)
+            .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
+            .environment(sessionStore.comfort)
+        } else if previewConfiguration?.screen == .detailMovie || previewConfiguration?.screen == .detailSourcePicker {
+            NavigationStack {
+                MediaDetailView(
+                    mediaType: "movie",
+                    itemId: "movie:tmdb:693134",
+                    initialTitle: "Dune: Part Two",
+                    previewAutoOpenSourcePicker: previewConfiguration?.screen == .detailSourcePicker
                 )
             }
             .ignoresSafeArea()
@@ -165,7 +179,8 @@ struct MainNavigationShell: View {
                     SearchView(
                         initialQuery: previewConfiguration?.screen == .search ? "Dune" : "",
                         isRootTab: true,
-                        isActiveTab: selectedTab == .search
+                        isActiveTab: selectedTab == .search,
+                        previewFocusFirstResult: previewConfiguration?.screen == .search
                     )
                     .toolbar(.hidden, for: .tabBar)
                     .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
