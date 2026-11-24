@@ -43,6 +43,7 @@ let package = Package(
                 "DesignSystem/LunaListRow.swift",
                 "DesignSystem/LunaPillButton.swift",
                 "DesignSystem/LunaSheetContainer.swift",
+                "DesignSystem/LunaTextField.swift",
                 "DesignSystem/LunaTheme.swift",
                 "DesignSystem/LunaThemeTypography.swift",
                 "DesignSystem/Tokens",

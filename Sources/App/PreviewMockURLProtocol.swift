@@ -147,7 +147,7 @@ final class PreviewMockURLProtocol: URLProtocol {
             )
             return (try? LunaCoreClient.encodeJSON(start)) ?? Data("{}".utf8)
         }
-        if path.hasSuffix("/alternatives") {
+        if path.hasSuffix("/alternatives") || path == "/api/tv/v1/playback/candidates" {
             let alt = TvAlternativesResponse(
                 ok: true,
                 sessionId: PreviewMockFixtures.playerSession.sessionId,

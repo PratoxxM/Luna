@@ -230,6 +230,30 @@ public enum LunaCopy: Sendable {
         return "Strømmes ved start"
     }
 
+    public nonisolated static func friendlyEngineErrorMessage(_ raw: String) -> String {
+        let cleaned = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else {
+            return "Avspillingsfeil i strømmen."
+        }
+        let lower = cleaned.lowercased()
+        if lower.contains("401") || lower.contains("credentials") || lower.contains("unauthorized") {
+            return "Strømmen utløp eller ble avvist (HTTP 401). Prøv på nytt eller velg en annen utgave."
+        }
+        if lower.contains("403") || lower.contains("forbidden") {
+            return "Ingen tilgang til videostrømmen (HTTP 403). Prøv på nytt."
+        }
+        if lower.contains("404") || lower.contains("not found") {
+            return "Fant ikke videostrømmen på serveren (HTTP 404). Prøv en annen utgave."
+        }
+        if lower.contains("timed out") || lower.contains("timeout") {
+            return "Tidsavbrudd mot videokilden. Prøv på nytt eller velg en annen utgave."
+        }
+        if lower.contains("connection") && (lower.contains("lost") || lower.contains("refused") || lower.contains("reset")) {
+            return "Mistet forbindelsen til videostrømmen på lokalnettet. Prøv på nytt."
+        }
+        return cleaned
+    }
+
     public nonisolated static func friendlyErrorMessage(
         _ error: Error,
         fallback: String = "Kunne ikke nå LunaCore akkurat nå. Prøv igjen om litt."

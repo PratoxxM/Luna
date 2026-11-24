@@ -174,4 +174,33 @@ final class PlayerTimelineAndScrubUXTests: XCTestCase {
         XCTAssertNil(osd.activeQuickPanel)
         XCTAssertEqual(vm.fatalError, "Kunne ikke lese strøm.")
     }
+
+    @MainActor
+    func testTouchCaptureUIViewSimultaneousPanAndSelectToPauseKeepsPanAlive() {
+        let touchView = TouchCaptureUIView(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        var isPlaying = true
+        var isScrubbing = false
+        var selectClicks = 0
+        touchView.isPlayingProvider = { isPlaying }
+        touchView.isScrubbingProvider = { isScrubbing }
+        touchView.canLockHorizontalFocusProvider = { true }
+        touchView.durationSecondsProvider = { 5400 }
+        touchView.onSelectClick = {
+            selectClicks += 1
+            if isScrubbing {
+                isScrubbing = false
+                isPlaying = true
+            } else {
+                isPlaying.toggle()
+            }
+        }
+
+        let dummyA = UIPanGestureRecognizer()
+        let dummyB = UIPanGestureRecognizer()
+        XCTAssertTrue(
+            touchView.gestureRecognizer(dummyA, shouldRecognizeSimultaneouslyWith: dummyB),
+            "Indirect pan must recognize simultaneously with UIFocusSystem pan recognizer on tvOS 26"
+        )
+        XCTAssertEqual(selectClicks, 0)
+    }
 }

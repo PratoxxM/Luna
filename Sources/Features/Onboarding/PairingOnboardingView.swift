@@ -96,8 +96,14 @@ struct PairingOnboardingView: View {
 
             if showManualInput {
                 VStack(spacing: 16) {
-                    TextField("Serveradresse (f.eks. http://lunacore.local:8090)", text: $manualURLInput)
-                        .frame(width: 760)
+                    LunaTextField(
+                        "Serveradresse (f.eks. http://lunacore.local:8090)",
+                        text: $manualURLInput,
+                        leadingSystemImage: "server.rack",
+                        keyboardType: .URL,
+                        returnKeyType: .go
+                    )
+                    .frame(width: 760)
 
                     HStack(spacing: 20) {
                         LunaPillButton("Start paring", systemImage: "link", prominence: .primary) {

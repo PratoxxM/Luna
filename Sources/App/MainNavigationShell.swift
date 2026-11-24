@@ -177,10 +177,11 @@ struct MainNavigationShell: View {
 
                 NavigationStack {
                     SearchView(
-                        initialQuery: previewConfiguration?.screen == .search ? "Dune" : "",
+                        initialQuery: (previewConfiguration?.screen == .search && previewConfiguration?.focusDirection != .select) ? "Dune" : "",
                         isRootTab: true,
                         isActiveTab: selectedTab == .search,
-                        previewFocusFirstResult: previewConfiguration?.screen == .search
+                        previewFocusFirstResult: previewConfiguration?.screen == .search && previewConfiguration?.focusDirection != .select,
+                        previewFocusSearchField: previewConfiguration?.screen == .search && previewConfiguration?.focusDirection == .select
                     )
                     .toolbar(.hidden, for: .tabBar)
                     .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))

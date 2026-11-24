@@ -114,8 +114,13 @@ struct PlayerContainerView: View {
             // 1.5 Invisible UIKit Siri Remote Touch & Click Surface (`focusEffect = nil`)
             if shouldEnableCanvasAnchor {
                 SiriRemoteTouchSurface(
-                    isPlayingProvider: { viewModel.playbackPhase == .playing },
+                    isPlayingProvider: { viewModel.playbackPhase == .playing && viewModel.transport.state != .paused },
+                    isScrubbingProvider: { viewModel.isScrubbing },
+                    canLockHorizontalFocusProvider: {
+                        !osd.isSeriesPromptFocused && !osd.isQuickActionsModeActive && osd.activeQuickPanel == nil
+                    },
                     durationSecondsProvider: { viewModel.effectiveDurationSeconds },
+                    focusRequestNonce: osd.canvasRestoreNonce,
                     cancelHoldNonce: osd.ringHoldCancelNonce,
                     onLightTouch: {
                         if !viewModel.isScrubbing {
@@ -260,6 +265,7 @@ struct PlayerContainerView: View {
                         viewModel: viewModel,
                         fallbackRequest: effectiveRequest,
                         activeQuickPanel: osd.activeQuickPanel,
+                        isQuickActionsModeActive: osd.isQuickActionsModeActive,
                         suppressFloatingNextPill: osd.hasSeriesPrompt,
                         focusRequestNonce: osd.bottomBarFocusRequestNonce,
                         clearFocusNonce: osd.bottomBarClearFocusNonce,

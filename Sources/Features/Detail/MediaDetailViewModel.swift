@@ -371,12 +371,43 @@ final class MediaDetailViewModel {
     ) {
         ItemDetailMemoryCache.invalidate(itemId: itemId, tmdbId: detail?.ids.tmdb)
         let currentClient = refreshedClient()
+        var effectiveToken: String? = reusedToken
+        var effectiveCandidateId: String? = reusedToken == nil ? picked.candidateId : nil
         var handedOverSession: TvPlaybackSession? = nil
         var handedOverInflight: Task<TvPrepareResponse?, Never>? = nil
         var handedOverInflightToken: String? = nil
-        if reusedToken != nil {
+
+        if reusedToken == SourcePickerTokenPolicy.adoptInflightDefaultSentinel {
+            let handoff = preResolve.consumeHandoffForPlayback(
+                itemId: target.itemId,
+                startPosition: target.startPositionSeconds,
+                client: currentClient
+            )
+            if let readySession = handoff.preparedSession,
+               readySession.selectedCandidate.candidateId == picked.candidateId {
+                effectiveToken = handoff.prepareToken ?? readySession.sessionId
+                effectiveCandidateId = nil
+                handedOverSession = readySession
+            } else if handoff.inflightPrepareTask != nil {
+                effectiveToken = nil
+                effectiveCandidateId = nil
+                handedOverInflight = handoff.inflightPrepareTask
+                handedOverInflightToken = handoff.inflightPrepareToken
+            } else {
+                if let mismatchedSid = handoff.preparedSession?.sessionId ?? handoff.prepareToken,
+                   !mismatchedSid.isEmpty,
+                   let currentClient {
+                    DetailPreResolveController.stopSessionDetached(sessionId: mismatchedSid, client: currentClient)
+                }
+                effectiveToken = nil
+                effectiveCandidateId = picked.candidateId
+            }
+        } else if let reusedToken {
             if let createdPreparedSession {
-                preResolve.discardPreparedSession(client: currentClient)
+                preResolve.discardPreparedSession(
+                    excludingSessionId: createdPreparedSession.sessionId,
+                    client: currentClient
+                )
                 handedOverSession = createdPreparedSession
             } else {
                 let handoff = preResolve.consumeHandoffForPlayback(
@@ -384,6 +415,12 @@ final class MediaDetailViewModel {
                     startPosition: target.startPositionSeconds,
                     client: currentClient
                 )
+                if handoff.preparedSession == nil {
+                    preResolve.discardPreparedSession(
+                        excludingSessionId: reusedToken,
+                        client: currentClient
+                    )
+                }
                 handedOverSession = handoff.preparedSession
                 handedOverInflight = handoff.inflightPrepareTask
                 handedOverInflightToken = handoff.inflightPrepareToken
@@ -399,8 +436,8 @@ final class MediaDetailViewModel {
             season: target.season,
             episode: target.episode,
             startPositionSeconds: target.startPositionSeconds,
-            candidateId: reusedToken == nil ? picked.candidateId : nil,
-            prepareToken: reusedToken,
+            candidateId: effectiveCandidateId,
+            prepareToken: effectiveToken,
             preparedSession: handedOverSession,
             inflightPrepareTask: handedOverInflight,
             inflightPrepareToken: handedOverInflightToken,

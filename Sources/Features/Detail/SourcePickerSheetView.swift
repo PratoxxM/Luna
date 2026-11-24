@@ -64,6 +64,8 @@ public struct SourcePickerContext: Identifiable, Equatable, Hashable, Sendable {
 }
 
 internal enum SourcePickerTokenPolicy {
+    nonisolated static let adoptInflightDefaultSentinel = "__luna_adopt_default_inflight__"
+
     nonisolated static func effectiveExistingPrepareToken(
         rawExistingToken: String?,
         existingTokenFailed: Bool
@@ -92,6 +94,11 @@ internal protocol SourcePickerSessionClient: Sendable {
         prepareToken: String?
     ) async throws
     func fetchAlternatives(sessionId: String) async throws -> TvAlternativesResponse
+    func fetchItemCandidates(
+        itemId: String,
+        title: String,
+        seriesTitle: String?
+    ) async throws -> TvAlternativesResponse
     func sendHeartbeat(
         sessionId: String,
         state: String,
@@ -99,6 +106,16 @@ internal protocol SourcePickerSessionClient: Sendable {
         durationSeconds: Double,
         completed: Bool?
     ) async throws -> TvHeartbeatResponse
+}
+
+extension SourcePickerSessionClient {
+    func fetchItemCandidates(
+        itemId: String,
+        title: String,
+        seriesTitle: String?
+    ) async throws -> TvAlternativesResponse {
+        throw LunaCoreError.serverMessage(404, "unsupported")
+    }
 }
 
 extension LunaCoreClient: SourcePickerSessionClient {}
@@ -113,6 +130,7 @@ internal final class SourcePickerViewModel {
     @ObservationIgnored private(set) var createdOrphanSessionId: String?
     @ObservationIgnored private(set) var createdPreparedSession: TvPlaybackSession?
     @ObservationIgnored private(set) var inflightPrepareToken: String?
+    @ObservationIgnored private(set) var loadedViaFastItemCandidates: Bool = false
     @ObservationIgnored private(set) var didSelectCandidate: Bool = false
     private(set) var isLoading: Bool = true
     private(set) var errorMessage: String?
@@ -140,6 +158,7 @@ internal final class SourcePickerViewModel {
         errorMessage = nil
 
         var usedExistingToken = false
+        loadedViaFastItemCandidates = false
         do {
             let sessionToken: String
             if let existing = SourcePickerTokenPolicy.effectiveExistingPrepareToken(
@@ -151,6 +170,27 @@ internal final class SourcePickerViewModel {
                 createdPreparedSession = nil
                 usedExistingToken = true
             } else {
+                do {
+                    let fastAlt = try await client.fetchItemCandidates(
+                        itemId: context.itemId,
+                        title: context.apiTitle,
+                        seriesTitle: context.seriesTitle
+                    )
+                    if Task.isCancelled || isDismissed { return }
+                    let nonEmptySid = fastAlt.sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+                    resolvedPrepareToken = nonEmptySid.isEmpty ? nil : nonEmptySid
+                    createdOrphanSessionId = nil
+                    createdPreparedSession = nil
+                    loadedViaFastItemCandidates = true
+                    candidates = fastAlt.alternatives
+                    activeCandidateId = fastAlt.activeCandidateId
+                        ?? fastAlt.alternatives.first(where: { $0.isActive == true })?.candidateId
+                    isLoading = false
+                    return
+                } catch let LunaCoreError.serverMessage(status, _) where status == 404 || status == 405 {
+                    // Fallback to full prepare + alternatives on older servers without /playback/candidates
+                }
+
                 let reqToken = UUID().uuidString
                 inflightPrepareToken = reqToken
                 defer {
@@ -243,11 +283,13 @@ internal final class SourcePickerViewModel {
         onSelectCandidate: (TvCandidateInfo, String?, TvPlaybackSession?) -> Void
     ) {
         didSelectCandidate = true
-        if isCurrent, let tok = resolvedPrepareToken {
+        if isCurrent, let tok = resolvedPrepareToken, !tok.isEmpty {
             let handedOverSession = createdPreparedSession
             createdOrphanSessionId = nil
             createdPreparedSession = nil
             onSelectCandidate(candidate, tok, handedOverSession)
+        } else if isCurrent, loadedViaFastItemCandidates {
+            onSelectCandidate(candidate, SourcePickerTokenPolicy.adoptInflightDefaultSentinel, nil)
         } else {
             stopOrphanSessionIfNeeded(context: context, client: client)
             onSelectCandidate(candidate, nil, nil)

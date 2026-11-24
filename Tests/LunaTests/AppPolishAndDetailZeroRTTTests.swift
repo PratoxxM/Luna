@@ -355,5 +355,47 @@ final class AppPolishAndDetailZeroRTTTests: XCTestCase {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         XCTAssertTrue(iconRestUI.getRed(&r, green: &g, blue: &b, alpha: &a))
         XCTAssertEqual(Double(a), 0.0, accuracy: 0.005)
+
+        // LunaTextField must never paint a white focus capsule and NonFocusableTVTextField must reject focus
+        let focusedSurface = UIColor(LunaTextField.resolveSurfaceColor(isFocused: true))
+        var fr: CGFloat = 0, fg: CGFloat = 0, fb: CGFloat = 0, fa: CGFloat = 0
+        XCTAssertTrue(focusedSurface.getRed(&fr, green: &fg, blue: &fb, alpha: &fa))
+        XCTAssertLessThan(Double(fr), 0.30, "Focused LunaTextField surface must stay dark Lampelys espresso, never white")
+        XCTAssertLessThan(Double(fg), 0.25)
+        XCTAssertLessThan(Double(fb), 0.25)
+        XCTAssertEqual(Double(fa), 1.0, accuracy: 0.01)
+
+        let hiddenTF = NonFocusableTVTextField(frame: CGRect(x: 0, y: 0, width: 2, height: 2))
+        XCTAssertFalse(hiddenTF.canBecomeFocused, "Hidden keyboard host UITextField must never become UIFocusSystem target")
+    }
+
+    @MainActor
+    func testCoalescedPreparedSessionIsNotStoppedOnSourcePickerSelect() {
+        let controller = DetailPreResolveController()
+        controller.discardPreparedSession(excludingSessionId: "tvs_2bdb46feb1009f2e", client: nil)
+        let detailContext = Etappe6MockDetailSessionContext()
+        let sampleSession = PreviewMockFixtures.playerSession
+        let detailVM = MediaDetailViewModel(
+            mediaType: "movie",
+            itemId: "movie:tmdb:360920",
+            initialTitle: "The Grinch",
+            preResolve: controller
+        )
+        detailVM.bind(sessionContext: detailContext)
+
+        let ctx = SourcePickerContext(
+            itemId: "movie:tmdb:360920",
+            title: "The Grinch",
+            startPositionSeconds: 0,
+            existingPrepareToken: nil
+        )
+        detailVM.launchSelectedSource(
+            sampleSession.selectedCandidate,
+            reusedToken: sampleSession.sessionId,
+            createdPreparedSession: sampleSession,
+            context: ctx
+        )
+        XCTAssertEqual(detailContext.activePlaybackTarget?.preparedSession?.sessionId, sampleSession.sessionId)
+        XCTAssertEqual(detailContext.activePlaybackTarget?.prepareToken, sampleSession.sessionId)
     }
 }

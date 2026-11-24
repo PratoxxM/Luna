@@ -203,7 +203,7 @@ final class LunaCoreLinuxTests: XCTestCase {
             roomName: "Stua",
             hardwareProfile: "hdr10-512",
             allowSelfSignedLanTLS: true,
-            appVersion: "2.12.0",
+            appVersion: "2.12.1",
             osVersion: "Linux-CI",
             session: session
         )
@@ -532,5 +532,40 @@ final class LunaCoreLinuxTests: XCTestCase {
         )
         XCTAssertTrue(didRemove550)
         XCTAssertFalse(didRemove999)
+    }
+
+    func testFriendlyEngineErrorLocalizationAndNullSessionAlternativesDecoding() throws {
+        XCTAssertEqual(
+            LunaCopy.friendlyEngineErrorMessage("Source refused the session's credentials (HTTP 401) (code 401)"),
+            "Strømmen utløp eller ble avvist (HTTP 401). Prøv på nytt eller velg en annen utgave."
+        )
+        XCTAssertEqual(
+            LunaCopy.friendlyEngineErrorMessage("HTTP 404 Not Found"),
+            "Fant ikke videostrømmen på serveren (HTTP 404). Prøv en annen utgave."
+        )
+        XCTAssertEqual(
+            LunaCopy.friendlyEngineErrorMessage("Request timed out"),
+            "Tidsavbrudd mot videokilden. Prøv på nytt eller velg en annen utgave."
+        )
+        XCTAssertEqual(
+            LunaCopy.friendlyEngineErrorMessage("   "),
+            "Avspillingsfeil i strømmen."
+        )
+
+        let rawJSON = Data(#"""
+        {
+          "ok": true,
+          "sessionId": null,
+          "roomName": "Stua",
+          "hardwareProfile": "hdr10-512",
+          "activeCandidateId": "cand-grinch-remux",
+          "alternatives": []
+        }
+        """#.utf8)
+        let decoded = try JSONDecoder().decode(TvAlternativesResponse.self, from: rawJSON)
+        XCTAssertTrue(decoded.ok)
+        XCTAssertEqual(decoded.sessionId, "")
+        XCTAssertEqual(decoded.roomName, "Stua")
+        XCTAssertEqual(decoded.activeCandidateId, "cand-grinch-remux")
     }
 }

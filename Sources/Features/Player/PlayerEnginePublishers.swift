@@ -37,14 +37,14 @@ extension PlayerViewModel {
                     )
                 }
                 if case .error(let errMsg) = phase {
-                    guard !self.isRestoringFromBackground else { return }
+                    guard !self.isRestoringFromBackground,
+                          !self.isSpeculativeWarmMountInFlight else { return }
                     self.heartbeatTask?.cancel()
                     self.heartbeatTask = nil
                     self.isResolving = false
                     self.isSwitchingSource = false
                     if self.fatalError == nil {
-                        let cleaned = errMsg.trimmingCharacters(in: .whitespacesAndNewlines)
-                        self.fatalError = cleaned.isEmpty ? "Avspillingsfeil i strømmen." : cleaned
+                        self.fatalError = LunaCopy.friendlyEngineErrorMessage(errMsg)
                     }
                     Task { @MainActor [weak self] in
                         guard let self, !self.isDismissing, !self.isTeardownCompleted else { return }

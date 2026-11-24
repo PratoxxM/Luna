@@ -16,6 +16,7 @@ struct SearchView: View {
     let isRootTab: Bool
     let isActiveTab: Bool
     let previewFocusFirstResult: Bool
+    let previewFocusSearchField: Bool
 
     @State private var subpageToken = UUID()
 
@@ -52,12 +53,14 @@ struct SearchView: View {
         initialQuery: String = "",
         isRootTab: Bool = false,
         isActiveTab: Bool = true,
-        previewFocusFirstResult: Bool = false
+        previewFocusFirstResult: Bool = false,
+        previewFocusSearchField: Bool = false
     ) {
         self.initialQuery = initialQuery
         self.isRootTab = isRootTab
         self.isActiveTab = isActiveTab
         self.previewFocusFirstResult = previewFocusFirstResult
+        self.previewFocusSearchField = previewFocusSearchField
         _query = State(initialValue: initialQuery)
     }
 
@@ -80,36 +83,22 @@ struct SearchView: View {
                     }
 
                     HStack(spacing: 14) {
-                        HStack(spacing: 14) {
-                            Image(systemName: "magnifyingglass")
-                                .font(LunaTheme.Font.pillIcon)
-                                .foregroundStyle(LunaTheme.muted)
-
-                            TextField("Film, serie eller person", text: $query)
-                                .font(LunaTheme.Font.body)
-                                .foregroundStyle(LunaTheme.linen)
-                                .focused($isQueryFieldFocused)
-                                .lunaRequestDirectFocus(nonce: queryFocusNonce, isFocused: $isQueryFieldFocused)
-                                .onMoveCommand { direction in
-                                    if direction == .down {
-                                        focusFirstResultOrHistory(trimmedQuery: trimmedQuery, scrollProxy: scrollProxy)
-                                    }
-                                }
+                        LunaTextField(
+                            "Film, serie eller person",
+                            text: $query,
+                            leadingSystemImage: "magnifyingglass",
+                            returnKeyType: .search,
+                            onEditingEnded: {
+                                isQueryFieldFocused = true
+                            }
+                        )
+                        .focused($isQueryFieldFocused)
+                        .lunaRequestDirectFocus(nonce: queryFocusNonce, isFocused: $isQueryFieldFocused)
+                        .onMoveCommand { direction in
+                            if direction == .down {
+                                focusFirstResultOrHistory(trimmedQuery: trimmedQuery, scrollProxy: scrollProxy)
+                            }
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
-                                .fill(isQueryFieldFocused ? LunaTheme.surfaceSelected : LunaTheme.surfaceRaised)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
-                                .strokeBorder(
-                                    Self.resolveSearchFieldBorderColor(isFocused: isQueryFieldFocused),
-                                    lineWidth: LunaTokens.Layout.hairlineWidth
-                                )
-                        )
-                        .lunaFocusSurface(.listRow, isFocused: isQueryFieldFocused, cornerRadius: LunaTokens.Radius.card)
 
                         if !query.isEmpty {
                             LunaIconButton(systemImage: "xmark", accessibilityLabel: "Tøm søk") {
@@ -261,6 +250,15 @@ struct SearchView: View {
             loadRecentSearches()
             if !isRootTab {
                 subpageVisibility.enterSubpage(subpageToken)
+            }
+            if previewFocusSearchField {
+                isQueryFieldFocused = true
+                queryFocusNonce &+= 1
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 140_000_000)
+                    isQueryFieldFocused = true
+                    queryFocusNonce &+= 1
+                }
             }
         }
         .task(id: "\(trimmedQuery)#\(searchRetryNonce)#\(sessionStore.homeRefreshNonce)#active:\(isActiveTab)") {

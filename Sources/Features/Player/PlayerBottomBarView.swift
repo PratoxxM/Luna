@@ -25,6 +25,7 @@ struct PlayerBottomBarView: View {
     let viewModel: PlayerViewModel
     let fallbackRequest: PlaybackLaunchRequest
     var activeQuickPanel: PlayerQuickPanelTab? = nil
+    var isQuickActionsModeActive: Bool = false
     var suppressFloatingNextPill: Bool = false
     var focusRequestNonce: Int = 0
     var clearFocusNonce: Int = 0
@@ -116,6 +117,7 @@ struct PlayerBottomBarView: View {
                     engine: viewModel.engine,
                     duration: duration,
                     isPaused: isPaused,
+                    showPausedSwipeHint: isPaused && !isQuickActionsModeActive && activeQuickPanel == nil,
                     inlineMovieChapterMode: isMovie
                 )
                 .allowsHitTesting(false)
@@ -143,13 +145,22 @@ struct PlayerBottomBarView: View {
             }
         }
         .onAppear {
-            if focusRequestNonce > 0 && activeQuickPanel == nil {
+            if isQuickActionsModeActive && focusRequestNonce > 0 && activeQuickPanel == nil {
                 activeFocusNonce = focusRequestNonce
+            } else {
+                activeFocusNonce = 0
+                focusedAction = nil
             }
         }
         .onChange(of: focusRequestNonce) { _, newNonce in
-            guard activeQuickPanel == nil else { return }
+            guard isQuickActionsModeActive && activeQuickPanel == nil else { return }
             activeFocusNonce = newNonce
+        }
+        .onChange(of: isQuickActionsModeActive) { _, active in
+            if !active {
+                activeFocusNonce = 0
+                focusedAction = nil
+            }
         }
         .onChange(of: clearFocusNonce) { _, _ in
             activeFocusNonce = 0
@@ -157,7 +168,7 @@ struct PlayerBottomBarView: View {
         }
         .lunaEntryFocusTarget(
             nonce: activeFocusNonce,
-            isActive: activeQuickPanel == nil,
+            isActive: isQuickActionsModeActive && activeQuickPanel == nil,
             focus: $focusedAction,
             target: { requestedAction }
         )
@@ -176,7 +187,7 @@ struct PlayerBottomBarView: View {
     @ViewBuilder
     private var quickActionsRow: some View {
         let tabs = PlayerQuickPanelTab.visibleTabs(hasChapters: !viewModel.chapters.isEmpty)
-        let interactive = (activeQuickPanel == nil && !viewModel.isScrubbing)
+        let interactive = (isQuickActionsModeActive && activeQuickPanel == nil && !viewModel.isScrubbing)
         HStack(spacing: 12) {
             ForEach(tabs) { tab in
                 let isOpenPopover = (activeQuickPanel == tab)
@@ -389,6 +400,7 @@ struct TimelineScrubberLeafView: View {
     let engine: AetherEngine
     let duration: Double
     let isPaused: Bool
+    var showPausedSwipeHint: Bool = false
     var inlineMovieChapterMode: Bool = false
 
     @State private var currentTime: Double = 0
@@ -542,6 +554,10 @@ struct TimelineScrubberLeafView: View {
                     Text("Klikk for å spille herfra")
                         .font(LunaTheme.Font.caption)
                         .foregroundStyle(LunaTheme.moonlight.opacity(0.78))
+                } else if showPausedSwipeHint {
+                    Text("Sveip for å spole")
+                        .font(LunaTheme.Font.caption)
+                        .foregroundStyle(LunaTheme.muted.opacity(0.72))
                 }
 
                 Spacer()

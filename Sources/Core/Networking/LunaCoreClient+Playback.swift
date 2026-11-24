@@ -145,6 +145,34 @@ extension LunaCoreClient {
         try await sendJSON(method: "GET", path: "/api/tv/v1/playback/\(sessionId)/alternatives")
     }
 
+    public func fetchItemCandidates(
+        itemId: String,
+        title: String,
+        seriesTitle: String? = nil
+    ) async throws -> TvAlternativesResponse {
+        struct CandidatesBody: Encodable, Sendable {
+            let itemId: String
+            let title: String
+            let seriesTitle: String?
+        }
+        let sanitizedTitle = EpisodeTitleFormatter.apiEpisodeTitle(
+            rawTitle: title,
+            seriesTitle: seriesTitle,
+            itemId: itemId,
+            season: nil,
+            episode: nil
+        )
+        return try await sendJSON(
+            method: "POST",
+            path: "/api/tv/v1/playback/candidates",
+            body: CandidatesBody(
+                itemId: itemId,
+                title: sanitizedTitle,
+                seriesTitle: seriesTitle
+            )
+        )
+    }
+
     public func switchCandidate(
         sessionId: String,
         candidateId: String,

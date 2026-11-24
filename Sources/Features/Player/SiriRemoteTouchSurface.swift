@@ -13,7 +13,10 @@ import UIKit
 @MainActor
 struct SiriRemoteTouchSurface: UIViewRepresentable {
     var isPlayingProvider: () -> Bool = { false }
+    var isScrubbingProvider: () -> Bool = { false }
+    var canLockHorizontalFocusProvider: () -> Bool = { true }
     var durationSecondsProvider: () -> Double = { 0 }
+    var focusRequestNonce: Int = 0
     var cancelHoldNonce: Int = 0
     let onLightTouch: () -> Void
     let onScrubBegan: () -> Void
@@ -38,6 +41,8 @@ struct SiriRemoteTouchSurface: UIViewRepresentable {
 
     private func updateCallbacks(on view: TouchCaptureUIView) {
         view.isPlayingProvider = isPlayingProvider
+        view.isScrubbingProvider = isScrubbingProvider
+        view.canLockHorizontalFocusProvider = canLockHorizontalFocusProvider
         view.durationSecondsProvider = durationSecondsProvider
         view.onLightTouch = onLightTouch
         view.onScrubBegan = onScrubBegan
@@ -50,12 +55,15 @@ struct SiriRemoteTouchSurface: UIViewRepresentable {
         view.onUpClick = onUpClick
         view.onDownClick = onDownClick
         view.applyCancelHoldNonce(cancelHoldNonce)
+        view.applyFocusRequestNonce(focusRequestNonce)
     }
 }
 
 @MainActor
-final class TouchCaptureUIView: UIView {
+final class TouchCaptureUIView: UIView, UIGestureRecognizerDelegate {
     var isPlayingProvider: () -> Bool = { false }
+    var isScrubbingProvider: () -> Bool = { false }
+    var canLockHorizontalFocusProvider: () -> Bool = { true }
     var durationSecondsProvider: () -> Double = { 0 }
     var onLightTouch: (() -> Void)?
     var onScrubBegan: (() -> Void)?
@@ -83,7 +91,10 @@ final class TouchCaptureUIView: UIView {
     private var activeRingDirection: Int?
     private var didEnterRingHold: Bool = false
     private var ringHoldTask: Task<Void, Never>?
+    private var focusRetryTask: Task<Void, Never>?
+    private var indirectPanRecognizer: UIPanGestureRecognizer?
     private var appliedCancelHoldNonce: Int = 0
+    private var appliedFocusRequestNonce: Int = -1
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -103,9 +114,34 @@ final class TouchCaptureUIView: UIView {
         true
     }
 
+    override func shouldUpdateFocus(in context: UIFocusUpdateContext) -> Bool {
+        if context.previouslyFocusedItem === self {
+            if panAxis == .horizontalScrub || isScrubbingProvider() {
+                return false
+            }
+            if canLockHorizontalFocusProvider(),
+               (context.focusHeading == .left || context.focusHeading == .right) {
+                return false
+            }
+        }
+        return super.shouldUpdateFocus(in: context)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil, canLockHorizontalFocusProvider() {
+            scheduleDirectFocusAcquisition()
+        } else if window == nil {
+            focusRetryTask?.cancel()
+            focusRetryTask = nil
+        }
+    }
+
     override func willMove(toWindow newWindow: UIWindow?) {
         super.willMove(toWindow: newWindow)
         if newWindow == nil {
+            focusRetryTask?.cancel()
+            focusRetryTask = nil
             cancelActiveRingHold(cancelled: true)
             activeSelectPress = false
         }
@@ -119,7 +155,49 @@ final class TouchCaptureUIView: UIView {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handleIndirectPan(_:)))
         pan.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirect.rawValue)]
         pan.cancelsTouchesInView = false
+        pan.delegate = self
         addGestureRecognizer(pan)
+        indirectPanRecognizer = pan
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
+    }
+
+    func applyFocusRequestNonce(_ nonce: Int) {
+        guard nonce != appliedFocusRequestNonce else { return }
+        appliedFocusRequestNonce = nonce
+        guard nonce > 0, window != nil, canLockHorizontalFocusProvider() else { return }
+        scheduleDirectFocusAcquisition()
+    }
+
+    func requestUIKitFocusOnce() {
+        guard window != nil, !isFocused, canLockHorizontalFocusProvider() else { return }
+        if let focusSystem = UIFocusSystem.focusSystem(for: self) {
+            focusSystem.requestFocusUpdate(to: self)
+            focusSystem.updateFocusIfNeeded()
+        } else {
+            setNeedsFocusUpdate()
+            updateFocusIfNeeded()
+        }
+    }
+
+    private func scheduleDirectFocusAcquisition() {
+        focusRetryTask?.cancel()
+        requestUIKitFocusOnce()
+        focusRetryTask = Task { @MainActor [weak self] in
+            for delayNs: UInt64 in [16_000_000, 48_000_000, 120_000_000] {
+                try? await Task.sleep(nanoseconds: delayNs)
+                guard !Task.isCancelled, let self, self.window != nil else { return }
+                if self.isFocused || !self.canLockHorizontalFocusProvider() {
+                    return
+                }
+                self.requestUIKitFocusOnce()
+            }
+        }
     }
 
     // MARK: - Indirect Touch (Wake OSD & Paused Adaptive Scrubbing)
@@ -321,8 +399,17 @@ final class TouchCaptureUIView: UIView {
             case .select:
                 if activeSelectPress {
                     activeSelectPress = false
-                    didCommitDuringCurrentPan = true
+                    let wasScrubbing = (panAxis == .horizontalScrub) || isScrubbingProvider()
                     onSelectClick?()
+                    if wasScrubbing {
+                        didCommitDuringCurrentPan = true
+                    } else {
+                        didCommitDuringCurrentPan = false
+                        panAxis = .undecided
+                        prevPanDx = 0
+                        smoothedSpeedNorm = 0
+                        indirectPanRecognizer?.setTranslation(.zero, in: self)
+                    }
                 }
             case .leftArrow, .rightArrow:
                 endRingArrowPress()

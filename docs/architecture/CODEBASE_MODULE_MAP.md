@@ -1,4 +1,4 @@
-# Luna (`v2.12.0`) — Codebase Module Map
+# Luna (`v2.12.1`) — Codebase Module Map
 
 Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced bidirectionally by `ops/bin/luna-check`).
 
@@ -46,7 +46,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Core/Networking/LunaCoreHTTPTransport.swift` | `LunaCoreClient`, `LunaCoreError`, `HomeConditionalResult`, HTTP request builder & JSON decoding | All `/api/tv/v1/*` HTTP transport | `LunaCoreHTTPTransportTests.swift`, `ClientOriginAndBlurHashTests.swift` |
 | `Sources/Core/Networking/LunaCoreClient+HomeCatalog.swift` | Pairing, bootstrap, conditional `/home`, catalog, library, search & shelf mutations | `/pair/*`, `/bootstrap`, `/home`, `/catalog/*`, `/library`, `/search` | `DynamicHomeRowTests.swift`, `SeriesFlowAndHomePolicyTests.swift` |
 | `Sources/Core/Networking/LunaCoreClient+LibraryDetail.swift` | Item detail, monitor toggle, watchlist/watched, custom row & delete preflight/execute | `/items/*`, `/monitor`, `/watchlist`, `/watched`, `/delete/*` | `MediaDetailViewModelTests.swift`, `NavigationSettingsAndDeleteTests.swift` |
-| `Sources/Core/Networking/LunaCoreClient+Playback.swift` | Playback prepare, resolve, heartbeat, stop, source switch & alternatives | `/playback/{prepare,resolve,heartbeat,stop,*/switch,*/alternatives}` | `PlaybackTitleAndNowPlayingTests.swift`, `SeriesFlowAndHomePolicyTests.swift` |
+| `Sources/Core/Networking/LunaCoreClient+Playback.swift` | Playback prepare, resolve, heartbeat, stop, source switch & fast item candidates | `/playback/{prepare,candidates,resolve,heartbeat,stop,*/switch,*/alternatives}` | `PlaybackTitleAndNowPlayingTests.swift`, `SeriesFlowAndHomePolicyTests.swift` |
 | `Sources/Core/Networking/LunaCoreSessionPool.swift` | Shared ephemeral `URLSession` lanes (`api`, `artwork`, `ws`) + `LanURLSessionDelegate` | HTTP keep-alive & LAN self-signed TLS | `LunaCoreSessionPoolTests.swift` |
 | `Sources/Core/Networking/PlaybackResolveSocket.swift` | `AsyncThrowingStream` WebSocket client for playback resolution progress | `WS /api/tv/v1/ws/playback/:resolveId` | `PlaybackResolveSocketTests.swift` |
 | `Packages/AetherBridge/Package.swift` | Local SwiftPM wrapper pinning `AetherEngine` `7.73.0` + 5 audio/DV traits | SwiftPM (`TrueHD`, `DTSX`, `DualLayerDV`, `FelCurves`, `StillReshaping`) | — |
@@ -61,6 +61,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/DesignSystem/LunaThemeTypography.swift` | `LunaTheme.Font` 10-foot typography & role tokens (`heroSerif`, `titleSerif`, `pageTitle`, `sectionTitle`, `cardTitle`, `body`, `subtitle`, `caption`, `badge`) | — | `DesignTokensAndCopyTests.swift` |
 | `Sources/DesignSystem/LunaCrescentMarkView.swift` | Clean vector crescent moon brand mark (`LunaCrescentMarkView`) | — | `ThemeAndArtworkViewTests.swift` |
 | `Sources/DesignSystem/LunaPillButton.swift` | Focus-safe `LunaChromelessButtonStyle`, `LunaPillButton`, `LunaButtonProminence/Accent/Size` | — | `ThemeAndArtworkViewTests.swift`, `DesignTokensAndCopyTests.swift` |
+| `Sources/DesignSystem/LunaTextField.swift` | Dark-surface chromeless tvOS text input (`LunaTextField` + `NonFocusableTVTextField`) eliminating white `UITextField` focus pills | — | `AppPolishAndDetailZeroRTTTests.swift` |
 | `Sources/DesignSystem/CachedArtworkView.swift` | Off-main-actor key-matched artwork view preventing 1-frame recycled cell flash | — | `ThemeAndArtworkViewTests.swift` |
 | `Sources/DesignSystem/LunaFocusStyle.swift` | Shared `0.32/0.86` tvOS focus spring, `.card`/`.control`/`.listRow` modifiers & room glow | — | `DesignTokensAndCopyTests.swift` |
 | `Sources/DesignSystem/LunaBadges.swift` | Borderless `LunaArtBadge`, `LunaTierDotView` & `56×56` `LunaIconButton` | — | — |
@@ -90,7 +91,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Features/Detail/DetailSeasonsSectionView.swift` | Season tabs, 4-column `LunaListRow` season picker & horizontal episode strip with default focus on next episode | — | — |
 | `Sources/Features/Detail/EpisodeCardView.swift` | Focusable episode tile with progress, air badge, «Neste for deg» & watched toggle | — | `EpisodeTitleFormattingTests.swift` |
 | `Sources/Features/Detail/DetailPreResolveController.swift` | Background pre-resolve + WebSocket progress bridge | `POST /playback/prepare`, `WS /ws/playback/:id` | `PlaybackResolveSocketTests.swift` |
-| `Sources/Features/Detail/SourcePickerSheetView.swift` | Focusable release/source selector sheet in `LunaSheetContainer` using flat `LunaListRow` candidates | `GET /playback/:id/alternatives` | `ClientOriginAndBlurHashTests.swift` |
+| `Sources/Features/Detail/SourcePickerSheetView.swift` | Focusable release/source selector sheet in `LunaSheetContainer` using flat `LunaListRow` candidates | `POST /playback/candidates`, `GET /playback/:id/alternatives` | `ClientOriginAndBlurHashTests.swift`, `AppPolishAndDetailZeroRTTTests.swift` |
 | `Sources/Features/Detail/DetailDeleteSheetView.swift` | Confined media deletion sheet with preflight byte summary | `POST /delete/{preflight,}` | `NavigationSettingsAndDeleteTests.swift` |
 | `Sources/Features/Settings/SettingsView.swift` | 2-column settings root (*Rom og skjerm · Undertekster · Avspilling · System · Avansert*) + shared `SettingsSectionPanel` & `SettingsToggleRowButton` | `PATCH /api/tv/v1/device/profile`, `GET /bootstrap` | `NavigationSettingsAndDeleteTests.swift` |
 | `Sources/Features/Settings/SettingsComfortSectionView.swift` | Unified Rom og skjerm (server room selector, MetalFX 4K upscaling, QMS menu display mode) + Kveldslys & autoplay | `PATCH /api/tv/v1/device/profile` | `PlayerOverlayAndCacheTests.swift` |
@@ -122,7 +123,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 
 ## 4. Build, Guardrails, Actions & `LunaTests` (`Tests/LunaTests/`)
 
-- **Build, Tokens & CI**: `project.yml` (`MARKETING_VERSION: "2.12.0"`, `CURRENT_PROJECT_VERSION: "68"`, `bundleIdPrefix: local.lunacore`), `Package.swift` (Linux `LunaCore` test target), `design/tokens.json`, `Resources/Localizable.xcstrings`, `ops/bin/luna-design-tokens`, `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/workflows/tvos-vision.yml`, `scripts/test-core.sh`, `scripts/preview-capture.sh`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, `>= 22 pt` tvOS font floor, zero system `Material`, sideload, zero private infra leaks, token parity & bidirectional doc parity).
+- **Build, Tokens & CI**: `project.yml` (`MARKETING_VERSION: "2.12.1"`, `CURRENT_PROJECT_VERSION: "69"`, `bundleIdPrefix: local.lunacore`), `Package.swift` (Linux `LunaCore` test target), `design/tokens.json`, `Resources/Localizable.xcstrings`, `ops/bin/luna-design-tokens`, `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/workflows/tvos-vision.yml`, `scripts/test-core.sh`, `scripts/preview-capture.sh`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, `>= 22 pt` tvOS font floor, zero system `Material`, sideload, zero private infra leaks, token parity & bidirectional doc parity).
 - **28 XCTest Suites + Test Doubles (`Tests/LunaTests/`)**:
   - `Tests/LunaTests/AppPolishAndDetailZeroRTTTests.swift`
   - `Tests/LunaTests/BonjourServerBrowserTests.swift`

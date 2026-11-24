@@ -174,6 +174,9 @@ final class PlayerOSDCoordinator {
             restoreCanvasFocusSoon()
         } else {
             revealBottomBarTemporarily(viewModel: viewModel)
+            if enteredPausedState {
+                restoreCanvasFocusSoon()
+            }
         }
     }
 

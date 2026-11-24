@@ -69,6 +69,7 @@ extension PlayerViewModel {
             overrideStartPosition: request.startPositionSeconds ?? resolvedSession.stream.startPositionSeconds,
             autoplay: autoplay
         )
+        fatalError = nil
         isResolving = false
         armFirstFrameFallbackWatchdog()
         startHeartbeatLoop()
@@ -165,12 +166,15 @@ extension PlayerViewModel {
                 defer { promoteTask.cancel() }
 
                 do {
+                    isSpeculativeWarmMountInFlight = true
                     try await mountSessionInEngine(
                         prepSession,
                         client: client,
                         overrideStartPosition: reqStartPos ?? prepSession.stream.startPositionSeconds,
                         autoplay: autoplay
                     )
+                    isSpeculativeWarmMountInFlight = false
+                    fatalError = nil
                     isResolving = false
                     armFirstFrameFallbackWatchdog()
                     startHeartbeatLoop()
@@ -200,9 +204,12 @@ extension PlayerViewModel {
                     }
                     return
                 } catch where LunaCoreError.isCancellation(error) {
+                    isSpeculativeWarmMountInFlight = false
                     promoteTask.cancel()
                     return
                 } catch {
+                    isSpeculativeWarmMountInFlight = false
+                    fatalError = nil
                     try Task.checkCancellation()
                     guard !isTeardownCompleted, !isDismissing else { return }
                     let (status, startRes) = try await withTaskCancellationHandler(

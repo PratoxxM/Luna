@@ -71,11 +71,18 @@ struct SettingsServerDiagnosticsSectionView: View {
 
                 if isEditingFallbackURL {
                     VStack(alignment: .leading, spacing: 12) {
-                        TextField("f.eks. https://lunacore.local:8920", text: $fallbackURLDraft)
-                            .font(LunaTheme.Font.body)
-                            .foregroundStyle(LunaTheme.linen)
-                            .focused($fallbackFocus, equals: .textField)
-                            .frame(maxWidth: 680)
+                        LunaTextField(
+                            "f.eks. https://lunacore.local:8920",
+                            text: $fallbackURLDraft,
+                            leadingSystemImage: "link",
+                            keyboardType: .URL,
+                            returnKeyType: .done,
+                            onEditingEnded: {
+                                fallbackFocus = .textField
+                            }
+                        )
+                        .focused($fallbackFocus, equals: .textField)
+                        .frame(maxWidth: 680)
                         HStack(spacing: 12) {
                             LunaPillButton("Lagre", prominence: .primary, size: .compact) {
                                 sessionStore.setFallbackServerURL(fallbackURLDraft)

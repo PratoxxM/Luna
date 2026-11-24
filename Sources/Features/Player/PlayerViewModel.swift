@@ -141,6 +141,7 @@ final class PlayerViewModel {
     @ObservationIgnored private var didTeardown: Bool = false
     @ObservationIgnored var engineOwnerToken: UInt64 = 0
     @ObservationIgnored var isDismissing: Bool = false
+    @ObservationIgnored var isSpeculativeWarmMountInFlight: Bool = false
     @ObservationIgnored var pendingStopSnapshot: PendingStopSnapshot?
     @ObservationIgnored var pendingHandedOverSessionId: String?
     @ObservationIgnored var pendingInflightPrepareTask: Task<TvPrepareResponse?, Never>?

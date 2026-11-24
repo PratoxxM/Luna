@@ -174,6 +174,20 @@ jobs:
             ls -lh "$OUT_FILE"
           done
 
+          if [ -z "$PREVIEW_FOCUS" ]; then
+            echo "==> Launching ${BUNDLE_ID} --preview-screen search --preview-focus select (focused search field)..."
+            xcrun simctl terminate "$TVOS_SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+            sleep 1
+            xcrun simctl launch "$TVOS_SIM_UDID" "$BUNDLE_ID" --preview-screen search --preview-focus select
+            sleep 5
+            OUT_FILE=".ci-screenshots/search-focused.png"
+            xcrun simctl io "$TVOS_SIM_UDID" screenshot "$OUT_FILE"
+            WIDTH=$(sips -g pixelWidth "$OUT_FILE" | awk '/pixelWidth:/ {print $2}')
+            HEIGHT=$(sips -g pixelHeight "$OUT_FILE" | awk '/pixelHeight:/ {print $2}')
+            echo "Captured ${OUT_FILE}: ${WIDTH}x${HEIGHT}"
+            ls -lh "$OUT_FILE"
+          fi
+
           xcrun simctl terminate "$TVOS_SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
 
       - name: Upload tvos-screenshots artifact

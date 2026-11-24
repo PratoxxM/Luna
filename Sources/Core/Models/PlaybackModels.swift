@@ -493,6 +493,20 @@ public struct TvAlternativesResponse: Codable, Equatable, Sendable {
         self.ok = ok; self.sessionId = sessionId; self.roomName = roomName
         self.hardwareProfile = hardwareProfile; self.activeCandidateId = activeCandidateId; self.alternatives = alternatives
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, sessionId, roomName, hardwareProfile, activeCandidateId, alternatives
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.ok = (try? c.decodeIfPresent(Bool.self, forKey: .ok)) ?? true
+        self.sessionId = (try? c.decodeIfPresent(String.self, forKey: .sessionId)) ?? ""
+        self.roomName = (try? c.decodeIfPresent(String.self, forKey: .roomName)) ?? ""
+        self.hardwareProfile = (try? c.decodeIfPresent(String.self, forKey: .hardwareProfile)) ?? ""
+        self.activeCandidateId = try? c.decodeIfPresent(String.self, forKey: .activeCandidateId)
+        self.alternatives = (try? c.decodeIfPresent([TvCandidateInfo].self, forKey: .alternatives)) ?? []
+    }
 }
 
 public struct TvSwitchResponse: Codable, Equatable, Sendable {

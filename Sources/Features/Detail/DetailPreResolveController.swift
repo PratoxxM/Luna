@@ -50,6 +50,26 @@ final class DetailPreResolveController {
     private var inflightItemId: String?
     private var inflightStartPosition: Double?
     private var prewarmTask: Task<Void, Never>?
+    private var handedOverSessionIds: [String] = []
+
+    private func markSessionHandedOver(_ sessionId: String?) {
+        guard let sid = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines), !sid.isEmpty else {
+            return
+        }
+        if !handedOverSessionIds.contains(sid) {
+            handedOverSessionIds.append(sid)
+            if handedOverSessionIds.count > 8 {
+                handedOverSessionIds.removeFirst(handedOverSessionIds.count - 8)
+            }
+        }
+    }
+
+    private func isHandedOverSession(_ sessionId: String?) -> Bool {
+        guard let sid = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines), !sid.isEmpty else {
+            return false
+        }
+        return handedOverSessionIds.contains(sid)
+    }
 
     nonisolated static func canReusePreparedSession(
         preparedItemId: String?,
@@ -118,6 +138,8 @@ final class DetailPreResolveController {
 
         if matchesPreparedItem, matchesPreparedStart, let token = preparedToken, !token.isEmpty {
             let session = preparedPlaybackSession
+            let handedSessionId = session?.sessionId ?? preparedSessionId ?? token
+            markSessionHandedOver(handedSessionId)
             preparedToken = nil
             preparedSessionId = nil
             preparedPlaybackSession = nil
@@ -126,7 +148,7 @@ final class DetailPreResolveController {
             isPreResolvedReady = false
             // Ownership of streamToken masking & session lifecycle transfers to PlayerViewModel.
             prewarmedStreamToken = nil
-            cancelAndCleanupInflightPrepare(client: client)
+            cancelAndCleanupInflightPrepare(excludingSessionId: handedSessionId, client: client)
             return ConsumedPreResolveHandoff(
                 prepareToken: token,
                 preparedSession: session,
@@ -169,11 +191,15 @@ final class DetailPreResolveController {
         )
     }
 
-    func discardPreparedSession(client: LunaCoreClient?) {
+    func discardPreparedSession(
+        excludingSessionId: String? = nil,
+        client: LunaCoreClient?
+    ) {
+        markSessionHandedOver(excludingSessionId)
         debounceTask?.cancel()
         debounceTask = nil
-        cancelAndCleanupInflightPrepare(client: client)
-        cleanupPreparedSession(client: client)
+        cancelAndCleanupInflightPrepare(excludingSessionId: excludingSessionId, client: client)
+        cleanupPreparedSession(excludingSessionId: excludingSessionId, client: client)
     }
 
     func schedule(
@@ -281,7 +307,8 @@ final class DetailPreResolveController {
                   self.inflightNetworkTask != nil else {
                 if let orphanSid = prep?.playbackSession?.sessionId ?? prep?.prepareToken,
                    !orphanSid.isEmpty,
-                   self.preparedSessionId != orphanSid {
+                   self.preparedSessionId != orphanSid,
+                   !self.isHandedOverSession(orphanSid) {
                     Self.stopSessionDetached(sessionId: orphanSid, client: client)
                 }
                 return
@@ -355,7 +382,10 @@ final class DetailPreResolveController {
         cleanupPreparedSession(client: client)
     }
 
-    private func cancelAndCleanupInflightPrepare(client: LunaCoreClient?) {
+    private func cancelAndCleanupInflightPrepare(
+        excludingSessionId: String? = nil,
+        client: LunaCoreClient?
+    ) {
         guard let running = inflightNetworkTask else {
             inflightTaskToken = nil
             inflightItemId = nil
@@ -364,6 +394,7 @@ final class DetailPreResolveController {
         }
         let cancelledItemId = inflightItemId
         let cancelledToken = inflightTaskToken?.uuidString
+        let excludedSid = excludingSessionId?.trimmingCharacters(in: .whitespacesAndNewlines)
         inflightNetworkTask = nil
         inflightTaskToken = nil
         inflightItemId = nil
@@ -371,7 +402,7 @@ final class DetailPreResolveController {
         running.cancel()
         if let client {
             Task.detached(priority: .utility) {
-                if let cancelledItemId {
+                if let cancelledItemId, (excludedSid == nil || excludedSid?.isEmpty == true) {
                     try? await client.cancelInflightPlayback(
                         itemId: cancelledItemId,
                         prepareToken: cancelledToken
@@ -379,7 +410,8 @@ final class DetailPreResolveController {
                 }
                 if let latePrep = await running.value,
                    let orphanSid = latePrep.playbackSession?.sessionId ?? latePrep.prepareToken,
-                   !orphanSid.isEmpty {
+                   !orphanSid.isEmpty,
+                   orphanSid != excludedSid {
                     _ = try? await client.sendHeartbeat(
                         sessionId: orphanSid,
                         state: "stopped",
@@ -391,14 +423,25 @@ final class DetailPreResolveController {
         }
     }
 
-    private func cleanupPreparedSession(client: LunaCoreClient?) {
+    private func cleanupPreparedSession(
+        excludingSessionId: String? = nil,
+        client: LunaCoreClient?
+    ) {
         prewarmTask?.cancel()
         prewarmTask = nil
+        let currentSid = preparedSessionId ?? preparedToken
+        let isExcluded = currentSid != nil && currentSid == excludingSessionId
         if let tok = prewarmedStreamToken, tok.count >= 8 {
-            EngineLog.unregisterSecret(tok)
+            if !isExcluded {
+                EngineLog.unregisterSecret(tok)
+            }
             prewarmedStreamToken = nil
         }
-        if let sid = preparedSessionId ?? preparedToken, !sid.isEmpty, let client {
+        if let sid = currentSid,
+           !sid.isEmpty,
+           !isExcluded,
+           !isHandedOverSession(sid),
+           let client {
             Self.stopSessionDetached(sessionId: sid, client: client)
         }
         preparedToken = nil
