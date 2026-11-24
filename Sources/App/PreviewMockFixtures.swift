@@ -20,7 +20,7 @@ enum PreviewMockFixtures {
             roomName: previewRoomName,
             hardwareProfile: previewHardwareProfile,
             allowSelfSignedLanTLS: true,
-            appVersion: "2.11.0",
+            appVersion: "2.12.0",
             osVersion: "tvOS 26.0",
             session: session,
             imageSession: session,

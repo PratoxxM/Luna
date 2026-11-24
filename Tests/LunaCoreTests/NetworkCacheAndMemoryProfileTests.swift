@@ -58,7 +58,7 @@ final class NetworkCacheAndMemoryProfileTests: XCTestCase {
         XCTAssertEqual(a19EightGB.prewarmByteBudget(availableMemoryBytes: 2_000 * 1024 * 1024, isFastLocalTier: false), 8 * 1024 * 1024)
         XCTAssertEqual(a19EightGB.prewarmByteBudget(availableMemoryBytes: 900 * 1024 * 1024, isFastLocalTier: true), 8 * 1024 * 1024)
         XCTAssertEqual(a19EightGB.prewarmByteBudget(availableMemoryBytes: 500 * 1024 * 1024, isFastLocalTier: true), 0)
-        XCTAssertEqual(SideloadSafeStorage.currentAppVersionString(), "2.11.0")
+        XCTAssertEqual(SideloadSafeStorage.currentAppVersionString(), "2.12.0")
     }
 
     func testHeartbeatNextEpisodePrewarmPayloadDecoding() throws {
