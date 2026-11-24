@@ -234,7 +234,7 @@ final class PlayerViewModel {
         videoFormat = .dolbyVision
         sourceDVProfile = 7
         videoRoute = .software
-        audioDelivery = .rendered
+        audioDelivery = .bridged
         sourceVideoCodecName = "hevc"
         sourceVideoWidth = 3840
         sourceVideoHeight = 2160
