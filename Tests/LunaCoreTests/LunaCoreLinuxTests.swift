@@ -203,7 +203,7 @@ final class LunaCoreLinuxTests: XCTestCase {
             roomName: "Stua",
             hardwareProfile: "hdr10-512",
             allowSelfSignedLanTLS: true,
-            appVersion: "2.12.1",
+            appVersion: "2.12.2",
             osVersion: "Linux-CI",
             session: session
         )

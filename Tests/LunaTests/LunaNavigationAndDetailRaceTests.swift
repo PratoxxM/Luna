@@ -38,7 +38,7 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
 
         XCTAssertEqual(
             AppSessionStore.currentAppVersionDisplayString(infoDictionary: nil),
-            "2.12.1"
+            "2.12.2"
         )
     }
 
