@@ -206,6 +206,7 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
         XCTAssertEqual(vm.activeSession?.sessionId, "sess-series-eof-1")
     }
 
+    @MainActor
     func testNerdHUDSeriesCardsAndErrorCurtainConstants() {
         XCTAssertEqual(NerdHUDView.cardWidth, 740)
         XCTAssertEqual(NerdHUDView.keyColumnWidth, 184)

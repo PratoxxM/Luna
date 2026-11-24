@@ -189,7 +189,7 @@ final class PlayerQuickPanelAndSwitchTests: XCTestCase {
         comfortA.audioEnhancement = .nightMode
         comfortA.speakerLayoutOverride = .atmos512
 
-        XCTAssertEqual(defaults.string(forKey: SideloadSafeStorage.audioEnhancementModeKey), "night")
+        XCTAssertEqual(defaults.string(forKey: SideloadSafeStorage.audioEnhancementModeKey), "nightMode")
         XCTAssertEqual(defaults.string(forKey: SideloadSafeStorage.speakerLayoutOverrideKey), "5.1.2")
 
         // Reload from SideloadSafeStorage UserDefaults into a brand-new ComfortPreferences & PlayerViewModel
