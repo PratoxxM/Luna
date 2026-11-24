@@ -46,7 +46,6 @@ private final class Etappe6ZeroRTTSourcePickerClient: SourcePickerSessionClient,
         prepareCalls.withLock { $0 += 1 }
         return TvPrepareResponse(
             ok: true,
-            status: "prepared",
             prepareToken: self.prepareToken,
             playbackSession: preparedSession
         )
@@ -237,7 +236,17 @@ final class AppPolishAndDetailZeroRTTTests: XCTestCase {
             releaseTitle: "Dune.Part.Two.2024.1080p.WEB-DL",
             source: "vfs",
             tier: "vfs",
-            isActive: false
+            resolution: "1080p",
+            videoRangeType: "SDR",
+            dvProfile: nil,
+            dvEnhancementLayer: nil,
+            audioCodec: "DDP Atmos",
+            sizeBytes: 5_368_709_120,
+            tvScore: 920,
+            isActive: false,
+            explanationChips: ["Strømmes ved start"],
+            releaseGroup: "FLUX",
+            isNorwegian: true
         )
         let mockClient = Etappe6ZeroRTTSourcePickerClient(
             preparedSession: sampleSession,

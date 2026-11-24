@@ -83,6 +83,7 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPGSBitmapLiftingOverSeriesCardsAndNerdHUDClearance() {
         let screen = CGSize(width: 1920, height: 1080)
         let baseBottomPGS = CGRect(x: 560, y: 900, width: 800, height: 96)
