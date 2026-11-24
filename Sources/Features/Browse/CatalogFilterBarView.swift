@@ -231,7 +231,7 @@ private struct CatalogSortPickerSheetView: View {
         LunaSheetContainer(
             title: "Sortering",
             subtitle: categoryTitle,
-            width: .compact,
+            width: .narrow,
             maxHeight: 680,
             onClose: onClose
         ) {
