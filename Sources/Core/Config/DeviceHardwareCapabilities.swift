@@ -290,3 +290,24 @@ extension TvCandidateInfo {
         return ["1080p", "720p", "576p", "480p", "sd", "hd"].contains(res)
     }
 }
+
+/// Hardware-calibrated `@2x` artwork decode ceilings matching exact tvOS 4K display frames
+/// (including `1.05x` focus zoom on cards, and RAM-aware 4K detail hero scaling).
+public enum ArtworkDecodeTargets: Sendable {
+    public static let posterCardMaxPixelSize: Int = 820
+    public static let backdropCardMaxPixelSize: Int = 1092
+    public static let episodeCardMaxPixelSize: Int = 882
+    public static let detailHeroStandardMaxPixelSize: Int = 2400
+    public static let detailHeroHigh2026MaxPixelSize: Int = 2880
+
+    public static func detailHeroMaxPixelSize(
+        for tier: DeviceMemoryTier = DeviceMemoryProfile.current.tier
+    ) -> Int {
+        switch tier {
+        case .high2026:
+            return detailHeroHigh2026MaxPixelSize
+        case .standard:
+            return detailHeroStandardMaxPixelSize
+        }
+    }
+}

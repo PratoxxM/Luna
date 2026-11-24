@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 import ImageIO
 import CoreGraphics
 import Synchronization
@@ -10,95 +9,6 @@ import UIKit
 public enum ArtworkLoadPriority: Sendable {
     case interactive
     case prefetch
-}
-
-private final class CGImageBox: NSObject, @unchecked Sendable {
-    let image: CGImage
-    let byteCost: Int
-
-    init(_ image: CGImage) {
-        self.image = image
-        self.byteCost = max(1, image.bytesPerRow * image.height)
-    }
-}
-
-private struct WeakImageBox: @unchecked Sendable {
-    weak var box: CGImageBox?
-}
-
-internal final class ThreadSafeImageMemoryCache: @unchecked Sendable {
-    private let cache = NSCache<NSString, CGImageBox>()
-    private let subjectBoxes = Mutex<[String: WeakImageBox]>([:])
-
-    init(totalCostLimit: Int, countLimit: Int = 420) {
-        cache.totalCostLimit = totalCostLimit
-        cache.countLimit = countLimit
-    }
-
-    func image(forKey key: String) -> CGImage? {
-        cache.object(forKey: key as NSString)?.image
-    }
-
-    func bestImage(forSubjectKey subjectKey: String) -> CGImage? {
-        subjectBoxes.withLock { map in
-            guard let entry = map[subjectKey] else { return nil }
-            guard let live = entry.box else {
-                map.removeValue(forKey: subjectKey)
-                return nil
-            }
-            return live.image
-        }
-    }
-
-    func insert(_ image: CGImage, forKey key: String, subjectKey: String? = nil) {
-        let box = CGImageBox(image)
-        cache.setObject(box, forKey: key as NSString, cost: box.byteCost)
-        guard let subjectKey else { return }
-        subjectBoxes.withLock { map in
-            if map.count >= 1024 {
-                map = map.filter { $0.value.box != nil }
-            }
-            let existingWidth = map[subjectKey]?.box?.image.width ?? 0
-            if existingWidth <= image.width {
-                map[subjectKey] = WeakImageBox(box: box)
-            }
-        }
-    }
-
-    func removeAll() {
-        cache.removeAllObjects()
-        subjectBoxes.withLock { $0.removeAll() }
-    }
-}
-
-private final class DiskTouchTracker: Sendable {
-    private let lastTouchByKey = Mutex<[String: TimeInterval]>([:])
-
-    func shouldTouchAndRecord(_ key: String, now: TimeInterval) -> Bool {
-        lastTouchByKey.withLock { map in
-            if let prev = map[key], now - prev <= 3600 {
-                return false
-            }
-            if map.count >= 1024 {
-                map.removeAll(keepingCapacity: true)
-            }
-            map[key] = now
-            return true
-        }
-    }
-
-    func recordWrite(_ key: String, now: TimeInterval) {
-        lastTouchByKey.withLock { map in
-            if map.count >= 1024 {
-                map.removeAll(keepingCapacity: true)
-            }
-            map[key] = now
-        }
-    }
-
-    func removeAll() {
-        lastTouchByKey.withLock { $0.removeAll() }
-    }
 }
 
 /// Off-main-thread WebP/JPEG/PNG artwork loader, GPU-ready bitmap cache, and adaptive NVMe disk cache.
@@ -119,7 +29,6 @@ public actor ArtworkPipeline {
         countLimit: DeviceMemoryProfile.current.artworkMemoryCountLimit
     )
     private nonisolated let diskTouchTracker = DiskTouchTracker()
-    private nonisolated static let hexChars: [UInt8] = Array("0123456789abcdef".utf8)
     private nonisolated let inflightImages = InflightTaskCoalescer<String, CGImage?>()
     private nonisolated let inflightRawFetches = InflightTaskCoalescer<String, Data?>()
     private nonisolated let isPlaybackActiveFlag = Mutex(false)
@@ -169,14 +78,6 @@ public actor ArtworkPipeline {
         Task { @MainActor in
             NotificationCenter.default.post(name: Self.didPurgeMemoryNotification, object: nil)
         }
-    }
-
-    private static nonisolated var imageCacheDirectoryURL: URL {
-        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-        return base
-            .appendingPathComponent("LunaV2", isDirectory: true)
-            .appendingPathComponent("img", isDirectory: true)
     }
 
     public nonisolated static func rawIdentity(for url: URL) -> String {
@@ -254,7 +155,7 @@ public actor ArtworkPipeline {
     }
 
     private nonisolated static let candidateCachedPixelSizes: [Int] = [
-        3840, 1920, 1280, 1120, 1040, 960, 900, 896, 800, 780, 750, 720, 640, 480, 220,
+        3840, 2880, 2400, 1920, 1280, 1120, 1092, 1040, 960, 900, 896, 882, 820, 800, 780, 750, 720, 640, 480, 220,
     ]
 
     /// Looks up any already-decoded bitmap in RAM for `url` (checking exact `preferredMaxPixelSize`,
@@ -365,7 +266,9 @@ public actor ArtworkPipeline {
         let window = min(maxLookahead ?? DeviceMemoryProfile.current.scrollPrefetchCardWindow, DeviceMemoryProfile.current.scrollPrefetchCardWindow)
         guard window > 0 else { return }
         let endIndex = min(cards.count, index + 1 + window)
-        let targetPixelSize = isBackdrop ? 1280 : 900
+        let targetPixelSize = isBackdrop
+            ? ArtworkDecodeTargets.backdropCardMaxPixelSize
+            : ArtworkDecodeTargets.posterCardMaxPixelSize
         let urls: [URL] = cards[(index + 1)..<endIndex].compactMap { card in
             let path = isBackdrop ? card.preferredLandscapePath : card.posterUrl
             return client.resolveArtworkURL(path, target: isBackdrop ? .landscape2x : .poster2x)
@@ -632,28 +535,6 @@ public actor ArtworkPipeline {
         try? FileManager.default.removeItem(at: Self.imageCacheDirectoryURL)
     }
 
-    public nonisolated static func diskUsageBytesAsync() async -> Int64 {
-        await Task.detached(priority: .utility) {
-            FileManager.allocatedDirectoryBytes(at: imageCacheDirectoryURL)
-        }.value
-    }
-
-    private nonisolated static func diskFileURL(for url: URL) -> URL {
-        let identity = rawIdentity(for: url)
-        let digest = SHA256.hash(data: Data(identity.utf8))
-        let hexBytes = [UInt8](unsafeUninitializedCapacity: 64) { buffer, count in
-            var idx = 0
-            for byte in digest {
-                buffer[idx] = hexChars[Int(byte >> 4)]
-                buffer[idx + 1] = hexChars[Int(byte & 0x0F)]
-                idx += 2
-            }
-            count = 64
-        }
-        let hex = String(decoding: hexBytes, as: UTF8.self)
-        return imageCacheDirectoryURL.appendingPathComponent("\(hex).img")
-    }
-
     /// Hardware-accelerated ImageIO thumbnail creation & GPU-ready bitmap preparation
     /// on a background worker thread, falling back cleanly to `ImageIO` `CGImage` if
     /// `byPreparingForDisplay()` returns `nil` (grayscale / indexed / special color profiles).
@@ -690,44 +571,5 @@ public actor ArtworkPipeline {
         }
         #endif
         return decoded
-    }
-
-    private nonisolated static func trimDiskCacheSynchronously(maxBytes: Int64) {
-        let dir = imageCacheDirectoryURL
-        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
-        guard let urls = try? FileManager.default.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: keys,
-            options: [.skipsHiddenFiles]
-        ) else {
-            return
-        }
-
-        struct FileEntry {
-            let url: URL
-            let size: Int64
-            let modifiedAt: Date
-        }
-
-        var entries: [FileEntry] = []
-        var totalBytes: Int64 = 0
-        for fileURL in urls {
-            guard let vals = try? fileURL.resourceValues(forKeys: Set(keys)) else { continue }
-            let size = Int64(vals.fileSize ?? 0)
-            let mod = vals.contentModificationDate ?? Date.distantPast
-            totalBytes += size
-            entries.append(FileEntry(url: fileURL, size: size, modifiedAt: mod))
-        }
-
-        guard totalBytes > maxBytes else { return }
-        let targetBytes = Int64(Double(maxBytes) * 0.80)
-        entries.sort { $0.modifiedAt < $1.modifiedAt }
-
-        for entry in entries {
-            guard totalBytes > targetBytes else { break }
-            if (try? FileManager.default.removeItem(at: entry.url)) != nil {
-                totalBytes -= entry.size
-            }
-        }
     }
 }

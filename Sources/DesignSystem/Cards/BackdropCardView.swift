@@ -56,7 +56,7 @@ public struct BackdropCardView: View {
                 CachedArtworkView(
                     url: artworkURL,
                     client: client,
-                    maxPixelSize: 1280,
+                    maxPixelSize: ArtworkDecodeTargets.backdropCardMaxPixelSize,
                     blurHash: card.blurHash,
                     dominantColor: card.dominantColor,
                     placeholderSymbol: variant == .upcomingEpisode ? "calendar.badge.clock" : "play.tv",

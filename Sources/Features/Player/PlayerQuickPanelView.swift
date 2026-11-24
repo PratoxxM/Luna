@@ -20,9 +20,10 @@ struct PlayerQuickPanelView: View {
 
     private static let topScrollFadeHeight: CGFloat = 12
     private static let bottomScrollFadeHeight: CGFloat = 14
+    nonisolated static let maxScrollAreaHeight: CGFloat = 376
 
     private var maxScrollContentHeight: CGFloat {
-        tab == .subtitles ? 520 : 610
+        Self.maxScrollAreaHeight
     }
 
     nonisolated static func panelWidth(for tab: PlayerQuickPanelTab) -> CGFloat {
@@ -135,23 +136,23 @@ struct PlayerQuickPanelView: View {
                     if isScrollable {
                         VStack(spacing: 0) {
                             LinearGradient(
-                                colors: [.clear, .black],
+                                colors: [.clear, LunaTheme.pureBlack],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                             .frame(height: Self.topScrollFadeHeight)
 
-                            Color.black
+                            LunaTheme.pureBlack
 
                             LinearGradient(
-                                colors: [.black, .clear],
+                                colors: [LunaTheme.pureBlack, .clear],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                             .frame(height: Self.bottomScrollFadeHeight)
                         }
                     } else {
-                        Color.black
+                        LunaTheme.pureBlack
                     }
                 }
                 .task(id: "\(tab.rawValue)#\(tab == .source ? viewModel.alternatives.count : 0)#\(viewModel.activeSession?.sessionId ?? "")") {

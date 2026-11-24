@@ -1,16 +1,28 @@
 import SwiftUI
 
 struct SettingsAdvancedSectionView: View {
+    private enum AudioSyncFocus: Hashable {
+        case minus
+        case reset
+        case plus
+    }
+
     @Environment(AppSessionStore.self) private var sessionStore
     @Environment(ComfortPreferences.self) private var comfort
+    @FocusState private var syncFocus: AudioSyncFocus?
 
     var body: some View {
         @Bindable var sessionStore = sessionStore
         @Bindable var comfort = comfort
+        let isNonZeroDelay = comfort.audioDelayMs != 0
+        let syncTitle = PlaybackSyncTimingPolicy.headerTitle(
+            baseTitle: "Fast lydsynk (HDMI / eARC)",
+            delayMs: comfort.audioDelayMs
+        )
 
         SettingsSectionPanel(title: "Avansert") {
             LunaControlRow(
-                title: "Dolby Vision Dual-Layer (P7 FEL)",
+                title: "Dolby Vision P7 FEL",
                 axis: .vertical
             ) {
                 HStack(spacing: 10) {
@@ -30,60 +42,51 @@ struct SettingsAdvancedSectionView: View {
             LunaListDivider()
 
             LunaControlRow(
-                title: "Høyttaleroppsett og objektlyd",
-                subtitle: "Auto tilpasser til rommet · 5.1.2 / 7.1.4 Atmos · Stereo for TV-høyttalere",
+                title: syncTitle,
+                subtitle: "Negativ verdi sender lyden tidligere · gjelder alle avspillinger på denne Apple TV-en",
                 axis: .vertical
             ) {
-                HStack(spacing: 10) {
-                    ForEach(SpeakerLayoutOverrideMode.allCases) { mode in
-                        LunaPillButton(
-                            mode.displayTitle(forHardwareProfile: sessionStore.hardwareProfile),
-                            isSelected: comfort.speakerLayoutOverride == mode,
-                            prominence: .glassPill,
-                            size: .compact
-                        ) {
-                            comfort.speakerLayoutOverride = mode
-                        }
-                    }
-                }
-            }
-
-            LunaListDivider()
-
-            LunaControlRow(
-                title: "Fast lydsynk for denne Apple TV-en (HDMI / eARC)",
-                subtitle: "Negativ verdi sender lyden tidligere",
-                axis: .vertical
-            ) {
-                let currentDelayLabel = ComfortPreferences.displayAudioDelayMs(comfort.audioDelayMs)
                 HStack(spacing: 10) {
                     LunaPillButton("−25 ms", prominence: .glassPill, size: .compact) {
-                        comfort.adjustAudioDelay(byMs: -25)
+                        comfort.adjustAudioDelay(byMs: -PlaybackSyncTimingPolicy.audioStepMs)
                     }
-                    LunaPillButton("−10 ms", prominence: .glassPill, size: .compact) {
-                        comfort.adjustAudioDelay(byMs: -10)
+                    .focused($syncFocus, equals: .minus)
+
+                    if isNonZeroDelay {
+                        LunaPillButton("Nullstill", isSelected: true, prominence: .glassPill, size: .compact) {
+                            syncFocus = .plus
+                            comfort.resetAudioDelay()
+                            Task { @MainActor in
+                                await Task.yield()
+                                if syncFocus != .plus && syncFocus != .minus {
+                                    syncFocus = .plus
+                                }
+                                for delayNs: UInt64 in [16_000_000, 48_000_000] {
+                                    try? await Task.sleep(nanoseconds: delayNs)
+                                    guard !Task.isCancelled else { return }
+                                    if syncFocus != .plus && syncFocus != .minus {
+                                        syncFocus = .plus
+                                    } else {
+                                        return
+                                    }
+                                }
+                            }
+                        }
+                        .focused($syncFocus, equals: .reset)
                     }
-                    LunaPillButton(
-                        currentDelayLabel,
-                        isSelected: true,
-                        prominence: .glassPill,
-                        size: .compact
-                    ) {
-                        comfort.resetAudioDelay()
-                    }
-                    LunaPillButton("+10 ms", prominence: .glassPill, size: .compact) {
-                        comfort.adjustAudioDelay(byMs: 10)
-                    }
+
                     LunaPillButton("+25 ms", prominence: .glassPill, size: .compact) {
-                        comfort.adjustAudioDelay(byMs: 25)
+                        comfort.adjustAudioDelay(byMs: PlaybackSyncTimingPolicy.audioStepMs)
                     }
+                    .focused($syncFocus, equals: .plus)
                 }
+                .focusSection()
             }
 
             LunaListDivider()
 
             SettingsToggleRowButton(
-                title: "Vis teknisk oversikt i spilleren",
+                title: "Teknisk oversikt",
                 isOn: $comfort.showNerdHUD
             )
 

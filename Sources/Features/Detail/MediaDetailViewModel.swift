@@ -45,10 +45,13 @@ final class MediaDetailViewModel {
     @ObservationIgnored weak var sessionContext: (any MediaDetailSessionContext)?
     @ObservationIgnored var lastSeenRefreshNonce: Int = -1
     @ObservationIgnored var postPlaybackReloadFallbackTask: Task<Void, Never>?
+    @ObservationIgnored var episodePreResolveTask: Task<Void, Never>?
     @ObservationIgnored var detailLoadTask: Task<Void, Never>?
     @ObservationIgnored var detailLoadGeneration: UInt64 = 0
     @ObservationIgnored var seasonLoadGeneration: UInt64 = 0
     @ObservationIgnored var loadedScopeKey: String?
+
+    nonisolated static let episodeFocusPreResolveDebounceNs: UInt64 = 340_000_000
 
     init(
         mediaType: String,
@@ -136,6 +139,8 @@ final class MediaDetailViewModel {
         if newTarget != nil {
             postPlaybackReloadFallbackTask?.cancel()
             postPlaybackReloadFallbackTask = nil
+            episodePreResolveTask?.cancel()
+            episodePreResolveTask = nil
             detailLoadTask?.cancel()
             detailLoadTask = nil
         } else if oldTarget != nil {
@@ -160,6 +165,8 @@ final class MediaDetailViewModel {
         }
         postPlaybackReloadFallbackTask?.cancel()
         postPlaybackReloadFallbackTask = nil
+        episodePreResolveTask?.cancel()
+        episodePreResolveTask = nil
         detailLoadTask?.cancel()
         detailLoadTask = nil
         seasonLoadGeneration &+= 1
@@ -184,6 +191,8 @@ final class MediaDetailViewModel {
     }
 
     func selectSeason(_ seasonNumber: Int) async {
+        episodePreResolveTask?.cancel()
+        episodePreResolveTask = nil
         let previousSeason = selectedSeasonNumber
         selectedSeasonNumber = seasonNumber
         guard let detail else { return }
@@ -191,6 +200,65 @@ final class MediaDetailViewModel {
         if loadedOk, sessionContext?.activePlaybackTarget == nil {
             schedulePreResolve(for: detail, immediate: false)
         }
+    }
+
+    func handleEpisodeFocusChanged(_ ep: TvEpisodeCard) {
+        episodePreResolveTask?.cancel()
+        episodePreResolveTask = nil
+        guard ep.isUpcoming != true else { return }
+        episodePreResolveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.episodeFocusPreResolveDebounceNs)
+            guard !Task.isCancelled,
+                  let self,
+                  self.sessionContext?.activePlaybackTarget == nil,
+                  !self.isShowingModal,
+                  let detail = self.detail else {
+                return
+            }
+            let cleanTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
+                ep.title,
+                seriesTitle: detail.title,
+                season: ep.seasonNumber,
+                episode: ep.episodeNumber,
+                episodeCode: ep.seasonEpisodeCode
+            ) ?? ""
+            let startPos: Double? = {
+                guard let prog = ep.progress else { return 0 }
+                return prog.percent < 90 ? prog.positionSeconds : 0
+            }()
+            self.preResolve.schedule(
+                targetItemId: ep.itemId,
+                title: cleanTitle,
+                seriesTitle: detail.title,
+                startPos: startPos,
+                immediate: true,
+                client: self.refreshedClient()
+            )
+            self.episodePreResolveTask = nil
+        }
+    }
+
+    nonisolated static func resolveRestoredEpisodeFocusID(
+        lastFocusedEpisodeID: String?,
+        episodes: [TvEpisodeCard],
+        nextUp: TvNextUpPointer?
+    ) -> String? {
+        let resolvedNextID: String? = {
+            if let next = nextUp,
+               let match = episodes.first(where: { $0.seasonNumber == next.season && $0.episodeNumber == next.episode }) {
+                return match.id
+            }
+            return episodes.first(where: { !$0.watched && $0.isUpcoming != true })?.id
+        }()
+
+        if let lastID = lastFocusedEpisodeID,
+           let current = episodes.first(where: { $0.id == lastID }) {
+            if current.watched, let nextID = resolvedNextID {
+                return nextID
+            }
+            return current.id
+        }
+        return resolvedNextID
     }
 
     // MARK: - Playback, Source Picker & Delete Intents
@@ -298,6 +366,7 @@ final class MediaDetailViewModel {
     func launchSelectedSource(
         _ picked: TvCandidateInfo,
         reusedToken: String?,
+        createdPreparedSession: TvPlaybackSession? = nil,
         context target: SourcePickerContext
     ) {
         ItemDetailMemoryCache.invalidate(itemId: itemId, tmdbId: detail?.ids.tmdb)
@@ -306,14 +375,19 @@ final class MediaDetailViewModel {
         var handedOverInflight: Task<TvPrepareResponse?, Never>? = nil
         var handedOverInflightToken: String? = nil
         if reusedToken != nil {
-            let handoff = preResolve.consumeHandoffForPlayback(
-                itemId: target.itemId,
-                startPosition: target.startPositionSeconds,
-                client: currentClient
-            )
-            handedOverSession = handoff.preparedSession
-            handedOverInflight = handoff.inflightPrepareTask
-            handedOverInflightToken = handoff.inflightPrepareToken
+            if let createdPreparedSession {
+                preResolve.discardPreparedSession(client: currentClient)
+                handedOverSession = createdPreparedSession
+            } else {
+                let handoff = preResolve.consumeHandoffForPlayback(
+                    itemId: target.itemId,
+                    startPosition: target.startPositionSeconds,
+                    client: currentClient
+                )
+                handedOverSession = handoff.preparedSession
+                handedOverInflight = handoff.inflightPrepareTask
+                handedOverInflightToken = handoff.inflightPrepareToken
+            }
         } else {
             preResolve.discardPreparedSession(client: currentClient)
         }

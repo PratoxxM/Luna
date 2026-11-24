@@ -2,11 +2,13 @@ import SwiftUI
 import AetherBridge
 
 /// Pure subtitle placement rules preventing collisions with bottom OSD (`320 pt`),
-/// series continuity overlays (`.skipPrompt` `152 pt`, `.nextEpisodeCard` `268 pt`, or
+/// series continuity overlays (`.skipPrompt` `168 pt`, `.nextEpisodeCard` `300 pt`, or
 /// relocated to top when bottom OSD + series card are visible simultaneously), open quick-panel
 /// popovers, and `NerdHUDView` (`x = 90..830 pt`, `y = 42..330 pt`).
 internal enum SubtitleOverlayLayout {
     static let nerdHUDProtectedRect = CGRect(x: 90, y: 42, width: 740, height: 288)
+    static let skipPromptBottomInset: CGFloat = 168
+    static let nextEpisodeBottomInset: CGFloat = 300
 
     struct VerticalPlacement: Equatable, Sendable {
         let relocateToTop: Bool
@@ -73,9 +75,9 @@ internal enum SubtitleOverlayLayout {
             case .none:
                 return 74
             case .skipPrompt:
-                return 152
+                return Self.skipPromptBottomInset
             case .nextEpisodeCard:
-                return 268
+                return Self.nextEpisodeBottomInset
             }
         }()
 

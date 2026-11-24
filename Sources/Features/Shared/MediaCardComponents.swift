@@ -72,7 +72,13 @@ enum MediaCardMutator {
         return (card.itemId, card.title, nil, nil, nil, card.progress?.positionSeconds)
     }
 
+    nonisolated static func canLaunchPlayback(for card: TvMediaCard) -> Bool {
+        let state = (card.availability?.state ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return state != "upcoming"
+    }
+
     static func launchPlayback(for card: TvMediaCard, sessionStore: AppSessionStore) {
+        guard canLaunchPlayback(for: card) else { return }
         let resolved = resolvePlayTarget(for: card)
         sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
             itemId: resolved.itemId,
@@ -205,7 +211,7 @@ struct StandardPosterContextMenuItems: View {
     var onRequestDelete: (() -> Void)? = nil
 
     var body: some View {
-        if let onPlay {
+        if let onPlay, MediaCardMutator.canLaunchPlayback(for: card) {
             Button(action: onPlay) {
                 Label("Spill av", systemImage: "play.fill")
             }

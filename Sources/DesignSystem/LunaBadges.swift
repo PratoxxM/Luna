@@ -106,7 +106,7 @@ public struct LunaTierDotView: View {
 }
 
 /// Canonical `56×56 pt` circular icon button using the unified `.control` focus style
-/// (bronze fill on focus, crisp `0.5 pt` warm hairline on `@2x` at rest).
+/// (bronze fill on focus, borderless at rest when unselected).
 public struct LunaIconButton: View {
     let systemImage: String
     let isSelected: Bool
@@ -125,6 +125,16 @@ public struct LunaIconButton: View {
         self.isSelected = isSelected
         self.accessibilityLabel = accessibilityLabel
         self.action = action
+    }
+
+    public nonisolated static func resolveBorderColor(
+        isFocused: Bool,
+        isSelected: Bool
+    ) -> Color {
+        if isFocused {
+            return .clear
+        }
+        return isSelected ? LunaTheme.warmBorderStrong : .clear
     }
 
     public var body: some View {
@@ -175,9 +185,10 @@ private struct LunaIconButtonLabel: View {
             .overlay(
                 Circle()
                     .strokeBorder(
-                        effectiveFocused
-                            ? Color.clear
-                            : (isSelected ? LunaTheme.warmBorderStrong : LunaTheme.warmBorder),
+                        LunaIconButton.resolveBorderColor(
+                            isFocused: effectiveFocused,
+                            isSelected: isSelected
+                        ),
                         lineWidth: LunaTokens.Layout.hairlineWidth
                     )
                     .transaction { $0.animation = nil }

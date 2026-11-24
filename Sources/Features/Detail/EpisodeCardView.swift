@@ -5,6 +5,8 @@ struct EpisodeCardView: View {
     var seriesTitle: String? = nil
     var isNextForYou: Bool = false
     let client: LunaCoreClient?
+    var focusRequestNonce: Int = 0
+    var onFocusChanged: ((Bool) -> Void)? = nil
     let onPlay: () -> Void
     let onPickSource: () -> Void
     let onToggleWatched: () -> Void
@@ -29,7 +31,7 @@ struct EpisodeCardView: View {
                     CachedArtworkView(
                         url: stillURL,
                         client: client,
-                        maxPixelSize: 960,
+                        maxPixelSize: ArtworkDecodeTargets.episodeCardMaxPixelSize,
                         placeholderSymbol: upcoming ? "calendar" : "play.tv",
                         contentMode: .fill
                     )
@@ -76,6 +78,10 @@ struct EpisodeCardView: View {
             .lunaChromelessButton(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
             .lunaCardLampGlow(isFocused: isFocused)
             .focused($isFocused)
+            .lunaRequestDirectFocus(nonce: focusRequestNonce, isFocused: $isFocused)
+            .onChange(of: isFocused) { _, focused in
+                onFocusChanged?(focused)
+            }
             .accessibilityLabel(displayTitle)
             .onPlayPauseCommand {
                 if !upcoming {
@@ -94,7 +100,7 @@ struct EpisodeCardView: View {
                         Label("Spill av", systemImage: "play.fill")
                     }
                     Button(action: onPickSource) {
-                        Label("Velg kilde…", systemImage: "arrow.triangle.2.circlepath")
+                        Label("Velg utgave…", systemImage: "arrow.triangle.2.circlepath")
                     }
                     if let onRequestDelete,
                        episode.availability?.isPhysicalLocal == true || episode.availability?.isLocalVfs == true {

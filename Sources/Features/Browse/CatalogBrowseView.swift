@@ -77,18 +77,6 @@ struct CatalogBrowseView: View {
         "\(serverBaseURL?.absoluteString ?? "")#\(mediaType)#\(genreSlug ?? "all")#\(sort)#\(localOnly)#\(unwatchedOnly)#\(roomName)#\(hardwareProfile)"
     }
 
-    private var sortOptions: [(id: String, label: String)] {
-        let base: [(id: String, label: String)] = [
-            ("popular", "Mest populære"),
-            ("top_rated", "Høyest rangert"),
-            ("newest", "Nyeste"),
-        ]
-        if isRootTab {
-            return base
-        }
-        return base + [("local_recent", "Lokalt")]
-    }
-
     init(
         mediaType: String,
         initialGenre: TvGenreChip?,
@@ -145,9 +133,8 @@ struct CatalogBrowseView: View {
                             .padding(.horizontal, LunaTheme.horizontalGutter)
                     }
 
-                    CatalogFilterStripView(
-                        sortOptions: sortOptions,
-                        isRootTab: isRootTab,
+                    CatalogFilterBarView(
+                        categoryTitle: headerTitle,
                         availableGenres: availableGenres,
                         selectedSort: $selectedSort,
                         localOnly: $localOnly,
@@ -544,131 +531,6 @@ struct CatalogBrowseView: View {
                 persistSnapshot(for: triggerKey)
             }
             showMutationError(error)
-        }
-    }
-}
-
-/// Focus-isolated horizontal filter pill strip so moving Siri Remote focus across sort/filter/genre
-/// pills updates only this strip's `@FocusState` (`0` re-evaluations of `CatalogBrowseView` / `LazyVGrid`).
-private struct CatalogFilterStripView: View {
-    let sortOptions: [(id: String, label: String)]
-    let isRootTab: Bool
-    let availableGenres: [TvGenreChip]
-    @Binding var selectedSort: String
-    @Binding var localOnly: Bool
-    @Binding var unwatchedOnly: Bool
-    @Binding var selectedGenreSlug: String?
-    @Binding var selectedGenreLabel: String?
-    let entryFocusNonce: Int
-    let isEntryActive: Bool
-    let onScrollToTop: @MainActor () -> Void
-    let onMoveDown: @MainActor () -> Void
-
-    @FocusState private var focusedFilterId: String?
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(sortOptions, id: \.id) { opt in
-                    LunaPillButton(
-                        opt.label,
-                        isSelected: selectedSort == opt.id,
-                        prominence: .glassPill,
-                        size: .compact
-                    ) {
-                        guard selectedSort != opt.id else { return }
-                        selectedSort = opt.id
-                    }
-                    .focused($focusedFilterId, equals: "sort-\(opt.id)")
-                }
-
-                Rectangle()
-                    .fill(LunaTheme.warmBorderStrong)
-                    .frame(width: 1, height: 22)
-                    .padding(.horizontal, 8)
-                    .allowsHitTesting(false)
-
-                if !isRootTab {
-                    LunaPillButton(
-                        "Kun lokalt",
-                        systemImage: localOnly ? "checkmark" : nil,
-                        isSelected: localOnly,
-                        prominence: .glassPill,
-                        size: .compact
-                    ) {
-                        localOnly.toggle()
-                    }
-                    .focused($focusedFilterId, equals: "local-only")
-                }
-
-                LunaPillButton(
-                    "Skjul sette",
-                    systemImage: unwatchedOnly ? "checkmark" : nil,
-                    isSelected: unwatchedOnly,
-                    prominence: .glassPill,
-                    size: .compact
-                ) {
-                    unwatchedOnly.toggle()
-                }
-                .focused($focusedFilterId, equals: "unwatched")
-
-                if !availableGenres.isEmpty {
-                    Rectangle()
-                        .fill(LunaTheme.warmBorderStrong)
-                        .frame(width: 1, height: 22)
-                        .padding(.horizontal, 8)
-                        .allowsHitTesting(false)
-
-                    LunaPillButton(
-                        "Alle sjangre",
-                        isSelected: selectedGenreSlug == nil,
-                        prominence: .glassPill,
-                        size: .compact
-                    ) {
-                        selectedGenreSlug = nil
-                        selectedGenreLabel = nil
-                    }
-                    .focused($focusedFilterId, equals: "genre-all")
-
-                    ForEach(availableGenres) { chip in
-                        let active = selectedGenreSlug == chip.slug
-                        LunaPillButton(
-                            chip.label,
-                            isSelected: active,
-                            prominence: .glassPill,
-                            size: .compact
-                        ) {
-                            if active {
-                                selectedGenreSlug = nil
-                                selectedGenreLabel = nil
-                            } else {
-                                selectedGenreSlug = chip.slug
-                                selectedGenreLabel = chip.label
-                            }
-                        }
-                        .focused($focusedFilterId, equals: "genre-\(chip.slug)")
-                    }
-                }
-            }
-            .padding(.horizontal, LunaTheme.horizontalGutter)
-            .padding(.vertical, 10)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentMargins(.zero, for: .scrollContent)
-        .scrollClipDisabled()
-        .ignoresSafeArea(.container, edges: .horizontal)
-        .focusSection()
-        .lunaEntryFocusTarget(
-            nonce: entryFocusNonce,
-            isActive: isEntryActive,
-            focus: $focusedFilterId,
-            target: { "sort-\(selectedSort)" },
-            onTrigger: onScrollToTop
-        )
-        .onMoveCommand { direction in
-            if direction == .down {
-                onMoveDown()
-            }
         }
     }
 }

@@ -48,8 +48,72 @@ public enum CatalogShelfIndexer: Sendable {
         }
     }
 
+    /// Canonical series identity (`series:tmdb:X` / `series:tvdb:X` / `series:imdb:X` / `series:...`)
+    /// matching series across `Fortsett`, `Kommende episoder`, and `Nye episoder` (`active_series`).
+    /// Returns `nil` for non-series cards (movies).
+    public static func seriesDeduplicationKey(for card: TvMediaCard) -> String? {
+        let lowerType = card.mediaType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let lowerId = card.itemId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let isSeriesLike = lowerType == "series"
+            || lowerType == "tv"
+            || lowerType == "episode"
+            || lowerId.hasPrefix("series:")
+            || lowerId.hasPrefix("episode:")
+        guard isSeriesLike else { return nil }
+
+        if let tmdb = card.ids.tmdb ?? card.directPlayTarget?.tmdbId, tmdb > 0 {
+            return "series:tmdb:\(tmdb)"
+        }
+        if let tvdb = card.ids.tvdb, tvdb > 0 {
+            return "series:tvdb:\(tvdb)"
+        }
+        if let imdb = card.ids.imdb?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           !imdb.isEmpty {
+            return "series:imdb:\(imdb)"
+        }
+        if lowerId.hasPrefix("episode:") {
+            let parts = lowerId.split(separator: ":")
+            if parts.count >= 3, (parts[1] == "tmdb" || parts[1] == "tvdb" || parts[1] == "imdb") {
+                return "series:\(parts[1]):\(parts[2])"
+            }
+        }
+        return lowerId.isEmpty ? nil : lowerId
+    }
+
+    private static func isContinueOrUpcomingAnchorRow(_ row: TvShelfRow) -> Bool {
+        let lowerId = row.rowId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let lowerSource = (row.sourceKind ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let lowerStyle = row.rowStyle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return lowerId == "medialogg-continue"
+            || lowerSource == "system_continue"
+            || lowerStyle == "continue_backdrop"
+            || lowerId == "upcoming-episodes"
+            || lowerSource == "system_upcoming"
+            || lowerSource == "upcoming"
+            || lowerStyle == "upcoming_backdrop"
+    }
+
+    private static func isActiveSeriesRow(_ row: TvShelfRow) -> Bool {
+        let lowerId = row.rowId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let lowerSource = (row.sourceKind ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let lowerTitle = row.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if lowerSource == "active_series" || lowerSource == "system_active_series" {
+            return true
+        }
+        if lowerId == "new-episodes"
+            || lowerId == "medialogg-active"
+            || lowerId == "active-series"
+            || lowerId == "custom:medialogg-active" {
+            return true
+        }
+        return lowerTitle == "nye episoder"
+            || lowerTitle == "mine pågående serier"
+            || lowerTitle == "pågående serier"
+    }
+
     /// Prioritizes `Fortsett` cards (`Fra iPhone` first, `I kveld` second), keeps server row order by default,
-    /// and promotes `Fortsett` to row 0 when an active `Fra iPhone` handoff is waiting.
+    /// promotes `Fortsett` to row 0 when an active `Fra iPhone` handoff is waiting, and removes duplicate
+    /// series from `Nye episoder` / `active_series` rows when already shown in `Fortsett` or `Kommende episoder`.
     public static func prepareVisibleRows(from payload: TvHomeResponse?) -> [TvShelfRow] {
         var rows = filterVisibleRows(payload?.rows ?? [])
         let continueIdx = rows.firstIndex { row in
@@ -95,6 +159,37 @@ public enum CatalogShelfIndexer: Sendable {
                 items: [prepared]
             )
             rows.insert(synthetic, at: 0)
+        }
+
+        var anchoredSeriesKeys = Set<String>()
+        for row in rows where isContinueOrUpcomingAnchorRow(row) {
+            for card in row.items {
+                if let key = seriesDeduplicationKey(for: card) {
+                    anchoredSeriesKeys.insert(key)
+                }
+            }
+        }
+
+        if !anchoredSeriesKeys.isEmpty {
+            rows = rows.compactMap { row in
+                guard isActiveSeriesRow(row) else { return row }
+                let dedupedItems = row.items.filter { card in
+                    guard let key = seriesDeduplicationKey(for: card) else { return true }
+                    return !anchoredSeriesKeys.contains(key)
+                }
+                guard !dedupedItems.isEmpty else { return nil }
+                guard dedupedItems.count != row.items.count else { return row }
+                return TvShelfRow(
+                    rowId: row.rowId,
+                    title: row.title,
+                    rowStyle: row.rowStyle,
+                    sourceKind: row.sourceKind,
+                    listMode: row.listMode,
+                    hasMore: row.hasMore,
+                    nextPath: row.nextPath,
+                    items: dedupedItems
+                )
+            }
         }
 
         return rows

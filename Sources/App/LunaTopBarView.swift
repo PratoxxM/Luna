@@ -125,6 +125,13 @@ struct LunaTopBarView: View {
         .task(id: activeRedirectToken) {
             guard activeRedirectToken > 0 else { return }
             let target = selectedTab
+            await Task.yield()
+            guard !Task.isCancelled, selectedTab == target else { return }
+            if focusedTab == nil {
+                focusedTab = target
+            } else {
+                return
+            }
             for delayNs: UInt64 in [16_000_000, 44_000_000, 72_000_000] {
                 try? await Task.sleep(nanoseconds: delayNs)
                 guard !Task.isCancelled, selectedTab == target else { return }

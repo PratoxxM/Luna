@@ -8,7 +8,8 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | :--- | :--- | :--- | :--- |
 | `Sources/App/LunaApp.swift` | Owns single `@MainActor AetherEngine`, root `AppSessionStore`, `ComfortPreferences` & `--preview-screen` boot | — | `LunaCoreLinuxTests.swift` |
 | `Sources/App/PreviewLaunchConfiguration.swift` | Parses `--preview-screen` (`home`, `home-poster`, `catalog`, `library`, `search`, `details`, `settings`, `player-subtitles`, `player-audio`, `player-source`, `player-picture`, `player-chapters`, `player-error`) & `--preview-focus` CLI arguments | — | `LunaCoreLinuxTests.swift` |
-| `Sources/App/PreviewMockFixtures.swift` | Deterministic offline Lampelys catalog, 28-season detail & playback fixtures | Mock `/api/tv/v1/*` | — |
+| `Sources/App/PreviewMockFixtures.swift` | Deterministic offline Lampelys Home, catalog & library fixtures | Mock `/api/tv/v1/*` | — |
+| `Sources/App/PreviewMockDetailAndPlayerFixtures.swift` | Deterministic 28-season detail & playback session fixtures | Mock `/api/tv/v1/*` | — |
 | `Sources/App/PreviewMockURLProtocol.swift` | Offline `URLProtocol` router & procedural cinema artwork PNG generator for preview mode | Mock `/api/tv/v1/*`, `/preview-art/*` | — |
 | `Sources/App/MainNavigationShell.swift` | Custom top bar + hidden stock tab bar, room atmosphere env, bootstrap sync & player sheet | `GET /api/tv/v1/bootstrap` | `LunaNavigationAndDetailRaceTests.swift`, `PlayerOverlayAndCacheTests.swift` |
 | `Sources/App/LunaNavigationBarVisibility.swift` | `MainNavigationTab` (*Hjem · Filmer · Serier · Bibliotek* + *Søk/Innstillinger*), scroll collapse & Menu-wakeup policy | — | `LunaNavigationAndDetailRaceTests.swift` |
@@ -19,7 +20,8 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Core/Config/ServerConfiguration.swift` | `AppSessionStore`, URL normalization, LAN TLS evaluator & `LunaCoreClient` factory | — | `ClientOriginAndBlurHashTests.swift`, `PlayerOverlayAndCacheTests.swift` |
 | `Sources/Core/Config/ComfortPreferences.swift` | Subtitle preset/scale/box, DV P7 FEL, speaker & MetalFX upscaling settings | `PATCH /api/tv/v1/device/profile` | `PlayerOverlayAndCacheTests.swift`, `NavigationSettingsAndDeleteTests.swift` |
 | `Sources/Core/Config/SmartTrackRuleEngine.swift` | Automatic Nordic/English audio & subtitle track matching | — | `SmartTrackRuleEngineTests.swift` |
-| `Sources/Core/Cache/ArtworkPipeline.swift` | Off-main-actor image download/downsample cache & BlurHash placeholder pipeline | Same-origin artwork auth & CDN fetch | `ClientOriginAndBlurHashTests.swift`, `PlayerOverlayAndCacheTests.swift` |
+| `Sources/Core/Cache/ArtworkPipeline.swift` | Off-main-actor image download/downsample cache & BlurHash placeholder pipeline | Same-origin artwork auth & CDN fetch | `ClientOriginAndBlurHashTests.swift`, `PlayerArtworkMemoryTests.swift` |
+| `Sources/Core/Cache/ArtworkDiskCache.swift` | Thread-safe RAM bitmap cache, disk touch tracker & NVMe image-cache LRU trimmer | `.cachesDirectory/LunaV2/img` | `PlayerArtworkMemoryTests.swift` |
 | `Sources/Core/Cache/BlurHashDecoder.swift` | Pure Swift BlurHash decoder for instant card & hero placeholders | — | `ClientOriginAndBlurHashTests.swift` |
 | `Sources/Core/Cache/DiskSWRStore.swift` | `.cachesDirectory` ETag/JSON SWR snapshot persistence for cold start | `GET /api/tv/v1/home` (`If-None-Match` / `304`) | `DiskSWRStoreTests.swift`, `LunaCoreLinuxTests.swift` |
 | `Sources/Core/Cache/InflightTaskCoalescer.swift` | Waiter-isolated in-flight task deduplicator, `BoundedLRUMemoryCache` & directory byte counter | — | `NetworkCacheAndMemoryProfileTests.swift`, `LunaCoreHTTPTransportTests.swift` |
@@ -74,7 +76,8 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Features/Onboarding/PairingOnboardingView.swift` | `_lunacore._tcp` auto-discovery & 6-digit pairing flow | `POST /api/tv/v1/pair/request`, `GET /pair/poll/:code` | `ClientOriginAndBlurHashTests.swift` |
 | `Sources/Features/Home/HomeView.swift` | 4-row evening home with SWR instant paint & context-menu shelf mutators | `GET /api/tv/v1/home` | `SeriesFlowAndHomePolicyTests.swift`, `DynamicHomeRowTests.swift` |
 | `Sources/Features/Home/ShelfRowView.swift` | Horizontal focus-safe shelf carousel supporting continue, upcoming (`upcoming_backdrop`), backdrop & poster styles | — | `DynamicHomeRowTests.swift` |
-| `Sources/Features/Browse/CatalogBrowseView.swift` | Paginated genre & sort catalog browser | `GET /api/tv/v1/catalog/{movies,series}` | `SeriesFlowAndHomePolicyTests.swift` |
+| `Sources/Features/Browse/CatalogBrowseView.swift` | Paginated genre & sort catalog browser | `GET /api/tv/v1/catalog/{movies,series}` | `SeriesFlowAndHomePolicyTests.swift`, `AppPolishAndDetailZeroRTTTests.swift` |
+| `Sources/Features/Browse/CatalogFilterBarView.swift` | Fixed left sort/filter triggers, `56 pt` edge-masked genre scroller & `LunaSheetContainer` sort picker | — | `AppPolishAndDetailZeroRTTTests.swift` |
 | `Sources/Features/Browse/CustomRowBrowseView.swift` | Paginated custom row browser | `GET /api/tv/v1/rows/:id` | `DynamicHomeRowTests.swift` |
 | `Sources/Features/Library/LibraryHubView.swift` | Clean 3-pill horizontal Bibliotek hub (*Filmer · Serier · Huskeliste*) above a 6-column `260×390` poster grid | `GET /api/tv/v1/library?section={watchlist,local}` | `NavigationSettingsAndDeleteTests.swift`, `DynamicHomeRowTests.swift` |
 | `Sources/Features/Library/LibrarySidebarAndEmptyViews.swift` | `LibraryFilterSection` filter model, default `Filmer`/`Serier` resolver & crescent-serif empty states | — | `DynamicHomeRowTests.swift` |
@@ -120,7 +123,8 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 ## 4. Build, Guardrails, Actions & `LunaTests` (`Tests/LunaTests/`)
 
 - **Build, Tokens & CI**: `project.yml` (`MARKETING_VERSION: "2.11.0"`, `CURRENT_PROJECT_VERSION: "67"`, `bundleIdPrefix: local.lunacore`), `Package.swift` (Linux `LunaCore` test target), `design/tokens.json`, `Resources/Localizable.xcstrings`, `ops/bin/luna-design-tokens`, `Config/Info.plist` (`NSAllowsArbitraryLoads`, `_lunacore._tcp`), `.github/workflows/build-tvos.yml`, `.github/workflows/tvos-vision.yml`, `scripts/test-core.sh`, `scripts/preview-capture.sh`, `.github/actions/setup-tvos-xcode/action.yml` (`Xcode 26.2+/27`, `XcodeGen`), and `ops/bin/luna-check` (permissions, `<= 800 LOC`, `>= 22 pt` tvOS font floor, zero system `Material`, sideload, zero private infra leaks, token parity & bidirectional doc parity).
-- **26 XCTest Suites + Test Doubles (`Tests/LunaTests/`)**:
+- **28 XCTest Suites + Test Doubles (`Tests/LunaTests/`)**:
+  - `Tests/LunaTests/AppPolishAndDetailZeroRTTTests.swift`
   - `Tests/LunaTests/BonjourServerBrowserTests.swift`
   - `Tests/LunaTests/ChapterClassificationTests.swift`
   - `Tests/LunaTests/ClientOriginAndBlurHashTests.swift`
@@ -139,6 +143,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
   - `Tests/LunaTests/PlaybackRestoreAndAudioSessionTests.swift`
   - `Tests/LunaTests/PlaybackTitleAndNowPlayingTests.swift`
   - `Tests/LunaTests/PlayerExitBlinkRegressionTests.swift`
+  - `Tests/LunaTests/PlayerArtworkMemoryTests.swift`
   - `Tests/LunaTests/PlayerOverlayAndCacheTests.swift`
   - `Tests/LunaTests/PlayerQuickPanelAndSwitchTests.swift`
   - `Tests/LunaTests/PlayerSeriesCurtainAndSubtitleTests.swift`
@@ -149,7 +154,8 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
   - `Tests/LunaTests/ThemeAndArtworkViewTests.swift`
   - `Tests/LunaTests/PlayerTestDoubles.swift` (shared player/transport test doubles)
 - **Linux `LunaCoreTests` (`Package.swift` / `./scripts/test-core.sh`)**:
-  - `Tests/LunaCoreTests/LunaCoreLinuxTests.swift` (native Linux x86_64 tests for `PlaybackEngine`/`IOReader`, `PlaybackCurtainWatchdog`, `CatalogShelfIndexer`, `LunaCoreClient`, `SmartTrackRuleEngine`, `PlaybackChapter`, `SideloadSafeStorage` & `PreviewLaunchConfiguration`)
+  - `Tests/LunaCoreTests/CatalogShelfAndStorageLinuxTests.swift` (native Linux x86_64 tests for cross-row `CatalogShelfIndexer` series deduplication, `ArtworkDecodeTargets`, `SideloadSafeStorage` & `PreviewLaunchConfiguration`)
+  - `Tests/LunaCoreTests/LunaCoreLinuxTests.swift` (native Linux x86_64 tests for `PlaybackCurtainWatchdog`, `LunaCoreClient`, same-origin token boundaries & `prepareToken` wire payloads)
   - `Tests/LunaCoreTests/NetworkCacheAndMemoryProfileTests.swift` (native Linux x86_64 tests for `DeviceMemoryProfile` 4 GB vs. 8 GB scaling, `InflightTaskCoalescer` deduplication & per-waiter cancellation isolation, and `BoundedLRUMemoryCache`)
   - `Tests/LunaCoreTests/PlaybackTrackIntentAndSyncTests.swift` (native Linux x86_64 unit tests for `PlaybackTrackIntent` MKV track-ID permutation matching, `ms` sync step/clamp/format, `Kveldslys` warm RGB presets & quick-panel tab switching)
   - `Tests/LunaCoreTests/PlayerTimelinePolicyTests.swift` (native Linux x86_64 unit tests for `0.5 s`/`2.0 s`/`10.0 s` clock bucketers, 24h `Slutter kl. HH:mm` formatting & all 6 steps of `PlayerTimelinePolicy.resolveExitAction`)

@@ -223,7 +223,7 @@ struct HomeView: View {
         .sheet(item: $sourcePickerContext) { ctx in
             SourcePickerSheetView(
                 context: ctx,
-                onSelectCandidate: { picked, reusedPrepareToken in
+                onSelectCandidate: { picked, reusedPrepareToken, createdPreparedSession in
                     let target = ctx
                     sourcePickerContext = nil
                     sessionStore.activePlaybackTarget = PlaybackLaunchRequest(
@@ -235,6 +235,7 @@ struct HomeView: View {
                         startPositionSeconds: target.startPositionSeconds,
                         candidateId: reusedPrepareToken == nil ? picked.candidateId : nil,
                         prepareToken: reusedPrepareToken,
+                        preparedSession: createdPreparedSession,
                         backdropUrl: target.backdropUrl,
                         logoUrl: target.logoUrl
                     )

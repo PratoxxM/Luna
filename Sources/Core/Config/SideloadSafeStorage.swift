@@ -108,6 +108,32 @@ public enum SideloadSafeStorage {
         return version
     }
 
+    public static func loadRecentSearches(defaults: UserDefaults = .standard) -> [String] {
+        defaults.stringArray(forKey: recentSearchesKey) ?? []
+    }
+
+    @discardableResult
+    public static func recordRecentSearch(
+        _ term: String,
+        defaults: UserDefaults = .standard,
+        maxCount: Int = 8
+    ) -> [String] {
+        let normalized = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        let current = loadRecentSearches(defaults: defaults)
+        guard normalized.count >= 2 else { return current }
+        var updated = current.filter { $0.caseInsensitiveCompare(normalized) != .orderedSame }
+        updated.insert(normalized, at: 0)
+        if updated.count > maxCount {
+            updated = Array(updated.prefix(maxCount))
+        }
+        defaults.set(updated, forKey: recentSearchesKey)
+        return updated
+    }
+
+    public static func clearRecentSearches(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: recentSearchesKey)
+    }
+
     private static func readKeychainString(account: String, defaults: UserDefaults) -> String? {
         #if canImport(Security)
         let query: [String: Any] = [

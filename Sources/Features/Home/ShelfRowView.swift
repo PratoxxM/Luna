@@ -168,7 +168,7 @@ struct ShelfRowView: View {
         Button {
             onPickSourceForCard(card)
         } label: {
-            Label("Velg kilde…", systemImage: "arrow.triangle.2.circlepath")
+            Label("Velg utgave…", systemImage: "arrow.triangle.2.circlepath")
         }
 
         Button {

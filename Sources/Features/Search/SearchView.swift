@@ -42,6 +42,10 @@ struct SearchView: View {
 
     private let columns = LunaTheme.posterGridColumns
 
+    nonisolated static func resolveSearchFieldBorderColor(isFocused: Bool) -> Color {
+        isFocused ? LunaTokens.Accent.border : .clear
+    }
+
     init(initialQuery: String = "", isRootTab: Bool = false, isActiveTab: Bool = true) {
         self.initialQuery = initialQuery
         self.isRootTab = isRootTab
@@ -93,7 +97,7 @@ struct SearchView: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: LunaTokens.Radius.card, style: .continuous)
                                 .strokeBorder(
-                                    isQueryFieldFocused ? Color.clear : LunaTheme.warmBorder,
+                                    Self.resolveSearchFieldBorderColor(isFocused: isQueryFieldFocused),
                                     lineWidth: LunaTokens.Layout.hairlineWidth
                                 )
                         )
@@ -101,7 +105,7 @@ struct SearchView: View {
 
                         if !query.isEmpty {
                             LunaIconButton(systemImage: "xmark", accessibilityLabel: "Tøm søk") {
-                                query = ""
+                                clearSearchKeepingFieldFocus()
                             }
                         }
                     }
@@ -166,7 +170,7 @@ struct SearchView: View {
                                 actionSymbol: "xmark.circle",
                                 actionProminence: .glassPill
                             ) {
-                                query = ""
+                                clearSearchKeepingFieldFocus()
                             }
                             .focused($controlFocus, equals: .emptyReset)
                             .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -346,25 +350,38 @@ struct SearchView: View {
         }
     }
 
+    private func clearSearchKeepingFieldFocus() {
+        isQueryFieldFocused = true
+        queryFocusNonce &+= 1
+        query = ""
+        Task { @MainActor in
+            await Task.yield()
+            if !isQueryFieldFocused {
+                isQueryFieldFocused = true
+            }
+            for delayNs: UInt64 in [16_000_000, 48_000_000] {
+                try? await Task.sleep(nanoseconds: delayNs)
+                guard !Task.isCancelled else { return }
+                if !isQueryFieldFocused && controlFocus == nil {
+                    isQueryFieldFocused = true
+                } else {
+                    return
+                }
+            }
+        }
+    }
+
     private func loadRecentSearches() {
-        recentSearches = UserDefaults.standard.stringArray(forKey: SideloadSafeStorage.recentSearchesKey) ?? []
+        recentSearches = sessionStore.loadRecentSearches()
     }
 
     private func recordRecentSearch(_ term: String) {
-        let normalized = term.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard normalized.count >= 2 else { return }
-        var updated = recentSearches.filter { $0.caseInsensitiveCompare(normalized) != .orderedSame }
-        updated.insert(normalized, at: 0)
-        if updated.count > 8 {
-            updated = Array(updated.prefix(8))
-        }
-        recentSearches = updated
-        UserDefaults.standard.set(updated, forKey: SideloadSafeStorage.recentSearchesKey)
+        recentSearches = sessionStore.recordRecentSearch(term)
     }
 
     private func clearRecentSearches() {
         recentSearches = []
-        UserDefaults.standard.removeObject(forKey: SideloadSafeStorage.recentSearchesKey)
+        sessionStore.clearRecentSearches()
     }
 
     private func showMutationError(_ error: Error) {

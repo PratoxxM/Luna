@@ -111,6 +111,7 @@ internal final class SourcePickerViewModel {
     @ObservationIgnored private(set) var resolvedPrepareToken: String?
     @ObservationIgnored private(set) var existingTokenFailed: Bool = false
     @ObservationIgnored private(set) var createdOrphanSessionId: String?
+    @ObservationIgnored private(set) var createdPreparedSession: TvPlaybackSession?
     @ObservationIgnored private(set) var inflightPrepareToken: String?
     @ObservationIgnored private(set) var didSelectCandidate: Bool = false
     private(set) var isLoading: Bool = true
@@ -147,6 +148,7 @@ internal final class SourcePickerViewModel {
             ) {
                 sessionToken = existing
                 resolvedPrepareToken = existing
+                createdPreparedSession = nil
                 usedExistingToken = true
             } else {
                 let reqToken = UUID().uuidString
@@ -180,6 +182,7 @@ internal final class SourcePickerViewModel {
                 sessionToken = tok
                 resolvedPrepareToken = tok
                 createdOrphanSessionId = prep.playbackSession?.sessionId
+                createdPreparedSession = prep.playbackSession
             }
 
             if Task.isCancelled || isDismissed {
@@ -237,15 +240,17 @@ internal final class SourcePickerViewModel {
         isCurrent: Bool,
         context: SourcePickerContext,
         client: (any SourcePickerSessionClient)?,
-        onSelectCandidate: (TvCandidateInfo, String?) -> Void
+        onSelectCandidate: (TvCandidateInfo, String?, TvPlaybackSession?) -> Void
     ) {
         didSelectCandidate = true
         if isCurrent, let tok = resolvedPrepareToken {
+            let handedOverSession = createdPreparedSession
             createdOrphanSessionId = nil
-            onSelectCandidate(candidate, tok)
+            createdPreparedSession = nil
+            onSelectCandidate(candidate, tok, handedOverSession)
         } else {
             stopOrphanSessionIfNeeded(context: context, client: client)
-            onSelectCandidate(candidate, nil)
+            onSelectCandidate(candidate, nil, nil)
         }
     }
 
@@ -283,9 +288,11 @@ internal final class SourcePickerViewModel {
             }
         }
         guard let sid = createdOrphanSessionId else {
+            createdPreparedSession = nil
             return
         }
         createdOrphanSessionId = nil
+        createdPreparedSession = nil
         Self.stopSessionDetached(sessionId: sid, client: client)
     }
 
@@ -309,7 +316,7 @@ struct SourcePickerSheetView: View {
     @Environment(AppSessionStore.self) private var sessionStore
 
     let context: SourcePickerContext
-    let onSelectCandidate: (TvCandidateInfo, String?) -> Void
+    let onSelectCandidate: (TvCandidateInfo, String?, TvPlaybackSession?) -> Void
     let onCancel: () -> Void
 
     @State private var viewModel = SourcePickerViewModel()
@@ -332,20 +339,20 @@ struct SourcePickerSheetView: View {
         let defaultID = preferredDefaultCandidateID
 
         LunaSheetContainer(
-            title: "Velg kilde",
+            title: "Velg utgave",
             subtitle: context.displaySubject,
             width: .wide,
             maxHeight: 860,
             onClose: onCancel
         ) {
             if viewModel.isLoading {
-                LunaLoadingRow(message: "Søker etter tilgjengelige kilder…")
+                LunaLoadingRow(message: "Henter tilgjengelige utgaver…")
             } else if let errorMessage = viewModel.errorMessage {
                 LunaInlineError(message: errorMessage) {
                     reloadAttempt &+= 1
                 }
             } else if viewModel.candidates.isEmpty {
-                LunaEmptyState(headline: "Fant ingen tilgjengelige kilder for denne tittelen.")
+                LunaEmptyState(headline: "Fant ingen tilgjengelige utgaver for denne tittelen.")
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     LunaListGroup(showsSurface: false) {

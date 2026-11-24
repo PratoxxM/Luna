@@ -13,6 +13,11 @@ public struct PosterCardView: View {
     let onSelect: () -> Void
     let onPlayShortcut: (() -> Void)?
 
+    public static let shelfCaptionSpacing: CGFloat = 10
+    public static let shelfCaptionHeight: CGFloat = 52
+    public static let gridCaptionSpacing: CGFloat = 14
+    public static let gridCaptionHeight: CGFloat = 60
+
     @FocusState private var isFocused: Bool
 
     public init(
@@ -41,10 +46,11 @@ public struct PosterCardView: View {
 
     public var body: some View {
         let posterURL = client?.resolveArtworkURL(card.preferredPosterPath, target: .poster2x)
-        let captionHeight: CGFloat = showRestingTitle ? 60 : 66
+        let captionHeight: CGFloat = showRestingTitle ? Self.gridCaptionHeight : Self.shelfCaptionHeight
+        let outerSpacing: CGFloat = showRestingTitle ? Self.gridCaptionSpacing : Self.shelfCaptionSpacing
         let showCaption = showRestingTitle || isFocused
 
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: outerSpacing) {
             Button(action: onSelect) {
                 ZStack {
                     LunaTheme.surface
@@ -52,7 +58,7 @@ public struct PosterCardView: View {
                     CachedArtworkView(
                         url: posterURL,
                         client: client,
-                        maxPixelSize: 900,
+                        maxPixelSize: ArtworkDecodeTargets.posterCardMaxPixelSize,
                         blurHash: card.blurHash,
                         dominantColor: card.dominantColor,
                         placeholderSymbol: card.mediaType == "series" ? "tv" : "film",
@@ -95,7 +101,7 @@ public struct PosterCardView: View {
                 onPlayShortcut?()
             }
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(card.title)
                     .font(showRestingTitle ? LunaTheme.Font.subtitle : LunaTheme.Font.cardTitle)
                     .foregroundStyle(isFocused ? LunaTheme.linen : (showRestingTitle ? LunaTheme.moonlight : LunaTheme.linen))
@@ -111,12 +117,13 @@ public struct PosterCardView: View {
                     }
 
                     Text(subtitleText)
-                        .font(showRestingTitle ? LunaTheme.Font.caption : LunaTheme.Font.subtitle)
+                        .font(LunaTheme.Font.caption)
                         .foregroundStyle(LunaTheme.cardSubtitleColor(isFocused: isFocused))
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
             .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: captionHeight, maxHeight: captionHeight, alignment: .topLeading)
             .lunaFocusCaptionReveal(isVisible: showCaption, isFocused: isFocused)
         }

@@ -2,6 +2,14 @@ import SwiftUI
 import AetherBridge
 
 struct SettingsServerDiagnosticsSectionView: View {
+    private enum FallbackEditorFocus: Hashable {
+        case row
+        case textField
+        case save
+        case remove
+        case cancel
+    }
+
     @Environment(AppSessionStore.self) private var sessionStore
 
     let cacheBytes: Int64
@@ -10,6 +18,7 @@ struct SettingsServerDiagnosticsSectionView: View {
     let onRefreshCacheMetrics: () async -> Void
     @State private var isEditingFallbackURL: Bool = false
     @State private var fallbackURLDraft: String = ""
+    @FocusState private var fallbackFocus: FallbackEditorFocus?
 
     var body: some View {
         VStack(alignment: .leading, spacing: LunaTokens.Layout.sectionGap) {
@@ -40,33 +49,59 @@ struct SettingsServerDiagnosticsSectionView: View {
                 LunaListRow(
                     title: "Sekundær serveradresse (fallback)",
                     subtitle: sessionStore.fallbackServerURL?.absoluteString ?? "Brukes kun dersom primærserver ikke svarer",
-                    leadingSystemImage: "network"
+                    leadingSystemImage: "network",
+                    externalIsFocused: fallbackFocus == .row
                 ) {
-                    fallbackURLDraft = sessionStore.fallbackServerURL?.absoluteString ?? ""
-                    isEditingFallbackURL.toggle()
+                    if isEditingFallbackURL {
+                        closeFallbackEditorReturningFocusToRow()
+                    } else {
+                        fallbackURLDraft = sessionStore.fallbackServerURL?.absoluteString ?? ""
+                        isEditingFallbackURL = true
+                        Task { @MainActor in
+                            await Task.yield()
+                            fallbackFocus = .textField
+                            try? await Task.sleep(nanoseconds: 16_000_000)
+                            if !Task.isCancelled, isEditingFallbackURL, fallbackFocus == nil {
+                                fallbackFocus = .textField
+                            }
+                        }
+                    }
                 }
+                .focused($fallbackFocus, equals: .row)
+
                 if isEditingFallbackURL {
                     VStack(alignment: .leading, spacing: 12) {
                         TextField("f.eks. https://lunacore.local:8920", text: $fallbackURLDraft)
+                            .font(LunaTheme.Font.body)
+                            .foregroundStyle(LunaTheme.linen)
+                            .focused($fallbackFocus, equals: .textField)
                             .frame(maxWidth: 680)
                         HStack(spacing: 12) {
                             LunaPillButton("Lagre", prominence: .primary, size: .compact) {
                                 sessionStore.setFallbackServerURL(fallbackURLDraft)
-                                isEditingFallbackURL = false
+                                closeFallbackEditorReturningFocusToRow()
                             }
+                            .focused($fallbackFocus, equals: .save)
+
                             if sessionStore.fallbackServerURL != nil {
                                 LunaPillButton("Fjern", prominence: .glassPill, size: .compact) {
                                     sessionStore.setFallbackServerURL(nil)
                                     fallbackURLDraft = ""
-                                    isEditingFallbackURL = false
+                                    closeFallbackEditorReturningFocusToRow()
                                 }
+                                .focused($fallbackFocus, equals: .remove)
                             }
                             LunaPillButton("Avbryt", prominence: .subtleChip, size: .compact) {
-                                isEditingFallbackURL = false
+                                closeFallbackEditorReturningFocusToRow()
                             }
+                            .focused($fallbackFocus, equals: .cancel)
                         }
                     }
                     .padding(.vertical, 8)
+                    .focusSection()
+                    .onExitCommand {
+                        closeFallbackEditorReturningFocusToRow()
+                    }
                 }
                 LunaListDivider()
                 LunaInfoRow(title: "Bilde- og kataloghurtigbuffer", value: formattedCacheSize)
@@ -104,6 +139,21 @@ struct SettingsServerDiagnosticsSectionView: View {
                 ) {
                     showReconnectDialog = true
                 }
+            }
+        }
+    }
+
+    private func closeFallbackEditorReturningFocusToRow() {
+        fallbackFocus = .row
+        isEditingFallbackURL = false
+        Task { @MainActor in
+            await Task.yield()
+            if fallbackFocus != .row {
+                fallbackFocus = .row
+            }
+            try? await Task.sleep(nanoseconds: 16_000_000)
+            if !Task.isCancelled, !isEditingFallbackURL, fallbackFocus == nil {
+                fallbackFocus = .row
             }
         }
     }

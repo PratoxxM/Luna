@@ -6,11 +6,15 @@ struct DetailHeroHeaderView: View {
     let primaryPlayTitle: String
     var horizontalGutter: CGFloat = LunaTheme.horizontalGutter
     let focusNamespace: Namespace.ID
+    var prefersDefaultPlayFocus: Bool = true
+    var onHeroInteracted: (() -> Void)? = nil
 
     let onPlay: () -> Void
     let onToggleWatchlist: () -> Void
     var onPickSource: () -> Void = {}
     var onOpenMore: (() -> Void)? = nil
+
+    @FocusState private var isAnyHeroButtonFocused: Bool
 
     private var heroMinHeight: CGFloat {
         item.mediaType == "movie" ? 760 : 500
@@ -80,22 +84,25 @@ struct DetailHeroHeaderView: View {
                     .frame(maxWidth: 920, alignment: .leading)
             }
 
-            // Action row: Play (primary) + Kilde + Huskeliste + ⋯
+            // Action row: Play (primary) + Utgave + Huskeliste + ⋯
             HStack(spacing: 14) {
                 LunaPillButton(
                     primaryPlayTitle,
                     systemImage: "play.fill",
                     prominence: .primary,
-                    size: .regular,
-                    action: onPlay
-                )
-                .prefersDefaultFocus(true, in: focusNamespace)
+                    size: .regular
+                ) {
+                    onHeroInteracted?()
+                    onPlay()
+                }
+                .prefersDefaultFocus(prefersDefaultPlayFocus, in: focusNamespace)
 
                 LunaPillButton(
-                    "Kilde",
+                    "Utgave",
                     systemImage: "film.stack",
                     prominence: .glassPill
                 ) {
+                    onHeroInteracted?()
                     onPickSource()
                 }
 
@@ -105,6 +112,7 @@ struct DetailHeroHeaderView: View {
                     isSelected: item.inWatchlist,
                     prominence: .glassPill
                 ) {
+                    onHeroInteracted?()
                     onToggleWatchlist()
                 }
 
@@ -112,6 +120,7 @@ struct DetailHeroHeaderView: View {
                     systemImage: "ellipsis",
                     accessibilityLabel: "Mer"
                 ) {
+                    onHeroInteracted?()
                     if let onOpenMore {
                         onOpenMore()
                     } else {
@@ -119,9 +128,16 @@ struct DetailHeroHeaderView: View {
                     }
                 }
             }
+            .focused($isAnyHeroButtonFocused)
+            .onChange(of: isAnyHeroButtonFocused) { _, focused in
+                if focused {
+                    onHeroInteracted?()
+                }
+            }
             .padding(.top, isMovie ? 12 : 6)
             .focusSection()
             .onPlayPauseCommand {
+                onHeroInteracted?()
                 onPlay()
             }
         }
@@ -138,7 +154,7 @@ struct DetailHeroHeaderView: View {
                         CachedArtworkView(
                             url: landscapeURL,
                             client: client,
-                            maxPixelSize: 1920,
+                            maxPixelSize: ArtworkDecodeTargets.detailHeroMaxPixelSize(),
                             blurHash: item.blurHash,
                             dominantColor: item.dominantColor,
                             placeholderSymbol: "film.stack",
@@ -167,9 +183,9 @@ struct DetailHeroHeaderView: View {
                     LinearGradient(
                         stops: [
                             .init(color: LunaTheme.canvas, location: 0.0),
-                            .init(color: LunaTheme.canvas.opacity(0.95), location: 0.30),
-                            .init(color: LunaTheme.canvas.opacity(0.56), location: 0.54),
-                            .init(color: LunaTheme.canvas.opacity(0.10), location: 0.78),
+                            .init(color: LunaTheme.canvas.opacity(0.97), location: 0.34),
+                            .init(color: LunaTheme.canvas.opacity(0.74), location: 0.56),
+                            .init(color: LunaTheme.canvas.opacity(0.22), location: 0.80),
                             .init(color: .clear, location: 1.0),
                         ],
                         startPoint: .leading,

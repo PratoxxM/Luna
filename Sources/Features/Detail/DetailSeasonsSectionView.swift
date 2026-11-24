@@ -8,8 +8,11 @@ struct DetailSeasonsSectionView: View {
     let isLoadingEpisodes: Bool
     let client: LunaCoreClient?
     let detailGutter: CGFloat
+    var restoreFocusEpisodeID: String? = nil
+    var restoreFocusNonce: Int = 0
 
     let onSelectSeason: (Int) -> Void
+    var onEpisodeFocused: ((TvEpisodeCard) -> Void)? = nil
     let onPlayEpisode: (TvEpisodeCard) -> Void
     let onPickEpisodeSource: (TvEpisodeCard) -> Void
     let onToggleEpisodeWatched: (TvEpisodeCard) -> Void
@@ -82,7 +85,7 @@ struct DetailSeasonsSectionView: View {
                     let displayedEpisodeCount = selectedSeasonSummary?.episodeCount ?? episodes.count
                     if displayedEpisodeCount > 0 {
                         Text(LunaCopy.episodesCount(displayedEpisodeCount))
-                            .font(LunaTheme.Font.subtitle)
+                            .font(LunaTheme.Font.caption)
                             .foregroundStyle(LunaTheme.muted)
                     }
 
@@ -99,6 +102,7 @@ struct DetailSeasonsSectionView: View {
                     .padding(.horizontal, detailGutter)
             } else {
                 let nextTargetID = nextEpisodeTargetID
+                let preferredEpisodeID = restoreFocusEpisodeID ?? nextTargetID
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
@@ -108,13 +112,19 @@ struct DetailSeasonsSectionView: View {
                                     seriesTitle: detail.title,
                                     isNextForYou: ep.id == nextTargetID,
                                     client: client,
+                                    focusRequestNonce: ep.id == restoreFocusEpisodeID ? restoreFocusNonce : 0,
+                                    onFocusChanged: { focused in
+                                        if focused {
+                                            onEpisodeFocused?(ep)
+                                        }
+                                    },
                                     onPlay: { onPlayEpisode(ep) },
                                     onPickSource: { onPickEpisodeSource(ep) },
                                     onToggleWatched: { onToggleEpisodeWatched(ep) },
                                     onRequestDelete: { onDeleteEpisode(ep) }
                                 )
                                 .id(ep.id)
-                                .prefersDefaultFocus(ep.id == nextTargetID, in: episodesFocusNamespace)
+                                .prefersDefaultFocus(ep.id == preferredEpisodeID, in: episodesFocusNamespace)
                             }
                         }
                         .padding(.horizontal, detailGutter)
@@ -125,10 +135,13 @@ struct DetailSeasonsSectionView: View {
                     .focusScope(episodesFocusNamespace)
                     .focusSection()
                     .onAppear {
-                        scrollToTargetEpisode(proxy: proxy)
+                        scrollToTargetEpisode(proxy: proxy, overrideID: restoreFocusEpisodeID)
                     }
                     .onChange(of: episodes) { _, _ in
-                        scrollToTargetEpisode(proxy: proxy)
+                        scrollToTargetEpisode(proxy: proxy, overrideID: restoreFocusEpisodeID)
+                    }
+                    .onChange(of: restoreFocusNonce) { _, _ in
+                        scrollToTargetEpisode(proxy: proxy, overrideID: restoreFocusEpisodeID)
                     }
                 }
             }
@@ -152,8 +165,10 @@ struct DetailSeasonsSectionView: View {
         }
     }
 
-    private func scrollToTargetEpisode(proxy: ScrollViewProxy) {
-        guard let targetID = nextEpisodeTargetID, targetID != episodes.first?.id else { return }
+    private func scrollToTargetEpisode(proxy: ScrollViewProxy, overrideID: String? = nil) {
+        guard let targetID = overrideID ?? nextEpisodeTargetID,
+              episodes.contains(where: { $0.id == targetID }),
+              targetID != episodes.first?.id else { return }
         proxy.scrollTo(targetID, anchor: .leading)
     }
 }

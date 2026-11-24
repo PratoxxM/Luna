@@ -13,6 +13,10 @@ struct MediaDetailView: View {
     @State private var subpageToken = UUID()
     @State private var modalToken = UUID()
     @State private var pendingMoreAction: PendingMoreSheetAction?
+    @State private var lastFocusedEpisodeID: String?
+    @State private var preserveEpisodeFocusAfterAction: Bool = false
+    @State private var restoreFocusEpisodeID: String?
+    @State private var restoreFocusNonce: Int = 0
 
     private enum PendingMoreSheetAction {
         case readOverview
@@ -57,6 +61,10 @@ struct MediaDetailView: View {
                             primaryPlayTitle: viewModel.heroPrimaryPlayTitle(detail),
                             horizontalGutter: detailGutter,
                             focusNamespace: detailFocusNamespace,
+                            prefersDefaultPlayFocus: !preserveEpisodeFocusAfterAction,
+                            onHeroInteracted: {
+                                preserveEpisodeFocusAfterAction = false
+                            },
                             onPlay: {
                                 viewModel.launchPrimaryPlayback()
                             },
@@ -80,19 +88,36 @@ struct MediaDetailView: View {
                                 isLoadingEpisodes: viewModel.isLoadingEpisodes,
                                 client: viewModel.client,
                                 detailGutter: detailGutter,
+                                restoreFocusEpisodeID: preserveEpisodeFocusAfterAction ? restoreFocusEpisodeID : nil,
+                                restoreFocusNonce: restoreFocusNonce,
                                 onSelectSeason: { seasonNumber in
+                                    lastFocusedEpisodeID = nil
+                                    restoreFocusEpisodeID = nil
                                     Task { await viewModel.selectSeason(seasonNumber) }
                                 },
+                                onEpisodeFocused: { ep in
+                                    lastFocusedEpisodeID = ep.id
+                                    preserveEpisodeFocusAfterAction = true
+                                    viewModel.handleEpisodeFocusChanged(ep)
+                                },
                                 onPlayEpisode: { ep in
+                                    lastFocusedEpisodeID = ep.id
+                                    preserveEpisodeFocusAfterAction = true
                                     viewModel.playEpisode(ep)
                                 },
                                 onPickEpisodeSource: { ep in
+                                    lastFocusedEpisodeID = ep.id
+                                    preserveEpisodeFocusAfterAction = true
                                     viewModel.openEpisodeSourcePicker(ep)
                                 },
                                 onToggleEpisodeWatched: { ep in
+                                    lastFocusedEpisodeID = ep.id
+                                    preserveEpisodeFocusAfterAction = true
                                     Task { await viewModel.toggleEpisodeWatched(ep) }
                                 },
                                 onDeleteEpisode: { ep in
+                                    lastFocusedEpisodeID = ep.id
+                                    preserveEpisodeFocusAfterAction = true
                                     viewModel.requestDeleteEpisode(ep)
                                 }
                             )
@@ -143,8 +168,13 @@ struct MediaDetailView: View {
         .sheet(item: $viewModel.sourcePickerContext) { ctx in
             SourcePickerSheetView(
                 context: ctx,
-                onSelectCandidate: { picked, reusedToken in
-                    viewModel.launchSelectedSource(picked, reusedToken: reusedToken, context: ctx)
+                onSelectCandidate: { picked, reusedToken, createdPreparedSession in
+                    viewModel.launchSelectedSource(
+                        picked,
+                        reusedToken: reusedToken,
+                        createdPreparedSession: createdPreparedSession,
+                        context: ctx
+                    )
                 },
                 onCancel: {
                     viewModel.sourcePickerContext = nil
@@ -157,17 +187,19 @@ struct MediaDetailView: View {
         .sheet(isPresented: $viewModel.showMoreSheet, onDismiss: {
             let action = pendingMoreAction
             pendingMoreAction = nil
-            switch action {
-            case .readOverview:
-                viewModel.showFullOverviewSheet = true
-            case .toggleWatched:
-                Task { await viewModel.handleHeroWatchedTap() }
-            case .deleteSeason(let seasonNumber):
-                viewModel.requestDeleteSeason(seasonNumber)
-            case .deleteTitle:
-                viewModel.requestDeleteTitle()
-            case nil:
-                break
+            guard let action else { return }
+            Task { @MainActor in
+                await Task.yield()
+                switch action {
+                case .readOverview:
+                    viewModel.showFullOverviewSheet = true
+                case .toggleWatched:
+                    await viewModel.handleHeroWatchedTap()
+                case .deleteSeason(let seasonNumber):
+                    viewModel.requestDeleteSeason(seasonNumber)
+                case .deleteTitle:
+                    viewModel.requestDeleteTitle()
+                }
             }
         }) {
             if let detail = viewModel.detail {
@@ -257,6 +289,14 @@ struct MediaDetailView: View {
         }
         .onChange(of: sessionStore.activePlaybackTarget) { oldTarget, newTarget in
             viewModel.handlePlaybackTargetChange(oldTarget: oldTarget, newTarget: newTarget)
+            if oldTarget != nil, newTarget == nil, preserveEpisodeFocusAfterAction {
+                requestEpisodeFocusRestoreIfNeeded()
+            }
+        }
+        .onChange(of: viewModel.episodes) { _, _ in
+            if preserveEpisodeFocusAfterAction, sessionStore.activePlaybackTarget == nil {
+                requestEpisodeFocusRestoreIfNeeded()
+            }
         }
         .onDisappear {
             viewModel.handleDisappear(sessionContext: sessionStore)
@@ -272,6 +312,19 @@ struct MediaDetailView: View {
             ) {
                 subpageVisibility.leaveSubpage(subpageToken)
             }
+        }
+    }
+
+    private func requestEpisodeFocusRestoreIfNeeded() {
+        guard let detail = viewModel.detail, detail.mediaType == "series" else { return }
+        if let targetID = MediaDetailViewModel.resolveRestoredEpisodeFocusID(
+            lastFocusedEpisodeID: lastFocusedEpisodeID,
+            episodes: viewModel.episodes,
+            nextUp: detail.nextUp
+        ) {
+            lastFocusedEpisodeID = targetID
+            restoreFocusEpisodeID = targetID
+            restoreFocusNonce &+= 1
         }
     }
 

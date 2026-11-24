@@ -181,6 +181,18 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         )
         XCTAssertEqual(try rgbaComponents(restingUnselectedBorder).a, 0.0, accuracy: 0.005)
 
+        let restingIconBorder = LunaIconButton.resolveBorderColor(isFocused: false, isSelected: false)
+        let selectedIconBorder = LunaIconButton.resolveBorderColor(isFocused: false, isSelected: true)
+        let focusedIconBorder = LunaIconButton.resolveBorderColor(isFocused: true, isSelected: true)
+        XCTAssertEqual(try rgbaComponents(restingIconBorder).a, 0.0, accuracy: 0.005)
+        XCTAssertEqual(try rgbaComponents(selectedIconBorder).a, 0.18, accuracy: 0.015)
+        XCTAssertEqual(try rgbaComponents(focusedIconBorder).a, 0.0, accuracy: 0.005)
+
+        let restingSearchBorder = SearchView.resolveSearchFieldBorderColor(isFocused: false)
+        let focusedSearchBorder = SearchView.resolveSearchFieldBorderColor(isFocused: true)
+        XCTAssertEqual(try rgbaComponents(restingSearchBorder).a, 0.0, accuracy: 0.005)
+        XCTAssertGreaterThan(try rgbaComponents(focusedSearchBorder).a, 0.30)
+
         let watchedButton = LunaPillButton(
             "Sett",
             systemImage: "checkmark.circle.fill",

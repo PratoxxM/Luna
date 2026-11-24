@@ -47,6 +47,27 @@ struct SettingsRoomDisplaySectionView: View {
             }
 
             LunaControlRow(
+                title: comfort.speakerLayoutOverride.headerSummary(forAutoLayout: roomAutoSpeakerLayout),
+                subtitle: "Auto tilpasser til rommet · 5.1.2 / 7.1.4 Atmos · Stereo 2.0 for TV-høyttalere",
+                axis: .vertical
+            ) {
+                HStack(spacing: 10) {
+                    ForEach(SpeakerLayoutOverrideMode.allCases) { mode in
+                        LunaPillButton(
+                            mode.quickPillTitle,
+                            isSelected: comfort.speakerLayoutOverride == mode,
+                            prominence: .glassPill,
+                            size: .compact
+                        ) {
+                            comfort.speakerLayoutOverride = mode
+                        }
+                    }
+                }
+            }
+
+            LunaListDivider()
+
+            LunaControlRow(
                 title: "MetalFX 4K-oppskalering",
                 subtitle: comfort.lowResUpscaleMode.shortDescription,
                 axis: .vertical
@@ -68,7 +89,7 @@ struct SettingsRoomDisplaySectionView: View {
             LunaListDivider()
 
             LunaControlRow(
-                title: "Skjermmodus i meny etter film",
+                title: "Meny-skjermmodus",
                 subtitle: comfort.menuDisplayMode.shortDescription,
                 axis: .vertical
             ) {
@@ -90,6 +111,11 @@ struct SettingsRoomDisplaySectionView: View {
 
             LunaInfoRow(title: "Skjermen støtter", value: activeVideoModeSummary)
         }
+    }
+
+    private var roomAutoSpeakerLayout: String {
+        let norm = sessionStore.hardwareProfile.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return norm == HardwareProfilePreset.hdr10512.rawValue ? "5.1.2" : "7.1.4"
     }
 
     private var activeVideoModeSummary: String {
@@ -150,7 +176,7 @@ struct SettingsSubtitlesSectionView: View {
 
             LunaListDivider()
 
-            LunaControlRow(title: "Bakgrunn bak tekst", axis: .horizontal) {
+            LunaControlRow(title: "Tekstbakgrunn", axis: .horizontal) {
                 HStack(spacing: 10) {
                     ForEach(SubtitleBoxOpacityPreset.allCases) { box in
                         LunaPillButton(
@@ -183,8 +209,29 @@ struct SettingsPlaybackSectionView: View {
         @Bindable var comfort = comfort
 
         SettingsSectionPanel(title: "Avspilling") {
+            LunaControlRow(
+                title: "Lydmodus",
+                subtitle: comfort.audioEnhancement.subtitle,
+                axis: .vertical
+            ) {
+                HStack(spacing: 10) {
+                    ForEach(AudioEnhancementMode.allCases) { mode in
+                        LunaPillButton(
+                            mode.displayTitle,
+                            isSelected: comfort.audioEnhancement == mode,
+                            prominence: .glassPill,
+                            size: .compact
+                        ) {
+                            comfort.audioEnhancement = mode
+                        }
+                    }
+                }
+            }
+
+            LunaListDivider()
+
             SettingsToggleRowButton(
-                title: "Spill neste episode automatisk",
+                title: "Auto-spill neste episode",
                 isOn: $comfort.autoPlayNextEpisode
             )
 

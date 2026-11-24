@@ -293,4 +293,107 @@ extension PlayerViewModel {
             self.upscaleReloadTask = nil
         }
     }
+
+    // MARK: - Drawer Track Descriptors, Coalesced Seek & Chapters
+
+    var drawerAudioOptions: [PlayerDrawerAudioOption] {
+        if !previewAudioOptions.isEmpty {
+            return previewAudioOptions
+        }
+        return audioTracks.map {
+            PlayerDrawerAudioOption(
+                id: $0.id,
+                languageCode: $0.language,
+                rawTitle: $0.name,
+                codec: $0.codec,
+                profile: $0.profile,
+                channelLayout: $0.channelLayout,
+                channels: Int($0.channels),
+                isAtmos: $0.isAtmos,
+                isDTSX: $0.isDTSX,
+                isCommentary: $0.isCommentary
+            )
+        }
+    }
+
+    var drawerSubtitleOptions: [PlayerDrawerSubtitleOption] {
+        if !previewSubtitleOptions.isEmpty {
+            return previewSubtitleOptions
+        }
+        return subtitleTracks.map {
+            PlayerDrawerSubtitleOption(
+                id: $0.id,
+                languageCode: $0.language,
+                rawTitle: $0.name,
+                isForced: $0.isForced,
+                isHearingImpaired: $0.isHearingImpaired,
+                isExternal: $0.isExternal
+            )
+        }
+    }
+
+    func coalesceRelativeSeek(delta: Double) {
+        guard !isResolving else { return }
+        let dur = effectiveDurationSeconds
+        let base = coalescedSeekPreviewTarget ?? max(0, transport.currentTime)
+        let accumulatedDelta = coalescedSeekDelta + delta
+        let rawTarget = max(0, base + delta)
+        let clampedTarget = dur > 1 ? min(dur - 0.5, rawTarget) : rawTarget
+
+        coalescedSeekDelta = accumulatedDelta
+        coalescedSeekPreviewTarget = clampedTarget
+
+        chapterSeekTask?.cancel()
+        chapterSeekTask = nil
+        coalescedSeekTask?.cancel()
+        coalescedSeekTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.relativeSeekDebounceNs)
+            guard !Task.isCancelled, let self else { return }
+            let finalTarget = self.coalescedSeekPreviewTarget ?? max(0, self.transport.currentTime)
+            await self.transport.seek(to: finalTarget, exact: false)
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled else { return }
+            self.coalescedSeekDelta = 0
+            self.coalescedSeekPreviewTarget = nil
+        }
+    }
+
+    func seekToChapter(_ chapter: PlaybackChapter) {
+        seekToPosition(chapter.startSeconds, exact: true)
+    }
+
+    func seekToPosition(_ rawTargetSeconds: Double, exact: Bool = true) {
+        guard !isResolving else { return }
+        coalescedSeekTask?.cancel()
+        coalescedSeekTask = nil
+        coalescedSeekDelta = 0
+        coalescedSeekPreviewTarget = nil
+        chapterSeekTask?.cancel()
+        let targetSeconds = max(0, rawTargetSeconds)
+        chapterSeekTask = Task { @MainActor [weak self] in
+            guard !Task.isCancelled, let self else { return }
+            await self.transport.seek(to: targetSeconds, exact: exact)
+            if !Task.isCancelled {
+                self.chapterSeekTask = nil
+            }
+        }
+    }
+
+    func activeChapter(at timeSeconds: Double) -> PlaybackChapter? {
+        guard !chapters.isEmpty, timeSeconds.isFinite else { return nil }
+        return chapters.first { timeSeconds >= $0.startSeconds && timeSeconds < $0.endSeconds }
+            ?? chapters.last { timeSeconds >= $0.startSeconds }
+    }
+
+    func rebuildMergedChapters() {
+        let probeCh = activeSession?.chapters ?? activeSession?.tracks?.chapters ?? []
+        let merged = PlaybackChapter.merge(
+            probeChapters: probeCh,
+            engineChapters: engineChapters,
+            mediaDuration: effectiveDurationSeconds
+        )
+        if chapters != merged {
+            chapters = merged
+        }
+    }
 }

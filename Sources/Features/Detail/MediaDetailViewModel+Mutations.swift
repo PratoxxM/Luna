@@ -179,13 +179,6 @@ extension MediaDetailViewModel {
                     episodes = inlineEpisodes
                     persistDetailSnapshot(loaded, season: targetSeason, seasonEpisodes: inlineEpisodes)
                 } else {
-                    // Fire 0 ms initial pre-resolve immediately from `loaded.nextUp` / `loaded.progress`
-                    // in parallel with the secondary season-episodes fetch!
-                    if !Task.isCancelled,
-                       generation == detailLoadGeneration,
-                       sessionContext?.activePlaybackTarget == nil {
-                        schedulePreResolve(for: loaded, immediate: true)
-                    }
                     _ = await loadSeasonEpisodes(detail: loaded, seasonNumber: targetSeason, previousSeason: nil)
                 }
                 guard !Task.isCancelled,

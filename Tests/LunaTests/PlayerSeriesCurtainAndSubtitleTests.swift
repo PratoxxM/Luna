@@ -19,7 +19,7 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
         XCTAssertEqual(clean.leadingInset, 120)
         XCTAssertEqual(clean.trailingInset, 120)
 
-        // 2. Skip Intro / Recap pill visible (OSD hidden) -> lifted gently to 152 pt
+        // 2. Skip Intro / Recap pill visible (OSD hidden) -> lifted gently to 168 pt
         let skipOnly = SubtitleOverlayLayout.verticalPlacement(
             isBottomBarVisible: false,
             isQuickPanelOpen: false,
@@ -27,9 +27,9 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
             activeSeriesOverlay: .skipPrompt
         )
         XCTAssertFalse(skipOnly.relocateToTop)
-        XCTAssertEqual(skipOnly.bottomInset, 152)
+        XCTAssertEqual(skipOnly.bottomInset, 168)
 
-        // 3. Next Episode card visible (OSD hidden) -> lifted cleanly to 268 pt
+        // 3. Next Episode card visible (OSD hidden) -> lifted cleanly to 300 pt
         let nextOnly = SubtitleOverlayLayout.verticalPlacement(
             isBottomBarVisible: false,
             isQuickPanelOpen: false,
@@ -37,7 +37,7 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
             activeSeriesOverlay: .nextEpisodeCard
         )
         XCTAssertFalse(nextOnly.relocateToTop)
-        XCTAssertEqual(nextOnly.bottomInset, 268)
+        XCTAssertEqual(nextOnly.bottomInset, 300)
 
         // 4. Bottom OSD + active series card simultaneously -> relocates cleanly to top (84 pt, or 340 pt below NerdHUD)
         let osdAndNext = SubtitleOverlayLayout.verticalPlacement(
@@ -87,7 +87,7 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
         let screen = CGSize(width: 1920, height: 1080)
         let baseBottomPGS = CGRect(x: 560, y: 900, width: 800, height: 96)
 
-        // Lifts above Hopp over intro (152 pt -> maxY <= 928)
+        // Lifts above Hopp over intro (168 pt -> maxY <= 912)
         let skipPlacement = SubtitleOverlayLayout.verticalPlacement(
             isBottomBarVisible: false,
             isQuickPanelOpen: false,
@@ -100,9 +100,9 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
             placement: skipPlacement,
             isNerdHUDVisible: false
         )
-        XCTAssertLessThanOrEqual(liftedForSkip.maxY, 1080 - 152 + 0.01)
+        XCTAssertLessThanOrEqual(liftedForSkip.maxY, 1080 - 168 + 0.01)
 
-        // Lifts above Neste episode card (268 pt -> maxY <= 812)
+        // Lifts above Neste episode card (300 pt -> maxY <= 780)
         let nextPlacement = SubtitleOverlayLayout.verticalPlacement(
             isBottomBarVisible: false,
             isQuickPanelOpen: false,
@@ -115,7 +115,7 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
             placement: nextPlacement,
             isNerdHUDVisible: false
         )
-        XCTAssertLessThanOrEqual(liftedForNext.maxY, 1080 - 268 + 0.01)
+        XCTAssertLessThanOrEqual(liftedForNext.maxY, 1080 - 300 + 0.01)
 
         // Relocated PGS with QuickPanel + NerdHUD stays clear of NerdHUDProtectedRect
         let hudPopoverPlacement = SubtitleOverlayLayout.verticalPlacement(

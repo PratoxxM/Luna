@@ -89,6 +89,19 @@ public final class AppSessionStore {
         serverBaseURL != nil && !(deviceToken ?? "").isEmpty
     }
 
+    public func loadRecentSearches() -> [String] {
+        SideloadSafeStorage.loadRecentSearches(defaults: defaults)
+    }
+
+    @discardableResult
+    public func recordRecentSearch(_ term: String) -> [String] {
+        SideloadSafeStorage.recordRecentSearch(term, defaults: defaults)
+    }
+
+    public func clearRecentSearches() {
+        SideloadSafeStorage.clearRecentSearches(defaults: defaults)
+    }
+
     public var effectiveRoomAtmosphere: LunaRoomAtmosphere {
         if isRoomUnassigned {
             return .neutral
