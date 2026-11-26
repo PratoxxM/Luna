@@ -172,6 +172,18 @@ if not tokens_path.is_file():
 else:
     try:
         tokens_data = json.loads(tokens_path.read_text(encoding="utf-8"))
+        def _find_legacy_keys(obj, prefix=""):
+            found = []
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    kp = f"{prefix}.{k}" if prefix else str(k)
+                    if str(k).lower().endswith("legacy"):
+                        found.append(kp)
+                    found.extend(_find_legacy_keys(v, kp))
+            return found
+        legacy_keys = _find_legacy_keys(tokens_data)
+        if legacy_keys:
+            errors.append(f"TOKENS_GATE design/tokens.json contains forbidden *Legacy keys: {', '.join(legacy_keys)}")
         tvos_typo = tokens_data.get("platform", {}).get("tvos", {}).get("typography", {})
         if not tvos_typo:
             errors.append("TYPO_FLOOR missing platform.tvos.typography in design/tokens.json")
@@ -180,6 +192,40 @@ else:
                 errors.append(f"TYPO_FLOOR design/tokens.json platform.tvos.typography.{role_name}={pt_val} < 22.0 pt minimum")
     except Exception as exc:
         errors.append(f"TYPO_FLOOR invalid design/tokens.json: {exc}")
+
+# Version parity & preview hygiene gate
+version_path = root / "VERSION"
+if not version_path.is_file():
+    errors.append("VERSION_GATE missing VERSION file")
+else:
+    app_ver = version_path.read_text(encoding="utf-8").strip()
+    if not re.match(r"^\d+\.\d+\.\d+$", app_ver):
+        errors.append(f"VERSION_GATE invalid VERSION '{app_ver}' (expected semver X.Y.Z)")
+    else:
+        proj_yml = (root / "project.yml").read_text(encoding="utf-8")
+        m_proj = re.search(r'^\s*MARKETING_VERSION:\s*"([^"]+)"', proj_yml, re.MULTILINE)
+        if not m_proj or m_proj.group(1) != app_ver:
+            errors.append(f"VERSION_GATE project.yml MARKETING_VERSION={m_proj.group(1) if m_proj else 'missing'} != VERSION ({app_ver})")
+        storage_swift = (root / "Sources/Core/Config/SideloadSafeStorage.swift").read_text(encoding="utf-8")
+        m_stor = re.search(r'appMarketingVersion\s*=\s*"([^"]+)"', storage_swift)
+        if not m_stor or m_stor.group(1) != app_ver:
+            errors.append(f"VERSION_GATE SideloadSafeStorage.appMarketingVersion={m_stor.group(1) if m_stor else 'missing'} != VERSION ({app_ver})")
+        fixtures_swift = (root / "Sources/App/PreviewMockFixtures.swift").read_text(encoding="utf-8")
+        m_fix = re.search(r'appVersion:\s*"([^"]+)"', fixtures_swift)
+        if not m_fix or m_fix.group(1) != app_ver:
+            errors.append(f"VERSION_GATE PreviewMockFixtures.swift appVersion={m_fix.group(1) if m_fix else 'missing'} != VERSION ({app_ver})")
+
+if (root / "preview/tokens.json").exists():
+    errors.append("PREVIEW_GATE retired preview/tokens.json must not exist; use generated preview/tokens.css")
+if not (root / "preview/tokens.css").is_file():
+    errors.append("PREVIEW_GATE missing generated preview/tokens.css")
+preview_html = root / "preview/index.html"
+if preview_html.is_file():
+    html_txt = preview_html.read_text(encoding="utf-8")
+    if "./tokens.css" not in html_txt:
+        errors.append("PREVIEW_GATE preview/index.html must link ./tokens.css")
+    if "tokens.json" in html_txt:
+        errors.append("PREVIEW_GATE preview/index.html must not reference retired tokens.json")
 
 PLURAL_BUG_RE = re.compile(r"\\\([^)]+\)\s*(?:lokale\s+|aktive\s+)?(?:filmer|serier|episoder|sesonger|tjenester|titler|kilder|dager|mediefiler|festet|kapitler|treff)\b")
 RAW_FONT_STYLE_RE = re.compile(r"\.font\(\.(?:caption2?|footnote|subheadline|callout|body|headline|title[23]?|largeTitle)\b")

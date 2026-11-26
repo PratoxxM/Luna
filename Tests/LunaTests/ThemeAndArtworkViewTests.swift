@@ -122,7 +122,7 @@ final class ThemeAndArtworkViewTests: XCTestCase {
             )
         )
 
-        let backdropURL = try XCTUnwrap(URL(string: "http://lunacore.local:8090/api/tv/v1/artwork/backdrop-99"))
+        let backdropURL = try XCTUnwrap(URL(string: "http://lunacore.local:8090/api/tv/v2/artwork/backdrop-99"))
         ArtworkPipeline.shared.insertMemoryCachedImage(freshMemImg, url: backdropURL, maxPixelSize: 1920)
         let reusedHit = ArtworkPipeline.shared.anyMemoryCachedImage(for: backdropURL, preferredMaxPixelSize: 960)
         XCTAssertTrue(reusedHit?.image === freshMemImg)
@@ -187,11 +187,6 @@ final class ThemeAndArtworkViewTests: XCTestCase {
         XCTAssertEqual(try rgbaComponents(restingIconBorder).a, 0.0, accuracy: 0.005)
         XCTAssertEqual(try rgbaComponents(selectedIconBorder).a, 0.18, accuracy: 0.015)
         XCTAssertEqual(try rgbaComponents(focusedIconBorder).a, 0.0, accuracy: 0.005)
-
-        let restingSearchBorder = SearchView.resolveSearchFieldBorderColor(isFocused: false)
-        let focusedSearchBorder = SearchView.resolveSearchFieldBorderColor(isFocused: true)
-        XCTAssertEqual(try rgbaComponents(restingSearchBorder).a, 0.0, accuracy: 0.005)
-        XCTAssertGreaterThan(try rgbaComponents(focusedSearchBorder).a, 0.30)
 
         let watchedButton = LunaPillButton(
             "Sett",

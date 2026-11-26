@@ -193,24 +193,72 @@ public enum SmartTrackRuleEngine {
         return sdhWordRegex.firstMatch(in: lower, options: [], range: fullRange) != nil
     }
 
+    private static let iso639Aliases: [String: String] = [
+        "no": "nob", "nb": "nob", "nn": "nob", "nor": "nob", "nob": "nob", "nno": "nob",
+        "en": "eng", "eng": "eng",
+        "sv": "swe", "swe": "swe",
+        "da": "dan", "dan": "dan",
+        "fr": "fra", "fra": "fra", "fre": "fra",
+        "de": "deu", "deu": "deu", "ger": "deu",
+        "es": "spa", "spa": "spa",
+        "it": "ita", "ita": "ita",
+        "pt": "por", "por": "por",
+        "nl": "nld", "nld": "nld", "dut": "nld",
+        "ja": "jpn", "jpn": "jpn",
+        "ko": "kor", "kor": "kor",
+        "zh": "zho", "zho": "zho", "chi": "zho",
+        "ru": "rus", "rus": "rus",
+        "pl": "pol", "pol": "pol",
+        "fi": "fin", "fin": "fin",
+        "is": "isl", "isl": "isl", "ice": "isl",
+        "ar": "ara", "ara": "ara",
+        "hi": "hin", "hin": "hin",
+        "tr": "tur", "tur": "tur",
+        "el": "ell", "ell": "ell", "gre": "ell",
+        "cs": "ces", "ces": "ces", "cze": "ces",
+        "ro": "ron", "ron": "ron", "rum": "ron",
+        "hu": "hun", "hun": "hun",
+        "th": "tha", "tha": "tha",
+        "vi": "vie", "vie": "vie",
+        "id": "ind", "ind": "ind",
+        "uk": "ukr", "ukr": "ukr",
+        "he": "heb", "heb": "heb", "iw": "heb",
+        "bg": "bul", "bul": "bul",
+        "hr": "hrv", "hrv": "hrv",
+        "sk": "slk", "slk": "slk", "slo": "slk",
+        "sl": "slv", "slv": "slv",
+        "sr": "srp", "srp": "srp",
+        "et": "est", "est": "est",
+        "lv": "lav", "lav": "lav",
+        "lt": "lit", "lit": "lit",
+        "fa": "fas", "fas": "fas", "per": "fas",
+        "ms": "msa", "msa": "msa", "may": "msa",
+        "ca": "cat", "cat": "cat",
+        "eu": "eus", "eus": "eus", "baq": "eus",
+        "gl": "glg", "glg": "glg",
+        "ta": "tam", "tam": "tam",
+        "te": "tel", "tel": "tel",
+        "bn": "ben", "ben": "ben",
+        "ur": "urd", "urd": "urd",
+    ]
+
     public static func normalizeLanguage(_ rawCode: String?, fallbackName: String = "") -> String? {
         let code = (rawCode ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let primary = code.split(whereSeparator: { $0 == "-" || $0 == "_" }).first.map(String.init) ?? code
-        if ["no", "nb", "nn", "nor", "nob", "nno", "norwegian", "norsk", "bokmål", "nynorsk"].contains(code)
-            || ["no", "nb", "nn", "nor", "nob", "nno"].contains(primary) {
+        if ["norwegian", "norsk", "bokmål", "nynorsk"].contains(code) {
             return "nob"
         }
-        if ["en", "eng", "english", "engelsk"].contains(code)
-            || ["en", "eng"].contains(primary) {
+        if ["english", "engelsk"].contains(code) {
             return "eng"
         }
-        if ["sv", "swe", "swedish", "svensk"].contains(code)
-            || ["sv", "swe"].contains(primary) {
+        if ["swedish", "svensk"].contains(code) {
             return "swe"
         }
-        if ["da", "dan", "danish", "dansk"].contains(code)
-            || ["da", "dan"].contains(primary) {
+        if ["danish", "dansk"].contains(code) {
             return "dan"
+        }
+        if let mapped = iso639Aliases[code] ?? iso639Aliases[primary] {
+            return mapped
         }
 
         let nameLower = fallbackName.lowercased()

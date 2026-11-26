@@ -53,7 +53,7 @@ private final class CoreURLProtocolMock: URLProtocol {
 final class LunaCoreLinuxTests: XCTestCase {
     private func makeSampleSession(
         sessionId: String = "sess-1",
-        streamPath: String = "/api/tv/v1/stream/sess-1/video.mkv",
+        streamPath: String = "/api/tv/v2/stream/sess-1/video.mkv",
         tier: String = "nvme",
         canPrewarm: Bool = true,
         startSeconds: Double = 120
@@ -203,7 +203,7 @@ final class LunaCoreLinuxTests: XCTestCase {
             roomName: "Stua",
             hardwareProfile: "hdr10-512",
             allowSelfSignedLanTLS: true,
-            appVersion: "2.12.2",
+            appVersion: "3.0.0",
             osVersion: "Linux-CI",
             session: session
         )
@@ -222,9 +222,9 @@ final class LunaCoreLinuxTests: XCTestCase {
 
         let wsURL = PlaybackResolveSocket.makeWebSocketURL(
             baseURL: baseURL,
-            wsPath: "/api/tv/v1/ws/playback/res-42"
+            wsPath: "/api/tv/v2/ws/playback/res-42"
         )
-        XCTAssertEqual(wsURL?.absoluteString, "wss://\(host):8920/api/tv/v1/ws/playback/res-42")
+        XCTAssertEqual(wsURL?.absoluteString, "wss://\(host):8920/api/tv/v2/ws/playback/res-42")
         let evt = try PlaybackResolveSocket.decodeEventData(
             Data(#"{"type":"resolve.ready","resolveId":"res-42","percent":100}"#.utf8)
         )
@@ -298,7 +298,7 @@ final class LunaCoreLinuxTests: XCTestCase {
             channels: "7.1"
         )
         XCTAssertEqual(cand.quickRowMetadata(activeLabel: nil), "På NVMe · HEVC · Bluray-2160p · 60,0 GB")
-        XCTAssertEqual(cand.quickRowTitle(roomName: "Stua", isRecommended: true), "Anbefalt for Stua · 4K HDR10+ TrueHD Atmos")
+        XCTAssertEqual(cand.quickRowTitle(isRecommended: true), "Anbefalt · 4K HDR10+ TrueHD Atmos")
 
         // Numeric channel regression from live SQLite probe
         let numericChannelJson = #"""
@@ -344,12 +344,12 @@ final class LunaCoreLinuxTests: XCTestCase {
         XCTAssertEqual(heroURL?.absoluteString, "https://image.tmdb.org/t/p/original/abc.jpg")
         let noDowngrade = client.resolveArtworkURL("https://image.tmdb.org/t/p/w1280/abc.jpg", target: .poster2x)
         XCTAssertEqual(noDowngrade?.absoluteString, "https://image.tmdb.org/t/p/w1280/abc.jpg")
-        let relUpgraded = client.resolveArtworkURL("/api/tv/v1/artwork?src=a&w=320", target: .landscape2x)
-        XCTAssertEqual(relUpgraded?.absoluteString, "http://127.0.0.1:8090/api/tv/v1/artwork?src=a&w=1280")
-        let relWidthHero = client.resolveArtworkURL("/api/tv/v1/artwork?src=a&width=780", target: .hero4K)
-        XCTAssertEqual(relWidthHero?.absoluteString, "http://127.0.0.1:8090/api/tv/v1/artwork?src=a&width=3840")
-        let preserved = client.resolveArtworkURL("/api/tv/v1/artwork?src=a&w=320", target: .preserve)
-        XCTAssertEqual(preserved?.absoluteString, "http://127.0.0.1:8090/api/tv/v1/artwork?src=a&w=320")
+        let relUpgraded = client.resolveArtworkURL("/api/tv/v2/artwork?src=a&w=320", target: .landscape2x)
+        XCTAssertEqual(relUpgraded?.absoluteString, "http://127.0.0.1:8090/api/tv/v2/artwork?src=a&w=1280")
+        let relWidthHero = client.resolveArtworkURL("/api/tv/v2/artwork?src=a&width=780", target: .hero4K)
+        XCTAssertEqual(relWidthHero?.absoluteString, "http://127.0.0.1:8090/api/tv/v2/artwork?src=a&width=3840")
+        let preserved = client.resolveArtworkURL("/api/tv/v2/artwork?src=a&w=320", target: .preserve)
+        XCTAssertEqual(preserved?.absoluteString, "http://127.0.0.1:8090/api/tv/v2/artwork?src=a&w=320")
     }
 
     func testSteg42SameOriginEasynewsArtworkUpgradeAndTokenCancelContract() async throws {
@@ -362,9 +362,9 @@ final class LunaCoreLinuxTests: XCTestCase {
             hardwareProfile: "hdr10-512",
             allowSelfSignedLanTLS: true
         )
-        let lanHttpStream = try XCTUnwrap(URL(string: "http://lunacore.local:8090/api/tv/v1/stream/s1/tok/video.mkv"))
-        let lanHttpsImg = try XCTUnwrap(URL(string: "https://lunacore.local:8920/api/tv/v1/img/poster/tmdb/p.jpg"))
-        let roguePort = try XCTUnwrap(URL(string: "http://lunacore.local:9999/api/tv/v1/stream/s1/tok/video.mkv"))
+        let lanHttpStream = try XCTUnwrap(URL(string: "http://lunacore.local:8090/api/tv/v2/stream/s1/tok/video.mkv"))
+        let lanHttpsImg = try XCTUnwrap(URL(string: "https://lunacore.local:8920/api/tv/v2/img/poster/tmdb/p.jpg"))
+        let roguePort = try XCTUnwrap(URL(string: "http://lunacore.local:9999/api/tv/v2/stream/s1/tok/video.mkv"))
         let foreignHost = try XCTUnwrap(URL(string: "https://cdn.example.net:8920/video.mkv"))
 
         XCTAssertTrue(tlsClient.isSameOrigin(lanHttpStream))
@@ -380,7 +380,7 @@ final class LunaCoreLinuxTests: XCTestCase {
         XCTAssertNil(foreignHeaders["Authorization"])
         XCTAssertNil(foreignHeaders["X-Device-Id"])
 
-        // 2. Easynews HTTPS candidate badge & /api/tv/v1/img/{card,still}/ -> /backdrop/ hero4K upgrade
+        // 2. Easynews HTTPS candidate badge & /api/tv/v2/img/{card,still}/ -> /backdrop/ hero4K upgrade
         let easynewsCand = try JSONDecoder().decode(
             TvCandidateInfo.self,
             from: Data(#"{"candidateId":"easy-1","displayHeadline":"4K WEB-DL","releaseTitle":"Example.2026.2160p","source":"easynews","tier":"ssd"}"#.utf8)
@@ -388,16 +388,16 @@ final class LunaCoreLinuxTests: XCTestCase {
         XCTAssertEqual(easynewsCand.sourceBadgeLabel, "Arkiv-strøm (HTTPS)")
 
         XCTAssertEqual(
-            tlsClient.resolveArtworkURL("/api/tv/v1/img/card/tmdb/hero.jpg", target: .hero4K)?.absoluteString,
-            "https://lunacore.local:8920/api/tv/v1/img/backdrop/tmdb/hero.jpg"
+            tlsClient.resolveArtworkURL("/api/tv/v2/img/card/tmdb/hero.jpg", target: .hero4K)?.absoluteString,
+            "https://lunacore.local:8920/api/tv/v2/img/backdrop/tmdb/hero.jpg"
         )
         XCTAssertEqual(
-            tlsClient.resolveArtworkURL("/api/tv/v1/img/still/tmdb/ep.jpg", target: .hero4K)?.absoluteString,
-            "https://lunacore.local:8920/api/tv/v1/img/backdrop/tmdb/ep.jpg"
+            tlsClient.resolveArtworkURL("/api/tv/v2/img/still/tmdb/ep.jpg", target: .hero4K)?.absoluteString,
+            "https://lunacore.local:8920/api/tv/v2/img/backdrop/tmdb/ep.jpg"
         )
         XCTAssertEqual(
-            tlsClient.resolveArtworkURL("/api/tv/v1/img/card/tmdb/hero.jpg", target: .landscape2x)?.absoluteString,
-            "https://lunacore.local:8920/api/tv/v1/img/card/tmdb/hero.jpg"
+            tlsClient.resolveArtworkURL("/api/tv/v2/img/card/tmdb/hero.jpg", target: .landscape2x)?.absoluteString,
+            "https://lunacore.local:8920/api/tv/v2/img/card/tmdb/hero.jpg"
         )
 
         // 3. Stua Sonos 5.1.2 copy & TvPairedDeviceInfo.roomUnassigned decoding
@@ -444,13 +444,13 @@ final class LunaCoreLinuxTests: XCTestCase {
             capturedBodies.withLock { $0[url.path] = bodyStr }
             let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil))
             switch url.path {
-            case "/api/tv/v1/home":
+            case "/api/tv/v2/home":
                 homeGetCount.withLock { $0 += 1 }
                 Thread.sleep(forTimeInterval: 0.03)
                 return (resp, Data(#"{"ok":true,"roomName":"Stua","hardwareProfile":"hdr10-512","rows":[]}"#.utf8))
-            case "/api/tv/v1/playback/prepare":
+            case "/api/tv/v2/playback/prepare":
                 return (resp, Data(#"{"ok":true,"status":"prepared","prepareToken":"tvs-prep-1"}"#.utf8))
-            case "/api/tv/v1/rows/custom:test/remove":
+            case "/api/tv/v2/rows/custom:test/remove":
                 let removed = bodyStr.contains("550")
                 return (resp, Data(#"{"ok":true,"removed":\#(removed)}"#.utf8))
             default:
@@ -509,8 +509,8 @@ final class LunaCoreLinuxTests: XCTestCase {
             itemId: "movie:tmdb:550",
             prepareToken: "prep-uuid-42"
         )
-        let prepBody = capturedBodies.withLock { $0["/api/tv/v1/playback/prepare"] ?? "" }
-        let cancelBody = capturedBodies.withLock { $0["/api/tv/v1/playback/heartbeat"] ?? "" }
+        let prepBody = capturedBodies.withLock { $0["/api/tv/v2/playback/prepare"] ?? "" }
+        let cancelBody = capturedBodies.withLock { $0["/api/tv/v2/playback/heartbeat"] ?? "" }
         XCTAssertTrue(prepBody.contains("\"prepareToken\":\"prep-uuid-42\""))
         XCTAssertTrue(cancelBody.contains("\"cancelInflight\":true"))
         XCTAssertTrue(cancelBody.contains("\"resolveId\":\"res-77\""))

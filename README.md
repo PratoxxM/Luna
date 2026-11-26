@@ -11,8 +11,8 @@
 <p align="center">
   <a href="https://github.com/PratoxxM/Luna/actions/workflows/build-tvos.yml"><img src="https://github.com/PratoxxM/Luna/actions/workflows/build-tvos.yml/badge.svg" alt="Build"></a>
   <a href="https://github.com/PratoxxM/Luna/releases/latest"><img src="https://img.shields.io/badge/IPA-latest-d4a056" alt="Latest IPA"></a>
-  <img src="https://img.shields.io/badge/tvOS-18%2B-1c1917?logo=appletv&logoColor=white" alt="tvOS 18+">
-  <img src="https://img.shields.io/badge/Swift-6.0-F05138?logo=swift&logoColor=white" alt="Swift 6">
+  <img src="https://img.shields.io/badge/tvOS-26%2B-1c1917?logo=appletv&logoColor=white" alt="tvOS 26+">
+  <img src="https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white" alt="Swift 6.2">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-44403c" alt="MIT License"></a>
 </p>
 
@@ -33,7 +33,7 @@
 
 ## Development
 
-`Luna.xcodeproj` is generated from [`project.yml`](project.yml) with [XcodeGen](https://github.com/yonaskolb/XcodeGen), and `AetherEngine` (`7.73.0`) traits are configured in [`Packages/AetherBridge`](Packages/AetherBridge/Package.swift). See [`CODEBASE_MODULE_MAP.md`](docs/architecture/CODEBASE_MODULE_MAP.md) for the module and `/api/tv/v1` endpoint overview.
+`Luna.xcodeproj` is generated from [`project.yml`](project.yml) with [XcodeGen](https://github.com/yonaskolb/XcodeGen), and `AetherEngine` (`7.73.0`) traits are configured in [`Packages/AetherBridge`](Packages/AetherBridge/Package.swift). See [`CODEBASE_MODULE_MAP.md`](docs/architecture/CODEBASE_MODULE_MAP.md) for the module and `/api/tv/v2` endpoint overview.
 
 ## License
 

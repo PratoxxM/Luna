@@ -3,22 +3,44 @@ import SwiftUI
 struct SeriesSkipPromptPillView: View {
     static let shadowRadius: CGFloat = 14
     static let shadowY: CGFloat = 6
+    static let chevronWidth: CGFloat = 24
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let chapter: PlaybackChapter
     let isPromptFocused: Bool
+    var labelOverride: String? = nil
     let focusBinding: FocusState<SeriesPromptControl?>.Binding
     let onSkip: () -> Void
 
+    static func resolvedLabel(for kind: TvChapterKind, override: String? = nil) -> String {
+        if let override, !override.isEmpty {
+            return override
+        }
+        switch kind {
+        case .recap:
+            return "Hopp over sammendrag"
+        case .credits, .postCredits:
+            return LunaCopy.skipToPostCreditsTitle
+        case .intro, .chapter:
+            return "Hopp over intro"
+        }
+    }
+
     var body: some View {
-        let baseLabel = chapter.kind == .recap ? "Hopp over sammendrag" : "Hopp over intro"
+        let baseLabel = Self.resolvedLabel(for: chapter.kind, override: labelOverride)
 
         HStack(spacing: 10) {
-            if !isPromptFocused {
-                Image(systemName: "chevron.up")
-                    .font(LunaTheme.Font.caption)
-                    .foregroundStyle(LunaTheme.muted)
-                    .frame(width: 24)
-            }
+            Image(systemName: "chevron.up")
+                .font(LunaTheme.Font.caption)
+                .foregroundStyle(LunaTheme.muted)
+                .frame(width: Self.chevronWidth)
+                .opacity(isPromptFocused ? 0 : 1)
+                .accessibilityHidden(isPromptFocused)
+                .animation(
+                    LunaFocusStyle.calmEaseOut(duration: 0.16, reduceMotion: reduceMotion),
+                    value: isPromptFocused
+                )
 
             LunaPillButton(
                 baseLabel,

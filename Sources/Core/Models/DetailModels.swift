@@ -82,8 +82,8 @@ public struct TvEpisodeCard: Codable, Identifiable, Equatable, Hashable, Sendabl
     }
 
     public var formattedRuntime: String? {
-        guard let runtimeSeconds, runtimeSeconds >= 60 else { return nil }
-        let mins = Int((runtimeSeconds / 60.0).rounded())
+        guard let runtimeSeconds, runtimeSeconds.isFinite, runtimeSeconds >= 60,
+              let mins = Int(exactly: (runtimeSeconds / 60.0).rounded()) else { return nil }
         return "\(mins) min"
     }
 }
@@ -211,8 +211,8 @@ public struct TvItemDetail: Codable, Equatable, Sendable {
     }
 
     public var formattedRuntime: String? {
-        guard let runtimeSeconds, runtimeSeconds >= 60 else { return nil }
-        let totalMins = Int((runtimeSeconds / 60.0).rounded())
+        guard let runtimeSeconds, runtimeSeconds.isFinite, runtimeSeconds >= 60,
+              let totalMins = Int(exactly: (runtimeSeconds / 60.0).rounded()) else { return nil }
         if mediaType == "movie", totalMins >= 60 {
             let hours = totalMins / 60
             let mins = totalMins % 60

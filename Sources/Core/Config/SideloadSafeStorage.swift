@@ -32,10 +32,13 @@ public enum SideloadSafeStorage {
     public static let audioEnhancementModeKey = "luna.v1.comfort.audio_enhancement_mode"
     public static let menuDisplayModeKey = "luna.v1.comfort.menu_display_mode"
     public static let recentSearchesKey = "luna.v1.recent_searches"
+    public static let preferNorwegianAudioPrefix = "luna.v1.playback.norwegian_audio."
+    public static let candidateSubtitleDelayPrefix = "luna.v1.playback.subtitle_delay."
 
     internal static let keychainService = "luna.v1.credentials"
     internal static let tokenAccount = "device_bearer_token"
     internal static let fallbackPrefix = "luna.v1.keychain_fallback."
+    public static let appMarketingVersion = "3.0.0"
 
     public static func ensurePersistentDeviceID(defaults: UserDefaults = .standard) -> String {
         if let existing = defaults.string(forKey: deviceIDKey), !existing.isEmpty {
@@ -80,7 +83,7 @@ public enum SideloadSafeStorage {
                 return trimmed
             }
         }
-        return "2.12.2"
+        return appMarketingVersion
     }
 
     public nonisolated static func currentBuildNumberString(

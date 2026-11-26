@@ -164,7 +164,7 @@ public enum EpisodeTitleFormatter: Sendable {
         return candidate
     }
 
-    /// Title value safe to send to `/api/tv/v1/playback/prepare` and `/resolve`.
+    /// Title value safe to send to `/api/tv/v2/playback/prepare` and `/resolve`.
     /// Never sends `seriesTitle` or a generic placeholder as an episode's `title`, allowing
     /// LunaCore to resolve the real episode title from TMDB when missing locally.
     public static func apiEpisodeTitle(

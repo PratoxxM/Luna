@@ -37,9 +37,23 @@ jobs:
           set -euo pipefail
           bash ops/bin/luna-check
 
+  linux-core-tests:
+    name: LunaCoreTests (Linux Swift 6.2)
+    needs: static-guardrails
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run LunaCoreTests on Linux
+        run: swift test --parallel
+
   test-tvos:
     name: LunaTests (tvOS Simulator)
-    needs: static-guardrails
+    needs: [static-guardrails, linux-core-tests]
     runs-on: ${{ inputs.runner || 'xcode-27' }}
     timeout-minutes: 30
 
@@ -128,7 +142,7 @@ jobs:
 
   build-ipa:
     name: Build Unsigned Release IPA (arm64)
-    needs: static-guardrails
+    needs: [static-guardrails, linux-core-tests]
     runs-on: ${{ inputs.runner || 'xcode-27' }}
     timeout-minutes: 30
 
@@ -238,7 +252,7 @@ jobs:
   publish-release:
     name: Publish Rolling Latest Release
     runs-on: ubuntu-latest
-    needs: [static-guardrails, test-tvos, build-ipa]
+    needs: [static-guardrails, linux-core-tests, test-tvos, build-ipa]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     permissions:
       contents: write

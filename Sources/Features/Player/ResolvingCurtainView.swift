@@ -1,29 +1,4 @@
-import Observation
 import SwiftUI
-
-/// Isolated startup & WebSocket resolution progress state observed exclusively by
-/// `ResolvingProgressClusterLeafView` so progress ticks never re-render `PlayerContainerView`
-/// or `ResolvingCurtainView`'s backdrop/logo hierarchy.
-@MainActor
-@Observable
-final class PlayerStartupState {
-    var resolveStageLabel: String = "Klargjør avspilling…"
-    var resolvePercent: Int = 12
-    var resolveHeadline: String?
-    private(set) var engineStartupPercentBucket: Int = 50
-
-    var engineStartupFraction: Double {
-        Double(engineStartupPercentBucket) / 100.0
-    }
-
-    func updateEngineStartupFraction(_ rawFraction: Double?) {
-        let clamped = min(1.0, max(0.0, rawFraction ?? 0.5))
-        let bucket = Int((clamped * 100.0).rounded())
-        if bucket != engineStartupPercentBucket {
-            engineStartupPercentBucket = bucket
-        }
-    }
-}
 
 /// Shared OLED-safe cinema backdrop (`opacity: 0.22` cached hero + warm/dark vignette)
 /// reused seamlessly across both `ResolvingCurtainView` and pre-reveal `PlayerFatalErrorOverlayView`
@@ -99,6 +74,7 @@ struct ResolvingCurtainView: View {
     let initialRequest: PlaybackLaunchRequest
     let client: LunaCoreClient?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var graceElapsed: Bool = false
 
     private var hasWarmPreparedSession: Bool {
@@ -191,7 +167,11 @@ struct ResolvingCurtainView: View {
             }
             try? await Task.sleep(nanoseconds: PlaybackCurtainPresentationPolicy.warmStartGraceNanoseconds)
             guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: PlaybackCurtainPresentationPolicy.curtainFadeInDurationSeconds)) {
+            let anim = LunaFocusStyle.calmEaseOut(
+                duration: PlaybackCurtainPresentationPolicy.curtainFadeInDurationSeconds,
+                reduceMotion: reduceMotion
+            )
+            withAnimation(anim) {
                 graceElapsed = true
             }
         }
@@ -226,6 +206,8 @@ struct ResolvingCurtainView: View {
 }
 
 private struct ResolvingProgressClusterLeafView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let startupState: PlayerStartupState
     let isResolving: Bool
     let hasFirstFrameReadyForDisplay: Bool
@@ -246,7 +228,7 @@ private struct ResolvingProgressClusterLeafView: View {
                 Capsule()
                     .fill(LunaTheme.primaryAmberGradient)
                     .frame(width: max(20, Self.trackWidth * CGFloat(progress)))
-                    .animation(.easeOut(duration: 0.24), value: progress)
+                    .animation(LunaFocusStyle.calmEaseOut(duration: 0.24, reduceMotion: reduceMotion), value: progress)
             }
             .frame(width: Self.trackWidth, height: Self.trackHeight)
 

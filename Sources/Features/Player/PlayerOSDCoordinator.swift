@@ -1,54 +1,7 @@
 import Observation
 import SwiftUI
+import UIKit
 import AetherBridge
-
-internal enum PlayerOSDVisibilityPolicy {
-    nonisolated static let playingAutoHideSeconds: TimeInterval = 4.0
-    nonisolated static let playingQuickActionsAutoHideSeconds: TimeInterval = 7.0
-    nonisolated static let pausedIdleRestSeconds: TimeInterval = 12.0
-
-    nonisolated static func shouldShowBottomBar(
-        isPictureReadyForReveal: Bool,
-        isQuickPanelOpen: Bool,
-        hasFatalError: Bool,
-        isScrubbing: Bool,
-        showBottomBar: Bool,
-        playbackPhase: PlaybackPhase,
-        isPausedOSDResting: Bool
-    ) -> Bool {
-        guard isPictureReadyForReveal, !hasFatalError else {
-            return false
-        }
-        if isQuickPanelOpen || isScrubbing || showBottomBar {
-            return true
-        }
-        return playbackPhase == .paused && !isPausedOSDResting
-    }
-
-    nonisolated static func shouldRestAmbientPlayerHUD(
-        playbackPhase: PlaybackPhase,
-        isPausedOSDResting: Bool,
-        isScrubbing: Bool,
-        isQuickPanelOpen: Bool
-    ) -> Bool {
-        playbackPhase == .paused && isPausedOSDResting && !isScrubbing && !isQuickPanelOpen
-    }
-
-    /// Active subtitles remain visible (`opacity = 1`, lifted to top when any quick-panel tab is open)
-    /// across `Tekst`, `Lyd`, `Utgave`, `Bilde`, and `Kapitler`, while staying suppressed behind
-    /// fatal errors or pre-reveal emergency recovery panels.
-    nonisolated static func shouldShowSubtitleOverlay(
-        hasFatalError: Bool,
-        hasSuspendedFatalError: Bool,
-        isPictureReadyForReveal: Bool,
-        isPreviewMode: Bool = false
-    ) -> Bool {
-        guard !hasFatalError, !hasSuspendedFatalError else {
-            return false
-        }
-        return isPictureReadyForReveal || isPreviewMode
-    }
-}
 
 /// Coordinates bottom-OSD visibility, `12 s` OLED pause rest, quick-panel popovers,
 /// Siri Remote `Play/Pause` focus handoff, and the 6-step `Menu` (`onExitCommand`) ladder.
@@ -79,6 +32,10 @@ final class PlayerOSDCoordinator {
     var canvasRestoreNonce: Int = 0
     var ringHoldCancelNonce: Int = 0
     var suspendedFatalErrorForPanel: String? = nil
+
+    private static func osdAnimation(_ animation: Animation) -> Animation? {
+        UIAccessibility.isReduceMotionEnabled ? nil : animation
+    }
 
     func shouldEnableCanvasAnchor(viewModel: PlayerViewModel) -> Bool {
         viewModel.isPictureReadyForReveal &&
@@ -120,7 +77,7 @@ final class PlayerOSDCoordinator {
         default:
             break
         }
-        if let banner = viewModel.transientBannerMessage, !banner.isEmpty {
+        if let banner = viewModel.qosReporter.transientBannerMessage, !banner.isEmpty {
             return (banner, .warn, false)
         }
         if let toast = viewModel.remoteCommandToastMessage, !toast.isEmpty {
@@ -134,7 +91,7 @@ final class PlayerOSDCoordinator {
     func beginInteractiveScrub() {
         isAutoHideArmed = false
         isPauseRestArmed = false
-        withAnimation(.easeOut(duration: 0.16)) {
+        withAnimation(Self.osdAnimation(.easeOut(duration: 0.16))) {
             isPausedOSDResting = false
             showBottomBar = true
         }
@@ -166,7 +123,7 @@ final class PlayerOSDCoordinator {
             isAutoHideArmed = false
             isQuickActionsModeActive = false
             bottomBarClearFocusNonce &+= 1
-            withAnimation(.easeOut(duration: 0.16)) {
+            withAnimation(Self.osdAnimation(.easeOut(duration: 0.16))) {
                 isPausedOSDResting = false
                 showBottomBar = true
             }
@@ -208,11 +165,11 @@ final class PlayerOSDCoordinator {
             isQuickActionsModeActive = false
             bottomBarClearFocusNonce &+= 1
             if hideBottomBar {
-                withAnimation(.easeOut(duration: 0.2)) {
+                withAnimation(Self.osdAnimation(.easeOut(duration: 0.2))) {
                     showBottomBar = false
                 }
             } else {
-                withAnimation(.easeOut(duration: 0.16)) {
+                withAnimation(Self.osdAnimation(.easeOut(duration: 0.16))) {
                     isPausedOSDResting = false
                     showBottomBar = true
                 }
@@ -221,7 +178,7 @@ final class PlayerOSDCoordinator {
             restoreCanvasFocusSoon()
         case .hideBottomBar:
             isAutoHideArmed = false
-            withAnimation(.easeOut(duration: 0.2)) {
+            withAnimation(Self.osdAnimation(.easeOut(duration: 0.2))) {
                 showBottomBar = false
             }
             restoreCanvasFocusSoon()
@@ -245,7 +202,7 @@ final class PlayerOSDCoordinator {
                 bottomBarClearFocusNonce &+= 1
                 restoreCanvasFocusSoon()
             }
-            withAnimation(.easeOut(duration: 0.16)) {
+            withAnimation(Self.osdAnimation(.easeOut(duration: 0.16))) {
                 isPausedOSDResting = false
             }
             if activeQuickPanel == nil {
@@ -254,7 +211,7 @@ final class PlayerOSDCoordinator {
         } else {
             isPauseRestArmed = false
             if isPausedOSDResting {
-                withAnimation(.easeOut(duration: 0.16)) {
+                withAnimation(Self.osdAnimation(.easeOut(duration: 0.16))) {
                     isPausedOSDResting = false
                 }
             }
@@ -287,7 +244,7 @@ final class PlayerOSDCoordinator {
         isPauseRestArmed = false
         isQuickActionsModeActive = true
         requestedBottomBarAction = target
-        withAnimation(.easeOut(duration: 0.16)) {
+        withAnimation(Self.osdAnimation(.easeOut(duration: 0.16))) {
             isPausedOSDResting = false
             showBottomBar = true
         }
@@ -302,7 +259,7 @@ final class PlayerOSDCoordinator {
         lastSelectedQuickTab = tab
         requestedBottomBarAction = .panel(tab)
         bottomBarClearFocusNonce &+= 1
-        withAnimation(LunaFocusStyle.focusSpring) {
+        withAnimation(Self.osdAnimation(LunaFocusStyle.focusSpring)) {
             isPausedOSDResting = false
             showBottomBar = true
             activeQuickPanel = tab
@@ -317,7 +274,7 @@ final class PlayerOSDCoordinator {
         }
         lastSelectedQuickTab = next
         requestedBottomBarAction = .panel(next)
-        withAnimation(LunaFocusStyle.focusSpring) {
+        withAnimation(Self.osdAnimation(LunaFocusStyle.focusSpring)) {
             activeQuickPanel = next
         }
     }
@@ -325,7 +282,7 @@ final class PlayerOSDCoordinator {
     func closeQuickPanel(viewModel: PlayerViewModel, returnFocusToPill: Bool) {
         viewModel.flushPendingAudioDelayCommitIfNeeded()
         isQuickActionsModeActive = returnFocusToPill
-        withAnimation(.easeOut(duration: 0.18)) {
+        withAnimation(Self.osdAnimation(.easeOut(duration: 0.18))) {
             activeQuickPanel = nil
         }
         if let suspended = suspendedFatalErrorForPanel {
@@ -350,7 +307,7 @@ final class PlayerOSDCoordinator {
         isQuickActionsModeActive = false
         bottomBarClearFocusNonce &+= 1
         if viewModel.playbackPhase == .playing {
-            withAnimation(.easeOut(duration: 0.2)) {
+            withAnimation(Self.osdAnimation(.easeOut(duration: 0.2))) {
                 showBottomBar = false
             }
         } else {
@@ -360,7 +317,7 @@ final class PlayerOSDCoordinator {
     }
 
     func revealBottomBarTemporarily(viewModel: PlayerViewModel) {
-        withAnimation(.easeOut(duration: 0.16)) {
+        withAnimation(Self.osdAnimation(.easeOut(duration: 0.16))) {
             isPausedOSDResting = false
             showBottomBar = true
         }
@@ -393,7 +350,7 @@ final class PlayerOSDCoordinator {
     func enterPausedIdleRest() {
         isQuickActionsModeActive = false
         bottomBarClearFocusNonce &+= 1
-        withAnimation(.easeInOut(duration: 0.65)) {
+        withAnimation(Self.osdAnimation(.easeInOut(duration: 0.65))) {
             showBottomBar = false
             isPausedOSDResting = true
         }
@@ -407,87 +364,5 @@ final class PlayerOSDCoordinator {
     func disarmAllTimers() {
         isAutoHideArmed = false
         isPauseRestArmed = false
-    }
-}
-
-struct PlayerPreviewCinemaStageView: View {
-    private static let previewTwoLineCue = "Velkommen tilbake til avdelingen.\nHele etasjen har ventet på dere i hele kveld."
-
-    let client: LunaCoreClient?
-    let backdropPath: String?
-    let comfort: ComfortPreferences
-    let activeQuickPanel: PlayerQuickPanelTab?
-    let isBottomBarShown: Bool
-    let isQuickPanelOpen: Bool
-    var activeSeriesOverlay: ActiveSeriesOverlayKind = .none
-    var isScrubbing: Bool = false
-
-    var body: some View {
-        let placement = SubtitleOverlayLayout.verticalPlacement(
-            isBottomBarVisible: isBottomBarShown,
-            isQuickPanelOpen: isQuickPanelOpen,
-            isNerdHUDVisible: comfort.showNerdHUD,
-            activeSeriesOverlay: activeSeriesOverlay,
-            isScrubbing: isScrubbing
-        )
-        let boxAlpha = comfort.subtitleBoxOpacity.alpha
-        let cueText = Text(Self.previewTwoLineCue)
-            .font(LunaTheme.Font.subtitleCue(size: comfort.subtitleFontSize.pointSize))
-            .foregroundStyle(comfort.hdrSubtitlePreset.foregroundColor(isHDR: true))
-            .multilineTextAlignment(.center)
-
-        ZStack {
-            if let backdropURL = client?.resolveArtworkURL(backdropPath, target: .hero4K) {
-                CachedArtworkView(
-                    url: backdropURL,
-                    client: client,
-                    maxPixelSize: 3840,
-                    placeholderSymbol: "film",
-                    contentMode: .fill,
-                    reuseAnyCachedSize: true,
-                    retainDuringPlayback: true
-                )
-            }
-            VStack {
-                if !placement.relocateToTop {
-                    Spacer()
-                }
-                Group {
-                    if boxAlpha > 0 {
-                        cueText
-                            .padding(.horizontal, 26)
-                            .padding(.vertical, 10)
-                            .background {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(LunaTheme.pureBlack.opacity(boxAlpha))
-                            }
-                    } else {
-                        cueText
-                            .shadow(color: LunaTheme.pureBlack.opacity(0.95), radius: 4, x: 0, y: 2)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 4)
-                    }
-                }
-                .padding(.leading, placement.relocateToTop ? placement.leadingInset : 120)
-                .padding(.trailing, placement.relocateToTop ? placement.trailingInset : 120)
-                .padding(.top, placement.relocateToTop ? placement.topInset : 0)
-                .padding(.bottom, placement.relocateToTop ? 0 : placement.bottomInset)
-                if placement.relocateToTop {
-                    Spacer()
-                }
-            }
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-struct CoalescedSeekOverlayLeafView: View {
-    let viewModel: PlayerViewModel
-
-    var body: some View {
-        if abs(viewModel.coalescedSeekDelta) >= 1 && !viewModel.isScrubbing {
-            CoalescedSeekFeedbackPillView(deltaSeconds: viewModel.coalescedSeekDelta)
-                .transition(.scale(scale: 0.92).combined(with: .opacity))
-        }
     }
 }

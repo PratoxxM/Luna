@@ -41,7 +41,7 @@ final class DynamicHomeRowTests: XCTestCase {
               "sourceKind": "custom",
               "listMode": "smart",
               "hasMore": true,
-              "nextPath": "/api/tv/v1/rows/custom%3Ajulefilmer",
+              "nextPath": "/api/tv/v2/rows/custom%3Ajulefilmer",
               "items": [
                 {
                   "itemId": "movie:tmdb:771",
@@ -104,7 +104,7 @@ final class DynamicHomeRowTests: XCTestCase {
         XCTAssertEqual(visible[0].items.first?.upcomingPillText, "I morgen")
         XCTAssertEqual(visible[0].items.first?.cleanUpcomingSubtitle, "S2 · E5 · Trojan's Horse")
         XCTAssertEqual(visible[1].rowStyle, "backdrop")
-        XCTAssertEqual(visible[1].nextPath, "/api/tv/v1/rows/custom%3Ajulefilmer")
+        XCTAssertEqual(visible[1].nextPath, "/api/tv/v2/rows/custom%3Ajulefilmer")
         XCTAssertEqual(visible[2].sourceKind, "local_library")
         XCTAssertEqual(visible[2].items.first?.availability?.isPhysicalLocal, true)
         XCTAssertEqual(visible[3].sourceKind, "active_series")
@@ -199,7 +199,7 @@ final class DynamicHomeRowTests: XCTestCase {
         XCTAssertEqual(rows.map(\.rowId), ["medialogg-continue", "custom:lokal-4k"])
         XCTAssertEqual(rows[0].items.map(\.itemId), ["movie:tmdb:693134", "series:tmdb:95396"])
         XCTAssertEqual(rows[0].items.first?.origin, "phone")
-        XCTAssertEqual(LibraryFilterSection.allCases.map(\.label), ["Filmer", "Serier", "Huskeliste"])
+        XCTAssertEqual(LibraryFilterSection.allCases.map(\.label), ["Filmer", "Serier", "Huskeliste", "Lister"])
 
         let zeroMoviesCounts = TvLibraryCounts(
             watchlist: 2,

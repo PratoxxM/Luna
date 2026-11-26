@@ -93,4 +93,83 @@ final class ChapterClassificationTests: XCTestCase {
         XCTAssertEqual(merged.map(\.kind), [.chapter, .intro, .credits])
         XCTAssertEqual(merged.map(\.index), [0, 1, 2])
     }
+
+    func testPostCreditsClassificationParsingAndMergeRaw() throws {
+        XCTAssertEqual(TvChapterKind.postCredits.rawValue, "post_credits")
+        XCTAssertEqual(TvChapterKind.postCredits.badgeLabel, "Etter rulletekst")
+        XCTAssertEqual(TvChapterKind.parse(rawKind: "post_credits"), .postCredits)
+        XCTAssertEqual(TvChapterKind.parse(rawKind: "post-credits"), .postCredits)
+        XCTAssertEqual(TvChapterKind.parse(rawKind: "postCredits"), .postCredits)
+        XCTAssertEqual(TvChapterKind.parse(rawKind: "after-credits"), .postCredits)
+        XCTAssertEqual(TvChapterKind.parse(rawKind: "stinger"), .postCredits)
+        XCTAssertEqual(TvChapterKind.parse(rawKind: "Etter rulletekst"), .postCredits)
+
+        XCTAssertEqual(TvChapterKind.classify(title: "Post-Credits Scene", startSeconds: 6900, durationSeconds: 7200), .postCredits)
+        XCTAssertEqual(TvChapterKind.classify(title: "After Credits", startSeconds: 6900, durationSeconds: 7200), .postCredits)
+        XCTAssertEqual(TvChapterKind.classify(title: "Stinger", startSeconds: 6900, durationSeconds: 7200), .postCredits)
+        XCTAssertEqual(TvChapterKind.classify(title: "Etter rulletekst", startSeconds: 6900, durationSeconds: 7200), .postCredits)
+
+        let json = """
+        [
+          {"id":"cr-1","title":"Rulletekst","startSeconds":6600,"endSeconds":6900,"type":"credits"},
+          {"id":"pc-1","title":"Bonus","startSeconds":6900,"endSeconds":7050,"type":"post-credits"}
+        ]
+        """.data(using: .utf8)!
+        let probes = try JSONDecoder().decode([TvProbeChapter].self, from: json)
+        XCTAssertEqual(probes.map(\.kind), ["credits", "post-credits"])
+
+        let genericEngine = [
+            RawEngineChapter(id: 1, name: "Chapter 01", startSeconds: 0, durationSeconds: 7200)
+        ]
+        let merged = PlaybackChapter.mergeRaw(probeChapters: probes, engineChapters: genericEngine, mediaDuration: 7200)
+        XCTAssertEqual(merged.map(\.kind), [.chapter, .credits, .postCredits])
+    }
+
+    func testMergeRawGenericChapterAndLegacyCreditsDoNotSuppressSemanticTitles() {
+        let engineMerged = PlaybackChapter.mergeRaw(
+            probeChapters: [
+                TvProbeChapter(index: 0, idString: "intro", title: "Intro", startSeconds: 45, endSeconds: 120, kind: "chapter"),
+                TvProbeChapter(index: 12, idString: "stinger", title: "Post Credits Scene", startSeconds: 5100, endSeconds: 5220, kind: "chapter"),
+            ],
+            engineChapters: [
+                RawEngineChapter(id: 1, name: "Intro", startSeconds: 45, durationSeconds: 75),
+                RawEngineChapter(id: 12, name: "Post Credits Scene", startSeconds: 5100, durationSeconds: 120),
+            ],
+            mediaDuration: 5400
+        )
+        XCTAssertEqual(engineMerged.map(\.kind), [.intro, .postCredits])
+
+        let probeOnlyMerged = PlaybackChapter.mergeRaw(
+            probeChapters: [
+                TvProbeChapter(index: 0, idString: "op", title: "Intro", startSeconds: 30, endSeconds: 100, kind: "chapter"),
+                TvProbeChapter(index: 1, idString: "pc", title: "Etter rulletekst", startSeconds: 5100, endSeconds: 5220, kind: "credits"),
+            ],
+            engineChapters: [],
+            mediaDuration: 5400
+        )
+        XCTAssertEqual(probeOnlyMerged.map(\.kind), [.intro, .postCredits])
+    }
+
+    func testCoincidentGenericMkvAndTheIntroDbSegmentsArePreserved() {
+        let merged = PlaybackChapter.mergeRaw(
+            probeChapters: [
+                TvProbeChapter(index: 0, idString: "ch1", title: "Chapter 1", startSeconds: 0, endSeconds: 2000, kind: "chapter"),
+                TvProbeChapter(index: 1, idString: "tidb-intro", title: "Intro", startSeconds: 0, endSeconds: 90, kind: "intro", source: "theintrodb"),
+                TvProbeChapter(index: 2, idString: "ch3", title: "Chapter 3", startSeconds: 5000, endSeconds: 5150, kind: "chapter"),
+                TvProbeChapter(index: 3, idString: "tidb-credits", title: "Rulletekst", startSeconds: 5000, endSeconds: 5150, kind: "credits", source: "theintrodb"),
+                TvProbeChapter(index: 4, idString: "ch4", title: "Chapter 4", startSeconds: 5150, endSeconds: 5260, kind: "chapter"),
+                TvProbeChapter(index: 5, idString: "tidb-post-credits", title: "Etter rulletekst", startSeconds: 5150, endSeconds: 5260, kind: "post_credits", source: "theintrodb"),
+            ],
+            engineChapters: [
+                RawEngineChapter(id: 0, name: "Chapter 1", startSeconds: 0, durationSeconds: 2000),
+                RawEngineChapter(id: 1, name: "Chapter 2", startSeconds: 2000, durationSeconds: 3000),
+                RawEngineChapter(id: 2, name: "Chapter 3", startSeconds: 5000, durationSeconds: 150),
+                RawEngineChapter(id: 3, name: "Chapter 4", startSeconds: 5150, durationSeconds: 110),
+            ],
+            mediaDuration: 5260
+        )
+
+        XCTAssertEqual(merged.map(\.kind), [.intro, .chapter, .credits, .postCredits])
+        XCTAssertEqual(merged[0].endSeconds, 90, accuracy: 0.1)
+    }
 }

@@ -7,6 +7,7 @@ public enum TvChapterKind: String, Codable, Equatable, Sendable {
     case intro
     case recap
     case credits
+    case postCredits = "post_credits"
     case chapter
 
     public var badgeLabel: String? {
@@ -14,10 +15,38 @@ public enum TvChapterKind: String, Codable, Equatable, Sendable {
         case .intro: return "Intro"
         case .recap: return "Sammendrag"
         case .credits: return "Rulletekst"
+        case .postCredits: return "Etter rulletekst"
         case .chapter: return nil
         }
     }
 
+    public static func parse(rawKind: String?) -> TvChapterKind? {
+        guard let rawKind else { return nil }
+        let normalized = rawKind
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        switch normalized {
+        case "intro":
+            return .intro
+        case "recap":
+            return .recap
+        case "credits":
+            return .credits
+        case "post_credits", "postcredits", "after_credits", "aftercredits", "stinger", "etter_rulletekst":
+            return .postCredits
+        case "chapter":
+            return .chapter
+        default:
+            return nil
+        }
+    }
+
+    private static let postCreditsRegex = try? NSRegularExpression(
+        pattern: #"(?:\b(?:post[\s\-_]*credits|after[\s\-_]*credits|stinger)\b|etter\s+rulletekst)"#,
+        options: .caseInsensitive
+    )
     private static let recapRegex = try? NSRegularExpression(
         pattern: #"\b(?:recap|previously|tidligere|sammendrag)\b"#,
         options: .caseInsensitive
@@ -57,6 +86,9 @@ public enum TvChapterKind: String, Codable, Equatable, Sendable {
         let trimmed = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .chapter }
 
+        if matches(postCreditsRegex, in: trimmed) {
+            return .postCredits
+        }
         if matches(recapRegex, in: trimmed) {
             return .recap
         }
@@ -71,6 +103,28 @@ public enum TvChapterKind: String, Codable, Equatable, Sendable {
             return .credits
         }
         return .chapter
+    }
+
+    public static func resolve(
+        rawKind: String?,
+        title: String,
+        startSeconds: Double,
+        durationSeconds: Double = 0
+    ) -> TvChapterKind {
+        let titleKind = classify(
+            title: title,
+            startSeconds: startSeconds,
+            durationSeconds: durationSeconds
+        )
+        let parsed = parse(rawKind: rawKind)
+        // «Post-Credits» / «Etter rulletekst» skal aldri klassifiseres som vanlig «credits» (heller ikke fra eldre prober)
+        if titleKind == .postCredits || parsed == .postCredits {
+            return .postCredits
+        }
+        if let parsed, parsed != .chapter {
+            return parsed
+        }
+        return titleKind
     }
 }
 
@@ -92,6 +146,7 @@ public struct TvProbeChapter: Codable, Identifiable, Equatable, Sendable {
         case startSeconds
         case endSeconds
         case kind
+        case type
         case source
     }
 
@@ -126,8 +181,13 @@ public struct TvProbeChapter: Codable, Identifiable, Equatable, Sendable {
             self.idString = "ch-\(decodedIndex ?? 0)"
         }
 
+        let fallbackIndex = decodedIndex ?? 0
+        let (nextIndex, overflow) = fallbackIndex.addingReportingOverflow(1)
+        let fallbackTitle = overflow
+            ? "Kapittel \(UInt64(max(0, fallbackIndex)) + 1)"
+            : "Kapittel \(nextIndex)"
         let t = (try? c.decodeIfPresent(String.self, forKey: .title))
-            ?? "Kapittel \((decodedIndex ?? 0) + 1)"
+            ?? fallbackTitle
         self.title = t
 
         let start = (try? c.decodeIfPresent(Double.self, forKey: .startSeconds)) ?? 0
@@ -137,7 +197,8 @@ public struct TvProbeChapter: Codable, Identifiable, Equatable, Sendable {
         } else {
             self.endSeconds = start + 1
         }
-        self.kind = try? c.decodeIfPresent(String.self, forKey: .kind)
+        self.kind = (try? c.decodeIfPresent(String.self, forKey: .kind))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .type))
         self.source = try? c.decodeIfPresent(String.self, forKey: .source)
     }
 
@@ -217,6 +278,38 @@ public struct PlaybackChapter: Identifiable, Equatable, Sendable {
     }
     #endif
 
+    private static let genericChapterTitleRegex = try? NSRegularExpression(
+        pattern: #"^(?:chapter|kapittel)\s+\d+$"#,
+        options: .caseInsensitive
+    )
+
+    private static func isGenericChapterTitle(_ title: String) -> Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        guard let regex = genericChapterTitleRegex else { return false }
+        let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+        return regex.firstMatch(in: trimmed, options: [], range: range) != nil
+    }
+
+    private static func kindPriority(_ kind: TvChapterKind) -> Int {
+        switch kind {
+        case .postCredits: return 3
+        case .intro, .recap, .credits: return 2
+        case .chapter: return 1
+        }
+    }
+
+    private static func compareStartSeconds(_ lhs: Double, _ rhs: Double) -> Bool? {
+        if lhs.isNaN || rhs.isNaN {
+            if lhs.isNaN && rhs.isNaN { return nil }
+            return !lhs.isNaN
+        }
+        if lhs != rhs {
+            return lhs < rhs
+        }
+        return nil
+    }
+
     public static func mergeRaw(
         probeChapters: [TvProbeChapter],
         engineChapters: [RawEngineChapter],
@@ -226,8 +319,8 @@ public struct PlaybackChapter: Identifiable, Equatable, Sendable {
         // and supplemented with unmatched semantic external segments (e.g. TheIntroDB intro/recap/credits).
         if !engineChapters.isEmpty {
             let sortedEngine = engineChapters.sorted { a, b in
-                if a.startSeconds != b.startSeconds {
-                    return a.startSeconds < b.startSeconds
+                if let ordered = compareStartSeconds(a.startSeconds, b.startSeconds) {
+                    return ordered
                 }
                 return a.id < b.id
             }
@@ -243,39 +336,89 @@ public struct PlaybackChapter: Identifiable, Equatable, Sendable {
                 }
                 let end = mediaDuration > start ? min(rawEnd, mediaDuration) : rawEnd
 
-                let matchedProbe = probeChapters.first { abs($0.startSeconds - start) < 1.5 }
-                let resolvedKind: TvChapterKind
-                if let rawKind = matchedProbe?.kind, let parsed = TvChapterKind(rawValue: rawKind) {
-                    resolvedKind = parsed
-                } else {
-                    resolvedKind = TvChapterKind.classify(
-                        title: ch.name,
+                let matchingProbes = probeChapters.filter { abs($0.startSeconds - start) < 1.5 }
+                let cleanTitle = ch.name.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                var bestProbe: TvProbeChapter?
+                var bestProbeKind: TvChapterKind = .chapter
+                for probe in matchingProbes {
+                    let probeKind = TvChapterKind.resolve(
+                        rawKind: probe.kind,
+                        title: probe.title,
                         startSeconds: start,
                         durationSeconds: mediaDuration
                     )
+                    if bestProbe == nil || kindPriority(probeKind) > kindPriority(bestProbeKind) {
+                        bestProbe = probe
+                        bestProbeKind = probeKind
+                    }
                 }
 
-                let cleanTitle = ch.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                let engineKind = TvChapterKind.resolve(
+                    rawKind: nil,
+                    title: cleanTitle,
+                    startSeconds: start,
+                    durationSeconds: mediaDuration
+                )
+                let resolvedKind: TvChapterKind
+                if kindPriority(bestProbeKind) > kindPriority(engineKind) {
+                    resolvedKind = bestProbeKind
+                } else if engineKind != .chapter {
+                    resolvedKind = engineKind
+                } else {
+                    resolvedKind = bestProbeKind
+                }
+
+                let engineTitleIsGeneric = isGenericChapterTitle(cleanTitle)
+                let resolvedTitle: String
+                if engineTitleIsGeneric,
+                   bestProbeKind != .chapter,
+                   let probeTitle = bestProbe?.title.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !isGenericChapterTitle(probeTitle) {
+                    resolvedTitle = probeTitle
+                } else if !cleanTitle.isEmpty {
+                    resolvedTitle = cleanTitle
+                } else if let probeTitle = bestProbe?.title.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !probeTitle.isEmpty {
+                    resolvedTitle = probeTitle
+                } else {
+                    resolvedTitle = "Kapittel \(idx + 1)"
+                }
+
+                var resolvedEnd = end
+                if engineTitleIsGeneric,
+                   bestProbeKind != .chapter,
+                   let bestProbe,
+                   (bestProbe.endSeconds - bestProbe.startSeconds) >= 5 {
+                    let rawProbeEnd = max(start + 1, bestProbe.endSeconds)
+                    let probeEnd = mediaDuration > start ? min(rawProbeEnd, mediaDuration) : rawProbeEnd
+                    resolvedEnd = min(end, probeEnd)
+                }
+
                 return PlaybackChapter(
                     id: "eng-\(ch.id)-\(idx)",
                     index: idx,
-                    title: cleanTitle.isEmpty ? (matchedProbe?.title ?? "Kapittel \(idx + 1)") : cleanTitle,
+                    title: resolvedTitle,
                     startSeconds: start,
-                    endSeconds: end,
+                    endSeconds: resolvedEnd,
                     kind: resolvedKind
                 )
             }
 
-            let semanticKinds: Set<TvChapterKind> = [.intro, .recap, .credits]
+            let semanticKinds: Set<TvChapterKind> = [.intro, .recap, .credits, .postCredits]
             for probe in probeChapters {
-                guard let parsedKind = probe.kind.flatMap(TvChapterKind.init(rawValue:)),
-                      semanticKinds.contains(parsedKind) else {
+                let start = max(0, probe.startSeconds)
+                let resolvedKind = TvChapterKind.resolve(
+                    rawKind: probe.kind,
+                    title: probe.title,
+                    startSeconds: start,
+                    durationSeconds: mediaDuration
+                )
+                guard semanticKinds.contains(resolvedKind) else {
                     continue
                 }
-                let start = max(0, probe.startSeconds)
-                let nearEngineStart = sortedEngine.contains { abs(max(0, $0.startSeconds) - start) < 1.5 }
-                let nearSameKind = combined.contains { $0.kind == parsedKind && abs($0.startSeconds - start) < 15 }
-                guard !nearEngineStart, !nearSameKind else { continue }
+                let nearSameKind = combined.contains { $0.kind == resolvedKind && abs($0.startSeconds - start) < 15 }
+                guard !nearSameKind else { continue }
 
                 let rawEnd = max(start + 1, probe.endSeconds)
                 let end = mediaDuration > start ? min(rawEnd, mediaDuration) : rawEnd
@@ -286,14 +429,14 @@ public struct PlaybackChapter: Identifiable, Equatable, Sendable {
                         title: probe.title,
                         startSeconds: start,
                         endSeconds: end,
-                        kind: parsedKind
+                        kind: resolvedKind
                     )
                 )
             }
 
             let sortedCombined = combined.sorted { a, b in
-                if a.startSeconds != b.startSeconds {
-                    return a.startSeconds < b.startSeconds
+                if let ordered = compareStartSeconds(a.startSeconds, b.startSeconds) {
+                    return ordered
                 }
                 return a.id < b.id
             }
@@ -310,8 +453,8 @@ public struct PlaybackChapter: Identifiable, Equatable, Sendable {
         }
 
         let sortedProbes = probeChapters.sorted { a, b in
-            if a.startSeconds != b.startSeconds {
-                return a.startSeconds < b.startSeconds
+            if let ordered = compareStartSeconds(a.startSeconds, b.startSeconds) {
+                return ordered
             }
             return (a.index ?? 0) < (b.index ?? 0)
         }
@@ -319,8 +462,12 @@ public struct PlaybackChapter: Identifiable, Equatable, Sendable {
             let start = max(0, ch.startSeconds)
             let rawEnd = max(start + 1, ch.endSeconds)
             let end = mediaDuration > start ? min(rawEnd, mediaDuration) : rawEnd
-            let parsedKind = ch.kind.flatMap(TvChapterKind.init(rawValue:))
-                ?? TvChapterKind.classify(title: ch.title, startSeconds: start, durationSeconds: mediaDuration)
+            let parsedKind = TvChapterKind.resolve(
+                rawKind: ch.kind,
+                title: ch.title,
+                startSeconds: start,
+                durationSeconds: mediaDuration
+            )
             return PlaybackChapter(
                 id: "prb-\(ch.idString)-\(idx)",
                 index: ch.index ?? idx,

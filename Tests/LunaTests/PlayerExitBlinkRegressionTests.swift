@@ -315,11 +315,11 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
         MockURLProtocol.registerAsync(host: host) { request in
             let url = try XCTUnwrap(request.url)
             let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
-            if url.path == "/api/tv/v1/playback/resolve" {
+            if url.path == "/api/tv/v2/playback/resolve" {
                 await resolveGate.wait(label: "resolve", log: gateLog)
                 return (resp, Data(#"{"ok":false,"status":"failed","resolveId":"r1"}"#.utf8))
             }
-            if url.path == "/api/tv/v1/playback/heartbeat" {
+            if url.path == "/api/tv/v2/playback/heartbeat" {
                 stoppedHeartbeatCount.withLock { $0 += 1 }
                 return (resp, Data(#"{"ok":true,"sessionId":"stopped","state":"stopped"}"#.utf8))
             }
@@ -383,5 +383,142 @@ final class PlayerExitBlinkRegressionTests: XCTestCase {
         await resolveGate.finish()
         await fulfillment(of: [stopDoneB], timeout: 3.0)
         XCTAssertEqual(stoppedHeartbeatCount.withLock { $0 }, 2, "Both handed-over and in-flight sessions must send state='stopped' on curtain abort")
+    }
+
+    @MainActor
+    func testTwentyCyclePlayerViewModelAndControllerDeallocationWithoutRetainCycles() throws {
+        let suite = "luna.test.vm.deinit20.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let engine = try AetherEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+        let comfort = ComfortPreferences(defaults: defaults)
+
+        for cycle in 0..<20 {
+            weak var weakVM: PlayerViewModel?
+            weak var weakSession: PlayerSessionController?
+            weak var weakTrack: PlayerTrackController?
+            weak var weakScrub: PlayerScrubController?
+            weak var weakRestore: PlayerRestoreController?
+            weak var weakQoS: PlayerQoSReporter?
+
+            do {
+                let transport = MockPlayerTransport(state: .playing, playbackPhase: .playing, currentTime: Double(cycle * 10))
+                let vm = PlayerViewModel(engine: engine, comfort: comfort, transport: transport, bindOnInit: true)
+                weakVM = vm
+                weakSession = vm.sessionController
+                weakTrack = vm.trackController
+                weakScrub = vm.scrubController
+                weakRestore = vm.restoreController
+                weakQoS = vm.qosReporter
+
+                let req = PlaybackLaunchRequest(
+                    itemId: "episode:tmdb:95396:s1:e\(cycle + 1)",
+                    title: "Episode \(cycle + 1)",
+                    seriesTitle: "Test",
+                    season: 1,
+                    episode: cycle + 1
+                )
+                vm.start(request: req, client: nil)
+                vm.prepareForDismissal()
+                vm.teardownAndStop()
+            }
+
+            XCTAssertNil(weakVM, "Cycle \(cycle): PlayerViewModel must deallocate")
+            XCTAssertNil(weakSession, "Cycle \(cycle): PlayerSessionController must deallocate")
+            XCTAssertNil(weakTrack, "Cycle \(cycle): PlayerTrackController must deallocate")
+            XCTAssertNil(weakScrub, "Cycle \(cycle): PlayerScrubController must deallocate")
+            XCTAssertNil(weakRestore, "Cycle \(cycle): PlayerRestoreController must deallocate")
+            XCTAssertNil(weakQoS, "Cycle \(cycle): PlayerQoSReporter must deallocate")
+        }
+    }
+
+    @MainActor
+    func testTeardownAndStopEmitsPlaybackStopReceiptAfterStoppedHeartbeat() async throws {
+        let host = "stop-receipt-\(UUID().uuidString.lowercased()).local"
+        let suite = "luna.test.stopreceipt.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer {
+            MockURLProtocol.unregister(host: host)
+            defaults.removePersistentDomain(forName: suite)
+        }
+
+        MockURLProtocol.register(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            return (resp, Data(#"{"ok":true,"sessionId":"sess-receipt-1","state":"stopped","watchCompleted":true}"#.utf8))
+        }
+
+        let engine = try AetherEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+        let comfort = ComfortPreferences(defaults: defaults)
+        let client = try MockURLProtocol.makeClient(host: host)
+        let transport = MockPlayerTransport(state: .playing, playbackPhase: .playing, currentTime: 1850)
+        let vm = PlayerViewModel(engine: engine, comfort: comfort, transport: transport, bindOnInit: false)
+
+        let sessionJSON = #"""
+        {
+          "sessionId": "sess-receipt-1",
+          "streamToken": "tok-receipt-secret-112233",
+          "roomName": "Stua",
+          "hardwareProfile": "hdr10-512",
+          "item": {
+            "itemId": "episode:tmdb:95396:s2:e5",
+            "mediaType": "episode",
+            "ids": { "tmdb": 95396 },
+            "title": "Trojan's Horse",
+            "seriesTitle": "Severance",
+            "season": 2,
+            "episode": 5,
+            "runtimeSeconds": 2800
+          },
+          "selectedCandidate": {
+            "candidateId": "cand-1",
+            "displayHeadline": "4K WEB-DL",
+            "releaseTitle": "Severance.S02E05.2160p",
+            "source": "nvme"
+          },
+          "stream": { "url": "/api/tv/v2/stream/sess-receipt-1/tok-receipt-secret-112233/video.mkv" },
+          "aetherConfig": {
+            "preferDualLayerDolbyVision": false,
+            "dolbyVisionHandling": "baseLayerOnly",
+            "matchContentEnabled": true,
+            "audioBridgeMode": "lossless"
+          }
+        }
+        """#
+        vm.activeSession = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(sessionJSON.utf8))
+        vm.activeClient = client
+        vm.durationSeconds = 2800
+
+        let exp = expectation(description: "PlaybackStopReceipt delivered")
+        var capturedReceipt: PlaybackStopReceipt?
+        vm.prepareForDismissal()
+        vm.teardownAndStop(
+            onComplete: { exp.fulfill() },
+            onStopReceipt: { receipt in capturedReceipt = receipt }
+        )
+        await fulfillment(of: [exp], timeout: 3.0)
+
+        let receipt = try XCTUnwrap(capturedReceipt)
+        XCTAssertEqual(receipt.itemId, "episode:tmdb:95396:s2:e5")
+        XCTAssertEqual(receipt.mediaType, "episode")
+        XCTAssertEqual(receipt.seasonNumber, 2)
+        XCTAssertEqual(receipt.episodeNumber, 5)
+        XCTAssertEqual(receipt.positionSeconds, 1850, accuracy: 0.1)
+        XCTAssertTrue(receipt.completed)
     }
 }

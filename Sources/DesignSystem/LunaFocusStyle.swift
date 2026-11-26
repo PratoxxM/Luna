@@ -28,6 +28,10 @@ public enum LunaFocusStyle {
         reduceMotion ? .linear(duration: 0.01) : focusSpring
     }
 
+    public nonisolated static func calmEaseOut(duration: Double = 0.22, reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .easeOut(duration: duration)
+    }
+
     public nonisolated static func captionRevealAnimation(isFocused: Bool, reduceMotion: Bool) -> Animation {
         reduceMotion
             ? .linear(duration: 0.01)

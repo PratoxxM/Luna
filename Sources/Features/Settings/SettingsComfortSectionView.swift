@@ -114,8 +114,7 @@ struct SettingsRoomDisplaySectionView: View {
     }
 
     private var roomAutoSpeakerLayout: String {
-        let norm = sessionStore.hardwareProfile.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return norm == HardwareProfilePreset.hdr10512.rawValue ? "5.1.2" : "7.1.4"
+        comfort.roomAutoSpeakerLayout
     }
 
     private var activeVideoModeSummary: String {

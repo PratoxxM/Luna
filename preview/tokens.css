@@ -1,0 +1,53 @@
+/* Generated from design/tokens.json (sha256: 26ba103abc2b298cbfd78c197316256e7b5c900b273e9e064f6fef8242e5f26d) — DO NOT EDIT MANUALLY. */
+/* Regenerate via: ./ops/bin/luna-design-tokens --sync */
+
+:root {
+  --bg-canvas: #0A0908;
+  --bg-black: #000000;
+  --surface-1: #14110F;
+  --surface-subtle: #181412;
+  --surface-2: #1E1916;
+  --surface-3: #241E1A;
+  --surface-selected: #2A231E;
+  --glass: rgba(18, 15, 13, 0.92);
+  --glass-pill: rgba(30, 25, 22, 0.84);
+  --text-primary: #F5F0E8;
+  --text-secondary: #C8BFB6;
+  --text-muted: #A0968C;
+  --text-on-accent: #0A0908;
+  --accent: #C48C3A;
+  --accent-bright: #CC9644;
+  --accent-deep: #9E6E27;
+  --accent-border: #D6AA63;
+  --focus-glow: rgba(196, 140, 58, 0.25);
+  --edge-subtle: rgba(255, 244, 230, 0.10);
+  --edge-strong: rgba(255, 244, 230, 0.18);
+  --ok: #5EBF8E;
+  --warn: #E0A84B;
+  --danger: #D96B52;
+  --stream: #E8C9A0;
+  --safe-x: 90px;
+  --safe-y: 60px;
+  --poster-w: 280px;
+  --poster-h: 420px;
+  --backdrop-w: 520px;
+  --backdrop-h: 293px;
+  --card-gap: 40px;
+  --spring: 320ms cubic-bezier(0.22, 1.2, 0.36, 1);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+  --font-serif: ui-serif, "New York", "Iowan Old Style", Georgia, serif;
+  --type-tv-hero-serif: 64px;
+  --type-tv-title-serif: 46px;
+  --type-tv-page-title: 40px;
+  --type-tv-section-title: 34px;
+  --type-tv-card-title: 29px;
+  --type-tv-body: 29px;
+  --type-tv-subtitle: 25px;
+  --type-tv-caption: 23px;
+  --type-tv-badge: 22px;
+  --r-tv-chip: 12px;
+  --r-tv-poster: 16px;
+  --r-tv-card: 18px;
+  --r-tv-panel: 24px;
+  --r-tv-pill: 999px;
+}

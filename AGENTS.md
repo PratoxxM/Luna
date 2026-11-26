@@ -2,7 +2,7 @@
 
 ## 1. Purpose & Public-Repository Security Rules
 
-`Luna` (`v2.12.2`) is a public, standalone tvOS client powered by `AetherEngine` (`7.73.0`) and backed by the native LunaCore TV API (`/api/tv/v1` on `:8090` / `:8920`).
+`Luna` (`v3.0.0`, pure `tvOS 26.0` / Swift `6.2`) is a public, standalone tvOS client powered by `AetherEngine` (`7.73.0`) and backed by the native LunaCore TV API (`/api/tv/v2` on `:8090` / `:8920`).
 
 Because this repository is **public on GitHub**, these rules are hard invariants:
 
@@ -19,9 +19,9 @@ Because this repository is **public on GitHub**, these rules are hard invariants
 
 ## 3. Code Organization & Naming Rules
 
-- **Domain naming only**: Use `LunaCoreClient` / `LunaCoreError` / `LunaCoreSessionPool` for `/api/tv/v1` networking (`Sources/Core/Networking/LunaCoreHTTPTransport.swift`, `Sources/Core/Networking/LunaCoreClient+HomeCatalog.swift`, `Sources/Core/Networking/LunaCoreClient+LibraryDetail.swift`, `Sources/Core/Networking/LunaCoreClient+Playback.swift`, `Sources/Core/Networking/LunaCoreSessionPool.swift`) and `DiscoveredLunaCoreServer` in `Sources/Core/Discovery/BonjourServerBrowser.swift`. Never reintroduce retired legacy client names, `BFF*` typealiases, `Hero` banners, or retired `Watchlist/` / `PlayerSheets.swift` views.
+- **Domain naming only**: Use `LunaCoreClient` / `LunaCoreError` / `LunaCoreSessionPool` for `/api/tv/v2` networking (`Sources/Core/Networking/LunaCoreHTTPTransport.swift`, `Sources/Core/Networking/LunaCoreClient+HomeCatalog.swift`, `Sources/Core/Networking/LunaCoreClient+LibraryDetail.swift`, `Sources/Core/Networking/LunaCoreClient+Playback.swift`, `Sources/Core/Networking/LunaCoreSessionPool.swift`) and `DiscoveredLunaCoreServer` in `Sources/Core/Discovery/BonjourServiceParser.swift`. Never reintroduce retired legacy client names, `BFF*` typealiases, `Hero` banners, or retired `Watchlist/` / `PlayerSheets.swift` views.
 - **File size & permission budget**: Keep every `.swift` source/test file and doc strictly `<= 800 LOC` (`0644` permissions; `0755` for `ops/bin/*` and `scripts/*.sh`), enforced by `./ops/bin/luna-check`.
-- **Shared networking & caching**: Reuse a single `URLSession` per `LunaCoreClient`, decode images off the main actor via `ArtworkPipeline`, and persist `/api/tv/v1/home` ETag/JSON snapshots in `DiskSWRStore` (`.cachesDirectory`).
+- **Shared networking & caching**: Reuse a single `URLSession` per `LunaCoreClient`, decode images off the main actor via `ArtworkPipeline`, and persist `/api/tv/v2/home` ETag/JSON snapshots in `DiskSWRStore` (`.cachesDirectory`).
 
 ## 4. Where to Look First
 
@@ -32,14 +32,14 @@ Because this repository is **public on GitHub**, these rules are hard invariants
 - **Discovery, pairing & config**: `Sources/Core/Discovery/BonjourServerBrowser.swift`, `Sources/Core/Config/ServerConfiguration.swift`, `Sources/Core/Config/SideloadSafeStorage.swift`, `Sources/Features/Onboarding/PairingOnboardingView.swift`
 - **Linux-testable core (`Package.swift` -> `LunaCore`)**: `Sources/Core/Networking/*`, `Sources/Core/Models/*`, `Sources/Core/Catalog/CatalogShelfIndexer.swift`, `Sources/Core/Playback/PlaybackCoreAbstractions.swift`, `Sources/Core/Cache/DiskSWRStore.swift`, `Tests/LunaCoreTests/LunaCoreLinuxTests.swift`
 - **Player shell & AetherEngine bridge**: `Packages/AetherBridge/Package.swift`, `Packages/AetherBridge/Sources/AetherBridge/Exports.swift`, `Sources/Features/Player/PlayerViewModel.swift`, `Sources/Features/Player/PlayerSessionCoordinator.swift`, `Sources/Features/Player/PlayerContainerView.swift`
-- **Local 1920×1080 Lampelys Focus Sandbox**: `preview/index.html`, `preview/tokens.json`, `design/tokens.json`
+- **Local 1920×1080 Lampelys Focus Sandbox**: `preview/index.html`, `preview/tokens.css`, `design/tokens.json`
 
 ## 5. PC / Linux Development Without a Mac
 
 Development happens on Linux/Docker without a local macOS SDK:
 
 1. **Ignore local SDK diagnostics**: Any local LSP/compiler errors complaining about missing `SwiftUI`, `UIKit`, `AVFoundation`, `Network`, `tvOS` SDKs, or `AetherEngine` binaries on Linux are expected and **must be ignored**.
-2. **Keep pure business logic Linux-native (`LunaCore`)**: Non-UI networking, models, shelf indexing, SWR caching, and `PlaybackEngine`/`IOReader` state machines & watchdogs live in pure Swift (`Package.swift` -> `LunaCore`) with zero `UIKit`, `SwiftUI`, or `TVUIKit` imports so `./scripts/test-core.sh` compiles and tests them locally in Docker (`swift:6.0`).
+2. **Keep pure business logic Linux-native (`LunaCore`)**: Non-UI networking, models, shelf indexing, SWR caching, and playback/scrub/track policies & watchdogs (`PlaybackCurtainWatchdog`, `PlaybackCurtainPresentationPolicy`, `PlaybackTrackIntent`, `PlayerTimelinePolicy`, `RemoteScrubMath`, `SeriesFlowPolicy`, `PlaybackStopReceipt`) live in pure Swift (`Package.swift` -> `LunaCore`) with zero `UIKit`, `SwiftUI`, `TVUIKit`, or `AVFoundation` imports so `./scripts/test-core.sh` compiles and tests them locally in Docker (`swift:6.2`).
 3. **Run `./ops/bin/luna-check` locally**: Validates `0644`/`0755` permissions, `<= 800 LOC`, `>= 22 pt` tvOS typography floor, sideload safety, zero private infra/retired patterns, design token parity, and bidirectional doc-to-disk parity (`CODEBASE_MODULE_MAP.md` <-> `Sources/**/*.swift`, `Tests/LunaTests/*.swift` & `Tests/LunaCoreTests/*.swift`).
 4. **`project.yml` is the single source of truth for tvOS**: Never hand-edit or commit `Luna.xcodeproj` or `*.xcworkspace`. XcodeGen generates `Luna.xcodeproj` fresh inside GitHub Actions on every build.
 5. **SPM Traits via `Packages/AetherBridge`**: XcodeGen does not serialize SwiftPM `traits:` on remote packages, and `xcodebuild` has no CLI flag for package traits. All `AetherEngine` version pinning (`exact: "7.73.0"`) and optional traits (`TrueHDObjectAudio`, `DTSXObjectAudio`, `DualLayerDolbyVision`, `DolbyVisionFelCurves`, `DolbyVisionStillReshaping`) MUST stay in `Packages/AetherBridge/Package.swift`.
@@ -80,7 +80,7 @@ Follow this 3-stage verification loop before reporting any change complete:
      # Download & inspect real tvOS Simulator screenshots:
      rm -rf .ci-screenshots && gh run download -n tvos-screenshots -D .ci-screenshots
      ```
-   - **Production `main` build & rolling unsigned IPA (`.github/workflows/build-tvos.yml`)**: Runs `luna-check`, all XCTest suites in `Tests/LunaTests` on tvOS Simulator, compiles `Luna` for `generic/platform=tvOS`, and publishes `Luna-unsigned.ipa` to the rolling `latest` GitHub Release for ATVLoadly:
+   - **Production `main` build & rolling unsigned IPA (`.github/workflows/build-tvos.yml`)**: Runs `luna-check`, `linux-core-tests` (`swift test --parallel` in `swift:6.2`), all XCTest suites in `Tests/LunaTests` on tvOS Simulator, compiles `Luna` for `generic/platform=tvOS`, and publishes `Luna-unsigned.ipa` to the rolling `latest` GitHub Release for ATVLoadly:
      ```bash
      ./ops/bin/luna-check
      git push origin main

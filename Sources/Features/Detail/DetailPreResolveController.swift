@@ -1,5 +1,17 @@
 import Foundation
-import AetherBridge
+
+public protocol DetailStreamPrewarming: Sendable {
+    func registerStreamSecret(_ secret: String)
+    func unregisterStreamSecret(_ secret: String)
+    func prewarmIfNeeded(url: URL, httpHeaders: [String: String], byteBudget: Int) async
+}
+
+public struct NoopDetailStreamPrewarmer: DetailStreamPrewarming {
+    public init() {}
+    public func registerStreamSecret(_ secret: String) {}
+    public func unregisterStreamSecret(_ secret: String) {}
+    public func prewarmIfNeeded(url: URL, httpHeaders: [String: String], byteBudget: Int) async {}
+}
 
 enum DetailReloadAction: Equatable, Sendable {
     case skip
@@ -32,8 +44,8 @@ struct ConsumedPreResolveHandoff: Sendable {
     let inflightPrepareToken: String?
 }
 
-/// Coordinates `0 ms` initial (or `180 ms` debounced) `/api/tv/v1/playback/prepare`
-/// + strict NVMe/VFS-only `AetherEngine.prewarm` on detail views without waking archive drives.
+/// Coordinates `0 ms` initial (or `180 ms` debounced) `/api/tv/v2/playback/prepare`
+/// + strict NVMe/VFS-only stream prewarm on detail views without waking archive drives.
 @MainActor
 final class DetailPreResolveController {
     private(set) var preparedToken: String?
@@ -43,6 +55,7 @@ final class DetailPreResolveController {
     private(set) var preparedStartPosition: Double?
     private(set) var isPreResolvedReady: Bool = false
 
+    private var prewarmer: any DetailStreamPrewarming
     private var prewarmedStreamToken: String?
     private var debounceTask: Task<Void, Never>?
     private var inflightNetworkTask: Task<TvPrepareResponse?, Never>?
@@ -51,6 +64,14 @@ final class DetailPreResolveController {
     private var inflightStartPosition: Double?
     private var prewarmTask: Task<Void, Never>?
     private var handedOverSessionIds: [String] = []
+
+    init(prewarmer: any DetailStreamPrewarming = NoopDetailStreamPrewarmer()) {
+        self.prewarmer = prewarmer
+    }
+
+    func configure(prewarmer: any DetailStreamPrewarming) {
+        self.prewarmer = prewarmer
+    }
 
     private func markSessionHandedOver(_ sessionId: String?) {
         guard let sid = sessionId?.trimmingCharacters(in: .whitespacesAndNewlines), !sid.isEmpty else {
@@ -332,9 +353,9 @@ final class DetailPreResolveController {
 
             if let streamTok = prep.playbackSession?.streamToken, streamTok.count >= 8 {
                 if let oldTok = self.prewarmedStreamToken, oldTok.count >= 8, oldTok != streamTok {
-                    EngineLog.unregisterSecret(oldTok)
+                    self.prewarmer.unregisterStreamSecret(oldTok)
                 }
-                _ = EngineLog.registerSecret(streamTok)
+                self.prewarmer.registerStreamSecret(streamTok)
                 self.prewarmedStreamToken = streamTok
             }
 
@@ -354,16 +375,15 @@ final class DetailPreResolveController {
                     isFastLocalTier: isFastLocal
                 )
                 guard prewarmBudget > 0 else { return }
+                let activePrewarmer = self.prewarmer
                 self.prewarmTask?.cancel()
                 self.prewarmTask = Task.detached(priority: .utility) {
                     guard !Task.isCancelled else { return }
-                    if !AetherEngine.isPrewarmed(url: streamURL) {
-                        _ = await AetherEngine.prewarm(
-                            url: streamURL,
-                            httpHeaders: headers,
-                            byteBudget: prewarmBudget
-                        )
-                    }
+                    await activePrewarmer.prewarmIfNeeded(
+                        url: streamURL,
+                        httpHeaders: headers,
+                        byteBudget: prewarmBudget
+                    )
                 }
             }
         }
@@ -433,7 +453,7 @@ final class DetailPreResolveController {
         let isExcluded = currentSid != nil && currentSid == excludingSessionId
         if let tok = prewarmedStreamToken, tok.count >= 8 {
             if !isExcluded {
-                EngineLog.unregisterSecret(tok)
+                prewarmer.unregisterStreamSecret(tok)
             }
             prewarmedStreamToken = nil
         }

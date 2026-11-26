@@ -1,5 +1,5 @@
+import Foundation
 import Observation
-import SwiftUI
 
 public enum MainNavigationTab: String, CaseIterable, Identifiable, Hashable, Sendable {
     case home
@@ -42,10 +42,10 @@ public enum ScrollTopZone: Equatable, Sendable {
     case midBand
     case scrolledDown
 
-    public nonisolated static let revealThreshold: CGFloat = 36
-    public nonisolated static let collapseThreshold: CGFloat = 88
+    public nonisolated static let revealThreshold: Double = 36
+    public nonisolated static let collapseThreshold: Double = 88
 
-    public nonisolated static func classify(scrolledOffsetY: CGFloat) -> ScrollTopZone {
+    public nonisolated static func classify(scrolledOffsetY: Double) -> ScrollTopZone {
         if scrolledOffsetY <= revealThreshold {
             return .atTop
         }
@@ -60,11 +60,25 @@ public struct ScrollTopSample: Equatable, Sendable {
     public let zone: ScrollTopZone
     public let downwardBucket: Int
 
-    public nonisolated static let stepPoints: CGFloat = 48
+    public nonisolated static let stepPoints: Double = 48
 
-    public nonisolated static func capture(scrolledOffsetY: CGFloat) -> ScrollTopSample {
+    public nonisolated static func capture(scrolledOffsetY: Double) -> ScrollTopSample {
         let zone = ScrollTopZone.classify(scrolledOffsetY: scrolledOffsetY)
-        let bucket = zone == .scrolledDown ? max(1, Int((scrolledOffsetY / stepPoints).rounded(.down))) : 0
+        let bucket: Int
+        if zone == .scrolledDown {
+            if scrolledOffsetY.isFinite, stepPoints.isFinite, stepPoints > 0 {
+                let floored = (scrolledOffsetY / stepPoints).rounded(.down)
+                if let exact = Int(exactly: floored) {
+                    bucket = max(1, exact)
+                } else {
+                    bucket = floored > 0 ? Int.max : 1
+                }
+            } else {
+                bucket = Int.max
+            }
+        } else {
+            bucket = 0
+        }
         return ScrollTopSample(zone: zone, downwardBucket: bucket)
     }
 }
@@ -104,35 +118,37 @@ public enum TabContentFreshnessPolicy {
 
 @MainActor
 @Observable
-final class LunaNavigationBarVisibility {
-    nonisolated static let menuFocusBounceGraceSeconds: TimeInterval = 0.14
+public final class LunaNavigationBarVisibility {
+    public nonisolated static let menuFocusBounceGraceSeconds: TimeInterval = 0.14
 
-    private(set) var activeSubpageTokens: Set<UUID> = []
-    private(set) var activeModalTokens: Set<UUID> = []
-    private(set) var isCollapsedByScroll: Bool = false
-    private(set) var isTopBarFocused: Bool = false
-    private(set) var focusRequestNonce: Int = 0
-    private(set) var scrollToTopNonce: Int = 0
-    private(set) var contentEntryFocusNonce: Int = 0
-    private(set) var pendingMenuBypassExit: Bool = false
+    public private(set) var activeSubpageTokens: Set<UUID> = []
+    public private(set) var activeModalTokens: Set<UUID> = []
+    public private(set) var isCollapsedByScroll: Bool = false
+    public private(set) var isTopBarFocused: Bool = false
+    public private(set) var focusRequestNonce: Int = 0
+    public private(set) var scrollToTopNonce: Int = 0
+    public private(set) var contentEntryFocusNonce: Int = 0
+    public private(set) var pendingMenuBypassExit: Bool = false
 
     @ObservationIgnored private var scrollZonesByTab: [MainNavigationTab: ScrollTopZone] = [:]
     @ObservationIgnored private var activeTab: MainNavigationTab = .home
     @ObservationIgnored private var menuRevealGraceUntil: Date = .distantPast
 
-    var isSubpageActive: Bool {
+    public init() {}
+
+    public var isSubpageActive: Bool {
         !activeSubpageTokens.isEmpty
     }
 
-    var isModalActive: Bool {
+    public var isModalActive: Bool {
         !activeModalTokens.isEmpty
     }
 
-    var isTopBarHidden: Bool {
+    public var isTopBarHidden: Bool {
         isSubpageActive || (isCollapsedByScroll && !isTopBarFocused)
     }
 
-    var sink: LunaSubpageVisibilitySink {
+    public var sink: LunaSubpageVisibilitySink {
         LunaSubpageVisibilitySink(
             enterSubpage: { [weak self] token in
                 self?.enterSubpage(token)
@@ -152,29 +168,29 @@ final class LunaNavigationBarVisibility {
         )
     }
 
-    func enterSubpage(_ token: UUID) {
+    public func enterSubpage(_ token: UUID) {
         guard !activeSubpageTokens.contains(token) else { return }
         activeSubpageTokens.insert(token)
         pendingMenuBypassExit = false
     }
 
-    func leaveSubpage(_ token: UUID) {
+    public func leaveSubpage(_ token: UUID) {
         guard activeSubpageTokens.contains(token) else { return }
         activeSubpageTokens.remove(token)
     }
 
-    func enterModal(_ token: UUID) {
+    public func enterModal(_ token: UUID) {
         guard !activeModalTokens.contains(token) else { return }
         activeModalTokens.insert(token)
         pendingMenuBypassExit = false
     }
 
-    func leaveModal(_ token: UUID) {
+    public func leaveModal(_ token: UUID) {
         guard activeModalTokens.contains(token) else { return }
         activeModalTokens.remove(token)
     }
 
-    func syncActiveTab(_ tab: MainNavigationTab) {
+    public func syncActiveTab(_ tab: MainNavigationTab) {
         activeTab = tab
         pendingMenuBypassExit = false
         if isTopBarFocused {
@@ -189,7 +205,7 @@ final class LunaNavigationBarVisibility {
         }
     }
 
-    func reportScrollSample(
+    public func reportScrollSample(
         _ oldSample: ScrollTopSample?,
         _ newSample: ScrollTopSample,
         for tab: MainNavigationTab,
@@ -218,7 +234,7 @@ final class LunaNavigationBarVisibility {
         }
     }
 
-    func updateTopBarFocused(_ focused: Bool, now: Date = Date()) {
+    public func updateTopBarFocused(_ focused: Bool, now: Date = Date()) {
         guard isTopBarFocused != focused else { return }
         isTopBarFocused = focused
         if focused {
@@ -233,7 +249,7 @@ final class LunaNavigationBarVisibility {
         }
     }
 
-    func shouldInterceptMenuPress(hasActivePlayback: Bool) -> Bool {
+    public func shouldInterceptMenuPress(hasActivePlayback: Bool) -> Bool {
         !isTopBarFocused &&
         !hasActivePlayback &&
         !isSubpageActive &&
@@ -241,7 +257,7 @@ final class LunaNavigationBarVisibility {
         !pendingMenuBypassExit
     }
 
-    func handleMenuPressToRevealTopBar(now: Date = Date()) {
+    public func handleMenuPressToRevealTopBar(now: Date = Date()) {
         isCollapsedByScroll = false
         pendingMenuBypassExit = true
         menuRevealGraceUntil = now.addingTimeInterval(Self.menuFocusBounceGraceSeconds)
@@ -249,7 +265,7 @@ final class LunaNavigationBarVisibility {
         scrollToTopNonce &+= 1
     }
 
-    func requestContentEntryFocus(for tab: MainNavigationTab) {
+    public func requestContentEntryFocus(for tab: MainNavigationTab) {
         activeTab = tab
         pendingMenuBypassExit = false
         isTopBarFocused = false
@@ -272,58 +288,4 @@ public struct LunaSubpageVisibilitySink: Sendable {
         leaveModal: { _ in },
         reportScrollSample: { _, _, _ in }
     )
-}
-
-private struct LunaSubpageVisibilitySinkKey: EnvironmentKey {
-    static let defaultValue: LunaSubpageVisibilitySink = .noop
-}
-
-private struct LunaScrollToTopNonceKey: EnvironmentKey {
-    static let defaultValue: Int = 0
-}
-
-private struct LunaContentEntryFocusNonceKey: EnvironmentKey {
-    static let defaultValue: Int = 0
-}
-
-public extension EnvironmentValues {
-    var lunaSubpageVisibility: LunaSubpageVisibilitySink {
-        get { self[LunaSubpageVisibilitySinkKey.self] }
-        set { self[LunaSubpageVisibilitySinkKey.self] = newValue }
-    }
-
-    var lunaScrollToTopNonce: Int {
-        get { self[LunaScrollToTopNonceKey.self] }
-        set { self[LunaScrollToTopNonceKey.self] = newValue }
-    }
-
-    var lunaContentEntryFocusNonce: Int {
-        get { self[LunaContentEntryFocusNonceKey.self] }
-        set { self[LunaContentEntryFocusNonceKey.self] = newValue }
-    }
-}
-
-extension View {
-    func lunaRootScrollTopBarTracking(tab: MainNavigationTab, isEnabled: Bool = true) -> some View {
-        modifier(LunaRootScrollTopBarModifier(tab: tab, isEnabled: isEnabled))
-    }
-}
-
-private struct LunaRootScrollTopBarModifier: ViewModifier {
-    @Environment(\.lunaSubpageVisibility) private var visibilitySink
-    let tab: MainNavigationTab
-    let isEnabled: Bool
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if isEnabled {
-            content.onScrollGeometryChange(for: ScrollTopSample.self) { geo in
-                ScrollTopSample.capture(scrolledOffsetY: geo.contentOffset.y + geo.contentInsets.top)
-            } action: { oldSample, newSample in
-                visibilitySink.reportScrollSample(oldSample, newSample, tab)
-            }
-        } else {
-            content
-        }
-    }
 }

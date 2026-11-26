@@ -5,6 +5,8 @@ import AetherBridge
 /// Supports direct Left/Right tab switching from full-width rows, starts deterministically on the
 /// active (`✓`) item inside each list, and uses a lightweight `16 pt` shadow for 4K DV P7 FEL headroom.
 struct PlayerQuickPanelView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let viewModel: PlayerViewModel
     let comfort: ComfortPreferences
     let tab: PlayerQuickPanelTab
@@ -70,7 +72,7 @@ struct PlayerQuickPanelView: View {
             if let audIdx = viewModel.activeAudioTrackIndex {
                 return "aud-\(audIdx)"
             }
-            if let first = viewModel.drawerAudioOptions.first {
+            if let first = viewModel.trackController.drawerAudioOptions.first {
                 return "aud-\(first.id)"
             }
             return "aud-mode-\(viewModel.audioEnhancement.rawValue)"
@@ -88,7 +90,7 @@ struct PlayerQuickPanelView: View {
         case .picture:
             return "pic-metalfx-\(comfort.lowResUpscaleMode.rawValue)"
         case .chapters:
-            if let activeCh = viewModel.activeChapter(at: snapshotSeconds) ?? viewModel.chapters.first {
+            if let activeCh = viewModel.trackController.activeChapter(at: snapshotSeconds) ?? viewModel.chapters.first {
                 return "ch-\(activeCh.id)"
             }
             return "ch-empty"
@@ -187,7 +189,7 @@ struct PlayerQuickPanelView: View {
         .padding(.leading, leadingX)
         .padding(.bottom, 248)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        .animation(LunaFocusStyle.focusSpring, value: tab)
+        .animation(LunaFocusStyle.spring(reduceMotion: reduceMotion), value: tab)
         .task(id: tab) {
             guard tab == .source,
                   viewModel.alternativesSessionId != viewModel.activeSession?.sessionId || viewModel.alternatives.isEmpty else {

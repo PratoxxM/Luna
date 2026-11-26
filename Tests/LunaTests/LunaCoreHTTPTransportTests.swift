@@ -52,10 +52,10 @@ final class LunaCoreHTTPTransportTests: XCTestCase {
         MockURLProtocol.register(host: host) { request in
             let url = try XCTUnwrap(request.url)
             switch url.path {
-            case "/api/tv/v1/bootstrap":
+            case "/api/tv/v2/bootstrap":
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 401, httpVersion: nil, headerFields: nil))
                 return (resp, Data())
-            case "/api/tv/v1/library":
+            case "/api/tv/v2/library":
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 503, httpVersion: nil, headerFields: nil))
                 return (resp, Data(#"{"error":"Arkivet vedlikeholdes"}"#.utf8))
             default:
@@ -107,9 +107,9 @@ final class LunaCoreHTTPTransportTests: XCTestCase {
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
                 return (resp, Data(#"{"ok":true,"status":"approved","deviceToken":"tok-123"}"#.utf8))
             }
-            if url.path == "/api/tv/v1/playback/resolve" {
+            if url.path == "/api/tv/v2/playback/resolve" {
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 202, httpVersion: nil, headerFields: nil))
-                let body = #"{"ok":true,"status":"resolving","resolveId":"res-99","wsPath":"/api/tv/v1/ws/resolve/res-99"}"#
+                let body = #"{"ok":true,"status":"resolving","resolveId":"res-99","wsPath":"/api/tv/v2/ws/resolve/res-99"}"#
                 return (resp, Data(body.utf8))
             }
             let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
@@ -141,7 +141,7 @@ final class LunaCoreHTTPTransportTests: XCTestCase {
         )
         XCTAssertEqual(resolveStatus, 202)
         XCTAssertEqual(resolveStart.resolveId, "res-99")
-        XCTAssertEqual(resolveStart.wsPath, "/api/tv/v1/ws/resolve/res-99")
+        XCTAssertEqual(resolveStart.wsPath, "/api/tv/v2/ws/resolve/res-99")
 
         try await client.updateDeviceProfile(roomName: "Kjellerstua", hardwareProfile: "dv-fel-714")
         let reqs = MockURLProtocol.requests(forHost: host)
@@ -202,7 +202,7 @@ final class LunaCoreHTTPTransportTests: XCTestCase {
         XCTAssertNotNil(headers["X-Supports-HW-AV1"])
         XCTAssertNotNil(headers["X-Physical-Memory-GB"])
 
-        let sameOriginURL = try XCTUnwrap(URL(string: "http://\(lanHost):8090/api/tv/v1/img/poster.webp"))
+        let sameOriginURL = try XCTUnwrap(URL(string: "http://\(lanHost):8090/api/tv/v2/img/poster.webp"))
         let (sameData, _) = try await client.fetchRawImageData(from: sameOriginURL)
         XCTAssertEqual(sameData, sampleBytes)
         let lanReq = try XCTUnwrap(MockURLProtocol.requests(forHost: lanHost).last)
@@ -234,8 +234,8 @@ final class LunaCoreHTTPTransportTests: XCTestCase {
           "ok": true,
           "server": {
             "name": "LunaCore",
-            "version": "5.0.0",
-            "apiVersion": 1
+            "version": "6.0.0",
+            "apiVersion": 2
           },
           "device": {
             "deviceId": "luna-test-device",
@@ -253,12 +253,12 @@ final class LunaCoreHTTPTransportTests: XCTestCase {
         MockURLProtocol.registerAsync(host: host) { request in
             let url = try XCTUnwrap(request.url)
             let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
-            if request.httpMethod == "GET" && url.path == "/api/tv/v1/bootstrap" {
+            if request.httpMethod == "GET" && url.path == "/api/tv/v2/bootstrap" {
                 getCount.withLock { $0 += 1 }
                 try await Task.sleep(nanoseconds: 50_000_000)
                 return (resp, Data(bootstrapJSON.utf8))
             }
-            if request.httpMethod == "POST" && url.path == "/api/tv/v1/watchlist" {
+            if request.httpMethod == "POST" && url.path == "/api/tv/v2/watchlist" {
                 postCount.withLock { $0 += 1 }
                 try await Task.sleep(nanoseconds: 40_000_000)
                 return (resp, Data(#"{"ok":true}"#.utf8))
@@ -298,5 +298,72 @@ final class LunaCoreHTTPTransportTests: XCTestCase {
             try await group.waitForAll()
         }
         XCTAssertEqual(postCount.withLock { $0 }, 4, "POST mutations must never coalesce")
+    }
+
+    func testConditionalLibraryAndSubtitleActions() async throws {
+        let host = "transport-v2-\(UUID().uuidString.lowercased()).local"
+        defer { MockURLProtocol.unregister(host: host) }
+
+        MockURLProtocol.register(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            if url.path == "/api/tv/v2/library" {
+                if request.value(forHTTPHeaderField: "If-None-Match") == "\"lib-etag\"" {
+                    let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 304, httpVersion: nil, headerFields: nil))
+                    return (resp, Data())
+                }
+                let json = #"""
+                {
+                  "ok": true,
+                  "section": "lists",
+                  "counts": { "watchlist": 1, "localTotal": 2, "nvme": 2, "archive": 0, "vfs": 0, "customLists": 1, "customListsCount": 1 },
+                  "watchlist": [],
+                  "localItems": [],
+                  "customLists": [
+                    { "id": "custom:noir", "name": "Nordic Noir", "itemCount": 4, "browsePath": "/api/tv/v2/rows/custom:noir" }
+                  ]
+                }
+                """#
+                let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["ETag": "\"lib-etag\""]))
+                return (resp, Data(json.utf8))
+            }
+            if url.path == "/api/tv/v2/playback/sess-1/subtitles/search-and-attach" {
+                let json = #"""
+                {"ok":true,"sessionId":"sess-1","attached":true,"status":"attached","provider":"subdl","externalSubtitles":[],"subtitleDelayMs":0}
+                """#
+                let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+                return (resp, Data(json.utf8))
+            }
+            if url.path == "/api/tv/v2/playback/sess-1/subtitles/auto-align" {
+                let json = #"""
+                {"ok":true,"sessionId":"sess-1","applied":true,"mode":"ffsubsync","offsetMs":350,"subtitleDelayMs":350}
+                """#
+                let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+                return (resp, Data(json.utf8))
+            }
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 404, httpVersion: nil, headerFields: nil))
+            return (resp, Data())
+        }
+
+        let client = try MockURLProtocol.makeClient(host: host)
+        let res = try await client.fetchLibrary(section: .lists)
+        guard case .updated(let lib, let etag, _) = res else {
+            return XCTFail("Expected .updated")
+        }
+        XCTAssertEqual(etag, "\"lib-etag\"")
+        XCTAssertEqual(lib.counts.resolvedCustomListsCount, 1)
+        XCTAssertEqual(lib.resolvedCustomLists.first?.name, "Nordic Noir")
+
+        let notModified = try await client.fetchLibrary(section: .lists, ifNoneMatch: "\"lib-etag\"")
+        guard case .notModified = notModified else {
+            return XCTFail("Expected .notModified")
+        }
+
+        let attach = try await client.searchAndAttachSubtitles(sessionId: "sess-1")
+        XCTAssertTrue(attach.attached)
+        XCTAssertEqual(attach.provider, "subdl")
+
+        let align = try await client.autoAlignSubtitles(sessionId: "sess-1", subtitleDelayMs: 350)
+        XCTAssertTrue(align.applied)
+        XCTAssertEqual(align.subtitleDelayMs, 350)
     }
 }

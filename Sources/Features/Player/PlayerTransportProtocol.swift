@@ -38,6 +38,7 @@ protocol PlayerTransportControlling: AnyObject {
     func clearSubtitle()
     func prepareForItemReplacement()
     func loadStream(url: URL, startPosition: Double?, options: LoadOptions) async throws
+    func reloadAtCurrentPosition(applying change: (inout LoadOptions) -> Void) async throws
     func stop(resetDisplayCriteria: Bool, finalTeardown: Bool)
 }
 
@@ -53,6 +54,7 @@ extension PlayerTransportControlling {
     func clearSubtitle() {}
     func prepareForItemReplacement() {}
     func loadStream(url _: URL, startPosition _: Double?, options _: LoadOptions) async throws {}
+    func reloadAtCurrentPosition(applying _: (inout LoadOptions) -> Void) async throws {}
 }
 
 @MainActor
@@ -123,6 +125,10 @@ final class AetherEngineTransport: PlayerTransportControlling {
 
     func loadStream(url: URL, startPosition: Double?, options: LoadOptions) async throws {
         _ = try await engine.load(url: url, startPosition: startPosition, options: options)
+    }
+
+    func reloadAtCurrentPosition(applying change: (inout LoadOptions) -> Void) async throws {
+        _ = try await engine.reloadAtCurrentPosition(applying: change)
     }
 
     func stop(resetDisplayCriteria: Bool, finalTeardown: Bool) {

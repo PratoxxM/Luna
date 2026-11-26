@@ -39,9 +39,23 @@ jobs:
           set -euo pipefail
           bash ops/bin/luna-check
 
+  linux-core-tests:
+    name: LunaCoreTests (Linux Swift 6.2)
+    needs: static-guardrails
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run LunaCoreTests on Linux
+        run: swift test --parallel
+
   tvos-screenshots:
     name: Build & Capture 4K (@2x) Simulator Screens
-    needs: static-guardrails
+    needs: [static-guardrails, linux-core-tests]
     runs-on: ${{ inputs.runner || 'xcode-27' }}
     timeout-minutes: 30
 

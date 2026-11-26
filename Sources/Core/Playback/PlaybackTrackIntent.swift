@@ -20,11 +20,19 @@ public enum PlaybackSyncTimingPolicy: Sendable {
     }
 
     public static func stepSubtitleDelayMs(from currentMs: Int, deltaMs: Int) -> Int {
-        clampSubtitleDelayMs(currentMs + deltaMs)
+        let (sum, overflow) = Int64(currentMs).addingReportingOverflow(Int64(deltaMs))
+        if overflow {
+            return deltaMs >= 0 ? subtitleDelayRangeMs.upperBound : subtitleDelayRangeMs.lowerBound
+        }
+        return Int(min(max(sum, Int64(subtitleDelayRangeMs.lowerBound)), Int64(subtitleDelayRangeMs.upperBound)))
     }
 
     public static func stepAudioDelayMs(from currentMs: Int, deltaMs: Int) -> Int {
-        clampAudioDelayMs(currentMs + deltaMs)
+        let (sum, overflow) = Int64(currentMs).addingReportingOverflow(Int64(deltaMs))
+        if overflow {
+            return deltaMs >= 0 ? audioDelayRangeMs.upperBound : audioDelayRangeMs.lowerBound
+        }
+        return Int(min(max(sum, Int64(audioDelayRangeMs.lowerBound)), Int64(audioDelayRangeMs.upperBound)))
     }
 
     /// Formats a millisecond offset with explicit sign (`0 ms`, `+100 ms`, `−50 ms` using Unicode minus).
@@ -32,7 +40,7 @@ public enum PlaybackSyncTimingPolicy: Sendable {
         if ms == 0 {
             return "0 ms"
         }
-        return ms > 0 ? "+\(ms) ms" : "−\(abs(ms)) ms"
+        return ms > 0 ? "+\(ms) ms" : "−\(ms.magnitude) ms"
     }
 
     public static func headerTitle(baseTitle: String, delayMs: Int) -> String {
@@ -360,8 +368,13 @@ public struct PlaybackTrackIntent: Equatable, Sendable {
             score += 20
         }
         if preferredChannels > 0 {
-            let diff = abs(track.channels - preferredChannels)
-            score += max(0, 15 - diff * 3)
+            let (rawDiff, overflow) = Int64(track.channels).subtractingReportingOverflow(Int64(preferredChannels))
+            if !overflow {
+                let absDiff: Int64 = rawDiff == Int64.min ? Int64.max : abs(rawDiff)
+                if absDiff < 5 {
+                    score += Int(max(0, 15 - absDiff * 3))
+                }
+            }
         }
         if track.isDefault {
             score += 4

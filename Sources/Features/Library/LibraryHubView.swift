@@ -7,6 +7,7 @@ struct LibraryHubView: View {
     }
 
     @Environment(AppSessionStore.self) private var sessionStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
     @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
     @Environment(\.lunaContentEntryFocusNonce) private var contentEntryFocusNonce
@@ -14,109 +15,108 @@ struct LibraryHubView: View {
     let isActiveTab: Bool
     var onSelectTab: ((MainNavigationTab) -> Void)? = nil
 
-    @State private var activeSection: LibraryFilterSection = .movies
-    @State private var didApplyInitialSectionFallback: Bool = false
-
-    @State private var libraryPayload: TvLibraryResponse?
-    @State private var localItems: [TvMediaCard] = []
-    @State private var localOffset: Int = 0
-    @State private var localHasMore: Bool = false
-    @State private var isLoading: Bool = true
-    @State private var isLoadingMoreLocal: Bool = false
-    @State private var errorMessage: String?
-    @State private var mutationErrorBanner: String?
-    @State private var lastSeenRefreshNonce: Int = -1
+    @State private var viewModel: LibraryViewModel
+    @State private var scrollPosition = ScrollPosition(idType: String.self)
 
     @State private var selectedCard: TvMediaCard?
+    @State private var selectedCustomList: TvLibraryCustomList?
     @State private var pendingDeleteTarget: TvDeleteRequestTarget?
     @State private var modalToken = UUID()
-    @State private var reloadTask: Task<Void, Never>?
-    @State private var loadMoreTask: Task<Void, Never>?
-    @State private var reloadGeneration: UInt64 = 0
     @State private var mountedTracker = MountedEntryCardTracker()
     @State private var entryCardID: String?
     @State private var cardFocusNonce: Int = 0
 
+    @FocusState private var focusedCustomListID: String?
     @FocusState private var fallbackFocus: LibraryFallbackFocus?
 
-    init(isActiveTab: Bool = true, onSelectTab: ((MainNavigationTab) -> Void)? = nil) {
-        self.isActiveTab = isActiveTab
-        self.onSelectTab = onSelectTab
-    }
-
-    private let pageSize = DeviceMemoryProfile.current.libraryPageSize
     private let columns = LunaTheme.posterGridColumns
 
-    private var queryKey: String {
-        "\(sessionStore.serverBaseURL?.absoluteString ?? "")#\(activeSection.rawValue)#\(activeSection.apiMediaType)#\(sessionStore.roomName)#\(sessionStore.hardwareProfile)"
+    init(
+        viewModel: LibraryViewModel? = nil,
+        isActiveTab: Bool = true,
+        onSelectTab: ((MainNavigationTab) -> Void)? = nil
+    ) {
+        self.isActiveTab = isActiveTab
+        self.onSelectTab = onSelectTab
+        _viewModel = State(initialValue: viewModel ?? LibraryViewModel())
     }
 
     var body: some View {
+        @Bindable var viewModel = viewModel
         let client = sessionStore.makeClient()
-        let counts = libraryPayload?.counts
+        let counts = viewModel.libraryPayload?.counts
 
-        ScrollViewReader { scrollProxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: LunaTokens.Layout.blockGap) {
-                    Color.clear
-                        .frame(height: 0)
-                        .id("luna-scroll-top")
-
-                    LibraryFilterStripView(
-                        counts: counts,
-                        activeSection: $activeSection,
-                        didApplyInitialSectionFallback: $didApplyInitialSectionFallback,
-                        entryFocusNonce: contentEntryFocusNonce,
-                        isEntryActive: isActiveTab,
-                        onScrollToTop: {
-                            scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
-                        },
-                        onMoveDown: {
-                            focusFirstLibraryContentItem(scrollProxy: scrollProxy)
-                        }
-                    )
-
-                    Group {
-                        if isLoading && libraryPayload == nil {
-                            LunaLoadingRow(message: "Henter samlingen…")
-                        } else if let errorMessage, libraryPayload == nil {
-                            LunaInlineError(message: errorMessage) {
-                                scheduleReloadLibrary(forceNetwork: true)
-                            }
-                            .focused($fallbackFocus, equals: .retry)
-                        } else {
-                            sectionGrid(client: client)
-                                .focusSection()
-                        }
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: LunaTokens.Layout.blockGap) {
+                LibraryFilterStripView(
+                    counts: counts,
+                    activeSection: $viewModel.activeSection,
+                    didApplyInitialSectionFallback: $viewModel.didApplyInitialSectionFallback,
+                    entryFocusNonce: contentEntryFocusNonce,
+                    isEntryActive: isActiveTab,
+                    onScrollToTop: {
+                        scrollPosition.scrollTo(edge: .top)
+                    },
+                    onMoveDown: {
+                        focusFirstLibraryContentItem()
                     }
-                    .padding(.horizontal, LunaTheme.horizontalGutter)
+                )
+
+                Group {
+                    if viewModel.isLoading && viewModel.libraryPayload == nil {
+                        LunaLoadingRow(message: "Henter samlingen…")
+                    } else if let errorMessage = viewModel.errorMessage, viewModel.libraryPayload == nil {
+                        LunaInlineError(message: errorMessage) {
+                            viewModel.scheduleReloadLibrary(forceNetwork: true, session: sessionStore)
+                        }
+                        .focused($fallbackFocus, equals: .retry)
+                    } else if viewModel.activeSection == .lists {
+                        customListsSection()
+                            .focusSection()
+                    } else {
+                        sectionGrid(client: client)
+                            .focusSection()
+                    }
                 }
-                .padding(.top, LunaTopBarView.contentTopPadding)
-                .padding(.bottom, 84)
+                .padding(.horizontal, LunaTheme.horizontalGutter)
             }
-            .contentMargins(.zero, for: .scrollContent)
-            .scrollClipDisabled()
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .ignoresSafeArea()
-            .lunaRootScrollTopBarTracking(tab: .library)
-            .onChange(of: scrollToTopNonce) { _, _ in
-                guard isActiveTab else { return }
-                withAnimation(.easeOut(duration: 0.22)) {
-                    scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
-                }
+            .padding(.top, LunaTopBarView.contentTopPadding)
+            .padding(.bottom, 84)
+        }
+        .scrollPosition($scrollPosition)
+        .contentMargins(.zero, for: .scrollContent)
+        .scrollClipDisabled()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .ignoresSafeArea()
+        .lunaRootScrollTopBarTracking(tab: .library)
+        .onChange(of: scrollToTopNonce) { _, _ in
+            guard isActiveTab else { return }
+            withAnimation(LunaFocusStyle.calmEaseOut(duration: 0.22, reduceMotion: reduceMotion)) {
+                scrollPosition.scrollTo(edge: .top)
             }
         }
-        .lunaBottomToast(message: $mutationErrorBanner, tone: .danger)
+        .lunaBottomToast(message: $viewModel.mutationErrorBanner, tone: .danger)
         .navigationDestination(item: $selectedCard) { card in
             MediaDetailView(mediaType: card.mediaType, itemId: card.itemId, initialTitle: card.title)
+        }
+        .navigationDestination(item: $selectedCustomList) { list in
+            CustomRowBrowseView(
+                title: list.name,
+                pathOrRowId: list.browsePath,
+                isOngoingList: CustomRowContextPolicy.isOngoingList(
+                    explicitFlag: false,
+                    rowId: list.id,
+                    sourceKind: list.sourceType
+                )
+            )
         }
         .sheet(item: $pendingDeleteTarget) { target in
             DetailDeleteSheetView(
                 target: target,
                 onDeleted: { _ in
-                    localItems.removeAll { $0.itemId == target.itemId }
+                    viewModel.removeOptimisticLocalItem(itemId: target.itemId)
                     pendingDeleteTarget = nil
-                    Task { await markLocalMutationAndReload() }
+                    Task { await viewModel.markLocalMutationAndReload(session: sessionStore) }
                 },
                 onCancel: {
                     pendingDeleteTarget = nil
@@ -132,63 +132,93 @@ struct LibraryHubView: View {
                 subpageVisibility.leaveModal(modalToken)
             }
         }
-        .task(id: "\(queryKey)#active:\(isActiveTab)") {
-            guard isActiveTab else { return }
-            reloadTask?.cancel()
-            reloadTask = nil
-            loadMoreTask?.cancel()
-            loadMoreTask = nil
-            reloadGeneration &+= 1
-            let gen = reloadGeneration
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            await loadLibrary(forceNetwork: false, generation: gen)
+        .task(id: "\(viewModel.queryKey(for: sessionStore))#active:\(isActiveTab)") {
+            await viewModel.handleActivation(session: sessionStore, isActiveTab: isActiveTab)
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
-            guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
-            lastSeenRefreshNonce = newNonce
-            scheduleReloadLibrary(forceNetwork: true)
+            viewModel.handleHomeRefreshNonceChange(newNonce, isActiveTab: isActiveTab, session: sessionStore)
         }
         .onDisappear {
-            reloadTask?.cancel()
-            reloadTask = nil
-            loadMoreTask?.cancel()
-            loadMoreTask = nil
+            viewModel.cancelAllTasks()
             if pendingDeleteTarget == nil {
                 subpageVisibility.leaveModal(modalToken)
             }
         }
     }
 
-    private func focusFirstLibraryContentItem(scrollProxy: ScrollViewProxy) {
-        let activeItems: [TvMediaCard] = activeSection == .watchlist
-            ? (libraryPayload?.watchlist ?? [])
-            : localItems
+    private func focusFirstLibraryContentItem() {
+        if viewModel.activeSection == .lists {
+            if let firstList = viewModel.customLists.first {
+                scrollPosition.scrollTo(id: firstList.id, anchor: .top)
+                focusedCustomListID = firstList.id
+            } else if viewModel.errorMessage != nil && viewModel.libraryPayload == nil {
+                fallbackFocus = .retry
+            }
+            return
+        }
+        let activeItems = viewModel.activeMediaCards
         if !activeItems.isEmpty {
             if !mountedTracker.hasAnyMounted, let firstID = activeItems.first?.id {
-                scrollProxy.scrollTo(firstID, anchor: .top)
+                scrollPosition.scrollTo(id: firstID, anchor: .top)
             }
             if let resolvedID = mountedTracker.resolveEntryID(orderedIDs: activeItems.map(\.id)) {
                 entryCardID = resolvedID
                 cardFocusNonce &+= 1
             }
-        } else if errorMessage != nil && libraryPayload == nil {
+        } else if viewModel.errorMessage != nil && viewModel.libraryPayload == nil {
             fallbackFocus = .retry
-        } else if onSelectTab != nil {
+        } else if onSelectTab != nil, viewModel.activeSection.emptyActionTitle != nil {
             fallbackFocus = .empty
         }
     }
 
     @ViewBuilder
+    private func customListsSection() -> some View {
+        let lists = viewModel.customLists
+        if lists.isEmpty {
+            emptyStateCard
+        } else {
+            LunaListGroup {
+                ForEach(Array(lists.enumerated()), id: \.element.id) { idx, list in
+                    LunaListRow(
+                        title: list.name,
+                        subtitle: customListSubtitle(for: list),
+                        trailingText: LunaCopy.plural(list.itemCount, "tittel", "titler"),
+                        showsChevron: true,
+                        externalIsFocused: focusedCustomListID == list.id
+                    ) {
+                        selectedCustomList = list
+                    }
+                    .id(list.id)
+                    .focused($focusedCustomListID, equals: list.id)
+
+                    if idx < lists.count - 1 {
+                        LunaListDivider()
+                    }
+                }
+            }
+            .scrollTargetLayout()
+            .padding(.bottom, 32)
+        }
+    }
+
+    private func customListSubtitle(for list: TvLibraryCustomList) -> String? {
+        switch list.mediaType?.lowercased() {
+        case "movie": return "Filmer"
+        case "series", "tv": return "Serier"
+        default: return nil
+        }
+    }
+
+    @ViewBuilder
     private func sectionGrid(client: LunaCoreClient?) -> some View {
-        let activeItems: [TvMediaCard] = activeSection == .watchlist
-            ? (libraryPayload?.watchlist ?? [])
-            : localItems
+        let activeItems = viewModel.activeMediaCards
 
         if activeItems.isEmpty {
             emptyStateCard
         } else {
             LazyVGrid(columns: columns, alignment: .leading, spacing: LunaTokens.Layout.gridRowGap) {
-                let prefetchThreshold = max(0, localItems.count - 6)
+                let prefetchThreshold = max(0, viewModel.localItems.count - 6)
                 ForEach(Array(activeItems.enumerated()), id: \.element.id) { idx, card in
                     PosterCardView(
                         card: card,
@@ -216,12 +246,12 @@ struct LibraryHubView: View {
                                 selectedCard = card
                             },
                             onToggleWatched: {
-                                Task { await toggleWatched(card) }
+                                Task { await viewModel.toggleWatched(card, session: sessionStore) }
                             },
                             onToggleWatchlist: {
-                                Task { await toggleWatchlist(card) }
+                                Task { await viewModel.toggleWatchlist(card, session: sessionStore) }
                             },
-                            onRequestDelete: activeSection != .watchlist ? {
+                            onRequestDelete: viewModel.activeSection != .watchlist ? {
                                 pendingDeleteTarget = TvDeleteRequestTarget(
                                     kind: card.mediaType,
                                     itemId: card.itemId,
@@ -240,20 +270,18 @@ struct LibraryHubView: View {
                             afterIndex: idx,
                             client: client
                         )
-                        if activeSection != .watchlist,
+                        if (viewModel.activeSection == .movies || viewModel.activeSection == .series),
                            idx >= prefetchThreshold,
-                           localHasMore,
-                           !isLoadingMoreLocal {
-                            loadMoreTask?.cancel()
-                            loadMoreTask = Task { @MainActor in
-                                await loadMoreLocalItems()
-                            }
+                           viewModel.localHasMore,
+                           !viewModel.isLoadingMoreLocal {
+                            viewModel.scheduleLoadMoreLocalItems(session: sessionStore)
                         }
                     }
                 }
             }
+            .scrollTargetLayout()
 
-            if activeSection != .watchlist && isLoadingMoreLocal {
+            if (viewModel.activeSection == .movies || viewModel.activeSection == .series) && viewModel.isLoadingMoreLocal {
                 HStack {
                     Spacer()
                     ProgressView()
@@ -266,203 +294,19 @@ struct LibraryHubView: View {
 
     @ViewBuilder
     private var emptyStateCard: some View {
-        let buttonTitle = onSelectTab != nil ? activeSection.emptyActionTitle : nil
+        let buttonTitle = onSelectTab != nil ? viewModel.activeSection.emptyActionTitle : nil
         let view = LunaEmptyState(
-            headline: activeSection.emptyHeadline,
+            headline: viewModel.activeSection.emptyHeadline,
             actionTitle: buttonTitle,
-            actionSymbol: activeSection == .series ? "tv" : "film",
+            actionSymbol: viewModel.activeSection.emptyActionSymbol,
             onAction: buttonTitle == nil ? nil : {
-                onSelectTab?(activeSection.emptyTargetTab)
+                onSelectTab?(viewModel.activeSection.emptyTargetTab)
             }
         )
         if buttonTitle != nil {
             view.focused($fallbackFocus, equals: .empty)
         } else {
             view
-        }
-    }
-
-    private func persistLibrarySnapshot(for key: String, payload: TvLibraryResponse, fetchedAt: Date? = nil) {
-        let existing = LibraryBrowseMemoryCache.shared.snapshot(for: key)
-        LibraryBrowseMemoryCache.shared.store(
-            LibraryBrowseSnapshot(
-                payload: payload,
-                localItems: localItems,
-                localOffset: localOffset,
-                localHasMore: localHasMore,
-                fetchedAt: fetchedAt ?? existing?.fetchedAt ?? Date(),
-                refreshNonce: sessionStore.homeRefreshNonce
-            ),
-            for: key
-        )
-    }
-
-    private func scheduleReloadLibrary(forceNetwork: Bool) {
-        reloadTask?.cancel()
-        loadMoreTask?.cancel()
-        loadMoreTask = nil
-        reloadGeneration &+= 1
-        let gen = reloadGeneration
-        reloadTask = Task { @MainActor in
-            await loadLibrary(forceNetwork: forceNetwork, generation: gen)
-            if reloadGeneration == gen {
-                reloadTask = nil
-            }
-        }
-    }
-
-    private func applyInitialSectionResolutionIfNeeded(counts: TvLibraryCounts) {
-        let resolution = LibraryFilterSection.resolveInitialSection(
-            counts: counts,
-            didApplyInitialFallback: didApplyInitialSectionFallback,
-            current: activeSection
-        )
-        didApplyInitialSectionFallback = resolution.didApplyInitialFallback
-        if resolution.section != activeSection {
-            activeSection = resolution.section
-        }
-    }
-
-    private func loadLibrary(forceNetwork: Bool = false, generation: UInt64? = nil) async {
-        guard let client = sessionStore.makeClient() else { return }
-        let targetKey = queryKey
-        let currentNonce = sessionStore.homeRefreshNonce
-
-        if let cached = LibraryBrowseMemoryCache.shared.snapshot(for: targetKey) {
-            libraryPayload = cached.payload
-            localItems = cached.localItems
-            localOffset = cached.localOffset
-            localHasMore = cached.localHasMore
-            isLoading = false
-            applyInitialSectionResolutionIfNeeded(counts: cached.payload.counts)
-
-            if !forceNetwork,
-               TabContentFreshnessPolicy.isCacheFresh(
-                   hasCachedContent: true,
-                   lastValidatedAt: cached.fetchedAt,
-                   cachedRefreshNonce: cached.refreshNonce,
-                   currentRefreshNonce: currentNonce,
-                   freshnessInterval: TabContentFreshnessPolicy.effectiveFreshnessInterval
-               ) {
-                errorMessage = nil
-                return
-            }
-        } else {
-            isLoading = true
-        }
-        errorMessage = nil
-
-        do {
-            let res = try await client.fetchLibrary(
-                section: activeSection.apiSection,
-                tier: "all",
-                mediaType: activeSection.apiMediaType,
-                sort: "recent",
-                offset: 0,
-                limit: pageSize
-            )
-            guard !Task.isCancelled, (generation == nil || generation == reloadGeneration), queryKey == targetKey else { return }
-            libraryPayload = res
-            localItems = res.localItems
-            localOffset = res.localItems.count
-            localHasMore = res.localHasMore ?? false
-            persistLibrarySnapshot(for: targetKey, payload: res, fetchedAt: Date())
-            applyInitialSectionResolutionIfNeeded(counts: res.counts)
-        } catch where LunaCoreError.isCancellation(error) {
-            return
-        } catch LunaCoreError.unauthorized {
-            LibraryBrowseMemoryCache.shared.clear()
-            sessionStore.unpairDevice()
-        } catch {
-            guard !Task.isCancelled, (generation == nil || generation == reloadGeneration) else { return }
-            if libraryPayload == nil {
-                errorMessage = LunaCopy.friendlyErrorMessage(error)
-            }
-        }
-        if generation == nil || generation == reloadGeneration {
-            isLoading = false
-        }
-    }
-
-    private func loadMoreLocalItems() async {
-        guard !isLoadingMoreLocal, localHasMore, let client = sessionStore.makeClient() else { return }
-        let targetKey = queryKey
-        let gen = reloadGeneration
-        isLoadingMoreLocal = true
-        defer { isLoadingMoreLocal = false }
-
-        do {
-            let res = try await client.fetchLibrary(
-                section: "local",
-                tier: "all",
-                mediaType: activeSection.apiMediaType,
-                sort: "recent",
-                offset: localOffset,
-                limit: pageSize
-            )
-            guard !Task.isCancelled, gen == reloadGeneration, queryKey == targetKey else {
-                return
-            }
-            let existing = Set(localItems.map(\.id))
-            let fresh = res.localItems.filter { !existing.contains($0.id) }
-            localItems.append(contentsOf: fresh)
-            localOffset += res.localItems.count
-            localHasMore = res.localHasMore ?? false
-            if let payload = libraryPayload {
-                persistLibrarySnapshot(for: targetKey, payload: payload)
-            }
-        } catch where LunaCoreError.isCancellation(error) {
-            return
-        } catch LunaCoreError.unauthorized {
-            LibraryBrowseMemoryCache.shared.clear()
-            sessionStore.unpairDevice()
-        } catch {
-            guard !Task.isCancelled, gen == reloadGeneration else { return }
-            showMutationError(error)
-        }
-    }
-
-    private func showMutationError(_ error: Error) {
-        mutationErrorBanner = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
-    }
-
-    private func markLocalMutationAndReload() async {
-        reloadTask?.cancel()
-        reloadTask = nil
-        loadMoreTask?.cancel()
-        loadMoreTask = nil
-        reloadGeneration &+= 1
-        let gen = reloadGeneration
-        LibraryBrowseMemoryCache.shared.clear()
-        lastSeenRefreshNonce = sessionStore.homeRefreshNonce &+ 1
-        sessionStore.notifyContentMutated()
-        await loadLibrary(forceNetwork: true, generation: gen)
-    }
-
-    private func toggleWatchlist(_ card: TvMediaCard) async {
-        let nextListed = !(card.inWatchlist ?? false)
-        do {
-            if try await MediaCardMutator.setWatchlist(for: card, listed: nextListed, sessionStore: sessionStore) {
-                await markLocalMutationAndReload()
-            }
-        } catch {
-            showMutationError(error)
-        }
-    }
-
-    private func toggleWatched(_ card: TvMediaCard) async {
-        let nextWatched = !(card.progress?.watched ?? false)
-        do {
-            if try await MediaCardMutator.toggleWatched(
-                for: card,
-                watched: nextWatched,
-                preferSeriesEpisodeTarget: true,
-                sessionStore: sessionStore
-            ) {
-                await markLocalMutationAndReload()
-            }
-        } catch {
-            showMutationError(error)
         }
     }
 }
@@ -485,8 +329,8 @@ private struct LibraryFilterStripView: View {
         HStack(spacing: 14) {
             ForEach(LibraryFilterSection.allCases) { section in
                 LunaPillButton(
-                    section.label,
-                    badgeText: section.countValue(from: counts).map(String.init),
+                    section.pillTitle(counts: counts),
+                    badgeText: section.pillBadgeText(counts: counts),
                     isSelected: activeSection == section,
                     prominence: .glassPill,
                     size: .compact

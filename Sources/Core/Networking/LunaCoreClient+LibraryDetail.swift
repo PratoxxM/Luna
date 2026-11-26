@@ -3,6 +3,13 @@ import Foundation
 import FoundationNetworking
 #endif
 
+public enum TvLibrarySectionFilter: String, CaseIterable, Sendable {
+    case all
+    case local
+    case watchlist
+    case lists
+}
+
 extension LunaCoreClient {
     // MARK: - Library, Item Detail, Search & Mutations
 
@@ -12,8 +19,9 @@ extension LunaCoreClient {
         mediaType: String = "all",
         sort: String = "recent",
         offset: Int = 0,
-        limit: Int = 36
-    ) async throws -> TvLibraryResponse {
+        limit: Int = 36,
+        ifNoneMatch: String? = nil
+    ) async throws -> ConditionalHTTPResult<TvLibraryResponse> {
         let items: [URLQueryItem] = [
             URLQueryItem(name: "section", value: section),
             URLQueryItem(name: "tier", value: tier),
@@ -22,13 +30,33 @@ extension LunaCoreClient {
             URLQueryItem(name: "offset", value: String(max(0, offset))),
             URLQueryItem(name: "limit", value: String(max(1, limit))),
         ]
-        let path = buildQueryPath("/api/tv/v1/library", queryItems: items)
-        return try await sendJSON(method: "GET", path: path)
+        let path = buildQueryPath("/api/tv/v2/library", queryItems: items)
+        return try await sendConditionalGET(path: path, ifNoneMatch: ifNoneMatch)
+    }
+
+    public func fetchLibrary(
+        section: TvLibrarySectionFilter,
+        tier: String = "all",
+        mediaType: String = "all",
+        sort: String = "recent",
+        offset: Int = 0,
+        limit: Int = 36,
+        ifNoneMatch: String? = nil
+    ) async throws -> ConditionalHTTPResult<TvLibraryResponse> {
+        try await fetchLibrary(
+            section: section.rawValue,
+            tier: tier,
+            mediaType: mediaType,
+            sort: sort,
+            offset: offset,
+            limit: limit,
+            ifNoneMatch: ifNoneMatch
+        )
     }
 
     public func fetchItemDetail(mediaType: String, itemId: String, seasonNumber: Int? = nil) async throws -> TvItemDetail {
         let encodedId = itemId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? itemId
-        var path = "/api/tv/v1/items/\(mediaType)/\(encodedId)"
+        var path = "/api/tv/v2/items/\(mediaType)/\(encodedId)"
         if let seasonNumber, seasonNumber > 0 {
             path += "?season=\(seasonNumber)"
         }
@@ -39,7 +67,7 @@ extension LunaCoreClient {
     public func fetchSeasonEpisodes(tmdbId: Int, seasonNumber: Int) async throws -> TvSeasonDetailResponse {
         try await sendJSON(
             method: "GET",
-            path: "/api/tv/v1/items/series/\(tmdbId)/seasons/\(seasonNumber)"
+            path: "/api/tv/v2/items/series/\(tmdbId)/seasons/\(seasonNumber)"
         )
     }
 
@@ -48,7 +76,7 @@ extension LunaCoreClient {
             URLQueryItem(name: "q", value: query),
             URLQueryItem(name: "limit", value: String(max(1, limit))),
         ]
-        let path = buildQueryPath("/api/tv/v1/search", queryItems: items)
+        let path = buildQueryPath("/api/tv/v2/search", queryItems: items)
         return try await sendJSON(method: "GET", path: path)
     }
 
@@ -65,7 +93,7 @@ extension LunaCoreClient {
         }
         let _: TvMutationAckResponse = try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/watchlist",
+            path: "/api/tv/v2/watchlist",
             body: BodyPayload(
                 listed: listed,
                 item: ItemPayload(kind: mediaType, title: title, year: year, ids: ids)
@@ -82,7 +110,7 @@ extension LunaCoreClient {
         }
         let _: TvMutationAckResponse = try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/continue/remove",
+            path: "/api/tv/v2/continue/remove",
             body: BodyPayload(itemId: itemId, mediaType: mediaType, ids: ids, title: title)
         )
     }
@@ -99,7 +127,7 @@ extension LunaCoreClient {
         let encodedRowId = cleanId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? cleanId
         let res: TvRowRemoveResponse = try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/rows/\(encodedRowId)/remove",
+            path: "/api/tv/v2/rows/\(encodedRowId)/remove",
             body: BodyPayload(itemId: itemId, mediaType: mediaType, ids: ids, title: title)
         )
         return res.removed ?? res.ok
@@ -117,7 +145,7 @@ extension LunaCoreClient {
         }
         return try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/delete/preflight",
+            path: "/api/tv/v2/delete/preflight",
             body: BodyPayload(
                 itemId: target.itemId,
                 mediaType: target.kind,
@@ -148,7 +176,7 @@ extension LunaCoreClient {
         }
         return try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/delete",
+            path: "/api/tv/v2/delete",
             body: BodyPayload(
                 itemId: target.itemId,
                 mediaType: target.kind,
@@ -184,7 +212,7 @@ extension LunaCoreClient {
         }
         return try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/monitor",
+            path: "/api/tv/v2/monitor",
             body: BodyPayload(
                 monitored: monitored,
                 monitorMode: monitorMode,
@@ -216,7 +244,7 @@ extension LunaCoreClient {
         }
         let _: TvMutationAckResponse = try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/watched",
+            path: "/api/tv/v2/watched",
             body: BodyPayload(
                 watched: watched,
                 item: ItemPayload(kind: mediaType, title: title, year: year, ids: ids, season: season, episode: episode)

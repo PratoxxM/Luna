@@ -90,7 +90,7 @@ private final class MockSourcePickerSessionClient: SourcePickerSessionClient, @u
               "releaseTitle": "Movie.2024.2160p",
               "source": "nvme"
             },
-            "stream": { "url": "/api/tv/v1/streams/\(sid)/master" },
+            "stream": { "url": "/api/tv/v2/streams/\(sid)/master" },
             "aetherConfig": {
               "preferDualLayerDolbyVision": false,
               "dolbyVisionHandling": "baseLayerOnly",
@@ -170,6 +170,10 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
     @MainActor
     func testNormalizeServerURLTrimsAddsSchemeAndRejectsEmpty() {
         XCTAssertEqual(
+            AppSessionStore.normalizeServerURL("  https://tv.example.test:8920/api/tv/v2/ ")?.absoluteString,
+            "https://tv.example.test:8920"
+        )
+        XCTAssertEqual(
             AppSessionStore.normalizeServerURL("  https://tv.example.test:8920/api/tv/v1/ ")?.absoluteString,
             "https://tv.example.test:8920"
         )
@@ -190,14 +194,14 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
             allowSelfSignedLanTLS: true
         )
 
-        XCTAssertTrue(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "https://tv.example.test:8920/api/tv/v1/img/1"))))
-        XCTAssertTrue(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "http://tv.example.test:8090/api/tv/v1/stream/s1/tok/v.mkv"))))
+        XCTAssertTrue(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "https://tv.example.test:8920/api/tv/v2/img/1"))))
+        XCTAssertTrue(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "http://tv.example.test:8090/api/tv/v2/stream/s1/tok/v.mkv"))))
         XCTAssertFalse(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "https://image.tmdb.example.net/t/p/original/a.jpg"))))
-        XCTAssertFalse(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "http://tv.example.test:9999/api/tv/v1/img/1"))))
-        XCTAssertFalse(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "https://tv.example.test:8090/api/tv/v1/img/1"))))
-        XCTAssertFalse(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "http://tv.example.test:8920/api/tv/v1/img/1"))))
+        XCTAssertFalse(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "http://tv.example.test:9999/api/tv/v2/img/1"))))
+        XCTAssertFalse(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "https://tv.example.test:8090/api/tv/v2/img/1"))))
+        XCTAssertFalse(tlsClient.isSameOrigin(try XCTUnwrap(URL(string: "http://tv.example.test:8920/api/tv/v2/img/1"))))
 
-        let lanStreamURL = try XCTUnwrap(URL(string: "http://tv.example.test:8090/api/tv/v1/stream/s1/tok/v.mkv"))
+        let lanStreamURL = try XCTUnwrap(URL(string: "http://tv.example.test:8090/api/tv/v2/stream/s1/tok/v.mkv"))
         let foreignStreamURL = try XCTUnwrap(URL(string: "https://cdn.example.net/video.mkv"))
         XCTAssertEqual(tlsClient.streamHTTPHeaders(for: lanStreamURL)["Authorization"], "Bearer token-placeholder")
         XCTAssertNil(tlsClient.streamHTTPHeaders(for: foreignStreamURL)["Authorization"])
@@ -535,16 +539,16 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
             "https://image.tmdb.org/t/p/w1280/large.jpg"
         )
         XCTAssertEqual(
-            client.resolveArtworkURL("/api/tv/v1/artwork?src=test&width=320", target: .hero4K)?.absoluteString,
-            "https://media.example.invalid/api/tv/v1/artwork?src=test&width=3840"
+            client.resolveArtworkURL("/api/tv/v2/artwork?src=test&width=320", target: .hero4K)?.absoluteString,
+            "https://media.example.invalid/api/tv/v2/artwork?src=test&width=3840"
         )
         XCTAssertEqual(
-            client.resolveArtworkURL("/api/tv/v1/img/card/tmdb/hero.jpg", target: .hero4K)?.absoluteString,
-            "https://media.example.invalid/api/tv/v1/img/backdrop/tmdb/hero.jpg"
+            client.resolveArtworkURL("/api/tv/v2/img/card/tmdb/hero.jpg", target: .hero4K)?.absoluteString,
+            "https://media.example.invalid/api/tv/v2/img/backdrop/tmdb/hero.jpg"
         )
         XCTAssertEqual(
-            client.resolveArtworkURL("/api/tv/v1/img/card/tmdb/hero.jpg", target: .landscape2x)?.absoluteString,
-            "https://media.example.invalid/api/tv/v1/img/card/tmdb/hero.jpg"
+            client.resolveArtworkURL("/api/tv/v2/img/card/tmdb/hero.jpg", target: .landscape2x)?.absoluteString,
+            "https://media.example.invalid/api/tv/v2/img/card/tmdb/hero.jpg"
         )
         XCTAssertNil(client.resolveArtworkURL("   ", target: .poster2x))
     }
@@ -564,15 +568,15 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
             ArtworkPipeline.canonicalSubjectIdentity(for: orig4KURL)
         )
 
-        let lanCard = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v1/img/card/tmdb/severance_hero.jpg"))
-        let lanBackdrop = try XCTUnwrap(URL(string: "https://\(host):8920/api/tv/v1/img/backdrop/tmdb/severance_hero.jpg"))
+        let lanCard = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/img/card/tmdb/severance_hero.jpg"))
+        let lanBackdrop = try XCTUnwrap(URL(string: "https://\(host):8920/api/tv/v2/img/backdrop/tmdb/severance_hero.jpg"))
         XCTAssertEqual(
             ArtworkPipeline.canonicalSubjectIdentity(for: lanCard),
             ArtworkPipeline.canonicalSubjectIdentity(for: lanBackdrop)
         )
 
-        let lan1280 = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v1/artwork/backdrop?id=550&w=1280"))
-        let lan3840 = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v1/artwork/backdrop?id=550&w=3840"))
+        let lan1280 = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/artwork/backdrop?id=550&w=1280"))
+        let lan3840 = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/artwork/backdrop?id=550&w=3840"))
         XCTAssertEqual(
             ArtworkPipeline.canonicalSubjectIdentity(for: lan1280),
             ArtworkPipeline.canonicalSubjectIdentity(for: lan3840)
@@ -613,7 +617,7 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
             return (resp, pngBytes)
         }
         let client = try MockURLProtocol.makeClient(host: host)
-        let grayURL = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v1/img/grayscale.png"))
+        let grayURL = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/img/grayscale.png"))
         let loadedGray = await ArtworkPipeline.shared.loadImage(url: grayURL, maxPixelSize: 1920, client: client)
         XCTAssertNotNil(loadedGray, "Grayscale artwork must never be lost if byPreparingForDisplay() returns nil")
         XCTAssertEqual(loadedGray?.width, 16, "downsampleAndDecode must clamp maxPixelSize to native pixel dimensions")

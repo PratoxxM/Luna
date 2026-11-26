@@ -12,6 +12,11 @@ private final class MockDetailSessionContext: MediaDetailSessionContext {
     var client: LunaCoreClient?
     var mutateCalls: Int = 0
     var unpairCalls: Int = 0
+    let stopReceiptStore = PlaybackStopReceiptStore()
+
+    var lastPlaybackStopReceipt: PlaybackStopReceipt? {
+        stopReceiptStore.lastReceipt
+    }
 
     func makeClient() -> LunaCoreClient? { client }
     func notifyContentMutated() {
@@ -20,6 +25,22 @@ private final class MockDetailSessionContext: MediaDetailSessionContext {
     }
     func unpairDevice() {
         unpairCalls += 1
+    }
+    func awaitPlaybackStopReceipt(for itemId: String, timeout: Duration) async -> PlaybackStopReceipt? {
+        await stopReceiptStore.awaitReceipt(for: itemId, timeout: timeout)
+    }
+    func awaitPlaybackStopReceipt(
+        for itemId: String,
+        timeout: Duration,
+        recordedAfter: Date?,
+        excluding preLaunchReceipt: PlaybackStopReceipt?
+    ) async -> PlaybackStopReceipt? {
+        await stopReceiptStore.awaitReceipt(
+            for: itemId,
+            timeout: timeout,
+            recordedAfter: recordedAfter,
+            excluding: preLaunchReceipt
+        )
     }
 }
 
@@ -91,24 +112,24 @@ final class MediaDetailViewModelTests: XCTestCase {
         MockURLProtocol.register(host: host) { request in
             let url = try XCTUnwrap(request.url)
             switch url.path {
-            case "/api/tv/v1/items/series/series:tmdb:95396":
+            case "/api/tv/v2/items/series/series:tmdb:95396":
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
                 let payload = monitoredState.withLock { $0 }
                     ? seriesDetailJSON
                         .replacingOccurrences(of: "\"monitored\": false", with: "\"monitored\": true,\n            \"monitorMode\": \"unwatched\"")
                     : seriesDetailJSON
                 return (resp, Data(payload.utf8))
-            case "/api/tv/v1/items/series/95396/seasons/2":
+            case "/api/tv/v2/items/series/95396/seasons/2":
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
                 return (resp, Data(season2JSON.utf8))
-            case "/api/tv/v1/watchlist":
+            case "/api/tv/v2/watchlist":
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil, headerFields: nil))
                 return (resp, Data(#"{"error":"Database opptatt"}"#.utf8))
-            case "/api/tv/v1/monitor":
+            case "/api/tv/v2/monitor":
                 monitoredState.withLock { $0 = true }
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
                 return (resp, Data(#"{"ok":true,"monitored":true,"monitorMode":"unwatched"}"#.utf8))
-            case "/api/tv/v1/playback/prepare":
+            case "/api/tv/v2/playback/prepare":
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
                 return (resp, Data(#"{"ok":true,"status":"ready","prepareToken":"prep-tok-1"}"#.utf8))
             default:
@@ -270,14 +291,14 @@ final class MediaDetailViewModelTests: XCTestCase {
         MockURLProtocol.registerAsync(host: host) { request in
             let url = try XCTUnwrap(request.url)
             switch url.path {
-            case "/api/tv/v1/items/series/series:tmdb:95396":
+            case "/api/tv/v2/items/series/series:tmdb:95396":
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
                 return (resp, Data(seriesDetailJSON.utf8))
-            case "/api/tv/v1/items/series/95396/seasons/2":
+            case "/api/tv/v2/items/series/95396/seasons/2":
                 await season2Gate.wait(label: "s2", log: seasonLog)
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
                 return (resp, Data(season2JSON.utf8))
-            case "/api/tv/v1/items/series/95396/seasons/1":
+            case "/api/tv/v2/items/series/95396/seasons/1":
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
                 return (resp, Data(season1JSON.utf8))
             default:
@@ -465,7 +486,7 @@ final class MediaDetailViewModelTests: XCTestCase {
               "tier": "ssd"
             },
             "stream": {
-              "url": "/api/tv/v1/stream/tvs_interstellar_1/secret_stream_token_1234/Interstellar.mkv",
+              "url": "/api/tv/v2/stream/tvs_interstellar_1/secret_stream_token_1234/Interstellar.mkv",
               "canClientPrewarmBytes": false
             },
             "aetherConfig": {
@@ -486,7 +507,7 @@ final class MediaDetailViewModelTests: XCTestCase {
                 detailFetches.withLock { $0 += 1 }
                 return (resp, Data(movieJSON.utf8))
             }
-            if url.path == "/api/tv/v1/playback/prepare" {
+            if url.path == "/api/tv/v2/playback/prepare" {
                 return (resp, Data(prepareJSON.utf8))
             }
             return (resp, Data(#"{"ok":true}"#.utf8))
@@ -558,7 +579,7 @@ final class MediaDetailViewModelTests: XCTestCase {
             if url.path.contains("/items/movie/") {
                 return (resp, Data(movieJSON.utf8))
             }
-            if url.path == "/api/tv/v1/playback/prepare" {
+            if url.path == "/api/tv/v2/playback/prepare" {
                 await prepareGate.wait(label: "prep", log: gateLog)
                 if Task.isCancelled {
                     prepareCancelled.withLock { $0 = true }
@@ -635,14 +656,14 @@ final class MediaDetailViewModelTests: XCTestCase {
             let bodyData = MockURLProtocol.bodyData(for: request)
             let bodyStr = String(data: bodyData, encoding: .utf8) ?? ""
             switch url.path {
-            case "/api/tv/v1/items/series/series:tmdb:95396":
+            case "/api/tv/v2/items/series/series:tmdb:95396":
                 detailGetCount.withLock { $0 += 1 }
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
                 return (resp, Data(detailJSON.utf8))
-            case "/api/tv/v1/items/series/95396/seasons/2":
+            case "/api/tv/v2/items/series/95396/seasons/2":
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 503, httpVersion: nil, headerFields: nil))
                 return (resp, Data(#"{"error":"Sesong utilgjengelig"}"#.utf8))
-            case "/api/tv/v1/playback/prepare":
+            case "/api/tv/v2/playback/prepare":
                 if let data = bodyStr.data(using: .utf8),
                    let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let tok = obj["prepareToken"] as? String {
@@ -651,7 +672,7 @@ final class MediaDetailViewModelTests: XCTestCase {
                 await prepareGate.wait(label: "prep", log: gateLog)
                 let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
                 return (resp, Data(#"{"ok":true,"status":"prepared","prepareToken":"tvs_s1e1"}"#.utf8))
-            case "/api/tv/v1/playback/heartbeat":
+            case "/api/tv/v2/playback/heartbeat":
                 if let data = bodyStr.data(using: .utf8),
                    let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    obj["cancelInflight"] as? Bool == true,
@@ -695,5 +716,63 @@ final class MediaDetailViewModelTests: XCTestCase {
         let cancelTokens = sentCancelTokens.withLock { $0 }
         XCTAssertEqual(prepTokens.count, 1)
         XCTAssertEqual(cancelTokens, prepTokens)
+    }
+
+    @MainActor
+    func testZeroDelayStopReceiptWakesPostPlaybackRefreshImmediately() async throws {
+        let host = "detail-stop-receipt-\(UUID().uuidString.lowercased()).local"
+        defer {
+            MockURLProtocol.unregister(host: host)
+            ItemDetailMemoryCache.shared.clear()
+        }
+        ItemDetailMemoryCache.shared.clear()
+
+        let detailFetchCount = TestLockedBox(0)
+        let beforeJSON = #"{"ok":true,"item":{"itemId":"series:tmdb:95396","mediaType":"series","ids":{"tmdb":95396},"title":"Severance","inWatchlist":false,"watched":false,"selectedSeason":1,"nextUp":{"season":1,"episode":1},"seasons":[{"seasonNumber":1,"name":"Sesong 1","episodeCount":2}],"episodes":[{"itemId":"episode:tmdb:95396:s1:e1","seasonNumber":1,"episodeNumber":1,"title":"E1","watched":false},{"itemId":"episode:tmdb:95396:s1:e2","seasonNumber":1,"episodeNumber":2,"title":"E2","watched":false}]}}"#
+        let afterJSON = #"{"ok":true,"item":{"itemId":"series:tmdb:95396","mediaType":"series","ids":{"tmdb":95396},"title":"Severance","inWatchlist":false,"watched":false,"selectedSeason":1,"nextUp":{"season":1,"episode":2},"seasons":[{"seasonNumber":1,"name":"Sesong 1","episodeCount":2}],"episodes":[{"itemId":"episode:tmdb:95396:s1:e1","seasonNumber":1,"episodeNumber":1,"title":"E1","watched":true},{"itemId":"episode:tmdb:95396:s1:e2","seasonNumber":1,"episodeNumber":2,"title":"E2","watched":false}]}}"#
+
+        MockURLProtocol.register(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            if url.path.contains("/items/series/") {
+                let count = detailFetchCount.withLock { c -> Int in
+                    c += 1
+                    return c
+                }
+                return (resp, Data((count == 1 ? beforeJSON : afterJSON).utf8))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let context = MockDetailSessionContext()
+        context.client = try MockURLProtocol.makeClient(host: host)
+        let vm = MediaDetailViewModel(mediaType: "series", itemId: "series:tmdb:95396", initialTitle: "Severance")
+        vm.stopReceiptTimeout = .seconds(3)
+        await vm.handleTaskAppearance(scopeKey: "series#series:tmdb:95396#Kjellerstua#dv-fel-714", sessionContext: context)
+        XCTAssertEqual(vm.detail?.nextUp, TvNextUpPointer(season: 1, episode: 1))
+
+        let launched = PlaybackLaunchRequest(itemId: "episode:tmdb:95396:s1:e1", title: "E1", seriesTitle: "Severance", season: 1, episode: 1)
+        context.activePlaybackTarget = launched
+        vm.handlePlaybackTargetChange(oldTarget: nil, newTarget: launched)
+
+        context.stopReceiptStore.record(
+            PlaybackStopReceipt(
+                itemId: "episode:tmdb:95396:s1:e1",
+                mediaType: "episode",
+                seasonNumber: 1,
+                episodeNumber: 1,
+                positionSeconds: 2800,
+                durationSeconds: 2800,
+                completed: true
+            )
+        )
+        context.activePlaybackTarget = nil
+        let start = Date()
+        vm.handlePlaybackTargetChange(oldTarget: launched, newTarget: nil)
+        await vm.postPlaybackReloadFallbackTask?.value
+        let elapsed = Date().timeIntervalSince(start)
+
+        XCTAssertLessThan(elapsed, 0.8, "Stop receipt must wake detail refresh immediately without 2.2 s sleep")
+        XCTAssertEqual(vm.detail?.nextUp, TvNextUpPointer(season: 1, episode: 2))
     }
 }

@@ -5,9 +5,10 @@ struct CoalescedSeekFeedbackPillView: View {
     let deltaSeconds: Double
 
     var body: some View {
-        let secs = Int(deltaSeconds.rounded())
+        let rounded = deltaSeconds.isFinite ? deltaSeconds.rounded() : 0
+        let secs = Int(exactly: rounded) ?? (rounded >= 0 ? Int.max : Int.min)
         let isForward = secs >= 0
-        let displayText = isForward ? "+\(secs) s" : "−\(abs(secs)) s"
+        let displayText = isForward ? "+\(secs) s" : "−\(secs.magnitude) s"
 
         HStack(spacing: 12) {
             Image(systemName: isForward ? "goforward" : "gobackward")

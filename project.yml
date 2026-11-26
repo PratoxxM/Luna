@@ -2,7 +2,7 @@ name: Luna
 options:
   bundleIdPrefix: local.lunacore
   deploymentTarget:
-    tvOS: "18.0"
+    tvOS: "26.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
 
@@ -12,11 +12,11 @@ packages:
 
 settings:
   base:
-    SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "2.12.2"
+    SWIFT_VERSION: "6.2"
+    MARKETING_VERSION: "3.0.0"
     CURRENT_PROJECT_VERSION: "70"
     TARGETED_DEVICE_FAMILY: "3"
-    TVOS_DEPLOYMENT_TARGET: "18.0"
+    TVOS_DEPLOYMENT_TARGET: "26.0"
     ENABLE_USER_SCRIPT_SANDBOXING: "NO"
     ENABLE_DEBUG_DYLIB: "NO"
 
@@ -24,7 +24,7 @@ targets:
   Luna:
     type: application
     platform: tvOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: Sources
       - path: Resources
@@ -47,7 +47,7 @@ targets:
   LunaTests:
     type: bundle.unit-test
     platform: tvOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: Tests/LunaTests
     settings:

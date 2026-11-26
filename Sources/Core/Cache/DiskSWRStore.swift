@@ -17,7 +17,27 @@ public struct CachedHomeSnapshot: Sendable {
     }
 }
 
-private struct HomeCacheMetadata: Codable, Sendable {
+public struct CachedCatalogSnapshot: Sendable {
+    public let etag: String?
+    public let payload: TvCatalogResponse
+
+    public init(etag: String?, payload: TvCatalogResponse) {
+        self.etag = etag
+        self.payload = payload
+    }
+}
+
+public struct CachedLibrarySnapshot: Sendable {
+    public let etag: String?
+    public let payload: TvLibraryResponse
+
+    public init(etag: String?, payload: TvLibraryResponse) {
+        self.etag = etag
+        self.payload = payload
+    }
+}
+
+private struct SWRCacheMetadata: Codable, Sendable {
     let etag: String?
 }
 
@@ -35,26 +55,24 @@ private actor DiskSWRStorageActor {
             .appendingPathComponent("swr", isDirectory: true)
     }
 
-    func loadFromDisk(baseName: String) -> CachedHomeSnapshot? {
+    func loadFromDisk<Payload: Decodable & Sendable>(
+        baseName: String,
+        as type: Payload.Type
+    ) -> (etag: String?, payload: Payload)? {
         let dir = swrDirectoryURL
         let payloadURL = dir.appendingPathComponent("\(baseName).json")
         let metaURL = dir.appendingPathComponent("\(baseName).meta.json")
         guard let payloadData = try? Data(contentsOf: payloadURL),
-              let decoded = try? decoder.decode(TvHomeResponse.self, from: payloadData) else {
+              let decoded = try? decoder.decode(Payload.self, from: payloadData) else {
             return nil
         }
-        let meta: HomeCacheMetadata?
+        let meta: SWRCacheMetadata?
         if let metaData = try? Data(contentsOf: metaURL) {
-            meta = try? decoder.decode(HomeCacheMetadata.self, from: metaData)
+            meta = try? decoder.decode(SWRCacheMetadata.self, from: metaData)
         } else {
             meta = nil
         }
-        let rows = CatalogShelfIndexer.prepareVisibleRows(from: decoded)
-        return CachedHomeSnapshot(
-            etag: meta?.etag,
-            payload: decoded,
-            visibleRows: rows
-        )
+        return (meta?.etag, decoded)
     }
 
     func saveToDisk(rawPayloadData: Data, etag: String?, baseName: String) {
@@ -66,7 +84,7 @@ private actor DiskSWRStorageActor {
         let metaURL = dir.appendingPathComponent("\(baseName).meta.json")
 
         try? rawPayloadData.write(to: payloadURL, options: .atomic)
-        let meta = HomeCacheMetadata(etag: etag)
+        let meta = SWRCacheMetadata(etag: etag)
         if let encodedMeta = try? encoder.encode(meta) {
             try? encodedMeta.write(to: metaURL, options: .atomic)
         }
@@ -82,7 +100,9 @@ private actor DiskSWRStorageActor {
 }
 
 private struct DiskSWRState: Sendable {
-    var snapshots: [String: CachedHomeSnapshot] = [:]
+    var homeSnapshots: [String: CachedHomeSnapshot] = [:]
+    var catalogSnapshots: [String: CachedCatalogSnapshot] = [:]
+    var librarySnapshots: [String: CachedLibrarySnapshot] = [:]
     var clearEpoch: UInt64 = 0
     var activeTasks: [UUID: Task<Void, Never>] = [:]
 }
@@ -101,13 +121,58 @@ public enum DiskSWRStore {
         })
     }
 
-    private static func fileBaseName(serverHost: String?, roomName: String, hardwareProfile: String) -> String {
+    private static func scopedBaseName(
+        prefix: String,
+        serverHost: String?,
+        roomName: String,
+        hardwareProfile: String
+    ) -> String {
         let trimmedHost = serverHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if trimmedHost.isEmpty {
-            return "home-\(sanitize(roomName))-\(sanitize(hardwareProfile))"
+            return "\(prefix)-\(sanitize(roomName))-\(sanitize(hardwareProfile))"
         }
-        return "home-\(sanitize(trimmedHost))-\(sanitize(roomName))-\(sanitize(hardwareProfile))"
+        return "\(prefix)-\(sanitize(trimmedHost))-\(sanitize(roomName))-\(sanitize(hardwareProfile))"
     }
+
+    private static func normalizedCatalogKind(_ kind: String) -> String {
+        let lower = kind.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return (lower == "series" || lower == "tv") ? "series" : "movies"
+    }
+
+    private static func homeBaseName(serverHost: String?, roomName: String, hardwareProfile: String) -> String {
+        scopedBaseName(prefix: "home", serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
+    }
+
+    private static func catalogBaseName(
+        kind: String,
+        serverHost: String?,
+        roomName: String,
+        hardwareProfile: String
+    ) -> String {
+        scopedBaseName(
+            prefix: "catalog-\(normalizedCatalogKind(kind))",
+            serverHost: serverHost,
+            roomName: roomName,
+            hardwareProfile: hardwareProfile
+        )
+    }
+
+    private static func libraryBaseName(
+        section: String,
+        mediaType: String,
+        serverHost: String?,
+        roomName: String,
+        hardwareProfile: String
+    ) -> String {
+        scopedBaseName(
+            prefix: "library-\(sanitize(section))-\(sanitize(mediaType))",
+            serverHost: serverHost,
+            roomName: roomName,
+            hardwareProfile: hardwareProfile
+        )
+    }
+
+    // MARK: - Home SWR
 
     /// 0 ms non-blocking memory snapshot lookup for Frame-1 renders without touching disk.
     public static func memorySnapshot(
@@ -115,8 +180,8 @@ public enum DiskSWRStore {
         roomName: String,
         hardwareProfile: String
     ) -> CachedHomeSnapshot? {
-        let key = fileBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
-        return state.withLock { $0.snapshots[key] }
+        let key = homeBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
+        return state.withLock { $0.homeSnapshots[key] }
     }
 
     public static func loadHomeAsync(
@@ -124,20 +189,25 @@ public enum DiskSWRStore {
         roomName: String,
         hardwareProfile: String
     ) async -> CachedHomeSnapshot? {
-        let primaryKey = fileBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
-        let (cachedHit, startEpoch) = state.withLock { ($0.snapshots[primaryKey], $0.clearEpoch) }
+        let primaryKey = homeBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
+        let (cachedHit, startEpoch) = state.withLock { ($0.homeSnapshots[primaryKey], $0.clearEpoch) }
         if let cachedHit {
             return cachedHit
         }
-        guard let loaded = await DiskSWRStorageActor.shared.loadFromDisk(baseName: primaryKey) else {
+        guard let loaded = await DiskSWRStorageActor.shared.loadFromDisk(baseName: primaryKey, as: TvHomeResponse.self) else {
             return nil
         }
+        let snapshot = CachedHomeSnapshot(
+            etag: loaded.etag,
+            payload: loaded.payload,
+            visibleRows: CatalogShelfIndexer.prepareVisibleRows(from: loaded.payload)
+        )
         return state.withLock { s in
             guard s.clearEpoch == startEpoch, !Task.isCancelled else {
                 return nil
             }
-            s.snapshots[primaryKey] = loaded
-            return loaded
+            s.homeSnapshots[primaryKey] = snapshot
+            return snapshot
         }
     }
 
@@ -150,14 +220,14 @@ public enum DiskSWRStore {
         decodedPayload: TvHomeResponse? = nil,
         precomputedRows: [TvShelfRow]? = nil
     ) {
-        let primaryKey = fileBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
+        let primaryKey = homeBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
         let taskID = UUID()
         let immediateSnapshot: CachedHomeSnapshot? = decodedPayload.map {
             CachedHomeSnapshot(etag: etag, payload: $0, visibleRows: precomputedRows)
         }
         state.withLock { s in
             if let immediateSnapshot {
-                s.snapshots[primaryKey] = immediateSnapshot
+                s.homeSnapshots[primaryKey] = immediateSnapshot
             }
             let epoch = s.clearEpoch
             let created = Task.detached(priority: .utility) {
@@ -170,7 +240,7 @@ public enum DiskSWRStore {
                     let computed = CatalogShelfIndexer.prepareVisibleRows(from: decoded)
                     state.withLock { s in
                         guard s.clearEpoch == epoch, !Task.isCancelled else { return }
-                        s.snapshots[primaryKey] = CachedHomeSnapshot(
+                        s.homeSnapshots[primaryKey] = CachedHomeSnapshot(
                             etag: etag,
                             payload: decoded,
                             visibleRows: computed
@@ -189,12 +259,193 @@ public enum DiskSWRStore {
         }
     }
 
+    // MARK: - Catalog Page 1 SWR (`Filmer` / `Serier`)
+
+    public static func catalogMemorySnapshot(
+        kind: String,
+        serverHost: String? = nil,
+        roomName: String,
+        hardwareProfile: String
+    ) -> CachedCatalogSnapshot? {
+        let key = catalogBaseName(kind: kind, serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
+        return state.withLock { $0.catalogSnapshots[key] }
+    }
+
+    public static func loadCatalogAsync(
+        kind: String,
+        serverHost: String? = nil,
+        roomName: String,
+        hardwareProfile: String
+    ) async -> CachedCatalogSnapshot? {
+        let primaryKey = catalogBaseName(kind: kind, serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
+        let (cachedHit, startEpoch) = state.withLock { ($0.catalogSnapshots[primaryKey], $0.clearEpoch) }
+        if let cachedHit {
+            return cachedHit
+        }
+        guard let loaded = await DiskSWRStorageActor.shared.loadFromDisk(baseName: primaryKey, as: TvCatalogResponse.self) else {
+            return nil
+        }
+        let snapshot = CachedCatalogSnapshot(etag: loaded.etag, payload: loaded.payload)
+        return state.withLock { s in
+            guard s.clearEpoch == startEpoch, !Task.isCancelled else {
+                return nil
+            }
+            s.catalogSnapshots[primaryKey] = snapshot
+            return snapshot
+        }
+    }
+
+    public static func saveCatalogInBackground(
+        rawPayloadData: Data,
+        etag: String?,
+        kind: String,
+        serverHost: String? = nil,
+        roomName: String,
+        hardwareProfile: String,
+        decodedPayload: TvCatalogResponse? = nil
+    ) {
+        let primaryKey = catalogBaseName(kind: kind, serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
+        let taskID = UUID()
+        let immediateSnapshot = decodedPayload.map { CachedCatalogSnapshot(etag: etag, payload: $0) }
+        state.withLock { s in
+            if let immediateSnapshot {
+                s.catalogSnapshots[primaryKey] = immediateSnapshot
+            }
+            let epoch = s.clearEpoch
+            let created = Task.detached(priority: .utility) {
+                defer {
+                    _ = state.withLock { $0.activeTasks.removeValue(forKey: taskID) }
+                }
+                guard !Task.isCancelled else { return }
+                if immediateSnapshot == nil,
+                   let decoded = try? LunaCoreClient.decodeJSON(TvCatalogResponse.self, from: rawPayloadData) {
+                    state.withLock { s in
+                        guard s.clearEpoch == epoch, !Task.isCancelled else { return }
+                        s.catalogSnapshots[primaryKey] = CachedCatalogSnapshot(etag: etag, payload: decoded)
+                    }
+                }
+                let shouldWriteDisk = state.withLock { $0.clearEpoch == epoch && !Task.isCancelled }
+                guard shouldWriteDisk else { return }
+                await DiskSWRStorageActor.shared.saveToDisk(
+                    rawPayloadData: rawPayloadData,
+                    etag: etag,
+                    baseName: primaryKey
+                )
+            }
+            s.activeTasks[taskID] = created
+        }
+    }
+
+    // MARK: - Library Page 1 SWR (`Bibliotek`)
+
+    public static func libraryMemorySnapshot(
+        section: String,
+        mediaType: String,
+        serverHost: String? = nil,
+        roomName: String,
+        hardwareProfile: String
+    ) -> CachedLibrarySnapshot? {
+        let key = libraryBaseName(
+            section: section,
+            mediaType: mediaType,
+            serverHost: serverHost,
+            roomName: roomName,
+            hardwareProfile: hardwareProfile
+        )
+        return state.withLock { $0.librarySnapshots[key] }
+    }
+
+    public static func loadLibraryAsync(
+        section: String,
+        mediaType: String,
+        serverHost: String? = nil,
+        roomName: String,
+        hardwareProfile: String
+    ) async -> CachedLibrarySnapshot? {
+        let primaryKey = libraryBaseName(
+            section: section,
+            mediaType: mediaType,
+            serverHost: serverHost,
+            roomName: roomName,
+            hardwareProfile: hardwareProfile
+        )
+        let (cachedHit, startEpoch) = state.withLock { ($0.librarySnapshots[primaryKey], $0.clearEpoch) }
+        if let cachedHit {
+            return cachedHit
+        }
+        guard let loaded = await DiskSWRStorageActor.shared.loadFromDisk(baseName: primaryKey, as: TvLibraryResponse.self) else {
+            return nil
+        }
+        let snapshot = CachedLibrarySnapshot(etag: loaded.etag, payload: loaded.payload)
+        return state.withLock { s in
+            guard s.clearEpoch == startEpoch, !Task.isCancelled else {
+                return nil
+            }
+            s.librarySnapshots[primaryKey] = snapshot
+            return snapshot
+        }
+    }
+
+    public static func saveLibraryInBackground(
+        rawPayloadData: Data,
+        etag: String?,
+        section: String,
+        mediaType: String,
+        serverHost: String? = nil,
+        roomName: String,
+        hardwareProfile: String,
+        decodedPayload: TvLibraryResponse? = nil
+    ) {
+        let primaryKey = libraryBaseName(
+            section: section,
+            mediaType: mediaType,
+            serverHost: serverHost,
+            roomName: roomName,
+            hardwareProfile: hardwareProfile
+        )
+        let taskID = UUID()
+        let immediateSnapshot = decodedPayload.map { CachedLibrarySnapshot(etag: etag, payload: $0) }
+        state.withLock { s in
+            if let immediateSnapshot {
+                s.librarySnapshots[primaryKey] = immediateSnapshot
+            }
+            let epoch = s.clearEpoch
+            let created = Task.detached(priority: .utility) {
+                defer {
+                    _ = state.withLock { $0.activeTasks.removeValue(forKey: taskID) }
+                }
+                guard !Task.isCancelled else { return }
+                if immediateSnapshot == nil,
+                   let decoded = try? LunaCoreClient.decodeJSON(TvLibraryResponse.self, from: rawPayloadData) {
+                    state.withLock { s in
+                        guard s.clearEpoch == epoch, !Task.isCancelled else { return }
+                        s.librarySnapshots[primaryKey] = CachedLibrarySnapshot(etag: etag, payload: decoded)
+                    }
+                }
+                let shouldWriteDisk = state.withLock { $0.clearEpoch == epoch && !Task.isCancelled }
+                guard shouldWriteDisk else { return }
+                await DiskSWRStorageActor.shared.saveToDisk(
+                    rawPayloadData: rawPayloadData,
+                    etag: etag,
+                    baseName: primaryKey
+                )
+            }
+            s.activeTasks[taskID] = created
+        }
+    }
+
+    // MARK: - Maintenance
+
     public static func diskUsageBytesAsync() async -> Int64 {
         await DiskSWRStorageActor.shared.diskUsageBytes()
     }
 
     public static func clearMemory() {
-        state.withLock { $0.snapshots.removeAll() }
+        state.withLock {
+            $0.homeSnapshots.removeAll()
+            $0.catalogSnapshots.removeAll()
+            $0.librarySnapshots.removeAll()
+        }
     }
 
     internal static func drainPendingWrites() async {
@@ -210,7 +461,9 @@ public enum DiskSWRStore {
     public static func clearAllAsync() async {
         let tasksToCancel = state.withLock { s -> [Task<Void, Never>] in
             s.clearEpoch &+= 1
-            s.snapshots.removeAll()
+            s.homeSnapshots.removeAll()
+            s.catalogSnapshots.removeAll()
+            s.librarySnapshots.removeAll()
             let tasks = Array(s.activeTasks.values)
             s.activeTasks.removeAll()
             return tasks
@@ -224,7 +477,9 @@ public enum DiskSWRStore {
         await DiskSWRStorageActor.shared.clearAllDiskFiles()
         state.withLock { s in
             s.clearEpoch &+= 1
-            s.snapshots.removeAll()
+            s.homeSnapshots.removeAll()
+            s.catalogSnapshots.removeAll()
+            s.librarySnapshots.removeAll()
         }
     }
 }

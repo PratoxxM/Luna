@@ -101,4 +101,39 @@ final class SmartTrackRuleEngineTests: XCTestCase {
             .selectTrack(62)
         )
     }
+
+    func testOriginalLanguageTrackSelectorAndNorwegianToggleParity() {
+        let tracks = [
+            PlaybackAudioTrackDescriptor(id: 0, name: "Norsk 5.1", codec: "eac3", language: "nob", channels: 6, isDefault: true),
+            PlaybackAudioTrackDescriptor(id: 1, name: "Japanese Commentary", codec: "truehd", language: "ja", channels: 2, isCommentary: true),
+            PlaybackAudioTrackDescriptor(id: 2, name: "Japanese TrueHD Atmos", codec: "truehd", language: "jpn", channels: 8, isAtmos: true),
+            PlaybackAudioTrackDescriptor(id: 3, name: "English DTS-HD MA", codec: "dts-hd", language: "eng", channels: 8),
+        ]
+        let subs = [
+            SmartTrackDescriptor(id: 10, name: "Norsk", codec: "srt", language: "nob"),
+            SmartTrackDescriptor(id: 11, name: "Norsk (Tvungen)", codec: "srt", language: "nob", isForced: true),
+        ]
+
+        let orig = OriginalLanguageTrackSelector.selectPreferredAudioTrack(
+            in: tracks,
+            originalLanguage: "ja",
+            preferNorwegianAudio: false
+        )
+        XCTAssertEqual(orig?.id, 2)
+        XCTAssertEqual(
+            SmartTrackRuleEngine.evaluate(activeAudio: orig?.asSmartDescriptor, subtitleTracks: subs),
+            .selectTrack(10)
+        )
+
+        let nor = OriginalLanguageTrackSelector.selectPreferredAudioTrack(
+            in: tracks,
+            originalLanguage: "ja",
+            preferNorwegianAudio: true
+        )
+        XCTAssertEqual(nor?.id, 0)
+        XCTAssertEqual(
+            SmartTrackRuleEngine.evaluate(activeAudio: nor?.asSmartDescriptor, subtitleTracks: subs),
+            .selectTrack(11)
+        )
+    }
 }

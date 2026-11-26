@@ -4,6 +4,10 @@ import XCTest
 
 final class BonjourServerBrowserTests: XCTestCase {
     func testParseDiscoveredServiceHandlesIPv4IPv6TLSOverrideAndTxtApiPath() {
+        XCTAssertFalse(BonjourDiscoveryPolicy.restrictsToIPv4Only)
+        XCTAssertTrue(BonjourDiscoveryPolicy.allowsIPv4)
+        XCTAssertTrue(BonjourDiscoveryPolicy.allowsIPv6)
+
         let httpServer = BonjourServerBrowser.parseDiscoveredService(
             id: "LunaCore._lunacore._tcp.local.",
             serviceName: "LunaCore",
@@ -12,7 +16,7 @@ final class BonjourServerBrowserTests: XCTestCase {
             txt: [:]
         )
         XCTAssertEqual(httpServer?.baseURL.absoluteString, "http://lunacore.local:8090")
-        XCTAssertEqual(httpServer?.apiPath, "/api/tv/v1")
+        XCTAssertEqual(httpServer?.apiPath, "/api/tv/v2")
         XCTAssertEqual(httpServer?.displayAddress, "http://lunacore.local:8090")
 
         let tlsServer = BonjourServerBrowser.parseDiscoveredService(
@@ -20,20 +24,20 @@ final class BonjourServerBrowserTests: XCTestCase {
             serviceName: "LunaCore",
             rawHost: "lunacore.example.test",
             port: 8090,
-            txt: ["https_port": "8920", "api": "/api/tv/v1"]
+            txt: ["https_port": "8920", "api": "/api/tv/v2"]
         )
         XCTAssertEqual(tlsServer?.baseURL.absoluteString, "https://lunacore.example.test:8920")
-        XCTAssertEqual(tlsServer?.apiPath, "/api/tv/v1")
+        XCTAssertEqual(tlsServer?.apiPath, "/api/tv/v2")
 
         let tlsPortAlias = BonjourServerBrowser.parseDiscoveredService(
             id: "LunaCore-2._lunacore._tcp.local.",
             serviceName: "LunaCore-2",
-            rawHost: "[fd00::1]",
+            rawHost: "[2001:db8::1]",
             port: 8090,
             txt: ["tls_port": " 8920 ", "api": "  "]
         )
-        XCTAssertEqual(tlsPortAlias?.baseURL.absoluteString, "https://[fd00::1]:8920")
-        XCTAssertEqual(tlsPortAlias?.apiPath, "/api/tv/v1")
+        XCTAssertEqual(tlsPortAlias?.baseURL.absoluteString, "https://[2001:db8::1]:8920")
+        XCTAssertEqual(tlsPortAlias?.apiPath, "/api/tv/v2")
 
         let zoneStrippedHostname = BonjourServerBrowser.parseDiscoveredService(
             id: "svc",

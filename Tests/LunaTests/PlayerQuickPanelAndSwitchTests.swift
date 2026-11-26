@@ -35,7 +35,7 @@ final class PlayerQuickPanelAndSwitchTests: XCTestCase {
             "audioCodec": "TrueHD Atmos"
           },
           "stream": {
-            "url": "/api/tv/v1/stream/\(sessionId)/tok-switch-secret-998877/video.mkv"\(startField)
+            "url": "/api/tv/v2/stream/\(sessionId)/tok-switch-secret-998877/video.mkv"\(startField)
           },
           "aetherConfig": {
             "preferDualLayerDolbyVision": true,
@@ -310,5 +310,152 @@ final class PlayerQuickPanelAndSwitchTests: XCTestCase {
             XCTAssertEqual(preset.foregroundColor(isHDR: false), preset.foregroundColor(isHDR: true))
             XCTAssertEqual(preset.bitmapMultiplyColor(isHDR: false), preset.bitmapMultiplyColor(isHDR: true))
         }
+    }
+
+    @MainActor
+    func testOriginalLanguageNorwegianToggleSofaSubtitlesAutoAlignDelayMemoryAndHDR10BaseLayer() async throws {
+        let host = "m3-features-\(UUID().uuidString.lowercased()).local"
+        let suite = "luna.v1.test.m3features.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer {
+            MockURLProtocol.unregister(host: host)
+            defaults.removePersistentDomain(forName: suite)
+        }
+
+        let autoAlignBodies = TestLockedBox<[Data]>([])
+        MockURLProtocol.register(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            if url.path.hasSuffix("/subtitles/search-and-attach") {
+                let body = #"""
+                {"ok":true,"sessionId":"sess-m3-1","attached":true,"status":"attached","subtitle":{"id":"ext-nob-1","url":"/api/tv/v2/subtitles/sess-m3-1/0/nob.srt","format":"srt","language":"nob","name":"Norsk (SubDL)","isDefault":true},"externalSubtitles":[{"id":"ext-nob-1","url":"/api/tv/v2/subtitles/sess-m3-1/0/nob.srt","format":"srt","language":"nob","name":"Norsk (SubDL)","isDefault":true}],"subtitleDelayMs":200}
+                """#
+                return (resp, Data(body.utf8))
+            }
+            if url.path.hasSuffix("/subtitles/auto-align") {
+                autoAlignBodies.withLock { $0.append(MockURLProtocol.bodyData(for: request)) }
+                let body = #"{"ok":true,"sessionId":"sess-m3-1","applied":true,"mode":"reference_srt","offsetMs":-150,"scale":1.0,"subtitleDelayMs":-150}"#
+                return (resp, Data(body.utf8))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let sessionJSON = #"""
+        {
+          "sessionId": "sess-m3-1",
+          "streamToken": "tok-m3-secret-556677",
+          "roomName": "Kjellerstua",
+          "hardwareProfile": "dv-fel-714",
+          "item": {
+            "itemId": "movie:tmdb:129",
+            "mediaType": "movie",
+            "ids": { "tmdb": 129 },
+            "title": "Chihiro og heksene",
+            "originalLanguage": "ja"
+          },
+          "selectedCandidate": {
+            "candidateId": "cand-jp-1",
+            "displayHeadline": "4K DV P7 FEL",
+            "releaseTitle": "Spirited.Away.2160p",
+            "source": "nvme"
+          },
+          "stream": { "url": "/api/tv/v2/stream/sess-m3-1/tok-m3-secret-556677/video.mkv" },
+          "aetherConfig": {
+            "preferDualLayerDolbyVision": true,
+            "foldsDolbyVisionFEL": true,
+            "dolbyVisionHandling": "automatic",
+            "matchContentEnabled": true,
+            "audioBridgeMode": "lossless"
+          }
+        }
+        """#
+        let session = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(sessionJSON.utf8))
+        let client = try MockURLProtocol.makeClient(host: host)
+        let comfort = ComfortPreferences(defaults: defaults)
+        let prefStore = PlaybackPreferenceStore(defaults: defaults)
+        let engine = try LunaApp.makeSharedEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+
+        let transport = FakePlayerTransport(state: .playing, playbackPhase: .playing, videoRoute: .software)
+        transport.audioTrackDescriptors = [
+            PlaybackAudioTrackDescriptor(id: 0, name: "Norsk 5.1", codec: "eac3", language: "nob", channels: 6),
+            PlaybackAudioTrackDescriptor(id: 1, name: "Japanese TrueHD Atmos", codec: "truehd", language: "jpn", channels: 8, isAtmos: true),
+        ]
+        transport.subtitleTrackDescriptors = [
+            SmartTrackDescriptor(id: 10, name: "Norsk", codec: "srt", language: "nob"),
+            SmartTrackDescriptor(id: 11, name: "Norsk (Tvungen)", codec: "srt", language: "nob", isForced: true),
+        ]
+
+        let opts = PlayerViewModel.buildLoadOptions(
+            session: session,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0
+        )
+        XCTAssertEqual(opts.preferredAudioLanguages, ["jpn", "ja", "eng"])
+
+        let vm = PlayerViewModel(
+            engine: engine,
+            comfort: comfort,
+            transport: transport,
+            audioActivator: MockNativeAudioActivator { _ in },
+            preferenceStore: prefStore,
+            bindOnInit: false
+        )
+        vm.activeClient = client
+        vm.activeSession = session
+        vm.isResolving = false
+        vm.videoFormat = .dolbyVision
+        vm.qosReporter.sourceDVProfile = 7
+
+        XCTAssertTrue(vm.hasNorwegianAudioTrack)
+        XCTAssertFalse(vm.preferNorwegianAudio)
+        vm.togglePreferNorwegianAudio()
+        XCTAssertTrue(vm.preferNorwegianAudio)
+        XCTAssertTrue(prefStore.preferNorwegianAudio(forItemId: "movie:tmdb:129"))
+        XCTAssertEqual(vm.activeAudioTrackIndex, 0)
+        XCTAssertEqual(vm.activeSubtitleTrackIndex, 11)
+
+        // Sofa search-and-attach reloads in place without restarting stream
+        let attached = await vm.trackController.performSearchAndAttachSubtitles()
+        XCTAssertTrue(attached)
+        XCTAssertEqual(transport.reloadCallCount, 1)
+        XCTAssertEqual(transport.lastReloadedOptions?.externalSubtitles.count, 1)
+        XCTAssertEqual(vm.subtitleDelayMs, 200)
+        XCTAssertEqual(prefStore.subtitleDelayMs(forCandidateId: "cand-jp-1"), 200)
+
+        // Auto-align omits subtitleDelayMs (both when non-zero and when zero) so LunaCore runs automatic alignment
+        let aligned = await vm.trackController.performAutoAlignActiveSubtitle()
+        XCTAssertTrue(aligned)
+        XCTAssertEqual(vm.subtitleDelayMs, -150)
+        XCTAssertEqual(prefStore.subtitleDelayMs(forCandidateId: "cand-jp-1"), -150)
+
+        vm.trackController.resetSubtitleDelay()
+        XCTAssertEqual(vm.subtitleDelayMs, 0)
+        let alignedFromZero = await vm.trackController.performAutoAlignActiveSubtitle()
+        XCTAssertTrue(alignedFromZero)
+
+        let capturedAlignBodies = autoAlignBodies.withLock { $0 }
+        XCTAssertEqual(capturedAlignBodies.count, 2)
+        for bodyData in capturedAlignBodies {
+            let alignJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: bodyData) as? [String: Any])
+            XCTAssertNil(alignJSON["subtitleDelayMs"])
+            XCTAssertNil(alignJSON["delayMs"])
+        }
+
+        // HDR10 base-layer fallback via telemetry threshold + reloadAtCurrentPosition
+        XCTAssertTrue(vm.qosReporter.isProfile7FELActive)
+        vm.qosReporter.recordDolbyVisionTelemetrySample(droppedFrameCount: 30)
+        XCTAssertTrue(vm.suggestsHDR10BaseLayer)
+        XCTAssertTrue(vm.canSwitchToHDR10BaseLayer)
+        await vm.trackController.performSwitchToHDR10BaseLayer()
+        XCTAssertEqual(comfort.dualLayerOverride, .forceOff)
+        XCTAssertEqual(transport.lastReloadedOptions?.dolbyVisionHandling, .baseLayerOnly)
+        XCTAssertEqual(transport.lastReloadedOptions?.preferDualLayerDolbyVision, false)
+        XCTAssertFalse(vm.suggestsHDR10BaseLayer)
     }
 }

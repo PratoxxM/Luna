@@ -45,6 +45,7 @@ public enum ConditionalHTTPResult<Payload: Decodable & Sendable>: Sendable {
 }
 
 public typealias HomeConditionalResult = ConditionalHTTPResult<TvHomeResponse>
+public typealias LibraryConditionalResult = ConditionalHTTPResult<TvLibraryResponse>
 
 public struct LunaCoreClient: Sendable {
     public let baseURL: URL
@@ -189,7 +190,9 @@ public struct LunaCoreClient: Sendable {
     public static func upgradeArtworkURL(_ url: URL, target: ArtworkTargetWidth) -> URL {
         let rawAbs = url.absoluteString
         if !rawAbs.contains("?") {
-            if let imgRange = rawAbs.range(of: "/api/tv/v1/img/") {
+            if let imgRange = rawAbs.range(of: "/api/tv/v2/img/")
+                ?? rawAbs.range(of: "/api/media/v2/img/")
+                ?? rawAbs.range(of: "/api/tv/v1/img/") {
                 if target == .hero4K {
                     let suffix = rawAbs[imgRange.upperBound...]
                     if suffix.hasPrefix("card/") {
@@ -302,8 +305,8 @@ public struct LunaCoreClient: Sendable {
     }
 
     public func probeReachability(timeoutSeconds: TimeInterval = 3.0) async throws -> TvBootstrapResponse {
-        guard let url = buildAbsoluteURL("/api/tv/v1/bootstrap") else {
-            throw LunaCoreError.invalidURL("/api/tv/v1/bootstrap")
+        guard let url = buildAbsoluteURL("/api/tv/v2/bootstrap") else {
+            throw LunaCoreError.invalidURL("/api/tv/v2/bootstrap")
         }
         var req = authorizedRequest(url: url, method: "GET", includeAuth: true)
         req.timeoutInterval = timeoutSeconds
@@ -406,7 +409,7 @@ public struct LunaCoreClient: Sendable {
 
         let immutableReq = req
         let originKey = "\(baseURL.scheme?.lowercased() ?? "http")://\(baseURL.host?.lowercased() ?? ""):\(baseURL.port ?? -1)"
-        let coalesceKey = "CONDGET|\(originKey)|\(ObjectIdentifier(Payload.self))|\(etagHeader ?? "")|\(path)"
+        let coalesceKey = "CONDGET|\(originKey)|\(String(describing: Payload.self))|\(etagHeader ?? "")|\(path)"
         let outcome = try await inflightGETRequests.coalesce(key: coalesceKey) { [self] () -> any Sendable in
             let (data, rawResp) = try await self.session.data(for: immutableReq)
             let http = rawResp as? HTTPURLResponse
@@ -447,7 +450,7 @@ public struct LunaCoreClient: Sendable {
             return try await executeAndDecode(req).response
         }
         let originKey = "\(baseURL.scheme?.lowercased() ?? "http")://\(baseURL.host?.lowercased() ?? ""):\(baseURL.port ?? -1)"
-        let coalesceKey = "GET|\(originKey)|\(ObjectIdentifier(Response.self))|auth:\(includeAuth)|\(path)"
+        let coalesceKey = "GET|\(originKey)|\(String(describing: Response.self))|auth:\(includeAuth)|\(path)"
         let outcome = try await inflightGETRequests.coalesce(key: coalesceKey) { [self] () -> any Sendable in
             let (_, decoded): (Int, Response) = try await self.executeAndDecode(req)
             return decoded

@@ -86,8 +86,8 @@ def render_swift(tokens: dict, sha256: str) -> str:
         f"        public static let cinemaAmbientOpacity: Double = {cinema.get('ambientOpacityTv', 0.055)}",
         f"        public static let livingLamp = {parse_color_expr(living.get('lampHexTv', '#F0D9B5'))}",
         f"        public static let livingLampStrength: Double = {living.get('lampStrengthTv', 0.22)}",
-        f"        public static let livingTint = {parse_color_expr(living.get('tint', '#2b241c'))}",
-        f"        public static let livingAmbientOpacity: Double = {living.get('ambientOpacityTv', 0.08)}",
+        f"        public static let livingTint = {parse_color_expr(living.get('tint', '#201b16'))}",
+        f"        public static let livingAmbientOpacity: Double = {living.get('ambientOpacityTv', 0.055)}",
         "    }",
         "",
     ])
@@ -129,8 +129,98 @@ def render_swift(tokens: dict, sha256: str) -> str:
     return "\n".join(lines)
 
 
+def to_kebab(name: str) -> str:
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", str(name)).lower()
+
+
+def find_legacy_token_keys(obj: object, prefix: str = "") -> list[str]:
+    found: list[str] = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            key_path = f"{prefix}.{k}" if prefix else str(k)
+            if str(k).lower().endswith("legacy"):
+                found.append(key_path)
+            found.extend(find_legacy_token_keys(v, key_path))
+    return found
+
+
+def render_preview_css(tokens: dict, sha256: str) -> str:
+    sem = tokens.get("semantic", {})
+    prim = tokens.get("primitives", {})
+    plat = tokens.get("platform", {})
+    tv = plat.get("tvos", {})
+    web = plat.get("web", {})
+    surface = sem.get("surface", {})
+    edge = sem.get("edge", {})
+    text = sem.get("text", {})
+    accent = sem.get("accent", {})
+    status = sem.get("status", {})
+    tier = sem.get("tier", {})
+    glow = sem.get("glow", {})
+    motion = prim.get("motion", {})
+    dims = tv.get("dimensions", {})
+    spring_ms = int(round(float(motion.get("tvFocusSpringResponse", 0.32)) * 1000))
+    spring_curve = motion.get("springWebCurve", "cubic-bezier(0.22, 1.2, 0.36, 1)")
+    font_sans = web.get("fontFamily", {}).get(
+        "sans",
+        '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif',
+    )
+    font_serif = web.get("fontFamily", {}).get(
+        "serif",
+        'ui-serif, "New York", Georgia, serif',
+    )
+
+    lines = [
+        f"/* Generated from design/tokens.json (sha256: {sha256}) — DO NOT EDIT MANUALLY. */",
+        "/* Regenerate via: ./ops/bin/luna-design-tokens --sync */",
+        "",
+        ":root {",
+        f"  --bg-canvas: {surface.get('canvas', {}).get('tvos', '#0A0908')};",
+        f"  --bg-black: {surface.get('pureBlack', {}).get('tvos', '#000000')};",
+        f"  --surface-1: {surface.get('lv1', {}).get('tvos', '#14110F')};",
+        f"  --surface-subtle: {surface.get('subtle', {}).get('tvos', '#181412')};",
+        f"  --surface-2: {surface.get('lv2', {}).get('tvos', '#1E1916')};",
+        f"  --surface-3: {surface.get('lv3', {}).get('tvos', '#241E1A')};",
+        f"  --surface-selected: {surface.get('selected', {}).get('tvos', '#2A231E')};",
+        f"  --glass: {surface.get('glass', {}).get('tvos', 'rgba(18, 15, 13, 0.92)')};",
+        f"  --glass-pill: {surface.get('glassPill', {}).get('tvos', 'rgba(30, 25, 22, 0.84)')};",
+        f"  --text-primary: {text.get('primary', {}).get('tvos', '#F5F0E8')};",
+        f"  --text-secondary: {text.get('secondary', {}).get('tvos', '#C8BFB6')};",
+        f"  --text-muted: {text.get('muted', {}).get('tvos', '#A0968C')};",
+        f"  --text-on-accent: {text.get('onAccent', {}).get('tvos', '#0A0908')};",
+        f"  --accent: {accent.get('primary', {}).get('tvos', '#C48C3A')};",
+        f"  --accent-bright: {accent.get('playFocusTop', {}).get('tvos', '#CC9644')};",
+        f"  --accent-deep: {accent.get('deep', {}).get('tvos', '#9E6E27')};",
+        f"  --accent-border: {accent.get('line', {}).get('tvos', '#D6AA63')};",
+        f"  --focus-glow: {glow.get('focusUnder', {}).get('tvos', 'rgba(196, 140, 58, 0.25)')};",
+        f"  --edge-subtle: {edge.get('top1', {}).get('tvos', 'rgba(255, 244, 230, 0.10)')};",
+        f"  --edge-strong: {edge.get('strong', {}).get('tvos', 'rgba(255, 244, 230, 0.18)')};",
+        f"  --ok: {status.get('ok', {}).get('tvos', '#5EBF8E')};",
+        f"  --warn: {status.get('warn', {}).get('tvos', '#E0A84B')};",
+        f"  --danger: {status.get('danger', {}).get('tvos', '#D96B52')};",
+        f"  --stream: {tier.get('stream', {}).get('tvos', '#E8C9A0')};",
+        f"  --safe-x: {dims.get('gutter', 90)}px;",
+        f"  --safe-y: {dims.get('safeTop', 60)}px;",
+        f"  --poster-w: {dims.get('posterW', 280)}px;",
+        f"  --poster-h: {dims.get('posterH', 420)}px;",
+        f"  --backdrop-w: {dims.get('backdropW', 520)}px;",
+        f"  --backdrop-h: {dims.get('backdropH', 293)}px;",
+        f"  --card-gap: {dims.get('cardGap', 40)}px;",
+        f"  --spring: {spring_ms}ms {spring_curve};",
+        f"  --font-sans: {font_sans};",
+        f"  --font-serif: {font_serif};",
+    ]
+    for k, v in tv.get("typography", {}).items():
+        lines.append(f"  --type-tv-{to_kebab(k)}: {v}px;")
+    for k, v in tv.get("radius", {}).items():
+        unit = "999px" if v == 999 else f"{v}px"
+        lines.append(f"  --r-tv-{to_kebab(k)}: {unit};")
+    lines.extend(["}", ""])
+    return "\n".join(lines)
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate or check LunaTokens.swift from design/tokens.json")
+    parser = argparse.ArgumentParser(description="Generate or check LunaTokens.swift and preview/tokens.css from design/tokens.json")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--sync", action="store_true")
     group.add_argument("--check", action="store_true")
@@ -140,6 +230,7 @@ def main() -> int:
     root = pathlib.Path(args.root).resolve() if args.root else pathlib.Path(__file__).resolve().parents[2]
     tokens_path = root / "design" / "tokens.json"
     out_path = root / "Sources" / "DesignSystem" / "Tokens" / "LunaTokens.swift"
+    preview_css_path = root / "preview" / "tokens.css"
 
     if not tokens_path.is_file():
         print(f"[luna-design-tokens] Missing {tokens_path}", file=sys.stderr)
@@ -147,24 +238,62 @@ def main() -> int:
 
     raw = tokens_path.read_text(encoding="utf-8").replace("\r\n", "\n")
     sha256 = hashlib.sha256(raw.encode("utf-8")).hexdigest()
-    expected = render_swift(json.loads(raw), sha256)
+    parsed = json.loads(raw)
+    expected_swift = render_swift(parsed, sha256)
+    expected_css = render_preview_css(parsed, sha256)
 
     if args.check:
-        current = out_path.read_text(encoding="utf-8") if out_path.is_file() else ""
-        if current != expected:
+        legacy_keys = find_legacy_token_keys(parsed)
+        if legacy_keys:
+            print(
+                f"[luna-design-tokens] Forbidden *Legacy keys in design/tokens.json: {', '.join(legacy_keys)}",
+                file=sys.stderr,
+            )
+            return 1
+        current_swift = out_path.read_text(encoding="utf-8") if out_path.is_file() else ""
+        if current_swift != expected_swift:
             print(
                 f"[luna-design-tokens] Sources/DesignSystem/Tokens/LunaTokens.swift is out of sync with design/tokens.json ({sha256[:12]})",
                 file=sys.stderr,
             )
             return 1
-        print(f"  [OK] Design tokens verified (sha256={sha256[:12]}, LunaTokens.swift in sync)")
+        current_css = preview_css_path.read_text(encoding="utf-8") if preview_css_path.is_file() else ""
+        if current_css != expected_css:
+            print(
+                f"[luna-design-tokens] preview/tokens.css is out of sync with design/tokens.json ({sha256[:12]})",
+                file=sys.stderr,
+            )
+            return 1
+        peer_tokens = root.parent / "LunaCore" / "design" / "tokens.json"
+        peer_note = "sibling LunaCore repo not present"
+        if peer_tokens.is_file():
+            peer_raw = peer_tokens.read_text(encoding="utf-8").replace("\r\n", "\n")
+            peer_sha = hashlib.sha256(peer_raw.encode("utf-8")).hexdigest()
+            if peer_sha != sha256:
+                print(
+                    f"[luna-design-tokens] Cross-repo SHA-256 mismatch: Luna ({sha256[:12]}) != LunaCore ({peer_sha[:12]})",
+                    file=sys.stderr,
+                )
+                return 1
+            peer_note = "cross-repo SHA-256 match"
+        print(
+            f"  [OK] Design tokens verified (sha256={sha256[:12]}, LunaTokens.swift + preview/tokens.css in sync, 0 legacy, {peer_note})"
+        )
         return 0
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(out_path.parent, 0o755)
-    out_path.write_text(expected, encoding="utf-8")
+    out_path.write_text(expected_swift, encoding="utf-8")
     os.chmod(out_path, 0o644)
-    print(f"[luna-design-tokens] Synced Sources/DesignSystem/Tokens/LunaTokens.swift (sha256={sha256[:12]})")
+
+    preview_css_path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(preview_css_path.parent, 0o755)
+    preview_css_path.write_text(expected_css, encoding="utf-8")
+    os.chmod(preview_css_path, 0o644)
+
+    print(
+        f"[luna-design-tokens] Synced Sources/DesignSystem/Tokens/LunaTokens.swift and preview/tokens.css (sha256={sha256[:12]})"
+    )
     return 0
 
 

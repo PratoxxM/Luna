@@ -24,6 +24,29 @@
         }
       }
     },
+    "lists_pill_count %lld" : {
+      "comment" : "Custom lists filter pill count",
+      "localizations" : {
+        "nb" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Lister · %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Lister · %lld"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "media_files_count %lld" : {
       "comment" : "Physical media file count in deletion sheet",
       "localizations" : {

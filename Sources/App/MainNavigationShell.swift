@@ -1,9 +1,11 @@
 import SwiftUI
+import UIKit
 import AetherBridge
 
 struct MainNavigationShell: View {
     @Environment(AppSessionStore.self) private var sessionStore
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var navBarVisibility = LunaNavigationBarVisibility()
 
     let engine: AetherEngine
@@ -12,6 +14,12 @@ struct MainNavigationShell: View {
     @State private var lastBootstrapRefreshAt: Date = .distantPast
     @State private var bootstrapRefreshNonce: Int = 0
     @State private var allowColdHomeCardFocus: Bool
+
+    @State private var homeViewModel: HomeViewModel
+    @State private var moviesViewModel = CatalogBrowseViewModel(mediaType: "movie", isRootTab: true)
+    @State private var seriesViewModel = CatalogBrowseViewModel(mediaType: "series", isRootTab: true)
+    @State private var libraryViewModel = LibraryViewModel()
+    @State private var searchViewModel: SearchViewModel
 
     init(
         engine: AetherEngine,
@@ -40,6 +48,33 @@ struct MainNavigationShell: View {
             || previewConfiguration?.screen == .homePoster)
             && previewConfiguration?.focusDirection != .up
         _allowColdHomeCardFocus = State(initialValue: shouldAllowColdFocus)
+
+        let defaults = UserDefaults.standard
+        let initialHost = (previewConfiguration != nil)
+            ? PreviewMockFixtures.previewHost
+            : (defaults.string(forKey: SideloadSafeStorage.serverURLKey).flatMap { URL(string: $0)?.host })
+        let initialRoom = (previewConfiguration != nil)
+            ? PreviewMockFixtures.previewRoomName
+            : (defaults.string(forKey: SideloadSafeStorage.roomNameKey) ?? "Stua")
+        let initialProfile = (previewConfiguration != nil)
+            ? PreviewMockFixtures.previewHardwareProfile
+            : (defaults.string(forKey: SideloadSafeStorage.hardwareProfileKey) ?? HardwareProfilePreset.hdr10512.rawValue)
+        _homeViewModel = State(
+            initialValue: HomeViewModel(
+                initialServerHost: initialHost,
+                initialRoomName: initialRoom,
+                initialHardwareProfile: initialProfile
+            )
+        )
+        let initialSearchQuery = (previewConfiguration?.screen == .search && previewConfiguration?.focusDirection != .select)
+            ? "Dune"
+            : ""
+        _searchViewModel = State(
+            initialValue: SearchViewModel(
+                initialQuery: initialSearchQuery,
+                isRootTab: true
+            )
+        )
     }
 
     var body: some View {
@@ -114,6 +149,7 @@ struct MainNavigationShell: View {
             TabView(selection: $selectedTab) {
                 NavigationStack {
                     HomeView(
+                        viewModel: homeViewModel,
                         initialServerHost: sessionStore.serverBaseURL?.host,
                         initialRoomName: sessionStore.roomName,
                         initialHardwareProfile: sessionStore.hardwareProfile,
@@ -132,6 +168,7 @@ struct MainNavigationShell: View {
 
                 NavigationStack {
                     CatalogBrowseView(
+                        viewModel: moviesViewModel,
                         mediaType: "movie",
                         initialGenre: nil,
                         isActiveTab: selectedTab == .movies,
@@ -148,6 +185,7 @@ struct MainNavigationShell: View {
 
                 NavigationStack {
                     CatalogBrowseView(
+                        viewModel: seriesViewModel,
                         mediaType: "series",
                         initialGenre: nil,
                         isActiveTab: selectedTab == .series,
@@ -163,7 +201,10 @@ struct MainNavigationShell: View {
                 .tag(MainNavigationTab.series)
 
                 NavigationStack {
-                    LibraryHubView(isActiveTab: selectedTab == .library) { targetTab in
+                    LibraryHubView(
+                        viewModel: libraryViewModel,
+                        isActiveTab: selectedTab == .library
+                    ) { targetTab in
                         selectedTab = targetTab
                     }
                     .toolbar(.hidden, for: .tabBar)
@@ -177,7 +218,8 @@ struct MainNavigationShell: View {
 
                 NavigationStack {
                     SearchView(
-                        initialQuery: (previewConfiguration?.screen == .search && previewConfiguration?.focusDirection != .select) ? "Dune" : "",
+                        viewModel: searchViewModel,
+                        initialQuery: searchViewModel.initialQuery,
                         isRootTab: true,
                         isActiveTab: selectedTab == .search,
                         previewFocusFirstResult: previewConfiguration?.screen == .search && previewConfiguration?.focusDirection != .select,
@@ -219,7 +261,10 @@ struct MainNavigationShell: View {
             .ignoresSafeArea(edges: [.top, .horizontal])
             .opacity(hideTopBar ? 0 : 1)
             .allowsHitTesting(false)
-            .animation(.easeOut(duration: 0.22), value: hideTopBar)
+            .animation(
+                LunaFocusStyle.calmEaseOut(duration: 0.22, reduceMotion: reduceMotion) ?? .linear(duration: 0.01),
+                value: hideTopBar
+            )
             .zIndex(9)
 
             LunaTopBarView(
@@ -239,10 +284,10 @@ struct MainNavigationShell: View {
                 }
             )
             .opacity(hideTopBar ? 0 : 1)
-            .offset(y: hideTopBar ? -24 : 0)
+            .offset(y: (!reduceMotion && hideTopBar) ? -24 : 0)
             .allowsHitTesting(!hideTopBar)
             .disabled(hideTopBar)
-            .animation(LunaFocusStyle.focusSpring, value: hideTopBar)
+            .animation(LunaFocusStyle.spring(reduceMotion: reduceMotion), value: hideTopBar)
             .zIndex(10)
         }
         .environment(\.lunaSubpageVisibility, navBarVisibility.sink)
@@ -257,6 +302,15 @@ struct MainNavigationShell: View {
         .onExitCommand(perform: interceptMenu ? {
             navBarVisibility.handleMenuPressToRevealTopBar()
         } : nil)
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+            DiskSWRStore.clearMemory()
+            let tabsToUnload = TabMemoryEvictionPolicy.inactiveTabsToUnload(activeTab: selectedTab)
+            if tabsToUnload.contains(.home) { homeViewModel.unloadForMemoryWarning() }
+            if tabsToUnload.contains(.movies) { moviesViewModel.unloadForMemoryWarning() }
+            if tabsToUnload.contains(.series) { seriesViewModel.unloadForMemoryWarning() }
+            if tabsToUnload.contains(.library) { libraryViewModel.unloadForMemoryWarning() }
+            if tabsToUnload.contains(.search) { searchViewModel.unloadForMemoryWarning() }
+        }
         .fullScreenCover(item: $sessionStore.activePlaybackTarget) { launchRequest in
             PlayerContainerView(
                 engine: engine,

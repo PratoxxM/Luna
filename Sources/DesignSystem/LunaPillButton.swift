@@ -3,13 +3,18 @@ import SwiftUI
 /// Replaces `.buttonStyle(.plain)` across Luna so tvOS 18–26+ never injects a bright
 /// white rectangular system platter behind custom pill buttons.
 public struct LunaChromelessButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .scaleEffect((configuration.isPressed && !reduceMotion) ? 0.96 : 1.0)
             .focusEffectDisabled(true)
-            .animation(.easeOut(duration: LunaTokens.Motion.pressDuration), value: configuration.isPressed)
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: LunaTokens.Motion.pressDuration),
+                value: configuration.isPressed
+            )
     }
 }
 

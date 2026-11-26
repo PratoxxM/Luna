@@ -264,7 +264,7 @@ final class PlaybackRestoreAndAudioSessionTests: XCTestCase {
             "tier": "vfs"
           },
           "stream": {
-            "url": "/api/tv/v1/streams/sess-autoplay-1/master"
+            "url": "/api/tv/v2/streams/sess-autoplay-1/master"
           },
           "aetherConfig": {
             "preferDualLayerDolbyVision": true,
@@ -495,7 +495,7 @@ final class PlaybackRestoreAndAudioSessionTests: XCTestCase {
             "dvEnhancementLayer": "FEL"
           },
           "stream": {
-            "url": "/api/tv/v1/stream/tvs_fel_1/0123456789abcdef0123456789abcdef/film.mkv",
+            "url": "/api/tv/v2/stream/tvs_fel_1/0123456789abcdef0123456789abcdef/film.mkv",
             "startPositionSeconds": 120,
             "canClientPrewarmBytes": true
           },
@@ -589,5 +589,73 @@ final class PlaybackRestoreAndAudioSessionTests: XCTestCase {
         XCTAssertEqual(transport.events.last, "audioDelay(0ms)")
         vm.handleAudioRouteChange(isWirelessOverride: false)
         XCTAssertEqual(transport.events.last, "audioDelay(-50ms)")
+    }
+
+    @MainActor
+    func testForegroundVideoRestoreRoutesThroughTransportReloadAtCurrentPosition() async throws {
+        let suite = "luna.test.restore.reload.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let sessionJSON = #"""
+        {
+          "sessionId": "sess-restore-1",
+          "streamToken": "tok-restore-secret-445566",
+          "roomName": "Stua",
+          "hardwareProfile": "hdr10-512",
+          "item": {
+            "itemId": "movie:tmdb:550",
+            "mediaType": "movie",
+            "ids": { "tmdb": 550 },
+            "title": "Fight Club"
+          },
+          "selectedCandidate": {
+            "candidateId": "cand-1",
+            "displayHeadline": "4K HDR10+",
+            "releaseTitle": "Fight.Club.2160p",
+            "source": "nvme"
+          },
+          "stream": { "url": "/api/tv/v2/stream/sess-restore-1/tok-restore-secret-445566/video.mkv" },
+          "aetherConfig": {
+            "preferDualLayerDolbyVision": false,
+            "dolbyVisionHandling": "baseLayerOnly",
+            "matchContentEnabled": true,
+            "audioBridgeMode": "lossless"
+          }
+        }
+        """#
+        let session = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(sessionJSON.utf8))
+        let engine = try LunaApp.makeSharedEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+        let comfort = ComfortPreferences(defaults: defaults)
+        comfort.dualLayerOverride = .forceOff
+        comfort.lowResUpscaleMode = .animeLineArt
+        let transport = MockPlayerTransport(
+            state: .paused,
+            playbackPhase: .paused,
+            videoRoute: .loopback,
+            currentTime: 420,
+            needsForegroundVideoRestore: true
+        )
+        let vm = PlayerViewModel(engine: engine, comfort: comfort, transport: transport, bindOnInit: false)
+        vm.activeSession = session
+        vm.isResolving = false
+        vm.lastForegroundPlaybackWasPlaying = true
+
+        vm.handleScenePhaseChange(.active)
+        await vm.restoreController.foregroundRestoreTask?.value
+
+        XCTAssertEqual(transport.reloadCallCount, 1)
+        XCTAssertTrue(transport.events.contains("reloadAtCurrentPosition"))
+        XCTAssertEqual(transport.lastReloadedOptions?.autoplay, true)
+        XCTAssertEqual(transport.lastReloadedOptions?.preferDualLayerDolbyVision, false)
+        XCTAssertEqual(transport.lastReloadedOptions?.foldsDolbyVisionFEL, false)
+        XCTAssertEqual(transport.lastReloadedOptions?.dolbyVisionHandling, .baseLayerOnly)
+        XCTAssertEqual(transport.lastReloadedOptions?.upscalesLowResolutionVideo, true)
+        XCTAssertEqual(transport.lastReloadedOptions?.upscaleScaler, .lineArt)
+        XCTAssertEqual(transport.state, .playing)
     }
 }

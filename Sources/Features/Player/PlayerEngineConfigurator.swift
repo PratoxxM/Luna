@@ -1,91 +1,9 @@
 import Foundation
 import AetherBridge
 
-extension PlayerViewModel {
-    // MARK: - Live Format Badges
-
-    var videoFormatBadge: String {
-        switch videoFormat {
-        case .dolbyVision:
-            if sourceDVProfile == 7 {
-                if videoRoute == .software && dolbyVisionConversion == nil {
-                    return "DV P7 FEL"
-                }
-                return "DV P7"
-            }
-            if sourceDVProfile == 8 || dolbyVisionConversion == .profile7ToProfile81 {
-                return "DV P8"
-            }
-            if let p = sourceDVProfile {
-                return "DV P\(p)"
-            }
-            return "Dolby Vision"
-        case .hdr10Plus:
-            return "HDR10+"
-        case .hdr10:
-            return "HDR10"
-        case .hlg:
-            return "HLG"
-        case .sdr:
-            return sourceVideoHeight >= 2000 ? "4K SDR" : "SDR"
-        }
-    }
-
-    var audioFormatBadge: String {
-        if comfort.speakerLayoutOverride == .stereo {
-            return "Stereo 2.0"
-        }
-        let activeTrack = audioTracks.first(where: { $0.id == activeAudioTrackIndex })
-        let configuredLayout = effectiveSpeakerLayoutLabel(isDTSX: activeTrack?.isDTSX == true)
-        if let activeTrack {
-            if activeTrack.isAtmos {
-                return "\(configuredLayout) Atmos"
-            }
-            if activeTrack.isDTSX {
-                return "\(configuredLayout) DTS:X"
-            }
-            let codecUpper = activeTrack.codec.uppercased()
-            if codecUpper.contains("TRUEHD") {
-                return "TrueHD \(activeTrack.channelLayout ?? "7.1")"
-            }
-            if codecUpper.contains("DTS") || codecUpper.contains("DCA") {
-                return "\(activeTrack.profile ?? "DTS-HD") \(activeTrack.channelLayout ?? "")"
-                    .trimmingCharacters(in: .whitespaces)
-            }
-            if audioDelivery == .bridged {
-                return "LPCM \(activeTrack.channelLayout ?? "")".trimmingCharacters(in: .whitespaces)
-            }
-            return "\(codecUpper) \(activeTrack.channelLayout ?? "")".trimmingCharacters(in: .whitespaces)
-        }
-        return configuredLayout
-    }
-
-    var sessionRoomAutoLayout: String {
-        if let lay = activeSession?.aetherConfig.objectAudioRendering?.layout, !lay.isEmpty {
-            return lay
-        }
-        if activeSession?.hardwareProfile == HardwareProfilePreset.hdr10512.rawValue {
-            return "5.1.2"
-        }
-        return "7.1.4"
-    }
-
-    private func effectiveSpeakerLayoutLabel(isDTSX: Bool) -> String {
-        switch comfort.speakerLayoutOverride {
-        case .stereo:
-            return "Stereo 2.0"
-        case .atmos512:
-            return isDTSX ? "7.1.4" : "5.1.2"
-        case .atmos714:
-            return "7.1.4"
-        case .auto:
-            let base = sessionRoomAutoLayout
-            return (base == "5.1.2" && isDTSX) ? "7.1.4" : base
-        }
-    }
-
-    // MARK: - AetherEngine LoadOptions
-
+/// Pure `AetherEngine` `LoadOptions`, speaker-layout, MetalFX, and capability helpers.
+@MainActor
+enum PlayerEngineConfigurator {
     nonisolated static func untaggedVideoColorHint(for candidate: TvCandidateInfo) -> UntaggedVideoColor {
         if candidate.dvProfile != nil {
             return .standard
@@ -103,6 +21,25 @@ extension PlayerViewModel {
         return .standard
     }
 
+    nonisolated static func externalSubtitleTracks(
+        for session: TvPlaybackSession,
+        client: LunaCoreClient
+    ) -> [ExternalSubtitleTrack] {
+        (session.tracks?.externalSubtitles ?? []).compactMap { sub in
+            guard let fullURL = client.buildAbsoluteURL(sub.url) else { return nil }
+            return ExternalSubtitleTrack(
+                url: fullURL,
+                name: sub.name,
+                language: sub.language,
+                isForced: sub.isForced ?? false,
+                isHearingImpaired: sub.isHearingImpaired ?? false,
+                isDefault: sub.isDefault ?? false,
+                httpHeaders: client.streamHTTPHeaders(for: fullURL),
+                formatHint: sub.format ?? "srt"
+            )
+        }
+    }
+
     static func buildLoadOptions(
         session: TvPlaybackSession,
         client: LunaCoreClient,
@@ -111,6 +48,7 @@ extension PlayerViewModel {
         audioDelaySeconds: Double,
         autoplay: Bool = true,
         suppressInitialSubtitleSelection: Bool = false,
+        preferNorwegianAudio: Bool = false,
         displayCapabilities: DisplayCapabilities = AetherEngine.displayCapabilities,
         memoryProfile: DeviceMemoryProfile = DeviceHardwareCapabilities.memoryProfile,
         availableMemoryBytes: UInt64 = DeviceHardwareCapabilities.availableMemoryBytes()
@@ -150,7 +88,7 @@ extension PlayerViewModel {
         options.dualLayerRoute = .softwareHost
         options.matchContentEnabled = cfg.matchContentEnabled
         options.displayCriteriaOwner = .engine
-        options.untaggedVideoColor = Self.untaggedVideoColorHint(for: session.selectedCandidate)
+        options.untaggedVideoColor = untaggedVideoColorHint(for: session.selectedCandidate)
         options.inverseTelecine = .auto
         options.attemptsHDRMasterOnUnprovenPanel = cfg.attemptsHDRMasterOnUnprovenPanel ?? true
         options.preferHDR10PlusOverForcedDolbyVision =
@@ -164,9 +102,17 @@ extension PlayerViewModel {
         options.audioBridgeMode = cfg.audioBridgeMode == "lossless" ? .lossless : .surroundCompat
         options.audioDelaySeconds = audioDelaySeconds
         options.audioShaping = comfort.buildAudioShaping(enhancement: audioEnhancement)
-        Self.applySpeakerLayoutOverride(comfort.speakerLayoutOverride, session: session, to: &options)
+        applySpeakerLayoutOverride(comfort.speakerLayoutOverride, session: session, to: &options)
 
-        options.preferredAudioLanguages = cfg.preferredAudioLanguages ?? ["nob", "nor", "no", "eng"]
+        if preferNorwegianAudio || session.item.originalLanguage != nil {
+            options.preferredAudioLanguages = OriginalLanguageTrackSelector.preferredAudioLanguageCodes(
+                forOriginalLanguage: session.item.originalLanguage,
+                preferNorwegianAudio: preferNorwegianAudio
+            )
+        } else {
+            options.preferredAudioLanguages = cfg.preferredAudioLanguages ?? ["nob", "nor", "no", "eng"]
+        }
+
         // When smart Nordic rule is enabled or an in-place source switch carries explicit track intent,
         // evaluate/select subtitles deterministically right after load so no unwanted initial subtitle flashes.
         options.preferredSubtitleLanguages = (comfort.smartNordicSubtitleRule || suppressInitialSubtitleSelection)
@@ -206,22 +152,8 @@ extension PlayerViewModel {
         )
         options.declaredDurationSeconds = cfg.declaredDurationSeconds ?? session.stream.declaredDurationSeconds
 
-        Self.applyLowResUpscaleMode(comfort.lowResUpscaleMode, to: &options)
-
-        let extSubs: [ExternalSubtitleTrack] = (session.tracks?.externalSubtitles ?? []).compactMap { sub in
-            guard let fullURL = client.buildAbsoluteURL(sub.url) else { return nil }
-            return ExternalSubtitleTrack(
-                url: fullURL,
-                name: sub.name,
-                language: sub.language,
-                isForced: sub.isForced ?? false,
-                isHearingImpaired: sub.isHearingImpaired ?? false,
-                isDefault: sub.isDefault ?? false,
-                httpHeaders: client.streamHTTPHeaders(for: fullURL),
-                formatHint: sub.format ?? "srt"
-            )
-        }
-        options.externalSubtitles = extSubs
+        applyLowResUpscaleMode(comfort.lowResUpscaleMode, to: &options)
+        options.externalSubtitles = externalSubtitleTracks(for: session, client: client)
 
         return options
     }
@@ -263,6 +195,44 @@ extension PlayerViewModel {
         } else {
             options.objectAudioRendering = .render(targetLayout)
         }
+    }
+
+    struct ReloadComfortSnapshot {
+        let lowResUpscaleMode: LowResUpscaleMode
+        let speakerLayoutOverride: SpeakerLayoutOverrideMode
+        let dualLayerOverride: DualLayerOverrideMode
+        let audioDelaySeconds: Double
+        let audioShaping: AudioShaping
+    }
+
+    static func captureReloadComfortSnapshot(
+        comfort: ComfortPreferences,
+        audioEnhancement: AudioEnhancementMode,
+        audioDelaySeconds: Double
+    ) -> ReloadComfortSnapshot {
+        ReloadComfortSnapshot(
+            lowResUpscaleMode: comfort.lowResUpscaleMode,
+            speakerLayoutOverride: comfort.speakerLayoutOverride,
+            dualLayerOverride: comfort.dualLayerOverride,
+            audioDelaySeconds: audioDelaySeconds,
+            audioShaping: comfort.buildAudioShaping(enhancement: audioEnhancement)
+        )
+    }
+
+    nonisolated static func applyRestoreDisplayAndUpscaleOptions(
+        _ snapshot: ReloadComfortSnapshot,
+        session: TvPlaybackSession?,
+        to options: inout LoadOptions
+    ) {
+        applyLowResUpscaleMode(snapshot.lowResUpscaleMode, to: &options)
+        applySpeakerLayoutOverride(snapshot.speakerLayoutOverride, session: session, to: &options)
+        if snapshot.dualLayerOverride == .forceOff {
+            options.preferDualLayerDolbyVision = false
+            options.foldsDolbyVisionFEL = false
+            options.dolbyVisionHandling = .baseLayerOnly
+        }
+        options.audioDelaySeconds = snapshot.audioDelaySeconds
+        options.audioShaping = snapshot.audioShaping
     }
 
     nonisolated static func applyLowResUpscaleMode(_ mode: LowResUpscaleMode, to options: inout LoadOptions) {
@@ -338,7 +308,7 @@ extension PlayerViewModel {
         return true
     }
 
-    func curtainPreservedURLs(
+    nonisolated static func curtainPreservedURLs(
         request: PlaybackLaunchRequest,
         session: TvPlaybackSession?,
         client: LunaCoreClient
@@ -367,5 +337,63 @@ extension PlayerViewModel {
         case .paused, .idle, .ended, .error:
             return false
         }
+    }
+}
+
+extension PlayerViewModel {
+    static func buildLoadOptions(
+        session: TvPlaybackSession,
+        client: LunaCoreClient,
+        comfort: ComfortPreferences,
+        audioEnhancement: AudioEnhancementMode,
+        audioDelaySeconds: Double,
+        autoplay: Bool = true,
+        suppressInitialSubtitleSelection: Bool = false,
+        preferNorwegianAudio: Bool = false,
+        displayCapabilities: DisplayCapabilities = AetherEngine.displayCapabilities,
+        memoryProfile: DeviceMemoryProfile = DeviceHardwareCapabilities.memoryProfile,
+        availableMemoryBytes: UInt64 = DeviceHardwareCapabilities.availableMemoryBytes()
+    ) -> LoadOptions {
+        PlayerEngineConfigurator.buildLoadOptions(
+            session: session,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: audioEnhancement,
+            audioDelaySeconds: audioDelaySeconds,
+            autoplay: autoplay,
+            suppressInitialSubtitleSelection: suppressInitialSubtitleSelection,
+            preferNorwegianAudio: preferNorwegianAudio,
+            displayCapabilities: displayCapabilities,
+            memoryProfile: memoryProfile,
+            availableMemoryBytes: availableMemoryBytes
+        )
+    }
+
+    nonisolated static func isLikelyHeavySoftwareSession(
+        _ session: TvPlaybackSession?,
+        dualLayerOverride: DualLayerOverrideMode = .auto,
+        lowResUpscaleMode: LowResUpscaleMode = .off,
+        supportsHardwareAV1: Bool = DeviceHardwareCapabilities.supportsHardwareAV1
+    ) -> Bool {
+        PlayerEngineConfigurator.isLikelyHeavySoftwareSession(
+            session,
+            dualLayerOverride: dualLayerOverride,
+            lowResUpscaleMode: lowResUpscaleMode,
+            supportsHardwareAV1: supportsHardwareAV1
+        )
+    }
+
+    nonisolated static func canDirectMountPreparedSession(
+        _ request: PlaybackLaunchRequest,
+        candidateSession: TvPlaybackSession? = nil
+    ) -> Bool {
+        PlayerEngineConfigurator.canDirectMountPreparedSession(request, candidateSession: candidateSession)
+    }
+
+    nonisolated static func shouldPauseEngineOnDismiss(
+        engineState: PlaybackState,
+        playbackPhase: PlaybackPhase
+    ) -> Bool {
+        PlayerEngineConfigurator.shouldPauseEngineOnDismiss(engineState: engineState, playbackPhase: playbackPhase)
     }
 }

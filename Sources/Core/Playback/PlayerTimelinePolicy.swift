@@ -17,23 +17,30 @@ public enum PlayerTimelinePolicy: Sendable {
     public static let bufferBucketSeconds: Double = 2.0
     public static let finishTimeBucketSeconds: Double = 10.0
 
+    private static func clampedBucket(_ scaled: Double) -> Int {
+        guard scaled.isFinite else { return Int.max }
+        let floored = scaled.rounded(.down)
+        guard floored >= 0 else { return -1 }
+        return Int(exactly: floored) ?? Int.max
+    }
+
     /// `0.5 s` buckets (`2 Hz` max while playing, `0 Hz` when paused) so `10 Hz` engine clock
     /// ticks never trigger unnecessary SwiftUI layout passes on the timeline or chapter label.
     public static func timeBucket(_ seconds: Double) -> Int {
         guard seconds.isFinite, seconds >= 0 else { return -1 }
-        return Int((seconds * 2.0).rounded(.down))
+        return clampedBucket(seconds * 2.0)
     }
 
     /// `2.0 s` buckets (`0.5 Hz` max) for the subtle background forward-buffer bar.
     public static func bufferBucket(_ seconds: Double) -> Int {
         guard seconds.isFinite, seconds >= 0 else { return -1 }
-        return Int((seconds / 2.0).rounded(.down))
+        return clampedBucket(seconds / 2.0)
     }
 
     /// `10.0 s` buckets (`0.1 Hz` max) for the wall-clock finish-time label (`Slutter kl. HH:mm`).
     public static func finishTimeBucket(_ seconds: Double) -> Int {
         guard seconds.isFinite, seconds >= 0 else { return -1 }
-        return Int((seconds / 10.0).rounded(.down))
+        return clampedBucket(seconds / 10.0)
     }
 
     /// Formats the wall-clock completion label as `Slutter kl. HH:mm` (explicit 24-hour colon

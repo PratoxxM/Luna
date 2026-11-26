@@ -1,183 +1,66 @@
 import Foundation
 import Observation
-import UIKit
+import SwiftUI
 import Combine
 import AetherBridge
 
 @MainActor
 @Observable
 final class PlayerViewModel {
-    // Resolve & First-Frame Reveal State
-    var isResolving: Bool = true
-    let startupState = PlayerStartupState()
-    var fatalError: String?
-    var transientBannerMessage: String?
-    var remoteCommandToastMessage: String?
-
-    var hasFirstFrameReadyForDisplay: Bool = false
-    var isAwaitingDisplaySwitch: Bool = false
-    var firstFrameFallbackUnlocked: Bool = false
-    var isRestoringFromBackground: Bool = false
-
-    var resolveStageLabel: String {
-        get { startupState.resolveStageLabel }
-        set { if startupState.resolveStageLabel != newValue { startupState.resolveStageLabel = newValue } }
-    }
-    var resolvePercent: Int {
-        get { startupState.resolvePercent }
-        set { if startupState.resolvePercent != newValue { startupState.resolvePercent = newValue } }
-    }
-    var resolveHeadline: String? {
-        get { startupState.resolveHeadline }
-        set { if startupState.resolveHeadline != newValue { startupState.resolveHeadline = newValue } }
-    }
-
-    // Session, Sources & Next Episode
-    var currentRequest: PlaybackLaunchRequest?
-    var activeSession: TvPlaybackSession?
-    var alternatives: [TvCandidateInfo] = []
-    private(set) var alternativesSessionId: String?
-    var isLoadingAlternatives: Bool = false
-
-    func markAlternativesLoaded(forSessionId sessionId: String) {
-        alternativesSessionId = sessionId
-    }
-    var isSwitchingSource: Bool = false
-    var lastVfsTelemetry: TvVfsTelemetry?
-
-    // Playback, Tracks & Chapters
-    var playbackPhase: PlaybackPhase = .idle
-    var durationSeconds: Double = 0
-    var videoFormat: VideoFormat = .sdr
-    var sourceDVProfile: Int?
-    var dolbyVisionConversion: DolbyVisionConversion?
-    var videoRoute: VideoRoute = .none
-    var audioDelivery: AudioDelivery = .none
-    var sourceVideoCodecName: String?
-    var sourceVideoWidth: Int32 = 0
-    var sourceVideoHeight: Int32 = 0
-    var sourceVideoFrameRate: Double?
-    var activeVideoDecoder: String?
-    var activeAudioDecoder: String?
-    var activeUpscale: UpscaleStatus?
-
-    var audioTracks: [TrackInfo] = []
-    var activeAudioTrackIndex: Int?
-    var audioDelayMs: Int {
-        get { comfort.audioDelayMs }
-        set {
-            if comfort.audioDelayMs != newValue {
-                comfort.audioDelayMs = newValue
-            }
-        }
-    }
-    var audioEnhancement: AudioEnhancementMode = .reference
-
-    var subtitleTracks: [TrackInfo] = []
-    var activeSubtitleTrackIndex: Int?
-    var subtitleDelayMs: Int = 0
-    var subtitleDelaySeconds: Double {
-        Double(subtitleDelayMs) / 1000.0
-    }
-
-    var previewAudioOptions: [PlayerDrawerAudioOption] = []
-    var previewSubtitleOptions: [PlayerDrawerSubtitleOption] = []
-
-    var chapters: [PlaybackChapter] = []
-    var previewPlayheadOverrideSeconds: Double?
-
-    // Tactile Coalesced Seeking & Continuous Siri Remote Touch Scrubbing
-    var coalescedSeekDelta: Double = 0
-    var coalescedSeekPreviewTarget: Double?
-    var isScrubbing: Bool = false
-    let scrubState = PlayerScrubState()
+    nonisolated static let audioDelayDebounceNs: UInt64 = 220_000_000
+    nonisolated static let relativeSeekDebounceNs: UInt64 = 150_000_000
 
     let engine: AetherEngine
     let comfort: ComfortPreferences
     let transport: any PlayerTransportControlling
     let audioActivator: any NativeAudioActivating
 
-    @ObservationIgnored var wasPlayingBeforeScrub: Bool = false
-    @ObservationIgnored var pendingScrubPreviewTarget: Double?
-    @ObservationIgnored var scrubPreviewLoopTask: Task<Void, Never>?
-    @ObservationIgnored weak var compositorPreviewView: AetherScrubPreviewView?
-
-    @ObservationIgnored var resolveTask: Task<Void, Never>?
-    @ObservationIgnored var heartbeatTask: Task<Void, Never>?
-    @ObservationIgnored var firstFrameFallbackTask: Task<Void, Never>?
-    @ObservationIgnored var transientBannerTask: Task<Void, Never>?
-    @ObservationIgnored var remoteCommandToastTask: Task<Void, Never>?
-    @ObservationIgnored var nowPlayingArtworkTask: Task<Void, Never>?
-    @ObservationIgnored var engineChapters: [ChapterInfo] = []
-    @ObservationIgnored var registeredStreamToken: String?
-    @ObservationIgnored var activeClient: LunaCoreClient?
-    @ObservationIgnored var userManuallySelectedSubtitle: Bool = false
-    @ObservationIgnored var didApplyInitialSmartRule: Bool = false
-    @ObservationIgnored var didBindEnginePublishers: Bool = false
-
-    nonisolated static let audioDelayDebounceNs: UInt64 = 220_000_000
-    nonisolated static let relativeSeekDebounceNs: UInt64 = 150_000_000
+    let sessionController: PlayerSessionController
+    let trackController: PlayerTrackController
+    let scrubController: PlayerScrubController
+    let restoreController: PlayerRestoreController
+    let qosReporter: PlayerQoSReporter
 
     @ObservationIgnored var cancellables = Set<AnyCancellable>()
-    @ObservationIgnored var coalescedSeekTask: Task<Void, Never>?
-    @ObservationIgnored var chapterSeekTask: Task<Void, Never>?
-    @ObservationIgnored var smartRuleTask: Task<Void, Never>?
-    @ObservationIgnored var switchSourceTask: Task<Void, Never>?
-    @ObservationIgnored var audioDelayCommitTask: Task<Void, Never>?
-    @ObservationIgnored var hasPendingAudioDelayCommit: Bool = false
-    @ObservationIgnored var isWirelessAudioRouteActive: Bool = false
-    @ObservationIgnored var upscaleReloadTask: Task<Void, Never>?
-    @ObservationIgnored var foregroundRestoreTask: Task<Void, Never>?
-    @ObservationIgnored private(set) var pausedRestoreResumeTask: Task<Void, Never>?
-    @ObservationIgnored private var pausedRestoreResumeToken: UInt64 = 0
-    @ObservationIgnored var scrubCommitTask: Task<Void, Never>?
-    @ObservationIgnored var scrubCommitToken: UInt64 = 0
-    @ObservationIgnored var ringHoldLoopTask: Task<Void, Never>?
-    @ObservationIgnored var nextEpisodePrewarmTask: Task<Void, Never>?
-    @ObservationIgnored var prewarmedNextEpisodeURL: URL?
-    @ObservationIgnored var prewarmedNextEpisodeItemId: String?
-    @ObservationIgnored var prewarmedNextEpisodeSessionId: String?
-    @ObservationIgnored var prewarmedNextEpisodeStreamToken: String?
-    @ObservationIgnored private var didTeardown: Bool = false
-    @ObservationIgnored var engineOwnerToken: UInt64 = 0
-    @ObservationIgnored var isDismissing: Bool = false
-    @ObservationIgnored var isSpeculativeWarmMountInFlight: Bool = false
-    @ObservationIgnored var pendingStopSnapshot: PendingStopSnapshot?
-    @ObservationIgnored var pendingHandedOverSessionId: String?
-    @ObservationIgnored var pendingInflightPrepareTask: Task<TvPrepareResponse?, Never>?
-    @ObservationIgnored var pendingInflightPrepareToken: String?
-    @ObservationIgnored var activeResolveId: String?
-    @ObservationIgnored var lastObservedPhase: PlaybackPhase = .idle
-    @ObservationIgnored var isForegroundActive: Bool = true
-    @ObservationIgnored var lastForegroundPlaybackWasPlaying: Bool = false
-    @ObservationIgnored var userDesiredPlayingDuringRestore: Bool?
-    @ObservationIgnored var needsNativeAudioActivationAfterPausedRestore: Bool = false
-    @ObservationIgnored var lastReportedServerState: String?
-    @ObservationIgnored var onUnauthorized: (() -> Void)?
+    @ObservationIgnored var didBindEnginePublishers: Bool = false
 
     init(
         engine: AetherEngine,
         comfort: ComfortPreferences,
         transport: (any PlayerTransportControlling)? = nil,
         audioActivator: any NativeAudioActivating = DefaultNativeAudioActivator(),
+        preferenceStore: PlaybackPreferenceStore = PlaybackPreferenceStore(),
         bindOnInit: Bool = true
     ) {
+        let resolvedTransport = transport ?? AetherEngineTransport(engine: engine)
         self.engine = engine
         self.comfort = comfort
-        self.audioEnhancement = comfort.audioEnhancement
-        self.transport = transport ?? AetherEngineTransport(engine: engine)
+        self.transport = resolvedTransport
         self.audioActivator = audioActivator
-        self.isWirelessAudioRouteActive = PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
-        if bindOnInit {
-            bindEnginePublishersIfNeeded()
-        }
-    }
 
-    func effectiveAudioDelaySecondsForActiveRoute() -> Double {
-        PlayerAudioSessionCoordinator.effectiveAudioDelaySeconds(
-            configuredDelaySeconds: Double(audioDelayMs) / 1000.0,
-            isWirelessRoute: isWirelessAudioRouteActive
+        self.sessionController = PlayerSessionController(
+            engine: engine, comfort: comfort, transport: resolvedTransport, audioActivator: audioActivator
         )
+        self.trackController = PlayerTrackController(
+            engine: engine, comfort: comfort, transport: resolvedTransport, preferenceStore: preferenceStore
+        )
+        self.scrubController = PlayerScrubController(
+            engine: engine, transport: resolvedTransport, audioActivator: audioActivator
+        )
+        self.restoreController = PlayerRestoreController(
+            comfort: comfort, transport: resolvedTransport, audioActivator: audioActivator
+        )
+        self.qosReporter = PlayerQoSReporter(
+            comfort: comfort, transport: resolvedTransport
+        )
+
+        self.sessionController.bindHost(self)
+        self.trackController.bindHost(self)
+        self.scrubController.bindHost(self)
+        self.restoreController.bindHost(self)
+        self.qosReporter.bindHost(self)
+
+        if bindOnInit { bindEnginePublishersIfNeeded() }
     }
 
     func bindEnginePublishersIfNeeded() {
@@ -186,441 +69,168 @@ final class PlayerViewModel {
         bindEnginePublishers()
     }
 
-    /// True only once the first decoded video frame is ready and HDMI range/frame-rate
-    /// switching has settled (or when an in-place source replacement is holding a still frame).
-    var isPictureReadyForReveal: Bool {
-        PlaybackCurtainWatchdog.isPictureReadyForReveal(
-            hasFatalError: fatalError != nil,
-            isSwitchingSource: isSwitchingSource,
-            isResolving: isResolving,
-            isRestoringFromBackground: isRestoringFromBackground,
-            needsForegroundVideoRestore: transport.needsForegroundVideoRestore,
-            firstFrameFallbackUnlocked: firstFrameFallbackUnlocked,
-            hasFirstFrameReadyForDisplay: hasFirstFrameReadyForDisplay,
-            isAwaitingDisplaySwitch: isAwaitingDisplaySwitch
-        )
-    }
+    // MARK: - Session Controller Forwarders
 
-    var effectiveDurationSeconds: Double {
-        if durationSeconds > 0 {
-            return durationSeconds
-        }
-        return activeSession?.stream.declaredDurationSeconds ?? activeSession?.item.runtimeSeconds ?? 0
-    }
-
-    // MARK: - Lifecycle & Commands
+    var isResolving: Bool { get { sessionController.isResolving } set { sessionController.isResolving = newValue } }
+    var startupState: PlayerStartupState { sessionController.startupState }
+    var fatalError: String? { get { sessionController.fatalError } set { sessionController.fatalError = newValue } }
+    var currentRequest: PlaybackLaunchRequest? { get { sessionController.currentRequest } set { sessionController.currentRequest = newValue } }
+    var activeSession: TvPlaybackSession? { get { sessionController.activeSession } set { sessionController.activeSession = newValue } }
+    var alternatives: [TvCandidateInfo] { get { sessionController.alternatives } set { sessionController.alternatives = newValue } }
+    var alternativesSessionId: String? { sessionController.alternativesSessionId }
+    var isLoadingAlternatives: Bool { get { sessionController.isLoadingAlternatives } set { sessionController.isLoadingAlternatives = newValue } }
+    var isSwitchingSource: Bool { get { sessionController.isSwitchingSource } set { sessionController.isSwitchingSource = newValue } }
+    var hasFirstFrameReadyForDisplay: Bool { get { sessionController.hasFirstFrameReadyForDisplay } set { sessionController.hasFirstFrameReadyForDisplay = newValue } }
+    var isAwaitingDisplaySwitch: Bool { get { sessionController.isAwaitingDisplaySwitch } set { sessionController.isAwaitingDisplaySwitch = newValue } }
+    var firstFrameFallbackUnlocked: Bool { get { sessionController.firstFrameFallbackUnlocked } set { sessionController.firstFrameFallbackUnlocked = newValue } }
+    var resolveStageLabel: String { get { startupState.resolveStageLabel } set { if startupState.resolveStageLabel != newValue { startupState.resolveStageLabel = newValue } } }
+    var resolvePercent: Int { get { startupState.resolvePercent } set { if startupState.resolvePercent != newValue { startupState.resolvePercent = newValue } } }
+    var resolveHeadline: String? { get { startupState.resolveHeadline } set { if startupState.resolveHeadline != newValue { startupState.resolveHeadline = newValue } } }
+    var activeClient: LunaCoreClient? { get { sessionController.activeClient } set { sessionController.activeClient = newValue } }
+    var engineOwnerToken: UInt64 { sessionController.engineOwnerToken }
+    var isDismissing: Bool { sessionController.isDismissing }
+    var isTeardownCompleted: Bool { sessionController.isTeardownCompleted }
+    var isPictureReadyForReveal: Bool { sessionController.isPictureReadyForReveal }
+    var effectiveDurationSeconds: Double { sessionController.effectiveDurationSeconds }
+    var onUnauthorized: (() -> Void)? { get { sessionController.onUnauthorized } set { sessionController.onUnauthorized = newValue } }
 
     func configurePreviewPlayback(
-        request: PlaybackLaunchRequest,
-        session: TvPlaybackSession,
-        client: LunaCoreClient?,
+        request: PlaybackLaunchRequest, session: TvPlaybackSession, client: LunaCoreClient?,
         audioOptions: [PlayerDrawerAudioOption] = PreviewMockFixtures.previewAudioOptions,
         subtitleOptions: [PlayerDrawerSubtitleOption] = PreviewMockFixtures.previewSubtitleOptions,
         candidates: [TvCandidateInfo] = PreviewMockFixtures.previewCandidates
     ) {
-        bindEnginePublishersIfNeeded()
-        currentRequest = request
-        activeSession = session
-        activeClient = client
-        fatalError = nil
-        isResolving = false
-        hasFirstFrameReadyForDisplay = true
-        isAwaitingDisplaySwitch = false
-        firstFrameFallbackUnlocked = true
-        isRestoringFromBackground = false
-        playbackPhase = .paused
-        let declared = session.stream.declaredDurationSeconds ?? session.item.runtimeSeconds ?? 6180
-        durationSeconds = declared
-        previewPlayheadOverrideSeconds = request.startPositionSeconds ?? session.stream.startPositionSeconds ?? 1122
-        videoFormat = .dolbyVision
-        sourceDVProfile = 7
-        videoRoute = .software
-        audioDelivery = .bridged
-        sourceVideoCodecName = "hevc"
-        sourceVideoWidth = 3840
-        sourceVideoHeight = 2160
-        sourceVideoFrameRate = 23.976
-        activeVideoDecoder = "FFmpeg + Metal P7 FEL"
-        activeAudioDecoder = "TrueHD Atmos 7.1.4"
-        previewAudioOptions = audioOptions
-        previewSubtitleOptions = subtitleOptions
-        activeAudioTrackIndex = audioOptions.first?.id
-        activeSubtitleTrackIndex = subtitleOptions.first?.id
-        alternatives = candidates
-        alternativesSessionId = session.sessionId
-        chapters = PlaybackChapter.mergeRaw(
-            probeChapters: session.chapters ?? [],
-            engineChapters: [],
-            mediaDuration: declared
+        sessionController.configurePreviewPlayback(
+            request: request, session: session, client: client,
+            audioOptions: audioOptions, subtitleOptions: subtitleOptions, candidates: candidates
         )
     }
-
-    func resetTransientTransitionState() {
-        PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
-        cancelPendingPausedRestoreResume()
-        cancelPendingScrubCommit()
-        foregroundRestoreTask?.cancel()
-        foregroundRestoreTask = nil
-        isRestoringFromBackground = false
-        userDesiredPlayingDuringRestore = nil
-        needsNativeAudioActivationAfterPausedRestore = false
-        audioDelayCommitTask?.cancel()
-        audioDelayCommitTask = nil
-        hasPendingAudioDelayCommit = false
+    func start(request: PlaybackLaunchRequest, client: LunaCoreClient?) { sessionController.start(request: request, client: client) }
+    func playNextEpisode(_ next: TvNextEpisodeSummary) { sessionController.playNextEpisode(next) }
+    func loadAlternatives() async { await sessionController.loadAlternatives() }
+    func triggerSourceSwitch(to candidateId: String) { sessionController.triggerSourceSwitch(to: candidateId) }
+    func switchSource(to candidateId: String) async { await sessionController.switchSource(to: candidateId) }
+    func prepareForDismissal() { sessionController.prepareForDismissal() }
+    func teardownAndStop(
+        onComplete: (@MainActor @Sendable () -> Void)? = nil,
+        onStopReceipt: (@MainActor @Sendable (PlaybackStopReceipt) -> Void)? = nil
+    ) {
+        sessionController.teardownAndStop(onComplete: onComplete, onStopReceipt: onStopReceipt)
     }
 
-    func start(request: PlaybackLaunchRequest, client: LunaCoreClient?) {
-        bindEnginePublishersIfNeeded()
-        PlayerAudioSessionCoordinator.shared.sampleMenuRefreshRateIfIdle(hasActivePlayback: false)
-        engineOwnerToken = PlayerAudioSessionCoordinator.shared.claimEngineOwnership()
-        resetTransientTransitionState()
-        audioEnhancement = comfort.audioEnhancement
-        subtitleDelayMs = 0
-        lastForegroundPlaybackWasPlaying = false
-        isDismissing = false
-        pendingStopSnapshot = nil
-        activeResolveId = nil
-        pendingInflightPrepareTask?.cancel()
-        pendingInflightPrepareTask = request.inflightPrepareTask
-        pendingInflightPrepareToken = request.inflightPrepareToken
-        pendingHandedOverSessionId = request.preparedSession?.sessionId ?? request.prepareToken
-        if let preTok = request.preparedSession?.streamToken, preTok.count >= 8 {
-            if let oldTok = registeredStreamToken, oldTok.count >= 8, oldTok != preTok {
-                EngineLog.unregisterSecret(oldTok)
-            }
-            _ = EngineLog.registerSecret(preTok)
-            registeredStreamToken = preTok
-        }
-        didTeardown = false
-        fatalError = nil
-        firstFrameFallbackUnlocked = false
-        lastObservedPhase = .idle
-        lastReportedServerState = nil
-        currentRequest = request
-        guard let client else {
-            pendingInflightPrepareTask?.cancel()
-            pendingInflightPrepareTask = nil
-            pendingInflightPrepareToken = nil
-            pendingHandedOverSessionId = nil
-            fatalError = "Mangler tilkobling til LunaCore."
-            isResolving = false
-            return
-        }
-        self.activeClient = client
-        self.alternatives = []
-        self.alternativesSessionId = nil
-        resolveTask?.cancel()
-        resolveTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.runResolveAndLoad(request: request, client: client)
-        }
+    // MARK: - Track Controller Forwarders
+
+    var durationSeconds: Double { get { trackController.durationSeconds } set { trackController.durationSeconds = newValue } }
+    var activeAudioTrackIndex: Int? { get { trackController.activeAudioTrackIndex } set { trackController.activeAudioTrackIndex = newValue } }
+    var audioDelayMs: Int { get { trackController.audioDelayMs } set { trackController.audioDelayMs = newValue } }
+    var audioEnhancement: AudioEnhancementMode { get { trackController.audioEnhancement } set { trackController.audioEnhancement = newValue } }
+    var subtitleTracks: [TrackInfo] { get { trackController.subtitleTracks } set { trackController.subtitleTracks = newValue } }
+    var activeSubtitleTrackIndex: Int? { get { trackController.activeSubtitleTrackIndex } set { trackController.activeSubtitleTrackIndex = newValue } }
+    var subtitleDelayMs: Int { get { trackController.subtitleDelayMs } set { trackController.subtitleDelayMs = newValue } }
+    var subtitleDelaySeconds: Double { trackController.subtitleDelaySeconds }
+    var previewSubtitleOptions: [PlayerDrawerSubtitleOption] { get { trackController.previewSubtitleOptions } set { trackController.previewSubtitleOptions = newValue } }
+    var chapters: [PlaybackChapter] { get { trackController.chapters } set { trackController.chapters = newValue } }
+    var isWirelessAudioRouteActive: Bool { get { trackController.isWirelessAudioRouteActive } set { trackController.isWirelessAudioRouteActive = newValue } }
+    var kveldslysLockReason: String? { trackController.kveldslysLockReason }
+    var preferNorwegianAudio: Bool { trackController.preferNorwegianAudio }
+    var hasNorwegianAudioTrack: Bool { trackController.hasNorwegianAudioTrack }
+    var isSearchingSubtitles: Bool { trackController.isSearchingSubtitles }
+    var isAutoAligningSubtitles: Bool { trackController.isAutoAligningSubtitles }
+    var subtitleActionStatusMessage: String? { trackController.subtitleActionStatusMessage }
+
+    func selectAudioTrack(_ index: Int) { trackController.selectAudioTrack(index) }
+    func togglePreferNorwegianAudio() { trackController.togglePreferNorwegianAudio() }
+    func adjustAudioDelay(byMs deltaMs: Int) { trackController.adjustAudioDelay(byMs: deltaMs) }
+    func flushPendingAudioDelayCommitIfNeeded() { trackController.flushPendingAudioDelayCommitIfNeeded() }
+    func handleAudioRouteChange(isWirelessOverride: Bool? = nil) { trackController.handleAudioRouteChange(isWirelessOverride: isWirelessOverride) }
+    func setAudioEnhancement(_ mode: AudioEnhancementMode) { trackController.setAudioEnhancement(mode) }
+    func selectSubtitleManually(_ index: Int) { trackController.selectSubtitleManually(index) }
+    func clearSubtitleManually() { trackController.clearSubtitleManually() }
+    func adjustSubtitleDelay(byMs deltaMs: Int) { trackController.adjustSubtitleDelay(byMs: deltaMs) }
+    func searchAndAttachSubtitles() { trackController.searchAndAttachSubtitles() }
+    func autoAlignActiveSubtitle() { trackController.autoAlignActiveSubtitle() }
+    func switchToHDR10BaseLayer() { trackController.switchToHDR10BaseLayer() }
+
+    // MARK: - Scrub Controller Forwarders
+
+    var previewPlayheadOverrideSeconds: Double? { get { scrubController.previewPlayheadOverrideSeconds } set { scrubController.previewPlayheadOverrideSeconds = newValue } }
+    var coalescedSeekDelta: Double { get { scrubController.coalescedSeekDelta } set { scrubController.coalescedSeekDelta = newValue } }
+    var coalescedSeekPreviewTarget: Double? { get { scrubController.coalescedSeekPreviewTarget } set { scrubController.coalescedSeekPreviewTarget = newValue } }
+    var isScrubbing: Bool { get { scrubController.isScrubbing } set { scrubController.isScrubbing = newValue } }
+    var scrubState: PlayerScrubState { scrubController.scrubState }
+    var scrubCommitTask: Task<Void, Never>? { scrubController.scrubCommitTask }
+    var coalescedSeekTask: Task<Void, Never>? { scrubController.coalescedSeekTask }
+    var chapterSeekTask: Task<Void, Never>? { scrubController.chapterSeekTask }
+
+    func beginTouchScrub() { scrubController.beginTouchScrub() }
+    func configurePreviewScrub(originSeconds: Double = 1122, targetSeconds: Double = 2145, previewImage: CGImage?) {
+        scrubController.configurePreviewScrub(originSeconds: originSeconds, targetSeconds: targetSeconds, previewImage: previewImage)
+    }
+    func updateTouchScrub(deltaSeconds: Double) { scrubController.updateTouchScrub(deltaSeconds: deltaSeconds) }
+    func stepTouchScrub(by deltaSeconds: Double) { scrubController.stepTouchScrub(by: deltaSeconds) }
+    func beginRingHoldScrub(direction: Int) { scrubController.beginRingHoldScrub(direction: direction) }
+    func endRingHoldScrub(cancelled: Bool = false) { scrubController.endRingHoldScrub(cancelled: cancelled) }
+    func commitTouchScrub() { scrubController.commitTouchScrub() }
+    func commitTouchScrubPaused() { scrubController.commitTouchScrubPaused() }
+    func cancelTouchScrub() { scrubController.cancelTouchScrub() }
+    func coalesceRelativeSeek(delta: Double) { scrubController.coalesceRelativeSeek(delta: delta) }
+    func seekToChapter(_ chapter: PlaybackChapter) { scrubController.seekToChapter(chapter) }
+    func seekToPosition(_ rawTargetSeconds: Double, exact: Bool = true) { scrubController.seekToPosition(rawTargetSeconds, exact: exact) }
+
+    // MARK: - Restore & QoS Forwarders
+
+    var isRestoringFromBackground: Bool { get { restoreController.isRestoringFromBackground } set { restoreController.isRestoringFromBackground = newValue } }
+    var lastForegroundPlaybackWasPlaying: Bool { get { restoreController.lastForegroundPlaybackWasPlaying } set { restoreController.lastForegroundPlaybackWasPlaying = newValue } }
+    var userDesiredPlayingDuringRestore: Bool? { get { restoreController.userDesiredPlayingDuringRestore } set { restoreController.userDesiredPlayingDuringRestore = newValue } }
+    var needsNativeAudioActivationAfterPausedRestore: Bool { get { restoreController.needsNativeAudioActivationAfterPausedRestore } set { restoreController.needsNativeAudioActivationAfterPausedRestore = newValue } }
+    var pausedRestoreResumeTask: Task<Void, Never>? { restoreController.pausedRestoreResumeTask }
+    var playbackPhase: PlaybackPhase { get { qosReporter.playbackPhase } set { qosReporter.playbackPhase = newValue } }
+    var videoFormat: VideoFormat { get { qosReporter.videoFormat } set { qosReporter.videoFormat = newValue } }
+    var isMetalFXActive: Bool { qosReporter.isMetalFXActive }
+    var activeMetalFXBadge: String? { qosReporter.activeMetalFXBadge }
+    var remoteCommandToastMessage: String? { qosReporter.remoteCommandToastMessage }
+    var suggestsHDR10BaseLayer: Bool { qosReporter.suggestsHDR10BaseLayer }
+    var canSwitchToHDR10BaseLayer: Bool { qosReporter.canSwitchToHDR10BaseLayer }
+
+    func updateInitialScenePhase(_ phase: ScenePhase) { restoreController.updateInitialScenePhase(phase) }
+    func handleScenePhaseChange(_ phase: ScenePhase) { restoreController.handleScenePhaseChange(phase) }
+    func togglePlayPause() { restoreController.togglePlayPause() }
+    func handleHeartbeatPendingCommand(_ cmd: TvPendingCommand, client: LunaCoreClient?, currentPosition: Double) async {
+        await qosReporter.handleHeartbeatPendingCommand(cmd, client: client, currentPosition: currentPosition)
     }
 
-    func playNextEpisode(_ next: TvNextEpisodeSummary) {
-        guard let client = activeClient, let current = activeSession else { return }
-        resetTransientTransitionState()
-        resolveTask?.cancel()
-        activeResolveId = nil
-        pendingInflightPrepareTask?.cancel()
-        pendingInflightPrepareTask = nil
-        pendingInflightPrepareToken = nil
-        let matchedNextPrepToken = prewarmedNextEpisodeItemId == next.itemId ? prewarmedNextEpisodeSessionId : nil
-        pendingHandedOverSessionId = matchedNextPrepToken
-        nextEpisodePrewarmTask?.cancel()
-        nextEpisodePrewarmTask = nil
-        prewarmedNextEpisodeURL = nil
-        prewarmedNextEpisodeItemId = nil
-        prewarmedNextEpisodeSessionId = nil
-        if let nextTok = prewarmedNextEpisodeStreamToken, nextTok.count >= 8 {
-            if matchedNextPrepToken != nil {
-                if let oldTok = registeredStreamToken, oldTok.count >= 8, oldTok != nextTok {
-                    EngineLog.unregisterSecret(oldTok)
-                }
-                registeredStreamToken = nextTok
-            } else {
-                EngineLog.unregisterSecret(nextTok)
-            }
-            prewarmedNextEpisodeStreamToken = nil
-        }
-        switchSourceTask?.cancel()
-        switchSourceTask = nil
-        heartbeatTask?.cancel()
-        heartbeatTask = nil
-        lastReportedServerState = nil
-
-        let seriesName = current.item.seriesTitle
-        let cleanNextTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
-            next.title,
-            seriesTitle: seriesName,
-            season: next.season,
-            episode: next.episode
-        ) ?? ""
-        let req = PlaybackLaunchRequest(
-            itemId: next.itemId,
-            title: cleanNextTitle,
-            seriesTitle: seriesName,
-            season: next.season,
-            episode: next.episode,
-            startPositionSeconds: 0,
-            prepareToken: matchedNextPrepToken,
-            backdropUrl: next.stillUrl ?? current.item.backdropUrl,
-            logoUrl: current.item.logoUrl
-        )
-        currentRequest = req
-        alternatives = []
-        alternativesSessionId = nil
-        audioEnhancement = comfort.audioEnhancement
-        subtitleDelayMs = 0
-        userManuallySelectedSubtitle = false
-        didApplyInitialSmartRule = false
-        resolveHeadline = nil
-        resolvePercent = 12
-        resolveStageLabel = "Starter neste episode…"
-        isResolving = true
-        hasFirstFrameReadyForDisplay = false
-        firstFrameFallbackUnlocked = false
-
-        let prevSessionId = current.sessionId
-        let finalPos = max(0, transport.currentTime)
-        let finalDur = max(0, effectiveDurationSeconds)
-        let inCredits = chapters.contains { $0.kind == .credits && finalPos >= $0.startSeconds }
-        let isCompleted = playbackPhase == .ended || inCredits || (finalDur > 0 && finalPos / finalDur >= 0.75)
-        activeSession = nil
-        transport.prepareForItemReplacement()
-
-        Task.detached(priority: .utility) {
-            _ = try? await client.sendHeartbeat(
-                sessionId: prevSessionId,
-                state: "stopped",
-                positionSeconds: finalPos,
-                durationSeconds: finalDur,
-                completed: isCompleted ? true : nil
-            )
-        }
-
-        resolveTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.runResolveAndLoad(request: req, client: client)
-        }
+    func cancelAllSessionTasks() {
+        restoreController.cancelTasks()
+        scrubController.cancelTasks()
+        trackController.cancelTasks()
+        sessionController.cancelSessionTasks()
+        qosReporter.cancelTasks()
     }
 
-    nonisolated static func shouldActivateNativeAudioBeforePlayOnResume(
-        wasPlaying: Bool,
-        needsNativeAudioActivationAfterPausedRestore: Bool
+    // MARK: - Static Restore Helpers
+
+    nonisolated static func isActiveTransportIntent(playbackPhase: PlaybackPhase, engineState: PlaybackState) -> Bool {
+        PlayerRestoreController.isActiveTransportIntent(playbackPhase: playbackPhase, engineState: engineState)
+    }
+    nonisolated static func resolvedPostRestorePlayingIntent(defaultShouldPlay: Bool, userOverride: Bool?) -> Bool {
+        PlayerRestoreController.resolvedPostRestorePlayingIntent(defaultShouldPlay: defaultShouldPlay, userOverride: userOverride)
+    }
+    nonisolated static func shouldActivateNativeAudioDuringRestore(shouldPlay: Bool, videoRoute: VideoRoute) -> Bool {
+        PlayerRestoreController.shouldActivateNativeAudioDuringRestore(shouldPlay: shouldPlay, videoRoute: videoRoute)
+    }
+    nonisolated static func shouldAttemptForegroundVideoRestore(
+        needsForegroundVideoRestore: Bool, hasActiveSession: Bool, isResolving: Bool,
+        isSwitchingSource: Bool, isRestoringFromBackground: Bool, hasFatalError: Bool, didTeardown: Bool
     ) -> Bool {
-        !wasPlaying && needsNativeAudioActivationAfterPausedRestore
-    }
-
-    func cancelPendingPausedRestoreResume() {
-        pausedRestoreResumeToken &+= 1
-        pausedRestoreResumeTask?.cancel()
-        pausedRestoreResumeTask = nil
-    }
-
-    func activateNativeAudioForPendingResumeIfNeeded() async {
-        guard needsNativeAudioActivationAfterPausedRestore else { return }
-        await audioActivator.activateNativePlaybackIfNeeded(videoRoute: transport.videoRoute)
-    }
-
-    private func beginPausedRestoreResumeWithNativeAudioActivation() {
-        cancelPendingScrubCommit()
-        cancelPendingPausedRestoreResume()
-        pausedRestoreResumeToken &+= 1
-        let resumeToken = pausedRestoreResumeToken
-        let expectedSessionId = activeSession?.sessionId
-
-        if isForegroundActive && !transport.needsForegroundVideoRestore {
-            lastForegroundPlaybackWasPlaying = true
-        }
-
-        pausedRestoreResumeTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.activateNativeAudioForPendingResumeIfNeeded()
-            if self.pausedRestoreResumeToken == resumeToken {
-                self.pausedRestoreResumeTask = nil
-            }
-            guard !Task.isCancelled,
-                  self.pausedRestoreResumeToken == resumeToken,
-                  !self.isTeardownCompleted,
-                  self.fatalError == nil,
-                  !self.isResolving,
-                  !self.isSwitchingSource,
-                  !self.isRestoringFromBackground,
-                  !self.isScrubbing,
-                  self.isForegroundActive,
-                  !self.transport.needsForegroundVideoRestore,
-                  self.activeSession?.sessionId == expectedSessionId else {
-                return
-            }
-            self.needsNativeAudioActivationAfterPausedRestore = false
-            if self.transport.state == .paused || self.transport.state == .loading {
-                self.transport.play()
-            }
-            if self.isForegroundActive && !self.transport.needsForegroundVideoRestore {
-                self.lastForegroundPlaybackWasPlaying = Self.isActiveTransportIntent(
-                    playbackPhase: self.transport.playbackPhase,
-                    engineState: self.transport.state
-                )
-            }
-        }
-    }
-
-    func togglePlayPause() {
-        if isRestoringFromBackground {
-            let currentTarget = userDesiredPlayingDuringRestore ?? lastForegroundPlaybackWasPlaying
-            let nextTarget = !currentTarget
-            userDesiredPlayingDuringRestore = nextTarget
-            lastForegroundPlaybackWasPlaying = nextTarget
-            return
-        }
-        if pausedRestoreResumeTask != nil || scrubCommitTask != nil {
-            cancelPendingPausedRestoreResume()
-            cancelPendingScrubCommit()
-            if isForegroundActive && !transport.needsForegroundVideoRestore {
-                lastForegroundPlaybackWasPlaying = false
-            }
-            return
-        }
-        let wasPlaying = Self.isActiveTransportIntent(
-            playbackPhase: transport.playbackPhase,
-            engineState: transport.state
+        PlayerRestoreController.shouldAttemptForegroundVideoRestore(
+            needsForegroundVideoRestore: needsForegroundVideoRestore, hasActiveSession: hasActiveSession,
+            isResolving: isResolving, isSwitchingSource: isSwitchingSource,
+            isRestoringFromBackground: isRestoringFromBackground, hasFatalError: hasFatalError, didTeardown: didTeardown
         )
-        if Self.shouldActivateNativeAudioBeforePlayOnResume(
-            wasPlaying: wasPlaying,
-            needsNativeAudioActivationAfterPausedRestore: needsNativeAudioActivationAfterPausedRestore
-        ) {
-            beginPausedRestoreResumeWithNativeAudioActivation()
-            return
-        }
-        transport.togglePlayPause()
-        if isForegroundActive && !transport.needsForegroundVideoRestore {
-            lastForegroundPlaybackWasPlaying = Self.isActiveTransportIntent(
-                playbackPhase: transport.playbackPhase,
-                engineState: transport.state
-            )
-        }
     }
-
-    func teardownAndStop(onComplete: (@MainActor @Sendable () -> Void)? = nil) {
-        guard !didTeardown else { return }
-        didTeardown = true
-        cancelAllSessionTasks()
-        resetScrubStateOnSessionChange()
-        UIApplication.shared.isIdleTimerDisabled = false
-
-        let snapshot = pendingStopSnapshot ?? captureStopSnapshot()
-        pendingStopSnapshot = nil
-        activeResolveId = nil
-        pendingHandedOverSessionId = nil
-        pendingInflightPrepareTask = nil
-        pendingInflightPrepareToken = nil
-        ArtworkPipeline.shared.exitPlaybackMemoryMode()
-        cancellables.removeAll()
-        didBindEnginePublishers = false
-
-        if PlayerAudioSessionCoordinator.shared.isCurrentEngineOwner(engineOwnerToken) {
-            PlayerNowPlayingCoordinator.clear(engine: engine)
-            let resetOnExit = PlayerAudioSessionCoordinator.shouldResetDisplayCriteriaOnPlayerExit(
-                menuDisplayMode: comfort.menuDisplayMode,
-                videoFormat: videoFormat,
-                isForegroundActive: isForegroundActive
-            )
-            transport.stop(resetDisplayCriteria: resetOnExit, finalTeardown: true)
-            if resetOnExit {
-                PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
-            } else {
-                if comfort.menuDisplayMode == .preserveHDR60HzQMS {
-                    PlayerAudioSessionCoordinator.shared.applyMenu60HzHDRCriteriaIfNeeded(videoFormat: videoFormat)
-                }
-                PlayerAudioSessionCoordinator.shared.holdDisplayCriteriaUntilBackground(engine: engine)
-            }
-        }
-
-        if let tok = registeredStreamToken, tok.count >= 8 {
-            EngineLog.unregisterSecret(tok)
-            registeredStreamToken = nil
-        }
-        if let nextTok = prewarmedNextEpisodeStreamToken, nextTok.count >= 8 {
-            EngineLog.unregisterSecret(nextTok)
-            prewarmedNextEpisodeStreamToken = nil
-        }
-        prewarmedNextEpisodeURL = nil
-        prewarmedNextEpisodeItemId = nil
-        prewarmedNextEpisodeSessionId = nil
-
-        if let client = snapshot.client, let sessionId = snapshot.sessionId, !sessionId.isEmpty {
-            snapshot.inflightPrepareTask?.cancel()
-            let finalPos = snapshot.finalPos
-            let finalDur = snapshot.finalDur
-            let isCompleted = snapshot.isCompleted
-            let cancelResolveId = snapshot.resolveId
-            Task.detached {
-                if let cancelResolveId, !cancelResolveId.isEmpty {
-                    try? await client.cancelInflightPlayback(
-                        sessionId: sessionId,
-                        resolveId: cancelResolveId
-                    )
-                }
-                _ = try? await client.sendHeartbeat(
-                    sessionId: sessionId,
-                    state: "stopped",
-                    positionSeconds: finalPos,
-                    durationSeconds: finalDur,
-                    completed: isCompleted ? true : nil
-                )
-                if let onComplete {
-                    await onComplete()
-                }
-            }
-        } else if let client = snapshot.client,
-                  (snapshot.resolveId != nil || snapshot.inflightPrepareTask != nil || snapshot.cancelItemId != nil) {
-            let inflightPrep = snapshot.inflightPrepareTask
-            inflightPrep?.cancel()
-            let cancelResolveId = snapshot.resolveId
-            let cancelItemId = snapshot.cancelItemId
-            let cancelPrepareToken = snapshot.cancelPrepareToken
-            Task.detached {
-                if cancelResolveId != nil || cancelItemId != nil {
-                    try? await client.cancelInflightPlayback(
-                        resolveId: cancelResolveId,
-                        itemId: cancelItemId,
-                        prepareToken: cancelPrepareToken
-                    )
-                }
-                if let latePrep = await inflightPrep?.value {
-                    if let lateTok = latePrep.playbackSession?.streamToken, lateTok.count >= 8 {
-                        EngineLog.unregisterSecret(lateTok)
-                    }
-                    if let orphanSid = latePrep.playbackSession?.sessionId ?? latePrep.prepareToken,
-                       !orphanSid.isEmpty {
-                        _ = try? await client.sendHeartbeat(
-                            sessionId: orphanSid,
-                            state: "stopped",
-                            positionSeconds: 0,
-                            durationSeconds: 0
-                        )
-                    }
-                }
-                if let onComplete {
-                    await onComplete()
-                }
-            }
-        } else {
-            snapshot.inflightPrepareTask?.cancel()
-            onComplete?()
-        }
-    }
-
-    func updateIdleTimer(for phase: PlaybackPhase) {
-        switch phase {
-        case .playing, .loading, .seeking, .rebuffering, .stalled:
-            UIApplication.shared.isIdleTimerDisabled = true
-        case .paused, .idle, .ended, .error:
-            UIApplication.shared.isIdleTimerDisabled = isResolving || isScrubbing || isRestoringFromBackground
-        }
-    }
-
-    var isTeardownCompleted: Bool {
-        didTeardown
+    nonisolated static func shouldActivateNativeAudioBeforePlayOnResume(wasPlaying: Bool, needsNativeAudioActivationAfterPausedRestore: Bool) -> Bool {
+        PlayerRestoreController.shouldActivateNativeAudioBeforePlayOnResume(
+            wasPlaying: wasPlaying, needsNativeAudioActivationAfterPausedRestore: needsNativeAudioActivationAfterPausedRestore
+        )
     }
 }

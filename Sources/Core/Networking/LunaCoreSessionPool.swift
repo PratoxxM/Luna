@@ -81,13 +81,14 @@ public final class LunaCoreSessionPool: Sendable {
         allowSelfSignedLanTLS: Bool,
         timeoutSeconds: TimeInterval = 3.0
     ) -> URLSession {
-        makeOrReuseSession(
+        let safeTimeout = timeoutSeconds.isFinite ? max(0.1, min(3600.0, timeoutSeconds)) : 4.0
+        return makeOrReuseSession(
             for: baseURL,
             allowSelfSignedLanTLS: allowSelfSignedLanTLS,
-            lane: "probe-\(Int((timeoutSeconds * 1000).rounded()))",
+            lane: "probe-\(Int((safeTimeout * 1000).rounded()))",
             maxConnections: 2,
-            requestTimeout: timeoutSeconds,
-            resourceTimeout: timeoutSeconds
+            requestTimeout: safeTimeout,
+            resourceTimeout: safeTimeout
         )
     }
 

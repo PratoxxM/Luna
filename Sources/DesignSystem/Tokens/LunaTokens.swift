@@ -1,11 +1,11 @@
-// Generated from design/tokens.json (sha256: 93300ad9c5c654cdeb77827205f72d1145440d93680ccca63ccac8ba3530bc6f) — DO NOT EDIT MANUALLY.
+// Generated from design/tokens.json (sha256: 26ba103abc2b298cbfd78c197316256e7b5c900b273e9e064f6fef8242e5f26d) — DO NOT EDIT MANUALLY.
 // Regenerate via: ./ops/bin/luna-design-tokens --sync
 
 import CoreGraphics
 import SwiftUI
 
 public enum LunaTokens {
-    public static let tokensSha256 = "93300ad9c5c654cdeb77827205f72d1145440d93680ccca63ccac8ba3530bc6f"
+    public static let tokensSha256 = "26ba103abc2b298cbfd78c197316256e7b5c900b273e9e064f6fef8242e5f26d"
 
     public enum Surface {
         public static let canvas = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0)
@@ -23,14 +23,6 @@ public enum LunaTokens {
         public static let statePill = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0).opacity(0.65)
         public static let badgeScrim = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0).opacity(0.75)
         public static let scrim = Color(red: 0.0 / 255.0, green: 0.0 / 255.0, blue: 0.0 / 255.0).opacity(0.65)
-        public static let topbarLegacy = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0).opacity(0.84)
-        public static let stickyLegacy = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0).opacity(0.90)
-        public static let navLegacy = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0).opacity(0.94)
-        public static let pillLegacy = Color(red: 24.0 / 255.0, green: 20.0 / 255.0, blue: 18.0 / 255.0).opacity(0.94)
-        public static let sheetLegacy = Color(red: 18.0 / 255.0, green: 15.0 / 255.0, blue: 13.0 / 255.0).opacity(0.96)
-        public static let sheetHeaderLegacy = Color(red: 18.0 / 255.0, green: 15.0 / 255.0, blue: 13.0 / 255.0).opacity(0.97)
-        public static let overlayLegacy = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0).opacity(0.78)
-        public static let backdropLegacy = Color(red: 0.0 / 255.0, green: 0.0 / 255.0, blue: 0.0 / 255.0).opacity(0.72)
     }
 
     public enum Edge {
@@ -47,7 +39,6 @@ public enum LunaTokens {
         public static let glassHighlight = Color(red: 255.0 / 255.0, green: 236.0 / 255.0, blue: 200.0 / 255.0).opacity(0.10)
         public static let ctaSplitDivider = Color(red: 10.0 / 255.0, green: 9.0 / 255.0, blue: 8.0 / 255.0).opacity(0.18)
         public static let ctaPressWash = Color(red: 0.0 / 255.0, green: 0.0 / 255.0, blue: 0.0 / 255.0).opacity(0.10)
-        public static let trackLegacy = Color(red: 255.0 / 255.0, green: 255.0 / 255.0, blue: 255.0 / 255.0).opacity(0.14)
     }
 
     public enum Text {

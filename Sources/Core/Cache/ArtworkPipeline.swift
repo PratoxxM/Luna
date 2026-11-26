@@ -6,11 +6,6 @@ import Synchronization
 import UIKit
 #endif
 
-public enum ArtworkLoadPriority: Sendable {
-    case interactive
-    case prefetch
-}
-
 /// Off-main-thread WebP/JPEG/PNG artwork loader, GPU-ready bitmap cache, and adaptive NVMe disk cache.
 public actor ArtworkPipeline {
     public static let shared = ArtworkPipeline()
@@ -81,72 +76,15 @@ public actor ArtworkPipeline {
     }
 
     public nonisolated static func rawIdentity(for url: URL) -> String {
-        let pathPart: String
-        if let query = url.query, !query.isEmpty {
-            pathPart = "\(url.path)?\(query)"
-        } else {
-            pathPart = url.path
-        }
-        if pathPart.hasPrefix("/api/tv/v1") {
-            return pathPart
-        }
-        let scheme = url.scheme?.lowercased() ?? ""
-        let host = url.host?.lowercased() ?? ""
-        guard !host.isEmpty else { return pathPart }
-        if let port = url.port {
-            return "\(scheme)://\(host):\(port)\(pathPart)"
-        }
-        return "\(scheme)://\(host)\(pathPart)"
+        ArtworkSubjectKey.rawIdentity(for: url)
     }
 
-    /// Size-agnostic subject identity bridging `/api/tv/v1/img/(card|still|backdrop)/<bucket>/<file>`,
-    /// TMDB `/t/p/w1280/...` <-> `/t/p/original/...`, and query-width `/api/tv/v1/artwork?...&w=1280`
-    /// for instant progressive upgrades.
     public nonisolated static func canonicalSubjectIdentity(for url: URL) -> String {
-        let path = url.path
-        if path.hasPrefix("/api/tv/v1/img/") {
-            let suffix = path.dropFirst("/api/tv/v1/img/".count)
-            let parts = suffix.split(separator: "/", maxSplits: 1)
-            if parts.count == 2 {
-                let variant = parts[0].lowercased()
-                let tail = parts[1]
-                switch variant {
-                case "card", "still", "backdrop":
-                    return "tvimg-landscape:\(tail)"
-                case "poster":
-                    return "tvimg-poster:\(tail)"
-                case "logo":
-                    return "tvimg-logo:\(tail)"
-                default:
-                    return "tvimg:\(variant)/\(tail)"
-                }
-            }
-        }
-        let segments = path.components(separatedBy: "/")
-        if let pIdx = segments.firstIndex(of: "p"),
-           pIdx >= 1,
-           segments[pIdx - 1] == "t",
-           pIdx + 2 < segments.count {
-            let tail = segments[(pIdx + 2)...].joined(separator: "/")
-            return "tmdb:/\(tail)"
-        }
-        if var comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
-           let items = comps.queryItems,
-           !items.isEmpty {
-            let filtered = items.filter { item in
-                let lower = item.name.lowercased()
-                return lower != "w" && lower != "width"
-            }
-            comps.queryItems = filtered.isEmpty ? nil : filtered
-            if let stripped = comps.url {
-                return rawIdentity(for: stripped)
-            }
-        }
-        return rawIdentity(for: url)
+        ArtworkSubjectKey.canonicalSubjectIdentity(for: url)
     }
 
     public nonisolated static func cacheKey(for url: URL, maxPixelSize: Int) -> String {
-        "\(rawIdentity(for: url))#px\(maxPixelSize)"
+        ArtworkSubjectKey.cacheKey(for: url, maxPixelSize: maxPixelSize)
     }
 
     public nonisolated func memoryCachedImage(for url: URL, maxPixelSize: Int) -> CGImage? {
@@ -154,9 +92,7 @@ public actor ArtworkPipeline {
         return ramCache.image(forKey: key)
     }
 
-    private nonisolated static let candidateCachedPixelSizes: [Int] = [
-        3840, 2880, 2400, 1920, 1280, 1120, 1092, 1040, 960, 900, 896, 882, 820, 800, 780, 750, 720, 640, 480, 220,
-    ]
+    private nonisolated static let candidateCachedPixelSizes: [Int] = ArtworkSubjectKey.candidateCachedPixelSizes
 
     /// Looks up any already-decoded bitmap in RAM for `url` (checking exact `preferredMaxPixelSize`,
     /// canonical size-agnostic subject match, and standard pixel buckets) in `0 ms`.
@@ -407,13 +343,11 @@ public actor ArtworkPipeline {
             operation: { [self] () -> Data? in
                 guard !Task.isCancelled else { return nil }
                 if let diskData = try? Data(contentsOf: diskFileURL), !diskData.isEmpty {
-                    let now = Date().timeIntervalSinceReferenceDate
-                    if diskTouchTracker.shouldTouchAndRecord(rawKey, now: now) {
-                        let path = diskFileURL.path
-                        Task.detached(priority: .background) {
-                            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: path)
-                        }
-                    }
+                    ArtworkDiskCache.touchDiskFileIfNeeded(
+                        at: diskFileURL,
+                        key: rawKey,
+                        tracker: diskTouchTracker
+                    )
                     return diskData
                 }
 
@@ -446,6 +380,7 @@ public actor ArtworkPipeline {
 
     private func ensureCacheDirectoryIfNeeded() {
         guard !didEnsureCacheDir else { return }
+        ArtworkDiskCache.migrateLegacyCacheDirectoryIfNeeded()
         try? FileManager.default.createDirectory(at: Self.imageCacheDirectoryURL, withIntermediateDirectories: true)
         didEnsureCacheDir = true
     }
@@ -571,5 +506,23 @@ public actor ArtworkPipeline {
         }
         #endif
         return decoded
+    }
+}
+
+extension ArtworkPipeline {
+    internal static nonisolated var imageCacheDirectoryURL: URL {
+        ArtworkDiskCache.imageCacheDirectoryURL
+    }
+
+    public nonisolated static func diskUsageBytesAsync() async -> Int64 {
+        await ArtworkDiskCache.diskUsageBytesAsync()
+    }
+
+    internal nonisolated static func diskFileURL(for url: URL) -> URL {
+        ArtworkDiskCache.diskFileURL(for: url)
+    }
+
+    internal nonisolated static func trimDiskCacheSynchronously(maxBytes: Int64) {
+        ArtworkDiskCache.trimDiskCacheSynchronously(maxBytes: maxBytes)
     }
 }

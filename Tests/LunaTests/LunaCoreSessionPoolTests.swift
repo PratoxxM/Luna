@@ -13,7 +13,7 @@ final class LunaCoreSessionPoolTests: XCTestCase {
         pool.invalidateAll()
 
         let urlA = try XCTUnwrap(URL(string: "https://lunacore.local:8920"))
-        let urlSameOriginUpper = try XCTUnwrap(URL(string: "HTTPS://LUNACORE.LOCAL:8920/api/tv/v1/home"))
+        let urlSameOriginUpper = try XCTUnwrap(URL(string: "HTTPS://LUNACORE.LOCAL:8920/api/tv/v2/home"))
         let urlDifferentPort = try XCTUnwrap(URL(string: "https://lunacore.local:8090"))
 
         let api1 = pool.session(for: urlA, allowSelfSignedLanTLS: true)

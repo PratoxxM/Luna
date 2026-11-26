@@ -33,7 +33,7 @@ public enum LunaCopy: Sendable {
     #endif
 
     public nonisolated static func plural(_ count: Int, _ singular: String, _ pluralForm: String) -> String {
-        abs(count) == 1 ? "\(count) \(singular)" : "\(count) \(pluralForm)"
+        count.magnitude == 1 ? "\(count) \(singular)" : "\(count) \(pluralForm)"
     }
 
     public nonisolated static func formatDecimal(_ value: Double, decimals: Int = 1) -> String {
@@ -79,6 +79,44 @@ public enum LunaCopy: Sendable {
             singular: "sesong",
             pluralForm: "sesonger"
         )
+    }
+
+    public static let libraryListsSectionTitle = "Lister"
+    public static let emptyCustomListsHeadline = "Ingen egne lister ennå"
+    public static let norwegianAudioTitle = "Norsk tale"
+    public static let originalLanguageTitle = "Originalspråk"
+    public static let fetchSubtitlesTitle = "Hent undertekst…"
+    public static let autoAlignSubtitlesTitle = "Synk automatisk"
+    public static let skipToPostCreditsTitle = "Hopp til etter rulletekst"
+    public static let switchToHDR10BaseLayerTitle = "Bytt til HDR10-baselag"
+    public static let ramBufferTitle = "RAM-buffer"
+    public static let quickBufferTitle = "Hurtigbuffer"
+    public static let norwegianAudioActiveSubtitle = "Husket for denne tittelen · Trykk for originalspråk"
+    public static let norwegianAudioInactiveSubtitle = "Bytt til norsk lyd og skjul full tekst"
+    public static let searchingSubtitlesTitle = "Henter undertekst…"
+    public static let subtitleAttachedStatus = "Undertekst lagt til"
+    public static let noSubtitlesFoundStatus = "Ingen undertekst funnet"
+    public static let autoAligningSubtitlesTitle = "Synkroniserer undertekst…"
+    public static let autoAlignSubtitleIdle = "Justerer timing automatisk"
+    public static let autoAlignSelectTrackFirst = "Velg en undertekst først"
+    public static let subtitlesAlignedStatus = "Undertekst synkronisert"
+    public static let subtitlesAlignFailedStatus = "Kunne ikke synkronisere"
+    public static let hdr10FallbackRecommendedSubtitle = "Mistede bilder oppdaget på P7 FEL — anbefalt for jevnere flyt"
+    public static let hdr10FallbackHintSubtitle = "Deaktiver Dolby Vision P7 FEL for jevnere avspilling"
+
+    public nonisolated static func listsPillTitle(_ count: Int) -> String {
+        let clamped = max(0, count)
+        #if canImport(Darwin)
+        let resolved = String(
+            localized: "lists_pill_count \(Int64(clamped))",
+            bundle: .main,
+            locale: norwegianLocale
+        )
+        if !resolved.contains("%lld"), !resolved.contains("lists_pill_count") {
+            return resolved
+        }
+        #endif
+        return "Lister · \(clamped)"
     }
 
     public nonisolated static func mediaFilesCount(_ count: Int) -> String {

@@ -1,12 +1,26 @@
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#endif
 import Foundation
-import CoreGraphics
 
-/// Fast pure-Swift BlurHash decoder producing tiny 32x18 smooth placeholders off or on demand,
-/// backed by `InflightTaskCoalescer` across concurrent shelf cards.
-public enum BlurHashDecoder {
-    private static let cache = ThreadSafeImageMemoryCache(totalCostLimit: 4 * 1024 * 1024)
-    private static let inflightDecodes = InflightTaskCoalescer<String, CGImage?>()
+public struct BlurHashDecodedPixels: Equatable, Sendable {
+    public let width: Int
+    public let height: Int
+    public let rgbaBytes: [UInt8]
 
+    public init(width: Int, height: Int, rgbaBytes: [UInt8]) {
+        self.width = width
+        self.height = height
+        self.rgbaBytes = rgbaBytes
+    }
+}
+
+/// Fast pure-Swift BlurHash decoder producing tiny 32x18 smooth RGBA placeholders on demand.
+public enum BlurHashDecoder: Sendable {
     private static let base83Table: [Int16] = {
         var table = [Int16](repeating: -1, count: 256)
         for (idx, byte) in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~".utf8.enumerated() {
@@ -27,58 +41,30 @@ public enum BlurHashDecoder {
         return lut
     }()
 
-    private static func makeCacheKey(_ raw: String, width: Int, height: Int, punch: Float) -> String {
-        let roundedPunch = Int((punch * 100).rounded())
+    public static let maxDecodeDimension = 512
+
+    public static func makeCacheKey(_ raw: String, width: Int, height: Int, punch: Float) -> String {
+        let safePunch = punch.isFinite ? max(0, min(10, punch)) : 1.0
+        let roundedPunch = Int((safePunch * 100).rounded())
         return "\(raw)#\(width)x\(height)#p\(roundedPunch)"
     }
 
-    public static func cachedImage(_ blurHash: String?, width: Int = 32, height: Int = 18, punch: Float = 1.0) -> CGImage? {
-        guard let raw = blurHash?.trimmingCharacters(in: .whitespacesAndNewlines),
-              raw.count >= 6 else {
-            return nil
-        }
-        return cache.image(forKey: makeCacheKey(raw, width: width, height: height, punch: punch))
-    }
-
-    public static func clearCache() {
-        inflightDecodes.cancelAll()
-        cache.removeAll()
-    }
-
-    public static func decodeAsync(_ blurHash: String?, width: Int = 32, height: Int = 18, punch: Float = 1.0) async -> CGImage? {
-        guard !Task.isCancelled,
-              width > 0, height > 0,
+    public static func decodePixels(
+        _ blurHash: String?,
+        width: Int = 32,
+        height: Int = 18,
+        punch: Float = 1.0
+    ) -> BlurHashDecodedPixels? {
+        guard width > 0, width <= maxDecodeDimension,
+              height > 0, height <= maxDecodeDimension,
+              punch.isFinite, punch >= 0,
               let raw = blurHash?.trimmingCharacters(in: .whitespacesAndNewlines),
               raw.count >= 6 else {
             return nil
-        }
-        let cacheKey = makeCacheKey(raw, width: width, height: height, punch: punch)
-        if let hit = cache.image(forKey: cacheKey) {
-            return hit
-        }
-
-        guard let outcome = await inflightDecodes.coalesceNonThrowing(key: cacheKey, priority: .utility, operation: {
-            guard !Task.isCancelled else { return nil }
-            return decode(raw, width: width, height: height, punch: punch)
-        }) else {
-            return nil
-        }
-        return outcome.value
-    }
-
-    public static func decode(_ blurHash: String?, width: Int = 32, height: Int = 18, punch: Float = 1.0) -> CGImage? {
-        guard width > 0, height > 0,
-              let raw = blurHash?.trimmingCharacters(in: .whitespacesAndNewlines),
-              raw.count >= 6 else {
-            return nil
-        }
-        let cacheKey = makeCacheKey(raw, width: width, height: height, punch: punch)
-        if let hit = cache.image(forKey: cacheKey) {
-            return hit
         }
 
         let bytes = Array(raw.utf8)
-        guard let sizeFlag = decode83(bytes, from: 0, to: 1) else { return nil }
+        guard bytes.count >= 6, let sizeFlag = decode83(bytes, from: 0, to: 1) else { return nil }
         let numY = (sizeFlag / 9) + 1
         let numX = (sizeFlag % 9) + 1
         let expectedLength = 4 + 2 * numX * numY
@@ -148,26 +134,7 @@ public enum BlurHashDecoder {
             }
         }
 
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        guard let provider = CGDataProvider(data: Data(pixels) as CFData),
-              let cgImage = CGImage(
-                  width: width,
-                  height: height,
-                  bitsPerComponent: 8,
-                  bitsPerPixel: 32,
-                  bytesPerRow: width * 4,
-                  space: colorSpace,
-                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                  provider: provider,
-                  decode: nil,
-                  shouldInterpolate: true,
-                  intent: .defaultIntent
-              ) else {
-            return nil
-        }
-
-        cache.insert(cgImage, forKey: cacheKey)
-        return cgImage
+        return BlurHashDecodedPixels(width: width, height: height, rgbaBytes: pixels)
     }
 
     private static func decode83(_ bytes: [UInt8], from: Int, to: Int) -> Int? {

@@ -1,100 +1,11 @@
 import SwiftUI
 import AetherBridge
 
-/// Pure subtitle placement rules preventing collisions with bottom OSD (`320 pt`),
-/// series continuity overlays (`.skipPrompt` `168 pt`, `.nextEpisodeCard` `300 pt`, or
-/// relocated to top when bottom OSD + series card are visible simultaneously), open quick-panel
-/// popovers, and `NerdHUDView` (`x = 90..830 pt`, `y = 42..330 pt`).
-internal enum SubtitleOverlayLayout {
-    static let nerdHUDProtectedRect = CGRect(x: 90, y: 42, width: 740, height: 288)
-    static let skipPromptBottomInset: CGFloat = 168
-    static let nextEpisodeBottomInset: CGFloat = 300
-
-    struct VerticalPlacement: Equatable, Sendable {
-        let relocateToTop: Bool
-        let topInset: CGFloat
-        let bottomInset: CGFloat
-        let leadingInset: CGFloat
-        let trailingInset: CGFloat
-
-        init(
-            relocateToTop: Bool,
-            topInset: CGFloat,
-            bottomInset: CGFloat,
-            leadingInset: CGFloat = 120,
-            trailingInset: CGFloat = 120
-        ) {
-            self.relocateToTop = relocateToTop
-            self.topInset = topInset
-            self.bottomInset = bottomInset
-            self.leadingInset = leadingInset
-            self.trailingInset = trailingInset
-        }
-    }
-
-    nonisolated static func verticalPlacement(
-        isBottomBarVisible: Bool,
-        isQuickPanelOpen: Bool,
-        isNerdHUDVisible: Bool,
-        activeSeriesOverlay: ActiveSeriesOverlayKind = .none,
-        isScrubbing: Bool = false
-    ) -> VerticalPlacement {
-        if isQuickPanelOpen || isScrubbing {
-            if isNerdHUDVisible {
-                return VerticalPlacement(
-                    relocateToTop: true,
-                    topInset: 72,
-                    bottomInset: 0,
-                    leadingInset: 856,
-                    trailingInset: 90
-                )
-            }
-            return VerticalPlacement(
-                relocateToTop: true,
-                topInset: 84,
-                bottomInset: 0,
-                leadingInset: 120,
-                trailingInset: 120
-            )
-        }
-
-        if isBottomBarVisible && activeSeriesOverlay != .none {
-            return VerticalPlacement(
-                relocateToTop: true,
-                topInset: isNerdHUDVisible ? 340 : 84,
-                bottomInset: 0,
-                leadingInset: 120,
-                trailingInset: 120
-            )
-        }
-
-        let resolvedBottomInset: CGFloat = {
-            if isBottomBarVisible {
-                return 320
-            }
-            switch activeSeriesOverlay {
-            case .none:
-                return 74
-            case .skipPrompt:
-                return Self.skipPromptBottomInset
-            case .nextEpisodeCard:
-                return Self.nextEpisodeBottomInset
-            }
-        }()
-
-        return VerticalPlacement(
-            relocateToTop: false,
-            topInset: isNerdHUDVisible ? 340 : 72,
-            bottomInset: resolvedBottomInset,
-            leadingInset: 120,
-            trailingInset: 120
-        )
-    }
-}
-
 /// Leaf subtitle overlay subscribing exclusively to `engine.clock.$sourceTime`
 /// so 10 Hz clock ticks never re-render the surrounding player UI.
 struct SubtitleOverlayView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let engine: AetherEngine
     let comfort: ComfortPreferences
     var subtitleDelaySeconds: Double = 0
@@ -232,7 +143,7 @@ struct SubtitleOverlayView: View {
         .padding(.top, verticalSlot == .top ? placement.topInset : 0)
         .padding(.bottom, verticalSlot == .bottom ? placement.bottomInset : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
-        .animation(.easeOut(duration: 0.18), value: placement)
+        .animation(LunaFocusStyle.calmEaseOut(duration: 0.18, reduceMotion: reduceMotion), value: placement)
     }
 
     @ViewBuilder
@@ -286,7 +197,7 @@ struct SubtitleOverlayView: View {
                 .colorMultiply(comfort.hdrSubtitlePreset.bitmapMultiplyColor(isHDR: isHDR))
                 .frame(width: max(1, adjusted.width), height: max(1, adjusted.height))
                 .position(x: adjusted.midX, y: adjusted.midY)
-                .animation(.easeOut(duration: 0.18), value: placement)
+                .animation(LunaFocusStyle.calmEaseOut(duration: 0.18, reduceMotion: reduceMotion), value: placement)
         }
     }
 

@@ -26,8 +26,8 @@ enum PlayerNowPlayingCoordinator {
         client: LunaCoreClient,
         viewModel: PlayerViewModel
     ) {
-        viewModel.nowPlayingArtworkTask?.cancel()
-        viewModel.nowPlayingArtworkTask = nil
+        viewModel.sessionController.nowPlayingArtworkTask?.cancel()
+        viewModel.sessionController.nowPlayingArtworkTask = nil
 
         let engine = viewModel.engine
         var baseInfo = makeBaseInfo(for: session)
@@ -56,7 +56,7 @@ enum PlayerNowPlayingCoordinator {
         }
 
         let targetSessionID = session.sessionId
-        viewModel.nowPlayingArtworkTask = Task { @MainActor [weak viewModel] in
+        viewModel.sessionController.nowPlayingArtworkTask = Task { @MainActor [weak viewModel] in
             guard let cgImage = await ArtworkPipeline.shared.loadImage(
                 url: artURL,
                 maxPixelSize: nowPlayingArtworkMaxPixels,

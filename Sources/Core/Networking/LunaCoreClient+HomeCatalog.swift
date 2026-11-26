@@ -21,7 +21,7 @@ extension LunaCoreClient {
         }
         return try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/pair/request",
+            path: "/api/tv/v2/pair/request",
             body: Payload(
                 deviceId: deviceID,
                 model: model,
@@ -35,7 +35,7 @@ extension LunaCoreClient {
 
     public func pollPairingCode(_ code: String) async throws -> (httpStatus: Int, response: TvPairingPollResponse) {
         let digits = code.filter(\.isNumber)
-        let (status, data) = try await executeRawGET(path: "/api/tv/v1/pair/poll/\(digits)", includeAuth: false)
+        let (status, data) = try await executeRawGET(path: "/api/tv/v2/pair/poll/\(digits)", includeAuth: false)
         if let decoded = try? Self.decodeJSON(TvPairingPollResponse.self, from: data) {
             return (status, decoded)
         }
@@ -65,7 +65,7 @@ extension LunaCoreClient {
     // MARK: - Bootstrap, Conditional Home & Native Catalog
 
     public func fetchBootstrap() async throws -> TvBootstrapResponse {
-        try await sendJSON(method: "GET", path: "/api/tv/v1/bootstrap")
+        try await sendJSON(method: "GET", path: "/api/tv/v2/bootstrap")
     }
 
     public func updateDeviceProfile(
@@ -82,7 +82,7 @@ extension LunaCoreClient {
         }
         let _: TvMutationAckResponse = try await sendJSON(
             method: "PATCH",
-            path: "/api/tv/v1/device/profile",
+            path: "/api/tv/v2/device/profile",
             body: BodyPayload(
                 roomName: roomName,
                 hardwareProfile: hardwareProfile,
@@ -93,7 +93,7 @@ extension LunaCoreClient {
     }
 
     public func fetchHomeConditional(ifNoneMatch: String?) async throws -> HomeConditionalResult {
-        try await sendConditionalGET(path: "/api/tv/v1/home", ifNoneMatch: ifNoneMatch)
+        try await sendConditionalGET(path: "/api/tv/v2/home", ifNoneMatch: ifNoneMatch)
     }
 
     public func fetchCatalog(
@@ -105,6 +105,49 @@ extension LunaCoreClient {
         page: Int = 1,
         limit: Int = 24
     ) async throws -> TvCatalogResponse {
+        let path = Self.buildCatalogRequestPath(
+            kind: kind,
+            genre: genre,
+            sort: sort,
+            localOnly: localOnly,
+            unwatchedOnly: unwatchedOnly,
+            page: page,
+            limit: limit
+        )
+        return try await sendJSON(method: "GET", path: path)
+    }
+
+    public func fetchCatalogConditional(
+        kind: String,
+        genre: String? = nil,
+        sort: String = "popular",
+        localOnly: Bool = false,
+        unwatchedOnly: Bool = false,
+        page: Int = 1,
+        limit: Int = 24,
+        ifNoneMatch: String? = nil
+    ) async throws -> ConditionalHTTPResult<TvCatalogResponse> {
+        let path = Self.buildCatalogRequestPath(
+            kind: kind,
+            genre: genre,
+            sort: sort,
+            localOnly: localOnly,
+            unwatchedOnly: unwatchedOnly,
+            page: page,
+            limit: limit
+        )
+        return try await sendConditionalGET(path: path, ifNoneMatch: ifNoneMatch)
+    }
+
+    private static func buildCatalogRequestPath(
+        kind: String,
+        genre: String?,
+        sort: String,
+        localOnly: Bool,
+        unwatchedOnly: Bool,
+        page: Int,
+        limit: Int
+    ) -> String {
         let endpointKind = (kind == "series" || kind == "tv") ? "series" : "movies"
         var items: [URLQueryItem] = [
             URLQueryItem(name: "sort", value: sort),
@@ -120,8 +163,14 @@ extension LunaCoreClient {
         if unwatchedOnly {
             items.append(URLQueryItem(name: "unwatchedOnly", value: "1"))
         }
-        let path = buildQueryPath("/api/tv/v1/catalog/\(endpointKind)", queryItems: items)
-        return try await sendJSON(method: "GET", path: path)
+        let query = items.compactMap { item -> String? in
+            guard let name = item.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                  let val = item.value?.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+                return nil
+            }
+            return "\(name)=\(val)"
+        }.joined(separator: "&")
+        return query.isEmpty ? "/api/tv/v2/catalog/\(endpointKind)" : "/api/tv/v2/catalog/\(endpointKind)?\(query)"
     }
 
     public func fetchRow(
@@ -148,11 +197,16 @@ extension LunaCoreClient {
         let clampedOffset = max(0, offset)
         let clampedLimit = max(1, limit)
 
-        if pathOrRowId.hasPrefix("/api/tv/v1/") {
-            if var comps = URLComponents(string: pathOrRowId) {
+        let normalizedPathOrRowId = pathOrRowId.hasPrefix("/api/tv/v1/")
+            ? "/api/tv/v2/" + pathOrRowId.dropFirst("/api/tv/v1/".count)
+            : pathOrRowId
+
+        if normalizedPathOrRowId.hasPrefix("/api/tv/v2/") {
+            if var comps = URLComponents(string: normalizedPathOrRowId) {
                 var items = comps.queryItems ?? []
-                if comps.path.hasPrefix("/api/tv/v1/catalog/") {
-                    let page = (clampedOffset / clampedLimit) + 1
+                if comps.path.hasPrefix("/api/tv/v2/catalog/") {
+                    let pageIndex = clampedOffset / clampedLimit
+                    let page = pageIndex < Int.max ? pageIndex + 1 : Int.max
                     items.removeAll { $0.name == "offset" || $0.name == "limit" || $0.name == "page" }
                     items.append(URLQueryItem(name: "page", value: String(page)))
                     items.append(URLQueryItem(name: "limit", value: String(clampedLimit)))
@@ -171,8 +225,8 @@ extension LunaCoreClient {
             }
         }
 
-        let encoded = pathOrRowId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? pathOrRowId
-        var path = "/api/tv/v1/rows/\(encoded)?offset=\(clampedOffset)&limit=\(clampedLimit)"
+        let encoded = normalizedPathOrRowId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? normalizedPathOrRowId
+        var path = "/api/tv/v2/rows/\(encoded)?offset=\(clampedOffset)&limit=\(clampedLimit)"
         if let sort, !sort.isEmpty {
             let encodedSort = sort.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? sort
             path += "&sort=\(encodedSort)"

@@ -90,7 +90,7 @@ final class ModelDecodingTests: XCTestCase {
             "sizeBytes": 53687091200
           },
           "stream": {
-            "url": "/api/tv/v1/streams/sess-1/master",
+            "url": "/api/tv/v2/streams/sess-1/master",
             "supportsByteRanges": true,
             "canClientPrewarmBytes": true
           },
@@ -106,8 +106,8 @@ final class ModelDecodingTests: XCTestCase {
         let session = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(json.utf8))
         XCTAssertEqual(session.stream.canClientPrewarmBytes, true)
         XCTAssertEqual(
-            session.selectedCandidate.quickRowTitle(roomName: "Kjellerstua", isRecommended: true),
-            "Anbefalt for Kjellerstua · 4K Dolby Vision P7 FEL TrueHD Atmos"
+            session.selectedCandidate.quickRowTitle(isRecommended: true),
+            "Anbefalt · 4K Dolby Vision P7 FEL TrueHD Atmos"
         )
         XCTAssertEqual(session.selectedCandidate.quickRowMetadata(activeLabel: nil), "På NVMe · 50,0 GB")
     }
@@ -218,6 +218,11 @@ final class ModelDecodingTests: XCTestCase {
         let autoNight = comfort.buildAudioShaping(enhancement: .nightMode)
         XCTAssertNil(autoNight.maxChannels)
         XCTAssertNil(autoNight.lfeMixDB)
+
+        comfort.roomAutoSpeakerLayout = "2.0"
+        let autoStereoRef = comfort.buildAudioShaping(enhancement: .reference)
+        XCTAssertEqual(autoStereoRef.maxChannels, 2)
+        XCTAssertEqual(autoStereoRef.lfeMixDB, -6.0)
     }
 
     func testFrontPageCardCleanSubtitlesAndUpcomingPills() {
@@ -341,7 +346,7 @@ final class ModelDecodingTests: XCTestCase {
           "nextEpisodePrewarm": {
             "itemId": "episode:tmdb:95396:s1:e2",
             "sessionId": "tvs_next",
-            "streamUrl": "/api/tv/v1/stream/tvs_next/sig/ep2.mkv",
+            "streamUrl": "/api/tv/v2/stream/tvs_next/sig/ep2.mkv",
             "canClientPrewarmBytes": true,
             "nextEpisode": {
               "itemId": "episode:tmdb:95396:s1:e2",
@@ -516,6 +521,39 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(decoded[0].isNorwegian, true)
         XCTAssertEqual(decoded[1].channels, "5.1")
         XCTAssertEqual(decoded[1].tvScore, 980)
-        XCTAssertEqual(decoded[1].quickRowTitle(roomName: "Stua", isRecommended: true), "Anbefalt for Stua · 4K HDR10+ Dolby Digital+ 5.1")
+        XCTAssertEqual(decoded[1].quickRowTitle(isRecommended: true), "Anbefalt · 4K HDR10+ Dolby Digital+ 5.1")
+    }
+
+    func testDecodeTvV2CustomListsOriginalLanguageAndSubtitleActions() throws {
+        let libJson = #"""
+        {
+          "ok": true,
+          "section": "lists",
+          "counts": { "watchlist": 1, "localTotal": 2, "nvme": 2, "archive": 0, "vfs": 0, "customListsCount": 1 },
+          "watchlist": [],
+          "localItems": [],
+          "customLists": [
+            { "id": "custom:nordic", "name": "Nordisk", "itemCount": 5, "browsePath": "/api/tv/v2/rows/custom:nordic" }
+          ]
+        }
+        """#
+        let lib = try JSONDecoder().decode(TvLibraryResponse.self, from: Data(libJson.utf8))
+        XCTAssertEqual(lib.counts.resolvedCustomListsCount, 1)
+        XCTAssertEqual(lib.resolvedCustomLists.first?.name, "Nordisk")
+
+        let searchAttachJson = #"""
+        {"ok":true,"sessionId":"s1","attached":true,"status":"attached","provider":"subdl","subtitleDelayMs":-120}
+        """#
+        let attach = try JSONDecoder().decode(TvSubtitleSearchAttachResponse.self, from: Data(searchAttachJson.utf8))
+        XCTAssertTrue(attach.attached)
+        XCTAssertEqual(attach.externalSubtitles, [])
+        XCTAssertEqual(attach.subtitleDelayMs, -120)
+
+        let autoAlignJson = #"""
+        {"ok":true,"sessionId":"s1","applied":true,"mode":"ffsubsync","offsetMs":450,"subtitleDelayMs":450}
+        """#
+        let align = try JSONDecoder().decode(TvSubtitleAutoAlignResponse.self, from: Data(autoAlignJson.utf8))
+        XCTAssertTrue(align.applied)
+        XCTAssertEqual(align.subtitleDelayMs, 450)
     }
 }

@@ -138,7 +138,7 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
             "tier": "vfs"
           },
           "stream": {
-            "url": "/api/tv/v1/streams/sess-sync-1/master"
+            "url": "/api/tv/v2/streams/sess-sync-1/master"
           },
           "aetherConfig": {
             "preferDualLayerDolbyVision": false,

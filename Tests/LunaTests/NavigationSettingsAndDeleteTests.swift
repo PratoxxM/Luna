@@ -187,7 +187,7 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
               "listMode": "curated",
               "rowStyle": "poster",
               "itemCount": 6,
-              "browsePath": "/api/tv/v1/rows/custom:nordic-noir"
+              "browsePath": "/api/tv/v2/rows/custom:nordic-noir"
             }
           ]
         }
@@ -291,7 +291,7 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
         let topBar = LunaTopBarView(selectedTab: .constant(.home))
         let pushedSearchView = SearchView(initialQuery: "dune", isRootTab: false)
         let pushedCatalogView = CatalogBrowseView(mediaType: "movie", initialGenre: nil, isRootTab: false)
-        let customRowView = CustomRowBrowseView(title: "Nordic Noir", pathOrRowId: "/api/tv/v1/rows/custom:nordic-noir")
+        let customRowView = CustomRowBrowseView(title: "Nordic Noir", pathOrRowId: "/api/tv/v2/rows/custom:nordic-noir")
         let detailView = MediaDetailView(mediaType: "movie", itemId: "movie:tmdb:550", initialTitle: "Fight Club")
 
         XCTAssertEqual(deleteSheet.target.tmdbId, 550)
@@ -416,7 +416,7 @@ final class NavigationSettingsAndDeleteTests: XCTestCase {
 
         let pushedViews: [AnyView] = [
             AnyView(MediaDetailView(mediaType: "movie", itemId: "movie:tmdb:550", initialTitle: "Fight Club").environment(store)),
-            AnyView(CustomRowBrowseView(title: "Nordic Noir", pathOrRowId: "/api/tv/v1/rows/custom:nordic-noir").environment(store)),
+            AnyView(CustomRowBrowseView(title: "Nordic Noir", pathOrRowId: "/api/tv/v2/rows/custom:nordic-noir").environment(store)),
             AnyView(CatalogBrowseView(mediaType: "movie", initialGenre: nil, isRootTab: false).environment(store)),
             AnyView(SearchView(initialQuery: "dune", isRootTab: false).environment(store)),
         ]

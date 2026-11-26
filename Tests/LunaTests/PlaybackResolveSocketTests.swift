@@ -8,12 +8,12 @@ final class PlaybackResolveSocketTests: XCTestCase {
         let httpsBase = try XCTUnwrap(URL(string: "https://lunacore.example.test:8920"))
 
         XCTAssertEqual(
-            PlaybackResolveSocket.makeWebSocketURL(baseURL: httpBase, wsPath: "/api/tv/v1/ws/resolve/abc")?.absoluteString,
-            "ws://lunacore.local:8090/api/tv/v1/ws/resolve/abc"
+            PlaybackResolveSocket.makeWebSocketURL(baseURL: httpBase, wsPath: "/api/tv/v2/ws/resolve/abc")?.absoluteString,
+            "ws://lunacore.local:8090/api/tv/v2/ws/resolve/abc"
         )
         XCTAssertEqual(
-            PlaybackResolveSocket.makeWebSocketURL(baseURL: httpsBase, wsPath: "api/tv/v1/ws/resolve/abc?token=1")?.absoluteString,
-            "wss://lunacore.example.test:8920/api/tv/v1/ws/resolve/abc?token=1"
+            PlaybackResolveSocket.makeWebSocketURL(baseURL: httpsBase, wsPath: "api/tv/v2/ws/resolve/abc?token=1")?.absoluteString,
+            "wss://lunacore.example.test:8920/api/tv/v2/ws/resolve/abc?token=1"
         )
         XCTAssertEqual(
             PlaybackResolveSocket.makeWebSocketURL(baseURL: httpBase, wsPath: "wss://direct.example.test/ws")?.absoluteString,
@@ -31,7 +31,7 @@ final class PlaybackResolveSocketTests: XCTestCase {
         XCTAssertNil(PlaybackResolveSocket.makeWebSocketURL(baseURL: httpBase, wsPath: "/bad path with spaces"))
         XCTAssertNil(PlaybackResolveSocket.makeWebSocketURL(baseURL: httpBase, wsPath: "ws://"))
         let hostlessBase = try XCTUnwrap(URL(string: "http:///"))
-        XCTAssertNil(PlaybackResolveSocket.makeWebSocketURL(baseURL: hostlessBase, wsPath: "/api/tv/v1/ws/resolve/abc"))
+        XCTAssertNil(PlaybackResolveSocket.makeWebSocketURL(baseURL: hostlessBase, wsPath: "/api/tv/v2/ws/resolve/abc"))
     }
 
     func testEventsStreamThrowsInvalidURLImmediatelyForBlankPath() async throws {
@@ -42,9 +42,10 @@ final class PlaybackResolveSocketTests: XCTestCase {
             headers: [:],
             allowSelfSignedLanTLS: true
         )
+        let provider: any PlaybackResolveSocketProviding = socket
 
         do {
-            for try await _ in socket.events() {
+            for try await _ in provider.events() {
                 XCTFail("Expected invalidURL error")
             }
             XCTFail("Stream should have thrown invalidURL")
@@ -83,7 +84,7 @@ final class PlaybackResolveSocketTests: XCTestCase {
             "hardwareProfile": "hdr10-512",
             "item": { "itemId": "movie:tmdb:550", "mediaType": "movie", "ids": {"tmdb": 550}, "title": "Fight Club" },
             "selectedCandidate": { "candidateId": "c1", "displayHeadline": "4K", "releaseTitle": "Rel", "source": "nvme" },
-            "stream": { "url": "/api/tv/v1/streams/sess-1/master" },
+            "stream": { "url": "/api/tv/v2/streams/sess-1/master" },
             "aetherConfig": {
               "preferDualLayerDolbyVision": false,
               "dolbyVisionHandling": "baseLayerOnly",

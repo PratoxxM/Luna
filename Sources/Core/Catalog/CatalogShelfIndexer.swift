@@ -27,7 +27,7 @@ public enum CatalogShelfIndexer: Sendable {
     ]
 
     /// Filters out empty shelves and generic Bibliotek-only duplicate rows (`Huskeliste` / full local library),
-    /// while preserving `Kommende episoder` and server-ordered shelves configured on `/api/tv/v1/home`.
+    /// while preserving `Kommende episoder` and server-ordered shelves configured on `/api/tv/v2/home`.
     public static func filterVisibleRows(_ rows: [TvShelfRow]) -> [TvShelfRow] {
         rows.filter { row in
             guard !row.items.isEmpty else { return false }

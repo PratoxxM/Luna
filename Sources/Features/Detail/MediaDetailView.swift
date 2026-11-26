@@ -1,4 +1,43 @@
 import SwiftUI
+import AetherBridge
+
+struct AetherDetailStreamPrewarmer: DetailStreamPrewarming {
+    func registerStreamSecret(_ secret: String) {
+        _ = EngineLog.registerSecret(secret)
+    }
+
+    func unregisterStreamSecret(_ secret: String) {
+        EngineLog.unregisterSecret(secret)
+    }
+
+    func prewarmIfNeeded(url: URL, httpHeaders: [String: String], byteBudget: Int) async {
+        if !AetherEngine.isPrewarmed(url: url) {
+            _ = await AetherEngine.prewarm(
+                url: url,
+                httpHeaders: httpHeaders,
+                byteBudget: byteBudget
+            )
+        }
+    }
+}
+
+extension AppSessionStore: MediaDetailSessionContext {
+    var keepDisplayModeInMenuAfterPlayback: Bool {
+        comfort.keepDisplayModeInMenuAfterPlayback
+    }
+
+    var detailStreamPrewarmer: any DetailStreamPrewarming {
+        AetherDetailStreamPrewarmer()
+    }
+
+    func handleDetailDisappear(isLaunchingPlayback: Bool, isShowingSourcePicker: Bool) {
+        PlayerAudioSessionCoordinator.shared.handleDetailDisappear(
+            isLaunchingPlayback: isLaunchingPlayback,
+            isShowingSourcePicker: isShowingSourcePicker,
+            keepDisplayModeInMenu: keepDisplayModeInMenuAfterPlayback
+        )
+    }
+}
 
 struct MediaDetailView: View {
     @Environment(AppSessionStore.self) private var sessionStore

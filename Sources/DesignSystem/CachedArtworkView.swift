@@ -24,6 +24,7 @@ public struct CachedArtworkView: View, Equatable {
     let progressiveFallback: Bool
     let retainDuringPlayback: Bool
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var loadedArtwork: TaggedCGImage?
     @State private var decodedBlur: TaggedCGImage?
     @State private var rehydrateNonce: UInt64 = 0
@@ -142,7 +143,7 @@ public struct CachedArtworkView: View, Equatable {
                 Image(decorative: cgImage, scale: 1.0, orientation: .up)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
-                    .transition(.opacity)
+                    .transition(reduceMotion ? .identity : .opacity)
             } else {
                 placeholderLayer
             }
@@ -229,7 +230,7 @@ public struct CachedArtworkView: View, Equatable {
             )
             guard !Task.isCancelled else { return }
             if let fetched {
-                withAnimation(.easeOut(duration: 0.18)) {
+                withAnimation(LunaFocusStyle.calmEaseOut(duration: 0.18, reduceMotion: reduceMotion)) {
                     loadedArtwork = TaggedCGImage(key: targetImageKey, image: fetched)
                 }
             } else if !progressiveFallback, loadedArtwork != nil {

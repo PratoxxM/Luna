@@ -58,7 +58,7 @@ final class NetworkCacheAndMemoryProfileTests: XCTestCase {
         XCTAssertEqual(a19EightGB.prewarmByteBudget(availableMemoryBytes: 2_000 * 1024 * 1024, isFastLocalTier: false), 8 * 1024 * 1024)
         XCTAssertEqual(a19EightGB.prewarmByteBudget(availableMemoryBytes: 900 * 1024 * 1024, isFastLocalTier: true), 8 * 1024 * 1024)
         XCTAssertEqual(a19EightGB.prewarmByteBudget(availableMemoryBytes: 500 * 1024 * 1024, isFastLocalTier: true), 0)
-        XCTAssertEqual(SideloadSafeStorage.currentAppVersionString(), "2.12.2")
+        XCTAssertEqual(SideloadSafeStorage.currentAppVersionString(), "3.0.0")
     }
 
     func testHeartbeatNextEpisodePrewarmPayloadDecoding() throws {
@@ -71,7 +71,7 @@ final class NetworkCacheAndMemoryProfileTests: XCTestCase {
             "itemId": "episode:tmdb:95396:s1:e2",
             "sessionId": "tvs_next85",
             "streamToken": "0123456789abcdef0123456789abcdef",
-            "streamUrl": "/api/tv/v1/stream/tvs_next85/0123456789abcdef0123456789abcdef/Severance.S01E02.mkv",
+            "streamUrl": "/api/tv/v2/stream/tvs_next85/0123456789abcdef0123456789abcdef/Severance.S01E02.mkv",
             "canClientPrewarmBytes": true,
             "nextEpisode": {
               "itemId": "episode:tmdb:95396:s1:e2",

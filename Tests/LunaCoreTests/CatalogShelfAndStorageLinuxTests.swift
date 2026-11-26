@@ -157,8 +157,9 @@ final class CatalogShelfAndStorageLinuxTests: XCTestCase {
             releaseGroup: "playWEB",
             isNorwegian: true
         )
-        let title = cand.quickRowTitle(roomName: "Stua", isRecommended: true)
-        XCTAssertEqual(title, "Anbefalt for Stua · 1080p Dolby Atmos")
+        let title = cand.quickRowTitle(isRecommended: true)
+        XCTAssertEqual(title, "Anbefalt · 1080p Dolby Atmos")
+        XCTAssertFalse(title.contains("Stua"))
         XCTAssertFalse(title.contains("playWEB"))
         XCTAssertFalse(title.contains("NORVINE"))
         let sub = cand.quickRowMetadata(activeLabel: "Spilles nå")

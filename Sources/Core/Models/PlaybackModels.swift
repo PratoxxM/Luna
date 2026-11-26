@@ -112,6 +112,7 @@ public struct TvPairedDeviceInfo: Codable, Equatable, Sendable {
     public let hardwareProfile: String
     public let equipmentLabel: String?
     public let atmosphere: String?
+    public let speakerLayout: String?
     public let overrides: TvDeviceOverrides?
     public let capabilities: TvDeviceCapabilities?
 
@@ -123,6 +124,7 @@ public struct TvPairedDeviceInfo: Codable, Equatable, Sendable {
         hardwareProfile: String,
         equipmentLabel: String? = nil,
         atmosphere: String? = nil,
+        speakerLayout: String? = nil,
         overrides: TvDeviceOverrides? = nil,
         capabilities: TvDeviceCapabilities? = nil
     ) {
@@ -133,6 +135,7 @@ public struct TvPairedDeviceInfo: Codable, Equatable, Sendable {
         self.hardwareProfile = hardwareProfile
         self.equipmentLabel = equipmentLabel
         self.atmosphere = atmosphere
+        self.speakerLayout = speakerLayout
         self.overrides = overrides
         self.capabilities = capabilities
     }
@@ -229,7 +232,7 @@ private extension KeyedDecodingContainer {
 
     func decodeFlexInt<T: FixedWidthInteger & Decodable & LosslessStringConvertible>(_ key: Key) -> T? {
         if let i = try? decodeIfPresent(T.self, forKey: key) { return i }
-        if let d = try? decodeIfPresent(Double.self, forKey: key), d.isFinite { return T(d.rounded()) }
+        if let d = try? decodeIfPresent(Double.self, forKey: key), d.isFinite { return T(exactly: d.rounded()) }
         if let s = try? decodeIfPresent(String.self, forKey: key) {
             return T(s.trimmingCharacters(in: .whitespacesAndNewlines))
         }
@@ -294,9 +297,18 @@ public struct TvSessionTracks: Codable, Equatable, Sendable {
     public let probeConfidence: String?
     public let externalSubtitles: [TvExternalSubtitle]?
     public let chapters: [TvProbeChapter]?
+    public let subtitleDelayMs: Int?
 
-    public init(probeConfidence: String? = nil, externalSubtitles: [TvExternalSubtitle]? = nil, chapters: [TvProbeChapter]? = nil) {
-        self.probeConfidence = probeConfidence; self.externalSubtitles = externalSubtitles; self.chapters = chapters
+    public init(
+        probeConfidence: String? = nil,
+        externalSubtitles: [TvExternalSubtitle]? = nil,
+        chapters: [TvProbeChapter]? = nil,
+        subtitleDelayMs: Int? = nil
+    ) {
+        self.probeConfidence = probeConfidence
+        self.externalSubtitles = externalSubtitles
+        self.chapters = chapters
+        self.subtitleDelayMs = subtitleDelayMs
     }
 }
 
@@ -348,14 +360,30 @@ public struct TvPlaybackItemContext: Codable, Equatable, Sendable {
     public let episode: Int?
     public let year: Int?
     public let runtimeSeconds: Double?
+    public let originalLanguage: String?
     public let posterUrl: String?
     public let backdropUrl: String?
     public let logoUrl: String?
 
-    public init(itemId: String, mediaType: String, ids: TvMediaIds, title: String, seriesTitle: String? = nil, season: Int? = nil, episode: Int? = nil, year: Int? = nil, runtimeSeconds: Double? = nil, posterUrl: String? = nil, backdropUrl: String? = nil, logoUrl: String? = nil) {
+    public init(
+        itemId: String,
+        mediaType: String,
+        ids: TvMediaIds,
+        title: String,
+        seriesTitle: String? = nil,
+        season: Int? = nil,
+        episode: Int? = nil,
+        year: Int? = nil,
+        runtimeSeconds: Double? = nil,
+        originalLanguage: String? = nil,
+        posterUrl: String? = nil,
+        backdropUrl: String? = nil,
+        logoUrl: String? = nil
+    ) {
         self.itemId = itemId; self.mediaType = mediaType; self.ids = ids; self.title = title
         self.seriesTitle = seriesTitle; self.season = season; self.episode = episode; self.year = year
-        self.runtimeSeconds = runtimeSeconds; self.posterUrl = posterUrl; self.backdropUrl = backdropUrl; self.logoUrl = logoUrl
+        self.runtimeSeconds = runtimeSeconds; self.originalLanguage = originalLanguage
+        self.posterUrl = posterUrl; self.backdropUrl = backdropUrl; self.logoUrl = logoUrl
     }
 }
 
@@ -381,14 +409,29 @@ public struct TvPlaybackSession: Codable, Equatable, Sendable {
     public let stream: TvStreamEndpoint
     public let tracks: TvSessionTracks?
     public let chapters: [TvProbeChapter]?
+    public let subtitleDelayMs: Int?
     public let aetherConfig: TvAetherConfig
     public let heartbeatIntervalSeconds: Int?
     public let nextEpisode: TvNextEpisodeSummary?
 
-    public init(sessionId: String, streamToken: String, roomName: String, hardwareProfile: String, item: TvPlaybackItemContext, selectedCandidate: TvCandidateInfo, stream: TvStreamEndpoint, tracks: TvSessionTracks? = nil, chapters: [TvProbeChapter]? = nil, aetherConfig: TvAetherConfig, heartbeatIntervalSeconds: Int? = nil, nextEpisode: TvNextEpisodeSummary? = nil) {
+    public init(
+        sessionId: String,
+        streamToken: String,
+        roomName: String,
+        hardwareProfile: String,
+        item: TvPlaybackItemContext,
+        selectedCandidate: TvCandidateInfo,
+        stream: TvStreamEndpoint,
+        tracks: TvSessionTracks? = nil,
+        chapters: [TvProbeChapter]? = nil,
+        subtitleDelayMs: Int? = nil,
+        aetherConfig: TvAetherConfig,
+        heartbeatIntervalSeconds: Int? = nil,
+        nextEpisode: TvNextEpisodeSummary? = nil
+    ) {
         self.sessionId = sessionId; self.streamToken = streamToken; self.roomName = roomName
         self.hardwareProfile = hardwareProfile; self.item = item; self.selectedCandidate = selectedCandidate
-        self.stream = stream; self.tracks = tracks; self.chapters = chapters
+        self.stream = stream; self.tracks = tracks; self.chapters = chapters; self.subtitleDelayMs = subtitleDelayMs
         self.aetherConfig = aetherConfig; self.heartbeatIntervalSeconds = heartbeatIntervalSeconds; self.nextEpisode = nextEpisode
     }
 }
@@ -467,17 +510,149 @@ public struct TvNextEpisodePrewarmInfo: Codable, Equatable, Sendable {
     }
 }
 
+public struct TvPlaybackQosPayload: Encodable, Equatable, Sendable {
+    public let videoRoute: String?
+    public let forwardBufferSeconds: Double?
+    public let droppedVideoFrames: Int?
+    public let stallCount: Int?
+
+    public init(
+        videoRoute: String? = nil,
+        forwardBufferSeconds: Double? = nil,
+        droppedVideoFrames: Int? = nil,
+        stallCount: Int? = nil
+    ) {
+        self.videoRoute = videoRoute
+        self.forwardBufferSeconds = forwardBufferSeconds
+        self.droppedVideoFrames = droppedVideoFrames
+        self.stallCount = stallCount
+    }
+}
+
 public struct TvHeartbeatResponse: Codable, Equatable, Sendable {
     public let ok: Bool
     public let sessionId: String?
     public let state: String
+    public let watchCompleted: Bool?
+    public let subtitleDelayMs: Int?
     public let pendingCommand: TvPendingCommand?
     public let vfsTelemetry: TvVfsTelemetry?
     public let nextEpisodePrewarm: TvNextEpisodePrewarmInfo?
 
-    public init(ok: Bool, sessionId: String? = nil, state: String, pendingCommand: TvPendingCommand? = nil, vfsTelemetry: TvVfsTelemetry? = nil, nextEpisodePrewarm: TvNextEpisodePrewarmInfo? = nil) {
+    public init(
+        ok: Bool,
+        sessionId: String? = nil,
+        state: String,
+        watchCompleted: Bool? = nil,
+        subtitleDelayMs: Int? = nil,
+        pendingCommand: TvPendingCommand? = nil,
+        vfsTelemetry: TvVfsTelemetry? = nil,
+        nextEpisodePrewarm: TvNextEpisodePrewarmInfo? = nil
+    ) {
         self.ok = ok; self.sessionId = sessionId; self.state = state
+        self.watchCompleted = watchCompleted; self.subtitleDelayMs = subtitleDelayMs
         self.pendingCommand = pendingCommand; self.vfsTelemetry = vfsTelemetry; self.nextEpisodePrewarm = nextEpisodePrewarm
+    }
+}
+
+public struct TvSubtitleSearchAttachResponse: Codable, Equatable, Sendable {
+    public let ok: Bool
+    public let requestId: String?
+    public let sessionId: String
+    public let attached: Bool
+    public let status: String
+    public let provider: String?
+    public let written: Bool?
+    public let alignedNorwegian: Bool?
+    public let downloadedCount: Int?
+    public let subtitle: TvExternalSubtitle?
+    public let externalSubtitles: [TvExternalSubtitle]
+    public let subtitleDelayMs: Int?
+
+    public init(
+        ok: Bool = true,
+        requestId: String? = nil,
+        sessionId: String,
+        attached: Bool,
+        status: String,
+        provider: String? = nil,
+        written: Bool? = nil,
+        alignedNorwegian: Bool? = nil,
+        downloadedCount: Int? = nil,
+        subtitle: TvExternalSubtitle? = nil,
+        externalSubtitles: [TvExternalSubtitle] = [],
+        subtitleDelayMs: Int? = nil
+    ) {
+        self.ok = ok
+        self.requestId = requestId
+        self.sessionId = sessionId
+        self.attached = attached
+        self.status = status
+        self.provider = provider
+        self.written = written
+        self.alignedNorwegian = alignedNorwegian
+        self.downloadedCount = downloadedCount
+        self.subtitle = subtitle
+        self.externalSubtitles = externalSubtitles
+        self.subtitleDelayMs = subtitleDelayMs
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case ok, requestId, sessionId, attached, status, provider, written
+        case alignedNorwegian, downloadedCount, subtitle, externalSubtitles, subtitleDelayMs
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.ok = (try? c.decodeIfPresent(Bool.self, forKey: .ok)) ?? true
+        self.requestId = try c.decodeIfPresent(String.self, forKey: .requestId)
+        self.sessionId = try c.decode(String.self, forKey: .sessionId)
+        self.attached = try c.decode(Bool.self, forKey: .attached)
+        self.status = try c.decode(String.self, forKey: .status)
+        self.provider = try c.decodeIfPresent(String.self, forKey: .provider)
+        self.written = try c.decodeIfPresent(Bool.self, forKey: .written)
+        self.alignedNorwegian = try c.decodeIfPresent(Bool.self, forKey: .alignedNorwegian)
+        self.downloadedCount = try c.decodeIfPresent(Int.self, forKey: .downloadedCount)
+        self.subtitle = try c.decodeIfPresent(TvExternalSubtitle.self, forKey: .subtitle)
+        self.externalSubtitles = (try? c.decodeIfPresent([TvExternalSubtitle].self, forKey: .externalSubtitles)) ?? []
+        self.subtitleDelayMs = try c.decodeIfPresent(Int.self, forKey: .subtitleDelayMs)
+    }
+}
+
+public struct TvSubtitleAutoAlignResponse: Codable, Equatable, Sendable {
+    public let ok: Bool
+    public let requestId: String?
+    public let sessionId: String
+    public let applied: Bool
+    public let mode: String?
+    public let reason: String?
+    public let offsetMs: Double
+    public let scale: Double?
+    public let subtitleDelayMs: Int
+    public let subtitle: TvExternalSubtitle?
+
+    public init(
+        ok: Bool = true,
+        requestId: String? = nil,
+        sessionId: String,
+        applied: Bool,
+        mode: String? = nil,
+        reason: String? = nil,
+        offsetMs: Double,
+        scale: Double? = nil,
+        subtitleDelayMs: Int,
+        subtitle: TvExternalSubtitle? = nil
+    ) {
+        self.ok = ok
+        self.requestId = requestId
+        self.sessionId = sessionId
+        self.applied = applied
+        self.mode = mode
+        self.reason = reason
+        self.offsetMs = offsetMs
+        self.scale = scale
+        self.subtitleDelayMs = subtitleDelayMs
+        self.subtitle = subtitle
     }
 }
 

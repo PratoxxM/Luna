@@ -19,6 +19,7 @@ struct DetailSeasonsSectionView: View {
     let onDeleteEpisode: (TvEpisodeCard) -> Void
 
     @State private var showSeasonPickerSheet: Bool = false
+    @State private var episodeScrollPosition = ScrollPosition(idType: String.self)
     @Namespace private var seasonsFocusNamespace
     @Namespace private var episodesFocusNamespace
 
@@ -103,46 +104,46 @@ struct DetailSeasonsSectionView: View {
             } else {
                 let nextTargetID = nextEpisodeTargetID
                 let preferredEpisodeID = restoreFocusEpisodeID ?? nextTargetID
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
-                            ForEach(episodes) { ep in
-                                EpisodeCardView(
-                                    episode: ep,
-                                    seriesTitle: detail.title,
-                                    isNextForYou: ep.id == nextTargetID,
-                                    client: client,
-                                    focusRequestNonce: ep.id == restoreFocusEpisodeID ? restoreFocusNonce : 0,
-                                    onFocusChanged: { focused in
-                                        if focused {
-                                            onEpisodeFocused?(ep)
-                                        }
-                                    },
-                                    onPlay: { onPlayEpisode(ep) },
-                                    onPickSource: { onPickEpisodeSource(ep) },
-                                    onToggleWatched: { onToggleEpisodeWatched(ep) },
-                                    onRequestDelete: { onDeleteEpisode(ep) }
-                                )
-                                .id(ep.id)
-                                .prefersDefaultFocus(ep.id == preferredEpisodeID, in: episodesFocusNamespace)
-                            }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {
+                        ForEach(episodes) { ep in
+                            EpisodeCardView(
+                                episode: ep,
+                                seriesTitle: detail.title,
+                                isNextForYou: ep.id == nextTargetID,
+                                client: client,
+                                focusRequestNonce: ep.id == restoreFocusEpisodeID ? restoreFocusNonce : 0,
+                                onFocusChanged: { focused in
+                                    if focused {
+                                        onEpisodeFocused?(ep)
+                                    }
+                                },
+                                onPlay: { onPlayEpisode(ep) },
+                                onPickSource: { onPickEpisodeSource(ep) },
+                                onToggleWatched: { onToggleEpisodeWatched(ep) },
+                                onRequestDelete: { onDeleteEpisode(ep) }
+                            )
+                            .id(ep.id)
+                            .prefersDefaultFocus(ep.id == preferredEpisodeID, in: episodesFocusNamespace)
                         }
-                        .padding(.horizontal, detailGutter)
-                        .padding(.vertical, 10)
                     }
-                    .contentMargins(.zero, for: .scrollContent)
-                    .scrollClipDisabled()
-                    .focusScope(episodesFocusNamespace)
-                    .focusSection()
-                    .onAppear {
-                        scrollToTargetEpisode(proxy: proxy, overrideID: restoreFocusEpisodeID)
-                    }
-                    .onChange(of: episodes) { _, _ in
-                        scrollToTargetEpisode(proxy: proxy, overrideID: restoreFocusEpisodeID)
-                    }
-                    .onChange(of: restoreFocusNonce) { _, _ in
-                        scrollToTargetEpisode(proxy: proxy, overrideID: restoreFocusEpisodeID)
-                    }
+                    .scrollTargetLayout()
+                    .padding(.horizontal, detailGutter)
+                    .padding(.vertical, 10)
+                }
+                .scrollPosition($episodeScrollPosition)
+                .contentMargins(.zero, for: .scrollContent)
+                .scrollClipDisabled()
+                .focusScope(episodesFocusNamespace)
+                .focusSection()
+                .onAppear {
+                    scrollToTargetEpisode(overrideID: restoreFocusEpisodeID)
+                }
+                .onChange(of: episodes) { _, _ in
+                    scrollToTargetEpisode(overrideID: restoreFocusEpisodeID)
+                }
+                .onChange(of: restoreFocusNonce) { _, _ in
+                    scrollToTargetEpisode(overrideID: restoreFocusEpisodeID)
                 }
             }
         }
@@ -165,11 +166,11 @@ struct DetailSeasonsSectionView: View {
         }
     }
 
-    private func scrollToTargetEpisode(proxy: ScrollViewProxy, overrideID: String? = nil) {
+    private func scrollToTargetEpisode(overrideID: String? = nil) {
         guard let targetID = overrideID ?? nextEpisodeTargetID,
               episodes.contains(where: { $0.id == targetID }),
               targetID != episodes.first?.id else { return }
-        proxy.scrollTo(targetID, anchor: .leading)
+        episodeScrollPosition.scrollTo(id: targetID, anchor: .leading)
     }
 }
 
@@ -180,6 +181,7 @@ private struct DetailSeasonPickerSheetView: View {
     let onPickSeason: (Int) -> Void
     let onClose: () -> Void
 
+    @State private var seasonScrollPosition = ScrollPosition(idType: Int.self)
     @FocusState private var focusedSeasonNumber: Int?
     @Namespace private var seasonGridNamespace
 
@@ -197,31 +199,31 @@ private struct DetailSeasonPickerSheetView: View {
             maxHeight: 860,
             onClose: onClose
         ) {
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 14) {
-                        ForEach(seasons) { season in
-                            let isSelected = (season.seasonNumber == selectedSeasonNumber)
-                            LunaListRow(
-                                title: season.localizedName,
-                                subtitle: season.episodeCount > 0 ? LunaCopy.episodesCount(season.episodeCount) : nil,
-                                isSelected: isSelected,
-                                externalIsFocused: focusedSeasonNumber == season.seasonNumber
-                            ) {
-                                onPickSeason(season.seasonNumber)
-                            }
-                            .id(season.seasonNumber)
-                            .focused($focusedSeasonNumber, equals: season.seasonNumber)
-                            .prefersDefaultFocus(isSelected, in: seasonGridNamespace)
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 14) {
+                    ForEach(seasons) { season in
+                        let isSelected = (season.seasonNumber == selectedSeasonNumber)
+                        LunaListRow(
+                            title: season.localizedName,
+                            subtitle: season.episodeCount > 0 ? LunaCopy.episodesCount(season.episodeCount) : nil,
+                            isSelected: isSelected,
+                            externalIsFocused: focusedSeasonNumber == season.seasonNumber
+                        ) {
+                            onPickSeason(season.seasonNumber)
                         }
+                        .id(season.seasonNumber)
+                        .focused($focusedSeasonNumber, equals: season.seasonNumber)
+                        .prefersDefaultFocus(isSelected, in: seasonGridNamespace)
                     }
-                    .padding(.vertical, 4)
                 }
-                .scrollClipDisabled()
-                .onAppear {
-                    focusedSeasonNumber = selectedSeasonNumber
-                    proxy.scrollTo(selectedSeasonNumber, anchor: .center)
-                }
+                .scrollTargetLayout()
+                .padding(.vertical, 4)
+            }
+            .scrollPosition($seasonScrollPosition)
+            .scrollClipDisabled()
+            .onAppear {
+                focusedSeasonNumber = selectedSeasonNumber
+                seasonScrollPosition.scrollTo(id: selectedSeasonNumber, anchor: .center)
             }
             .defaultFocus($focusedSeasonNumber, selectedSeasonNumber, priority: .userInitiated)
             .focusScope(seasonGridNamespace)

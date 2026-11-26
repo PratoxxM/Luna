@@ -170,7 +170,7 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
             "releaseTitle": "Severance.S02E03.2160p",
             "source": "nvme"
           },
-          "stream": { "url": "/api/tv/v1/stream/sess-series-eof-1/tok-series-eof-998877/video.mkv" },
+          "stream": { "url": "/api/tv/v2/stream/sess-series-eof-1/tok-series-eof-998877/video.mkv" },
           "aetherConfig": {
             "preferDualLayerDolbyVision": false,
             "dolbyVisionHandling": "automatic",
@@ -182,7 +182,7 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
             "season": 2,
             "episode": 4,
             "title": "Woe's Hollow",
-            "stillUrl": "/api/tv/v1/img/still/s2e4.jpg"
+            "stillUrl": "/api/tv/v2/img/still/s2e4.jpg"
           }
         }
         """#
@@ -242,6 +242,17 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
         XCTAssertEqual(SeriesNextEpisodeCardView.shadowRadius, 14)
         XCTAssertEqual(SeriesNextEpisodeCardView.shadowY, 6)
         XCTAssertEqual(SeriesSkipPromptPillView.shadowRadius, 14)
+        XCTAssertEqual(SeriesSkipPromptPillView.chevronWidth, 24)
+        XCTAssertEqual(SeriesSkipPromptPillView.resolvedLabel(for: .postCredits), LunaCopy.skipToPostCreditsTitle)
+        XCTAssertEqual(SeriesSkipPromptPillView.resolvedLabel(for: .credits), LunaCopy.skipToPostCreditsTitle)
+        XCTAssertEqual(SeriesSkipPromptPillView.resolvedLabel(for: .recap), "Hopp over sammendrag")
+        XCTAssertNil(NerdHUDView.formatSessionCacheLabel(.inactive))
+        XCTAssertNil(NerdHUDView.formatSessionCacheBytes(2_621_440, isInactive: true))
+        XCTAssertNil(NerdHUDView.formatSessionCacheBytes(0))
+        XCTAssertEqual(
+            NerdHUDView.formatSessionCacheBytes(2_621_440),
+            "+2,5 MiB RAM-buffer"
+        )
         XCTAssertEqual(SeriesResumeBannerView.standardTopPadding, 64)
         XCTAssertEqual(SeriesResumeBannerView.shiftedBelowStatusToastTopPadding, 132)
         XCTAssertEqual(PlayerFatalErrorOverlayView.cardShadowRadius, 18)

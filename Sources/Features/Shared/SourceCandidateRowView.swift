@@ -4,7 +4,6 @@ import SwiftUI
 /// and in-player `Velg utgave` popover (`PlayerQuickPanelView`).
 struct SourceCandidateRowView: View {
     let candidate: TvCandidateInfo
-    let roomName: String
     let isRecommended: Bool
     let isSelected: Bool
     let activeStatusLabel: String
@@ -13,10 +12,30 @@ struct SourceCandidateRowView: View {
     var compactForQuickPanel: Bool = false
     let action: () -> Void
 
+    init(
+        candidate: TvCandidateInfo,
+        isRecommended: Bool,
+        isSelected: Bool,
+        activeStatusLabel: String,
+        isFocused: Bool,
+        dimUnfocusedTitle: Bool = false,
+        compactForQuickPanel: Bool = false,
+        action: @escaping () -> Void
+    ) {
+        self.candidate = candidate
+        self.isRecommended = isRecommended
+        self.isSelected = isSelected
+        self.activeStatusLabel = activeStatusLabel
+        self.isFocused = isFocused
+        self.dimUnfocusedTitle = dimUnfocusedTitle
+        self.compactForQuickPanel = compactForQuickPanel
+        self.action = action
+    }
+
     var body: some View {
         let title = compactForQuickPanel
             ? candidate.inPlayerQuickRowTitle
-            : candidate.quickRowTitle(roomName: roomName, isRecommended: isRecommended)
+            : candidate.quickRowTitle(isRecommended: isRecommended)
         let subtitle: String = {
             if compactForQuickPanel {
                 return candidate.inPlayerQuickRowSubtitle(

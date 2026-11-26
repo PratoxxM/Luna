@@ -8,8 +8,8 @@ import XCTest
 /// Extracted artwork pipeline, NowPlaying bitmap, tab/BlurHash cache invalidation, and A19 memory-budget tests.
 final class PlayerArtworkMemoryTests: XCTestCase {
     func testArtworkPipelineRawIdentityAndCacheKeyDeduplication() throws {
-        let lanHostA = try XCTUnwrap(URL(string: "http://lunacore.local:8090/api/tv/v1/artwork/123?w=600"))
-        let lanHostB = try XCTUnwrap(URL(string: "https://lunacore.example.test:8920/api/tv/v1/artwork/123?w=600"))
+        let lanHostA = try XCTUnwrap(URL(string: "http://lunacore.local:8090/api/tv/v2/artwork/123?w=600"))
+        let lanHostB = try XCTUnwrap(URL(string: "https://lunacore.example.test:8920/api/tv/v2/artwork/123?w=600"))
         XCTAssertEqual(ArtworkPipeline.rawIdentity(for: lanHostA), ArtworkPipeline.rawIdentity(for: lanHostB))
         XCTAssertNotEqual(
             ArtworkPipeline.cacheKey(for: lanHostA, maxPixelSize: 480),
@@ -166,7 +166,7 @@ final class PlayerArtworkMemoryTests: XCTestCase {
             "sizeBytes": 64424509440
           },
           "stream": {
-            "url": "/api/tv/v1/streams/sess-a19-1/master",
+            "url": "/api/tv/v2/streams/sess-a19-1/master",
             "declaredDurationSeconds": 9960
           },
           "aetherConfig": {

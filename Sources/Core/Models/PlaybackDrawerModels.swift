@@ -257,14 +257,10 @@ public extension TvCandidateInfo {
         return isNorwegian == true ? "Norsk utgave" : "Standard utgave"
     }
 
-    func quickRowTitle(roomName: String, isRecommended: Bool) -> String {
+    func quickRowTitle(isRecommended: Bool) -> String {
         let quality = humanQualitySummary
         guard isRecommended else { return quality }
-        let trimmedRoom = roomName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedRoom.isEmpty {
-            return quality.isEmpty ? "Anbefalt" : "Anbefalt · \(quality)"
-        }
-        return quality.isEmpty ? "Anbefalt for \(trimmedRoom)" : "Anbefalt for \(trimmedRoom) · \(quality)"
+        return quality.isEmpty ? "Anbefalt" : "Anbefalt · \(quality)"
     }
 
     func quickRowMetadata(activeLabel: String?) -> String {

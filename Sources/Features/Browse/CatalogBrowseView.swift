@@ -1,22 +1,5 @@
 import SwiftUI
 
-internal struct CatalogBrowseSnapshot {
-    var items: [TvMediaCard]
-    var availableGenres: [TvGenreChip]
-    var selectedGenreLabel: String?
-    var hasMore: Bool
-    var currentPage: Int
-    var fetchedAt: Date
-    var refreshNonce: Int
-}
-
-internal enum CatalogBrowseMemoryCache {
-    @MainActor
-    static let shared = BoundedLRUMemoryCache<CatalogBrowseSnapshot>(
-        maxEntries: DeviceMemoryProfile.current.catalogCacheMaxEntries
-    )
-}
-
 struct CatalogBrowseView: View {
     private enum CatalogFallbackFocus: Hashable {
         case retry
@@ -24,6 +7,7 @@ struct CatalogBrowseView: View {
     }
 
     @Environment(AppSessionStore.self) private var sessionStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
     @Environment(\.lunaScrollToTopNonce) private var scrollToTopNonce
     @Environment(\.lunaContentEntryFocusNonce) private var contentEntryFocusNonce
@@ -33,27 +17,9 @@ struct CatalogBrowseView: View {
     let isActiveTab: Bool
     let isRootTab: Bool
 
+    @State private var viewModel: CatalogBrowseViewModel
+    @State private var scrollPosition = ScrollPosition(idType: String.self)
     @State private var subpageToken = UUID()
-
-    @State private var selectedGenreSlug: String?
-    @State private var selectedGenreLabel: String?
-    @State private var selectedSort: String = "popular"
-    @State private var localOnly: Bool = false
-    @State private var unwatchedOnly: Bool = false
-
-    @State private var availableGenres: [TvGenreChip] = []
-    @State private var items: [TvMediaCard] = []
-    @State private var currentPage: Int = 1
-    @State private var hasMore: Bool = false
-    @State private var isLoading: Bool = true
-    @State private var isLoadingMore: Bool = false
-    @State private var errorMessage: String?
-    @State private var mutationErrorBanner: String?
-    @State private var lastSeenRefreshNonce: Int = -1
-    @State private var reloadTask: Task<Void, Never>?
-    @State private var loadMoreTask: Task<Void, Never>?
-    @State private var reloadGeneration: UInt64 = 0
-
     @State private var selectedCard: TvMediaCard?
     @State private var mountedTracker = MountedEntryCardTracker()
     @State private var entryCardID: String?
@@ -62,7 +28,6 @@ struct CatalogBrowseView: View {
     @Namespace private var catalogGridNamespace
 
     private let columns = LunaTheme.posterGridColumns
-    private let pageSize = DeviceMemoryProfile.current.catalogPageSize
 
     internal static func makeCacheKey(
         serverBaseURL: URL?,
@@ -74,10 +39,20 @@ struct CatalogBrowseView: View {
         roomName: String,
         hardwareProfile: String
     ) -> String {
-        "\(serverBaseURL?.absoluteString ?? "")#\(mediaType)#\(genreSlug ?? "all")#\(sort)#\(localOnly)#\(unwatchedOnly)#\(roomName)#\(hardwareProfile)"
+        CatalogBrowseViewModel.makeCacheKey(
+            serverBaseURL: serverBaseURL,
+            mediaType: mediaType,
+            genreSlug: genreSlug,
+            sort: sort,
+            localOnly: localOnly,
+            unwatchedOnly: unwatchedOnly,
+            roomName: roomName,
+            hardwareProfile: hardwareProfile
+        )
     }
 
     init(
+        viewModel: CatalogBrowseViewModel? = nil,
         mediaType: String,
         initialGenre: TvGenreChip?,
         isActiveTab: Bool = true,
@@ -87,104 +62,77 @@ struct CatalogBrowseView: View {
         self.initialGenre = initialGenre
         self.isActiveTab = isActiveTab
         self.isRootTab = isRootTab
-        _selectedGenreSlug = State(initialValue: initialGenre?.slug)
-        _selectedGenreLabel = State(initialValue: initialGenre?.label)
-    }
-
-    private var rootNavigationTab: MainNavigationTab {
-        (mediaType == "series" || mediaType == "tv") ? .series : .movies
-    }
-
-    private var headerTitle: String {
-        let kindLabel = (mediaType == "series" || mediaType == "tv") ? "Serier" : "Filmer"
-        if let label = selectedGenreLabel, !label.isEmpty {
-            return "\(label) · \(kindLabel)"
-        }
-        return kindLabel
-    }
-
-    private var reloadTriggerKey: String {
-        Self.makeCacheKey(
-            serverBaseURL: sessionStore.serverBaseURL,
-            mediaType: mediaType,
-            genreSlug: selectedGenreSlug,
-            sort: selectedSort,
-            localOnly: localOnly,
-            unwatchedOnly: unwatchedOnly,
-            roomName: sessionStore.roomName,
-            hardwareProfile: sessionStore.hardwareProfile
+        _viewModel = State(
+            initialValue: viewModel ?? CatalogBrowseViewModel(
+                mediaType: mediaType,
+                initialGenre: initialGenre,
+                isRootTab: isRootTab
+            )
         )
     }
 
     var body: some View {
+        @Bindable var viewModel = viewModel
         let client = sessionStore.makeClient()
+        let items = viewModel.items
 
-        return ScrollViewReader { scrollProxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: LunaTokens.Layout.blockGap) {
-                    Color.clear
-                        .frame(height: 0)
-                        .id("luna-scroll-top")
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: LunaTokens.Layout.blockGap) {
+                if !isRootTab {
+                    Text(viewModel.headerTitle)
+                        .font(LunaTheme.Font.pageTitle)
+                        .foregroundStyle(LunaTheme.linen)
+                        .padding(.horizontal, LunaTheme.horizontalGutter)
+                }
 
-                    if !isRootTab {
-                        Text(headerTitle)
-                            .font(LunaTheme.Font.pageTitle)
-                            .foregroundStyle(LunaTheme.linen)
-                            .padding(.horizontal, LunaTheme.horizontalGutter)
-                    }
-
-                    CatalogFilterBarView(
-                        categoryTitle: headerTitle,
-                        availableGenres: availableGenres,
-                        selectedSort: $selectedSort,
-                        localOnly: $localOnly,
-                        unwatchedOnly: $unwatchedOnly,
-                        selectedGenreSlug: $selectedGenreSlug,
-                        selectedGenreLabel: $selectedGenreLabel,
-                        entryFocusNonce: contentEntryFocusNonce,
-                        isEntryActive: isRootTab && isActiveTab,
-                        onScrollToTop: {
-                            scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
-                        },
-                        onMoveDown: {
-                            if !items.isEmpty {
-                                if !mountedTracker.hasAnyMounted, let firstID = items.first?.id {
-                                    scrollProxy.scrollTo(firstID, anchor: .top)
-                                }
-                                if let resolvedID = mountedTracker.resolveEntryID(orderedIDs: items.map(\.id)) {
-                                    entryCardID = resolvedID
-                                    cardFocusNonce &+= 1
-                                }
-                            } else if errorMessage != nil {
-                                fallbackFocus = .retry
-                            } else if localOnly || unwatchedOnly || selectedGenreSlug != nil {
-                                fallbackFocus = .emptyReset
+                CatalogFilterBarView(
+                    categoryTitle: viewModel.headerTitle,
+                    availableGenres: viewModel.availableGenres,
+                    selectedSort: $viewModel.selectedSort,
+                    localOnly: $viewModel.localOnly,
+                    unwatchedOnly: $viewModel.unwatchedOnly,
+                    selectedGenreSlug: $viewModel.selectedGenreSlug,
+                    selectedGenreLabel: $viewModel.selectedGenreLabel,
+                    entryFocusNonce: contentEntryFocusNonce,
+                    isEntryActive: isRootTab && isActiveTab,
+                    onScrollToTop: {
+                        scrollPosition.scrollTo(edge: .top)
+                    },
+                    onMoveDown: {
+                        if !items.isEmpty {
+                            if !mountedTracker.hasAnyMounted, let firstID = items.first?.id {
+                                scrollPosition.scrollTo(id: firstID, anchor: .top)
                             }
+                            if let resolvedID = mountedTracker.resolveEntryID(orderedIDs: items.map(\.id)) {
+                                entryCardID = resolvedID
+                                cardFocusNonce &+= 1
+                            }
+                        } else if viewModel.errorMessage != nil {
+                            fallbackFocus = .retry
+                        } else if viewModel.hasActiveFilters {
+                            fallbackFocus = .emptyReset
                         }
-                    )
+                    }
+                )
 
-                // Content Grid
-                if isLoading && items.isEmpty {
+                if viewModel.isLoading && items.isEmpty {
                     LunaLoadingRow(message: "Henter utvalg…")
                         .padding(.horizontal, LunaTheme.horizontalGutter)
-                } else if let errorMessage, items.isEmpty {
+                } else if let errorMessage = viewModel.errorMessage, items.isEmpty {
                     LunaInlineError(message: errorMessage) {
-                        scheduleReloadFirstPage(forceNetwork: true)
+                        viewModel.scheduleReloadFirstPage(forceNetwork: true, session: sessionStore)
                     }
                     .focused($fallbackFocus, equals: .retry)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else if items.isEmpty {
-                    let hasFilters = localOnly || unwatchedOnly || selectedGenreSlug != nil
+                    let hasFilters = viewModel.hasActiveFilters
                     let emptyView = LunaEmptyState(
                         headline: "Ingen treff med disse filtrene",
                         actionTitle: hasFilters ? "Nullstill filtre" : nil,
                         actionSymbol: hasFilters ? "xmark" : nil,
                         actionProminence: .subtleChip,
                         onAction: hasFilters ? {
-                            localOnly = false
-                            unwatchedOnly = false
-                            selectedGenreSlug = nil
-                            selectedGenreLabel = nil
+                            viewModel.resetFilters()
                         } : nil
                     )
                     .padding(.horizontal, LunaTheme.horizontalGutter)
@@ -225,10 +173,10 @@ struct CatalogBrowseView: View {
                                         selectedCard = card
                                     },
                                     onToggleWatched: {
-                                        Task { await toggleWatched(card) }
+                                        Task { await viewModel.toggleWatched(card, session: sessionStore) }
                                     },
                                     onToggleWatchlist: {
-                                        Task { await toggleWatchlist(card) }
+                                        Task { await viewModel.toggleWatchlist(card, session: sessionStore) }
                                     }
                                 )
                             }
@@ -238,20 +186,18 @@ struct CatalogBrowseView: View {
                                     afterIndex: idx,
                                     client: client
                                 )
-                                if idx >= prefetchThreshold && hasMore && !isLoadingMore {
-                                    loadMoreTask?.cancel()
-                                    loadMoreTask = Task { @MainActor in
-                                        await loadNextPage()
-                                    }
+                                if idx >= prefetchThreshold && viewModel.hasMore && !viewModel.isLoadingMore {
+                                    viewModel.scheduleLoadNextPage(session: sessionStore)
                                 }
                             }
                         }
                     }
+                    .scrollTargetLayout()
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                     .padding(.bottom, 32)
                     .focusSection()
 
-                    if isLoadingMore {
+                    if viewModel.isLoadingMore {
                         HStack {
                             Spacer()
                             ProgressView()
@@ -265,19 +211,20 @@ struct CatalogBrowseView: View {
             .padding(.top, isRootTab ? LunaTopBarView.contentTopPadding : LunaTokens.Layout.subpageTop)
             .padding(.bottom, 84)
         }
+        .scrollPosition($scrollPosition)
         .contentMargins(.zero, for: .scrollContent)
         .scrollClipDisabled()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
         .focusScope(catalogGridNamespace)
-        .lunaRootScrollTopBarTracking(tab: rootNavigationTab, isEnabled: isRootTab)
+        .lunaRootScrollTopBarTracking(tab: viewModel.rootNavigationTab, isEnabled: isRootTab)
         .onChange(of: scrollToTopNonce) { _, _ in
             guard isRootTab, isActiveTab else { return }
-            withAnimation(.easeOut(duration: 0.22)) {
-                scrollProxy.scrollTo("luna-scroll-top", anchor: .top)
+            withAnimation(LunaFocusStyle.calmEaseOut(duration: 0.22, reduceMotion: reduceMotion)) {
+                scrollPosition.scrollTo(edge: .top)
             }
         }
-        .lunaBottomToast(message: $mutationErrorBanner, tone: .danger)
+        .lunaBottomToast(message: $viewModel.mutationErrorBanner, tone: .danger)
         .focusSection()
         .lunaNavigationContainerBackdrop(
             isEnabled: !isRootTab,
@@ -302,27 +249,14 @@ struct CatalogBrowseView: View {
                 cardFocusNonce &+= 1
             }
         }
-        .task(id: "\(reloadTriggerKey)#active:\(isActiveTab || !isRootTab)") {
-            guard isActiveTab || !isRootTab else { return }
-            reloadTask?.cancel()
-            reloadTask = nil
-            loadMoreTask?.cancel()
-            loadMoreTask = nil
-            reloadGeneration &+= 1
-            let gen = reloadGeneration
-            lastSeenRefreshNonce = sessionStore.homeRefreshNonce
-            await loadFirstPage(forceNetwork: false, generation: gen)
+        .task(id: "\(viewModel.reloadTriggerKey(for: sessionStore))#active:\(isActiveTab || !isRootTab)") {
+            await viewModel.handleActivation(session: sessionStore, isActive: isActiveTab || !isRootTab)
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
-            guard isActiveTab, newNonce != lastSeenRefreshNonce else { return }
-            lastSeenRefreshNonce = newNonce
-            scheduleReloadFirstPage(forceNetwork: true)
+            viewModel.handleHomeRefreshNonceChange(newNonce, isActiveTab: isActiveTab, session: sessionStore)
         }
         .onDisappear {
-            reloadTask?.cancel()
-            reloadTask = nil
-            loadMoreTask?.cancel()
-            loadMoreTask = nil
+            viewModel.cancelAllTasks()
             if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
                 isRootTab: isRootTab,
                 hasPushedChildDestination: selectedCard != nil,
@@ -330,207 +264,6 @@ struct CatalogBrowseView: View {
             ) {
                 subpageVisibility.leaveSubpage(subpageToken)
             }
-        }
-        }
-    }
-
-    private func persistSnapshot(for triggerKey: String, fetchedAt: Date? = nil, refreshNonce: Int? = nil) {
-        let existing = CatalogBrowseMemoryCache.shared.snapshot(for: triggerKey)
-        CatalogBrowseMemoryCache.shared.store(
-            CatalogBrowseSnapshot(
-                items: items,
-                availableGenres: availableGenres,
-                selectedGenreLabel: selectedGenreLabel,
-                hasMore: hasMore,
-                currentPage: currentPage,
-                fetchedAt: fetchedAt ?? existing?.fetchedAt ?? Date(),
-                refreshNonce: refreshNonce ?? existing?.refreshNonce ?? sessionStore.homeRefreshNonce
-            ),
-            for: triggerKey
-        )
-    }
-
-    private func scheduleReloadFirstPage(forceNetwork: Bool) {
-        reloadTask?.cancel()
-        loadMoreTask?.cancel()
-        loadMoreTask = nil
-        reloadGeneration &+= 1
-        let gen = reloadGeneration
-        reloadTask = Task { @MainActor in
-            await loadFirstPage(forceNetwork: forceNetwork, generation: gen)
-            if reloadGeneration == gen {
-                reloadTask = nil
-            }
-        }
-    }
-
-    private func loadFirstPage(forceNetwork: Bool = false, generation: UInt64? = nil) async {
-        guard let client = sessionStore.makeClient() else { return }
-        let triggerKey = reloadTriggerKey
-        let currentNonce = sessionStore.homeRefreshNonce
-
-        if let cached = CatalogBrowseMemoryCache.shared.snapshot(for: triggerKey) {
-            items = cached.items
-            if availableGenres.isEmpty && !cached.availableGenres.isEmpty {
-                availableGenres = cached.availableGenres
-            }
-            if selectedGenreSlug != nil, selectedGenreLabel == nil {
-                selectedGenreLabel = cached.selectedGenreLabel
-            }
-            hasMore = cached.hasMore
-            currentPage = max(1, cached.currentPage)
-            isLoading = cached.items.isEmpty
-
-            if !forceNetwork,
-               TabContentFreshnessPolicy.isCacheFresh(
-                   hasCachedContent: !cached.items.isEmpty,
-                   lastValidatedAt: cached.fetchedAt,
-                   cachedRefreshNonce: cached.refreshNonce,
-                   currentRefreshNonce: currentNonce,
-                   freshnessInterval: TabContentFreshnessPolicy.effectiveFreshnessInterval
-               ) {
-                errorMessage = nil
-                isLoading = false
-                return
-            }
-        } else {
-            isLoading = true
-        }
-        errorMessage = nil
-
-        do {
-            let res = try await client.fetchCatalog(
-                kind: mediaType,
-                genre: selectedGenreSlug,
-                sort: selectedSort,
-                localOnly: localOnly,
-                unwatchedOnly: unwatchedOnly,
-                page: 1,
-                limit: pageSize
-            )
-            guard !Task.isCancelled, (generation == nil || generation == reloadGeneration), reloadTriggerKey == triggerKey else { return }
-            currentPage = 1
-            items = res.items
-            hasMore = res.hasMore
-            if let genres = res.availableGenres, !genres.isEmpty {
-                availableGenres = genres
-            }
-            if let serverGenre = res.genre {
-                selectedGenreLabel = serverGenre.label
-            }
-            persistSnapshot(for: triggerKey, fetchedAt: Date(), refreshNonce: sessionStore.homeRefreshNonce)
-        } catch where LunaCoreError.isCancellation(error) {
-            return
-        } catch LunaCoreError.unauthorized {
-            CatalogBrowseMemoryCache.shared.clear()
-            sessionStore.unpairDevice()
-        } catch {
-            guard !Task.isCancelled, (generation == nil || generation == reloadGeneration) else { return }
-            if items.isEmpty {
-                errorMessage = LunaCopy.friendlyErrorMessage(error)
-            }
-        }
-        if generation == nil || generation == reloadGeneration {
-            isLoading = false
-        }
-    }
-
-    private func loadNextPage() async {
-        guard !isLoadingMore, hasMore, let client = sessionStore.makeClient() else { return }
-        let triggerKey = reloadTriggerKey
-        let gen = reloadGeneration
-        isLoadingMore = true
-        let nextPage = currentPage + 1
-        defer { isLoadingMore = false }
-
-        do {
-            let res = try await client.fetchCatalog(
-                kind: mediaType,
-                genre: selectedGenreSlug,
-                sort: selectedSort,
-                localOnly: localOnly,
-                unwatchedOnly: unwatchedOnly,
-                page: nextPage,
-                limit: pageSize
-            )
-            guard !Task.isCancelled, gen == reloadGeneration, reloadTriggerKey == triggerKey else {
-                return
-            }
-            currentPage = nextPage
-            hasMore = res.hasMore
-            let existingIDs = Set(items.map(\.id))
-            let fresh = res.items.filter { !existingIDs.contains($0.id) }
-            items.append(contentsOf: fresh)
-            persistSnapshot(for: triggerKey)
-        } catch where LunaCoreError.isCancellation(error) {
-            return
-        } catch LunaCoreError.unauthorized {
-            CatalogBrowseMemoryCache.shared.clear()
-            sessionStore.unpairDevice()
-        } catch {
-            guard !Task.isCancelled, gen == reloadGeneration else { return }
-            showMutationError(error)
-        }
-    }
-
-    private func showMutationError(_ error: Error) {
-        mutationErrorBanner = "Kunne ikke lagre endringen: \(LunaCopy.friendlyErrorMessage(error))"
-    }
-
-    private func toggleWatchlist(_ card: TvMediaCard) async {
-        let nextListed = !(card.inWatchlist ?? false)
-        let triggerKey = reloadTriggerKey
-        if let idx = items.firstIndex(where: { $0.id == card.id }) {
-            items[idx].inWatchlist = nextListed
-            persistSnapshot(for: triggerKey)
-        }
-        do {
-            if try await MediaCardMutator.setWatchlist(for: card, listed: nextListed, sessionStore: sessionStore) {
-                let bumped = sessionStore.homeRefreshNonce &+ 1
-                lastSeenRefreshNonce = bumped
-                sessionStore.notifyContentMutated()
-                persistSnapshot(for: triggerKey, refreshNonce: sessionStore.homeRefreshNonce)
-            }
-        } catch {
-            if let idx = items.firstIndex(where: { $0.id == card.id }) {
-                items[idx].inWatchlist = card.inWatchlist
-                persistSnapshot(for: triggerKey)
-            }
-            showMutationError(error)
-        }
-    }
-
-    private func toggleWatched(_ card: TvMediaCard) async {
-        let nextWatched = !(card.progress?.watched ?? false)
-        let originalProgress = card.progress
-        let triggerKey = reloadTriggerKey
-        if let idx = items.firstIndex(where: { $0.id == card.id }) {
-            var updated = items[idx].progress ?? TvWatchProgress()
-            updated.watched = nextWatched
-            items[idx].progress = updated
-            persistSnapshot(for: triggerKey)
-        }
-        do {
-            if try await MediaCardMutator.toggleWatched(
-                for: card,
-                watched: nextWatched,
-                preferSeriesEpisodeTarget: true,
-                sessionStore: sessionStore
-            ) {
-                if unwatchedOnly && nextWatched {
-                    items.removeAll { $0.id == card.id }
-                }
-                let bumped = sessionStore.homeRefreshNonce &+ 1
-                lastSeenRefreshNonce = bumped
-                sessionStore.notifyContentMutated()
-                persistSnapshot(for: triggerKey, refreshNonce: sessionStore.homeRefreshNonce)
-            }
-        } catch {
-            if let idx = items.firstIndex(where: { $0.id == card.id }) {
-                items[idx].progress = originalProgress
-                persistSnapshot(for: triggerKey)
-            }
-            showMutationError(error)
         }
     }
 }

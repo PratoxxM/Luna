@@ -7,25 +7,35 @@ final class SeriesFlowAndHomePolicyTests: XCTestCase {
     func testBuildRowRequestPathReplacesExistingOffsetAndMapsCatalogPages() {
         XCTAssertEqual(
             LunaCoreClient.buildRowRequestPath(pathOrRowId: "sci-fi", offset: 36, limit: 36),
-            "/api/tv/v1/rows/sci-fi?offset=36&limit=36"
+            "/api/tv/v2/rows/sci-fi?offset=36&limit=36"
         )
 
+        XCTAssertEqual(
+            LunaCoreClient.buildRowRequestPath(
+                pathOrRowId: "/api/tv/v2/rows/custom?offset=0&limit=24",
+                offset: 48,
+                limit: 24
+            ),
+            "/api/tv/v2/rows/custom?offset=48&limit=24"
+        )
+
+        XCTAssertEqual(
+            LunaCoreClient.buildRowRequestPath(
+                pathOrRowId: "/api/tv/v2/catalog/movies?sort=popular",
+                offset: 48,
+                limit: 24
+            ),
+            "/api/tv/v2/catalog/movies?sort=popular&page=3&limit=24"
+        )
+
+        // Legacy /api/tv/v1/ paths normalize cleanly to /api/tv/v2/
         XCTAssertEqual(
             LunaCoreClient.buildRowRequestPath(
                 pathOrRowId: "/api/tv/v1/rows/custom?offset=0&limit=24",
-                offset: 48,
+                offset: 24,
                 limit: 24
             ),
-            "/api/tv/v1/rows/custom?offset=48&limit=24"
-        )
-
-        XCTAssertEqual(
-            LunaCoreClient.buildRowRequestPath(
-                pathOrRowId: "/api/tv/v1/catalog/movies?sort=popular",
-                offset: 48,
-                limit: 24
-            ),
-            "/api/tv/v1/catalog/movies?sort=popular&page=3&limit=24"
+            "/api/tv/v2/rows/custom?offset=24&limit=24"
         )
     }
 
@@ -426,5 +436,39 @@ final class SeriesFlowAndHomePolicyTests: XCTestCase {
         XCTAssertEqual(vm.remoteCommandToastMessage, "Ingen undertekster tilgjengelig")
         vm.cancelAllSessionTasks()
         XCTAssertNil(vm.remoteCommandToastMessage)
+    }
+
+    func testPostCreditsStingerSkipEligibilityDistinguishesStingerFromTerminalCredits() {
+        let withPostCredits = [
+            PlaybackChapter(id: "cr", index: 0, title: "Rulletekst", startSeconds: 5800, endSeconds: 6040, kind: .credits),
+            PlaybackChapter(id: "st", index: 1, title: "Etter rulletekst", startSeconds: 6040, endSeconds: 6110, kind: .postCredits),
+        ]
+        XCTAssertEqual(
+            SeriesFlowEligibility.postCreditsSkipTargetSeconds(
+                currentTime: 5850,
+                authoritativeDurationSeconds: 6120,
+                chapters: withPostCredits
+            ),
+            6040
+        )
+
+        let implicit25sTail = [
+            PlaybackChapter(id: "cr-2", index: 0, title: "Credits", startSeconds: 5800, endSeconds: 6000, kind: .credits),
+        ]
+        XCTAssertEqual(
+            SeriesFlowEligibility.postCreditsSkipTargetSeconds(
+                currentTime: 5840,
+                authoritativeDurationSeconds: 6025,
+                chapters: implicit25sTail
+            ),
+            6000
+        )
+        XCTAssertNil(
+            SeriesFlowEligibility.postCreditsSkipTargetSeconds(
+                currentTime: 5840,
+                authoritativeDurationSeconds: 6020,
+                chapters: implicit25sTail
+            )
+        )
     }
 }

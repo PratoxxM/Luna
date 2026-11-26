@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Synchronization
 
 @MainActor
 protocol MediaDetailSessionContext: AnyObject {
@@ -8,15 +9,36 @@ protocol MediaDetailSessionContext: AnyObject {
     var homeRefreshNonce: Int { get }
     var activePlaybackTarget: PlaybackLaunchRequest? { get set }
     var keepDisplayModeInMenuAfterPlayback: Bool { get }
+    var lastPlaybackStopReceipt: PlaybackStopReceipt? { get }
+    var detailStreamPrewarmer: any DetailStreamPrewarming { get }
     func makeClient() -> LunaCoreClient?
     func notifyContentMutated()
     func unpairDevice()
+    func awaitPlaybackStopReceipt(for itemId: String, timeout: Duration) async -> PlaybackStopReceipt?
+    func awaitPlaybackStopReceipt(
+        for itemId: String,
+        timeout: Duration,
+        recordedAfter: Date?,
+        excluding preLaunchReceipt: PlaybackStopReceipt?
+    ) async -> PlaybackStopReceipt?
+    func handleDetailDisappear(isLaunchingPlayback: Bool, isShowingSourcePicker: Bool)
 }
 
-extension AppSessionStore: MediaDetailSessionContext {
-    var keepDisplayModeInMenuAfterPlayback: Bool {
-        comfort.keepDisplayModeInMenuAfterPlayback
+extension MediaDetailSessionContext {
+    var lastPlaybackStopReceipt: PlaybackStopReceipt? { nil }
+    var detailStreamPrewarmer: any DetailStreamPrewarming { NoopDetailStreamPrewarmer() }
+    func awaitPlaybackStopReceipt(for itemId: String, timeout: Duration) async -> PlaybackStopReceipt? {
+        nil
     }
+    func awaitPlaybackStopReceipt(
+        for itemId: String,
+        timeout: Duration,
+        recordedAfter: Date?,
+        excluding preLaunchReceipt: PlaybackStopReceipt?
+    ) async -> PlaybackStopReceipt? {
+        await awaitPlaybackStopReceipt(for: itemId, timeout: timeout)
+    }
+    func handleDetailDisappear(isLaunchingPlayback: Bool, isShowingSourcePicker: Bool) {}
 }
 
 @MainActor
@@ -50,6 +72,9 @@ final class MediaDetailViewModel {
     @ObservationIgnored var detailLoadGeneration: UInt64 = 0
     @ObservationIgnored var seasonLoadGeneration: UInt64 = 0
     @ObservationIgnored var loadedScopeKey: String?
+    @ObservationIgnored var stopReceiptTimeout: Duration = .seconds(3)
+    @ObservationIgnored var lastPlaybackLaunchAt: Date?
+    @ObservationIgnored var preLaunchStopReceipt: PlaybackStopReceipt?
 
     nonisolated static let episodeFocusPreResolveDebounceNs: UInt64 = 340_000_000
 
@@ -90,6 +115,7 @@ final class MediaDetailViewModel {
     func bind(sessionContext: any MediaDetailSessionContext) {
         self.sessionContext = sessionContext
         self.client = sessionContext.makeClient()
+        self.preResolve.configure(prewarmer: sessionContext.detailStreamPrewarmer)
     }
 
     func setClient(_ next: LunaCoreClient?) {
@@ -137,25 +163,106 @@ final class MediaDetailViewModel {
         newTarget: PlaybackLaunchRequest?
     ) {
         if newTarget != nil {
+            lastPlaybackLaunchAt = Date()
+            preLaunchStopReceipt = sessionContext?.lastPlaybackStopReceipt
             postPlaybackReloadFallbackTask?.cancel()
             postPlaybackReloadFallbackTask = nil
             episodePreResolveTask?.cancel()
             episodePreResolveTask = nil
             detailLoadTask?.cancel()
             detailLoadTask = nil
-        } else if oldTarget != nil {
-            // Wait for PlayerViewModel.teardownAndStop()'s stopped heartbeat and notifyContentMutated()
-            // so loadDetail(preserveSeason: true) pre-resolves with the fresh resume position & nextUp.
+        } else if let oldTarget {
+            // Await the player's `PlaybackStopReceipt` directly (`0 ms` when already emitted)
+            // across both the launched itemId (e.g. episode) and the detail itemId (e.g. series),
+            // then invalidate detail cache and refresh `nextUp` + resume position immediately.
             postPlaybackReloadFallbackTask?.cancel()
+            let lookupIDs = oldTarget.itemId == itemId ? [itemId] : [oldTarget.itemId, itemId]
+            let timeout = stopReceiptTimeout
             postPlaybackReloadFallbackTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 2_200_000_000)
+                guard let self else { return }
+                if self.sessionContext != nil {
+                    _ = await self.awaitAnyStopReceipt(
+                        lookupIDs: lookupIDs,
+                        timeout: timeout
+                    )
+                }
                 guard !Task.isCancelled,
-                      let self,
                       self.sessionContext?.activePlaybackTarget == nil else {
                     return
                 }
-                await self.runSerializedDetailLoad(preserveSeason: true)
+                if let sessionContext = self.sessionContext {
+                    self.lastSeenRefreshNonce = sessionContext.homeRefreshNonce
+                }
+                ItemDetailMemoryCache.invalidate(itemId: self.itemId, tmdbId: self.detail?.ids.tmdb)
+                await self.runSerializedDetailLoad(preserveSeason: true, bypassCache: true)
             }
+        }
+    }
+
+    private func awaitAnyStopReceipt(
+        lookupIDs: [String],
+        timeout: Duration
+    ) async -> PlaybackStopReceipt? {
+        guard let sessionContext else { return nil }
+        let minRecordedAt = lastPlaybackLaunchAt?.addingTimeInterval(-0.05)
+        let staleReceipt = preLaunchStopReceipt
+        if let immediate = sessionContext.lastPlaybackStopReceipt,
+           lookupIDs.contains(immediate.itemId),
+           immediate != staleReceipt,
+           immediate.recordedAt >= (minRecordedAt ?? .distantPast),
+           Date().timeIntervalSince(immediate.recordedAt) <= 5.0 {
+            return immediate
+        }
+        if lookupIDs.count <= 1, let singleID = lookupIDs.first {
+            return await sessionContext.awaitPlaybackStopReceipt(
+                for: singleID,
+                timeout: timeout,
+                recordedAfter: minRecordedAt,
+                excluding: staleReceipt
+            )
+        }
+        let taskBox = Mutex<[Task<Void, Never>]>([])
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<PlaybackStopReceipt?, Never>) in
+                final class RaceBox {
+                    var resumed = false
+                    var remaining: Int
+                    init(remaining: Int) { self.remaining = remaining }
+                }
+                let race = RaceBox(remaining: lookupIDs.count)
+                let spawned = lookupIDs.map { id in
+                    Task { @MainActor [weak self] in
+                        let receipt = await self?.sessionContext?.awaitPlaybackStopReceipt(
+                            for: id,
+                            timeout: timeout,
+                            recordedAfter: minRecordedAt,
+                            excluding: staleReceipt
+                        )
+                        guard !race.resumed else { return }
+                        if let receipt {
+                            race.resumed = true
+                            let toCancel = taskBox.withLock { $0 }
+                            toCancel.forEach { $0.cancel() }
+                            continuation.resume(returning: receipt)
+                        } else {
+                            race.remaining -= 1
+                            if race.remaining <= 0 {
+                                race.resumed = true
+                                continuation.resume(returning: nil)
+                            }
+                        }
+                    }
+                }
+                taskBox.withLock { $0 = spawned }
+                if Task.isCancelled && !race.resumed {
+                    race.resumed = true
+                    spawned.forEach { $0.cancel() }
+                    continuation.resume(returning: nil)
+                }
+            }
+        } onCancel: {
+            let toCancel = taskBox.withLock { $0 }
+            toCancel.forEach { $0.cancel() }
         }
     }
 
@@ -179,10 +286,9 @@ final class MediaDetailViewModel {
             isShowingSourcePicker: showingModal,
             client: currentClient
         )
-        PlayerAudioSessionCoordinator.shared.handleDetailDisappear(
+        self.sessionContext?.handleDetailDisappear(
             isLaunchingPlayback: isLaunchingPlayback,
-            isShowingSourcePicker: showingModal,
-            keepDisplayModeInMenu: self.sessionContext?.keepDisplayModeInMenuAfterPlayback ?? false
+            isShowingSourcePicker: showingModal
         )
     }
 
@@ -522,11 +628,14 @@ final class MediaDetailViewModel {
                 return item.progress
             }()
             guard let prog = targetProg,
+                  prog.positionSeconds.isFinite,
+                  prog.durationSeconds.isFinite,
                   prog.positionSeconds > 30,
-                  prog.durationSeconds > prog.positionSeconds else {
+                  prog.durationSeconds > prog.positionSeconds,
+                  let rawMins = Int(exactly: ((prog.durationSeconds - prog.positionSeconds) / 60.0).rounded()) else {
                 return base
             }
-            let totalMins = max(1, Int(((prog.durationSeconds - prog.positionSeconds) / 60.0).rounded()))
+            let totalMins = max(1, rawMins)
             let remText = totalMins >= 60 && totalMins % 60 > 0
                 ? "\(totalMins / 60) t \(totalMins % 60) min igjen"
                 : (totalMins >= 60 ? "\(totalMins / 60) t igjen" : "\(totalMins) min igjen")

@@ -7,7 +7,7 @@ Canonical signature reference extracted directly from `Luna`'s `Packages/AetherB
 ## 1. SwiftPM Package & Trait Pinning (`Packages/AetherBridge`)
 
 ```swift
-// Packages/AetherBridge/Package.swift (swift-tools-version: 6.1)
+// Packages/AetherBridge/Package.swift (swift-tools-version: 6.2)
 .package(
     url: "https://github.com/superuser404notfound/AetherEngine.git",
     exact: "7.73.0",
@@ -175,34 +175,39 @@ public struct SystemCaptionRequest: Equatable, Sendable {
     public init(language: String?)
 }
 
-public struct DisplayCapabilities: Sendable {
+public struct DisplayCapabilities: Sendable, Equatable {
+    public let supportsHDR: Bool
     public let supportsDolbyVision: Bool
     public let supportsHDR10: Bool
     public let supportsHLG: Bool
+    public init(supportsHDR: Bool, supportsDolbyVision: Bool, supportsHDR10: Bool, supportsHLG: Bool)
 }
 
 public struct LiveTelemetry: Sendable {
     public let observedFps: Double?
-    public let droppedFrameCount: Int
+    public let droppedFrameCount: Int?
     public let instantBitrateMbps: Double?
     public let averageBitrateMbps: Double?
     public let networkThroughputMbps: Double?
     public let forwardBufferSeconds: Double?
-    public let readerWindowAheadBytes: Int64?
+    public let readerWindowAheadBytes: Int?
     public let rssMb: Int
-    public let objectAudio: ObjectAudioTelemetry?
+    public let objectAudio: ObjectAudioActivity?
+    // Note: full memberwise init takes 24 parameters in fixed declaration order; prefer test helpers over constructing directly.
 }
 
-public struct ObjectAudioTelemetry: Sendable {
+public struct ObjectAudioActivity: Equatable, Sendable {
     public let layout: SpatialSpeakerLayout
-    public let activeObjects: Int
     public let objects: Int
+    public let activeObjects: Int
     public let elevatedObjects: Int
+    public let heightChannels: Int
 }
 
-public struct SessionCacheStatus: Equatable, Sendable {
+public struct SessionCacheStatus: Sendable, Equatable {
     public static let inactive: SessionCacheStatus
-    public let currentForwardBytes: Int64
+    public let currentForwardBytes: Int
+    // Note: full memberwise init takes 22 parameters (17 non-defaulted); use `.inactive` or test formatting helpers directly.
 }
 ```
 
@@ -395,6 +400,6 @@ public enum EngineTLS {
 - **tvOS Player Transport Seam (`Sources/Features/Player/PlayerTransportProtocol.swift`)**:
   - `@MainActor protocol PlayerTransportControlling`: `state`, `playbackPhase`, `videoRoute`, `currentTime`, `needsForegroundVideoRestore`, `play()`, `pause()`, `togglePlayPause()`, `seek(to:exact:)`, `setAudioDelay(_:)`, `stop(resetDisplayCriteria:finalTeardown:)`.
   - `protocol NativeAudioActivating: Sendable`: `activateNativePlaybackIfNeeded(videoRoute:) async`.
-- **Linux-Testable Core Seam (`Sources/Core/Playback/PlaybackCoreAbstractions.swift` & `RemoteScrubMath.swift`)**:
-  - `public protocol PlaybackEngine: AnyObject, Sendable` & `public protocol IOReader: Sendable`, coordinated by `PlaybackCoordinatorStateMachine` and `PlaybackCurtainWatchdog`.
-  - `RemoteScrubMath` handles indirect clickpad pan scrubbing (`18 %` deadzone, `1.35` axis lock, `75 s` duration-independent cubic curve, click drift suppression). Note: Siri Remote capacitive circular outer-ring jog events are private to `AVPlayerViewController` (`UISwipeGestureRecognizer` / `AVPlayerBehavior` internals) and have no public UIKit/tvOS API for custom player hosts.
+- **Linux-Testable Core Seam (`Sources/Core/Playback/`)**:
+  - `PlaybackCurtainWatchdog` (`5.0 s` fallback timeout) and `PlaybackCurtainPresentationPolicy` (`180 ms` `0-RTT` silent black grace) in `PlaybackCoreAbstractions.swift`, `PlaybackStopReceipt`, `PlaybackTrackIntent`, `PlayerTimelinePolicy`, and `SeriesFlowPolicy`.
+  - `RemoteScrubMath` handles paused-only clickpad pan scrubbing (`20 pt` breakaway, `0 pt` reversal deadzone, `1.35` axis lock, EMA velocity `α = 0.35`, 3-zone duration-adaptive curve, and `>= 280 ms` ring-hold progressive speeds). Note: Siri Remote capacitive circular outer-ring jog events are private to `AVPlayerViewController` (`UISwipeGestureRecognizer` / `AVPlayerBehavior` internals) and have no public UIKit/tvOS API for custom player hosts.

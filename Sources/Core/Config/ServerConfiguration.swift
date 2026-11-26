@@ -3,51 +3,6 @@ import Observation
 import UIKit
 import AetherBridge
 
-public enum HardwareProfilePreset: String, CaseIterable, Identifiable, Sendable {
-    case dvFel714 = "dv-fel-714"
-    case hdr10512 = "hdr10-512"
-
-    public var id: String { rawValue }
-
-    public var defaultRoomName: String {
-        switch self {
-        case .dvFel714: return "Kjellerstua"
-        case .hdr10512: return "Stua"
-        }
-    }
-
-    public var displayTitle: String {
-        switch self {
-        case .dvFel714:
-            return "Kjellerstua — Dolby Vision FEL + 7.1.4"
-        case .hdr10512:
-            return "Stua — HDR10+ / HDR10 + 5.1.2"
-        }
-    }
-
-    public var technicalSummary: String {
-        switch self {
-        case .dvFel714:
-            return "4K BluRay Remux · Dual-Layer DV P7 FEL / P8 · TrueHD Atmos og DTS:X (7.1.4)"
-        case .hdr10512:
-            return "4K HDR10+ / HDR10 · DV Base-Layer · Atmos og tapsfri lyd (5.1.2)"
-        }
-    }
-
-    public static var fallbackRooms: [TvRoomDefinition] {
-        allCases.map { preset in
-            TvRoomDefinition(
-                roomName: preset.defaultRoomName,
-                hardwareProfile: preset.rawValue,
-                equipmentLabel: LunaCopy.roomEquipmentLabel(hardwareProfile: preset.rawValue),
-                atmosphere: preset == .hdr10512 ? "living" : "cinema",
-                label: preset.displayTitle,
-                description: preset.technicalSummary
-            )
-        }
-    }
-}
-
 @MainActor
 @Observable
 public final class AppSessionStore {
@@ -60,6 +15,8 @@ public final class AppSessionStore {
     public private(set) var isRoomUnassigned: Bool = false
     public var hardwareProfile: String
     public var serverAtmosphere: String? = nil
+    public private(set) var serverEquipmentLabel: String? = nil
+    public private(set) var serverSpeakerLayout: String? = nil
     public private(set) var availableRooms: [TvRoomDefinition] = HardwareProfilePreset.fallbackRooms
     public private(set) var homeRefreshNonce: Int = 0
     public let comfort: ComfortPreferences
@@ -74,7 +31,11 @@ public final class AppSessionStore {
     }
 
     public var activePlaybackTarget: PlaybackLaunchRequest? = nil
+    public var lastPlaybackStopReceipt: PlaybackStopReceipt? {
+        stopReceiptStore.lastReceipt
+    }
 
+    @ObservationIgnored private let stopReceiptStore = PlaybackStopReceiptStore()
     @ObservationIgnored private var deviceName: String
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let cachedAppVersion: String
@@ -106,15 +67,40 @@ public final class AppSessionStore {
         if isRoomUnassigned {
             return .neutral
         }
-        let matchedRoom = availableRooms.first {
-            $0.roomName == roomName && $0.hardwareProfile == hardwareProfile
-        } ?? availableRooms.first { $0.hardwareProfile == hardwareProfile }
+        let matchedRoom = matchedRoomDefinition()
         let rawAtmos = serverAtmosphere ?? matchedRoom?.atmosphere
         return LunaRoomAtmosphere.resolve(
             atmosphere: rawAtmos,
             hardwareProfile: hardwareProfile,
             roomName: roomName
         )
+    }
+
+    public var effectiveRoomSpeakerLayout: String {
+        let matchedRoom = matchedRoomDefinition()
+        return SpeakerLayoutOverrideMode.resolveAutoSpeakerLayout(
+            speakerLayout: serverSpeakerLayout ?? matchedRoom?.speakerLayout,
+            equipmentLabel: serverEquipmentLabel ?? matchedRoom?.equipmentLabel,
+            hardwareProfile: hardwareProfile,
+            roomName: roomName
+        )
+    }
+
+    private func matchedRoomDefinition() -> TvRoomDefinition? {
+        availableRooms.first {
+            $0.roomName == roomName && $0.hardwareProfile == hardwareProfile
+        } ?? availableRooms.first {
+            $0.roomName.caseInsensitiveCompare(roomName) == .orderedSame
+        } ?? availableRooms.first {
+            $0.hardwareProfile == hardwareProfile
+        }
+    }
+
+    private func syncComfortRoomSpeakerLayout() {
+        let resolved = effectiveRoomSpeakerLayout
+        if comfort.roomAutoSpeakerLayout != resolved {
+            comfort.roomAutoSpeakerLayout = resolved
+        }
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -157,6 +143,7 @@ public final class AppSessionStore {
 
         applyEngineTLSPolicy()
         rebuildCachedClient()
+        syncComfortRoomSpeakerLayout()
 
         self.comfort.onSyncRequested = { [weak self] updatedOverrides in
             self?.scheduleOverridesSync(updatedOverrides)
@@ -185,9 +172,12 @@ public final class AppSessionStore {
         self.roomName = "Stua"
         self.hardwareProfile = HardwareProfilePreset.hdr10512.rawValue
         self.serverAtmosphere = "living"
+        self.serverEquipmentLabel = LunaCopy.roomEquipmentLabel(hardwareProfile: HardwareProfilePreset.hdr10512.rawValue)
+        self.serverSpeakerLayout = HardwareProfilePreset.hdr10512.defaultSpeakerLayout
         self.activePlaybackTarget = nil
         self.allowSelfSignedLanTLS = true
         self.cachedClient = PreviewMockFixtures.makeClient()
+        syncComfortRoomSpeakerLayout()
         PreviewMockFixtures.prewarmHomeCache()
     }
 
@@ -227,6 +217,31 @@ public final class AppSessionStore {
         homeRefreshNonce &+= 1
     }
 
+    public func recordPlaybackStopReceipt(_ receipt: PlaybackStopReceipt) {
+        stopReceiptStore.record(receipt)
+    }
+
+    public func awaitPlaybackStopReceipt(
+        for itemId: String,
+        timeout: Duration = .seconds(3)
+    ) async -> PlaybackStopReceipt? {
+        await stopReceiptStore.awaitReceipt(for: itemId, timeout: timeout)
+    }
+
+    public func awaitPlaybackStopReceipt(
+        for itemId: String,
+        timeout: Duration = .seconds(3),
+        recordedAfter: Date?,
+        excluding preLaunchReceipt: PlaybackStopReceipt?
+    ) async -> PlaybackStopReceipt? {
+        await stopReceiptStore.awaitReceipt(
+            for: itemId,
+            timeout: timeout,
+            recordedAfter: recordedAfter,
+            excluding: preLaunchReceipt
+        )
+    }
+
     public func makeClient() -> LunaCoreClient? {
         cachedClient
     }
@@ -258,16 +273,7 @@ public final class AppSessionStore {
     }
 
     public nonisolated static func isFailoverEligibleError(_ error: any Error) -> Bool {
-        if let urlError = error as? URLError {
-            switch urlError.code {
-            case .timedOut, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
-                 .networkConnectionLost, .notConnectedToInternet, .secureConnectionFailed:
-                return true
-            default:
-                return false
-            }
-        }
-        return false
+        ServerFailoverPolicy.isFailoverEligibleError(error)
     }
 
     public nonisolated static func orderedFailoverCandidates(
@@ -275,29 +281,11 @@ public final class AppSessionStore {
         localHostnameURL: URL?,
         fallbackServerURL: URL?
     ) -> [URL] {
-        var seen: Set<String> = [primary.absoluteString.lowercased()]
-        var candidates: [URL] = []
-
-        func appendCandidate(_ candidate: URL?) {
-            guard let candidate else { return }
-            let norm = candidate.absoluteString.lowercased()
-            if seen.insert(norm).inserted {
-                candidates.append(candidate)
-            }
-        }
-
-        if let host = primary.host {
-            let scheme = primary.scheme?.lowercased() ?? "http"
-            let port = primary.port ?? (scheme == "https" ? 443 : 80)
-            if scheme == "https" && port == 8920 {
-                appendCandidate(URL(string: "http://\(host):8090"))
-            } else if scheme == "http" && port == 8090 {
-                appendCandidate(URL(string: "https://\(host):8920"))
-            }
-        }
-        appendCandidate(localHostnameURL)
-        appendCandidate(fallbackServerURL)
-        return candidates
+        ServerFailoverPolicy.orderedFailoverCandidates(
+            primary: primary,
+            localHostnameURL: localHostnameURL,
+            fallbackServerURL: fallbackServerURL
+        )
     }
 
     @discardableResult
@@ -363,6 +351,8 @@ public final class AppSessionStore {
         self.isRoomUnassigned = pairedDevice.roomUnassigned ?? false
         self.hardwareProfile = pairedDevice.hardwareProfile
         self.serverAtmosphere = pairedDevice.atmosphere
+        self.serverEquipmentLabel = pairedDevice.equipmentLabel
+        self.serverSpeakerLayout = pairedDevice.speakerLayout
         self.comfort.adoptServerOverrides(pairedDevice.overrides)
         self.didSyncCapabilitiesThisLaunch = pairedDevice.capabilities == DeviceHardwareCapabilities.asTvCapabilities
 
@@ -372,6 +362,7 @@ public final class AppSessionStore {
         defaults.set(pairedDevice.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
         applyEngineTLSPolicy()
         rebuildCachedClient()
+        syncComfortRoomSpeakerLayout()
         homeRefreshNonce &+= 1
     }
 
@@ -398,12 +389,19 @@ public final class AppSessionStore {
         if device.atmosphere != serverAtmosphere {
             self.serverAtmosphere = device.atmosphere
         }
+        if device.equipmentLabel != serverEquipmentLabel {
+            self.serverEquipmentLabel = device.equipmentLabel
+        }
+        if device.speakerLayout != serverSpeakerLayout {
+            self.serverSpeakerLayout = device.speakerLayout
+        }
         if overrideSyncTask == nil {
             self.comfort.adoptServerOverrides(device.overrides)
         }
         if let defaultRooms, !defaultRooms.isEmpty, defaultRooms != availableRooms {
             self.availableRooms = defaultRooms
         }
+        syncComfortRoomSpeakerLayout()
         if clientInputsChanged || cachedClient == nil {
             rebuildCachedClient()
         }
@@ -426,6 +424,9 @@ public final class AppSessionStore {
             $0.roomName == roomName && $0.hardwareProfile == hardwareProfile
         } ?? availableRooms.first { $0.hardwareProfile == hardwareProfile }
         self.serverAtmosphere = matchedRoom?.atmosphere
+        self.serverEquipmentLabel = matchedRoom?.equipmentLabel
+        self.serverSpeakerLayout = matchedRoom?.speakerLayout
+        syncComfortRoomSpeakerLayout()
         defaults.set(roomName, forKey: SideloadSafeStorage.roomNameKey)
         defaults.set(hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
         profileSyncTask?.cancel()
@@ -506,8 +507,11 @@ public final class AppSessionStore {
         Task { await DiskSWRStore.clearAllAsync() }
         deviceToken = nil
         serverAtmosphere = nil
+        serverEquipmentLabel = nil
+        serverSpeakerLayout = nil
         availableRooms = HardwareProfilePreset.fallbackRooms
         activePlaybackTarget = nil
+        syncComfortRoomSpeakerLayout()
         homeRefreshNonce &+= 1
         rebuildCachedClient()
     }
@@ -541,24 +545,7 @@ public final class AppSessionStore {
     }
 
     public static func normalizeServerURL(_ raw: String) -> URL? {
-        var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        if !trimmed.contains("://") {
-            trimmed = "http://\(trimmed)"
-        }
-        while trimmed.hasSuffix("/") {
-            trimmed.removeLast()
-        }
-        if trimmed.hasSuffix("/api/tv/v1") {
-            trimmed = String(trimmed.dropLast("/api/tv/v1".count))
-        }
-        guard let url = URL(string: trimmed),
-              let scheme = url.scheme?.lowercased(),
-              (scheme == "http" || scheme == "https"),
-              url.host != nil else {
-            return nil
-        }
-        return url
+        ServerFailoverPolicy.normalizeServerURL(raw)
     }
 
     internal nonisolated static func shouldTrustServerHost(
@@ -566,10 +553,10 @@ public final class AppSessionStore {
         configuredHost: String?,
         allowSelfSignedLanTLS: Bool
     ) -> Bool {
-        LanURLSessionDelegate.shouldTrustServer(
-            host: host,
-            trustedHost: configuredHost,
-            allowSelfSignedTLS: allowSelfSignedLanTLS
+        ServerFailoverPolicy.shouldTrustServerHost(
+            host,
+            configuredHost: configuredHost,
+            allowSelfSignedLanTLS: allowSelfSignedLanTLS
         )
     }
 
@@ -588,5 +575,43 @@ public final class AppSessionStore {
         } else {
             EngineTLS.serverTrustEvaluator = nil
         }
+    }
+}
+
+extension AppSessionStore: TabSessionContext, SearchSessionContext, PairingSessionContext {
+    public var hasActivePlayback: Bool {
+        activePlaybackTarget != nil
+    }
+
+    public func makeHomeClient() -> (any HomeClientProviding)? {
+        makeClient()
+    }
+
+    public func makeCatalogClient() -> (any CatalogClientProviding)? {
+        makeClient()
+    }
+
+    public func makeLibraryClient() -> (any LibraryClientProviding)? {
+        makeClient()
+    }
+
+    public func makeSearchClient() -> (any SearchClientProviding)? {
+        makeClient()
+    }
+
+    public func probeAndFailoverServerURLIfNeeded() async -> Bool {
+        await probeAndFailoverServerURLIfNeeded(timeoutSeconds: 3.0)
+    }
+
+    public var deviceMetadata: PairingDeviceMetadata {
+        PairingDeviceMetadata(
+            model: Self.currentHardwareModelString(),
+            osVersion: Self.currentSystemVersionString(),
+            appVersion: Self.currentAppVersionString()
+        )
+    }
+
+    public func makePairingClient(baseURL: URL) -> (any PairingClientProviding)? {
+        makeClient(overrideBaseURL: baseURL)
     }
 }

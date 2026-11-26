@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Deterministic offline Lampelys catalog, library, 28-season detail, and playback fixtures
 /// used exclusively when `--preview-screen` is passed at launch.
@@ -20,7 +23,7 @@ enum PreviewMockFixtures {
             roomName: previewRoomName,
             hardwareProfile: previewHardwareProfile,
             allowSelfSignedLanTLS: true,
-            appVersion: "2.12.2",
+            appVersion: "3.0.0",
             osVersion: "tvOS 26.0",
             session: session,
             imageSession: session,
@@ -371,13 +374,13 @@ enum PreviewMockFixtures {
 
     static var genreChips: [TvGenreChip] {
         [
-            TvGenreChip(slug: "norsk", label: "Norsk", icon: nil, accentColor: nil, tmdbGenreIds: nil, browsePath: "/api/tv/v1/catalog/movies?genre=norsk", catalogPath: nil),
-            TvGenreChip(slug: "drama", label: "Drama", icon: nil, accentColor: nil, tmdbGenreIds: [18], browsePath: "/api/tv/v1/catalog/movies?genre=drama", catalogPath: nil),
-            TvGenreChip(slug: "komedie", label: "Komedie", icon: nil, accentColor: nil, tmdbGenreIds: [35], browsePath: "/api/tv/v1/catalog/movies?genre=komedie", catalogPath: nil),
-            TvGenreChip(slug: "sci-fi", label: "Sci-Fi & Fantasy", icon: nil, accentColor: nil, tmdbGenreIds: [878], browsePath: "/api/tv/v1/catalog/movies?genre=sci-fi", catalogPath: nil),
-            TvGenreChip(slug: "thriller", label: "Thriller & Spenning", icon: nil, accentColor: nil, tmdbGenreIds: [53], browsePath: "/api/tv/v1/catalog/movies?genre=thriller", catalogPath: nil),
-            TvGenreChip(slug: "action", label: "Action & Eventyr", icon: nil, accentColor: nil, tmdbGenreIds: [28], browsePath: "/api/tv/v1/catalog/movies?genre=action", catalogPath: nil),
-            TvGenreChip(slug: "krim", label: "Krim & Mysterier", icon: nil, accentColor: nil, tmdbGenreIds: [80], browsePath: "/api/tv/v1/catalog/movies?genre=krim", catalogPath: nil),
+            TvGenreChip(slug: "norsk", label: "Norsk", icon: nil, accentColor: nil, tmdbGenreIds: nil, browsePath: "/api/tv/v2/catalog/movies?genre=norsk", catalogPath: nil),
+            TvGenreChip(slug: "drama", label: "Drama", icon: nil, accentColor: nil, tmdbGenreIds: [18], browsePath: "/api/tv/v2/catalog/movies?genre=drama", catalogPath: nil),
+            TvGenreChip(slug: "komedie", label: "Komedie", icon: nil, accentColor: nil, tmdbGenreIds: [35], browsePath: "/api/tv/v2/catalog/movies?genre=komedie", catalogPath: nil),
+            TvGenreChip(slug: "sci-fi", label: "Sci-Fi & Fantasy", icon: nil, accentColor: nil, tmdbGenreIds: [878], browsePath: "/api/tv/v2/catalog/movies?genre=sci-fi", catalogPath: nil),
+            TvGenreChip(slug: "thriller", label: "Thriller & Spenning", icon: nil, accentColor: nil, tmdbGenreIds: [53], browsePath: "/api/tv/v2/catalog/movies?genre=thriller", catalogPath: nil),
+            TvGenreChip(slug: "action", label: "Action & Eventyr", icon: nil, accentColor: nil, tmdbGenreIds: [28], browsePath: "/api/tv/v2/catalog/movies?genre=action", catalogPath: nil),
+            TvGenreChip(slug: "krim", label: "Krim & Mysterier", icon: nil, accentColor: nil, tmdbGenreIds: [80], browsePath: "/api/tv/v2/catalog/movies?genre=krim", catalogPath: nil),
         ]
     }
 
@@ -476,7 +479,7 @@ enum PreviewMockFixtures {
                     sourceKind: "active_series",
                     listMode: "curated",
                     hasMore: true,
-                    nextPath: "/api/tv/v1/catalog/series",
+                    nextPath: "/api/tv/v2/catalog/series",
                     items: seriesCards
                 ),
                 TvShelfRow(
@@ -486,7 +489,7 @@ enum PreviewMockFixtures {
                     sourceKind: "catalog",
                     listMode: "curated",
                     hasMore: true,
-                    nextPath: "/api/tv/v1/catalog/movies",
+                    nextPath: "/api/tv/v2/catalog/movies",
                     items: catalogMovies
                 ),
             ]
@@ -503,6 +506,28 @@ enum PreviewMockFixtures {
         default:
             items = libraryLocalCards
         }
+        let sampleLists = [
+            TvLibraryCustomList(
+                id: "custom:nordic-noir",
+                name: "Nordisk spenning",
+                mediaType: "series",
+                sourceType: "custom",
+                listMode: "curated",
+                rowStyle: "poster",
+                itemCount: 4,
+                browsePath: "/api/tv/v2/rows/custom%3Anordic-noir"
+            ),
+            TvLibraryCustomList(
+                id: "custom:weekend-sci-fi",
+                name: "Helgefilm · Sci-Fi",
+                mediaType: "movie",
+                sourceType: "custom",
+                listMode: "curated",
+                rowStyle: "poster",
+                itemCount: 6,
+                browsePath: "/api/tv/v2/rows/custom%3Aweekend-sci-fi"
+            ),
+        ]
         return TvLibraryResponse(
             ok: true,
             section: "local",
@@ -514,11 +539,13 @@ enum PreviewMockFixtures {
                 nvme: 6,
                 archive: 2,
                 vfs: 0,
-                customLists: 0
+                customLists: sampleLists.count,
+                customListsCount: sampleLists.count
             ),
             watchlist: [dunePartTwoCard, lykkelandCard],
             localItems: items,
-            localHasMore: false
+            localHasMore: false,
+            customLists: sampleLists
         )
     }
 }

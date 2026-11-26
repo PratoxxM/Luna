@@ -111,7 +111,7 @@ final class PlaybackTitleAndNowPlayingTests: XCTestCase {
             "source": "vfs",
             "tier": "vfs"
           },
-          "stream": { "url": "/api/tv/v1/streams/sess-np-1/master" },
+          "stream": { "url": "/api/tv/v2/streams/sess-np-1/master" },
           "aetherConfig": {
             "preferDualLayerDolbyVision": false,
             "dolbyVisionHandling": "baseLayerOnly",
@@ -140,7 +140,7 @@ final class PlaybackTitleAndNowPlayingTests: XCTestCase {
 
         let movieDurationJson = genericSessionJson
             .replacingOccurrences(of: "\"episode\"", with: "\"movie\"")
-            .replacingOccurrences(of: "\"/api/tv/v1/streams/sess-np-1/master\"", with: "\"/api/tv/v1/streams/sess-np-1/master\", \"declaredDurationSeconds\": 5420")
+            .replacingOccurrences(of: "\"/api/tv/v2/streams/sess-np-1/master\"", with: "\"/api/tv/v2/streams/sess-np-1/master\", \"declaredDurationSeconds\": 5420")
         let movieDurationSession = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(movieDurationJson.utf8))
         let movieNowPlaying = PlayerNowPlayingCoordinator.makeBaseInfo(for: movieDurationSession)
         XCTAssertEqual(movieNowPlaying[MPMediaItemPropertyMediaType] as? UInt, MPMediaType.movie.rawValue)

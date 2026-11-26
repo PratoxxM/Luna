@@ -3,7 +3,18 @@ import Foundation
 import FoundationNetworking
 #endif
 
-public struct PlaybackResolveSocket: Sendable {
+public protocol PlaybackResolveSocketProviding: Sendable {
+    func events() -> AsyncThrowingStream<TvResolveSocketEvent, Error>
+}
+
+public typealias PlaybackResolveSocketFactory = @Sendable (
+    _ baseURL: URL,
+    _ wsPath: String,
+    _ headers: [String: String],
+    _ allowSelfSignedLanTLS: Bool
+) -> any PlaybackResolveSocketProviding
+
+public struct PlaybackResolveSocket: PlaybackResolveSocketProviding, Sendable {
     public let baseURL: URL
     public let wsPath: String
     public let headers: [String: String]
@@ -84,6 +95,16 @@ public struct PlaybackResolveSocket: Sendable {
             return nil
         }
         return try decodeEventData(data)
+    }
+    #else
+    public func events() -> AsyncThrowingStream<TvResolveSocketEvent, Error> {
+        AsyncThrowingStream { continuation in
+            if Self.makeWebSocketURL(baseURL: baseURL, wsPath: wsPath) == nil {
+                continuation.finish(throwing: LunaCoreError.invalidURL(wsPath))
+            } else {
+                continuation.finish(throwing: URLError(.unsupportedURL))
+            }
+        }
     }
     #endif
 

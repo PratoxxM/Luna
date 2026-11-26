@@ -1,38 +1,5 @@
 import SwiftUI
 
-internal struct CatalogSortOption: Identifiable, Equatable, Sendable {
-    let id: String
-    let label: String
-    let subtitle: String
-
-    static let allOptions: [CatalogSortOption] = [
-        CatalogSortOption(
-            id: "popular",
-            label: "Mest populære",
-            subtitle: "Titler med høyest interesse nå"
-        ),
-        CatalogSortOption(
-            id: "top_rated",
-            label: "Høyest rangert",
-            subtitle: "Sortert etter høyeste vurdering"
-        ),
-        CatalogSortOption(
-            id: "newest",
-            label: "Nyeste",
-            subtitle: "Nyeste utgivelser først"
-        ),
-        CatalogSortOption(
-            id: "local_recent",
-            label: "Nylig lagt til lokalt",
-            subtitle: "Sist lagret på LunaCore"
-        ),
-    ]
-
-    static func label(for sortID: String) -> String {
-        allOptions.first(where: { $0.id == sortID })?.label ?? "Mest populære"
-    }
-}
-
 /// Focus-isolated catalog filter & genre bar (`F-10`):
 /// - Fixed left zone keeps sort trigger (`arrow.up.arrow.down`), `Lokalt`, and `Skjul sette`
 ///   permanently visible at `x = 90`.

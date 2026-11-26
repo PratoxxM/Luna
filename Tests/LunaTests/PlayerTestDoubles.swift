@@ -24,12 +24,15 @@ final class MockPlayerTransport: PlayerTransportControlling {
     var lastLoadedURL: URL?
     var lastLoadedStartPosition: Double?
     var lastLoadedOptions: LoadOptions?
+    var lastReloadedOptions: LoadOptions?
+    var reloadCallCount: Int = 0
 
     var onPlay: (() -> Void)?
     var onPause: (() -> Void)?
     var onSeek: ((Double, Bool) async -> Void)?
     var onSetAudioDelay: ((Double) -> Void)?
     var onLoadStream: ((URL, Double?, LoadOptions) async throws -> Void)?
+    var onReloadAtCurrentPosition: ((inout LoadOptions) throws -> Void)?
     var onStop: ((Bool, Bool) -> Void)?
 
     init(
@@ -126,6 +129,18 @@ final class MockPlayerTransport: PlayerTransportControlling {
         if let onLoadStream {
             try await onLoadStream(url, startPosition, options)
         }
+    }
+
+    func reloadAtCurrentPosition(applying change: (inout LoadOptions) -> Void) async throws {
+        var updated = lastReloadedOptions ?? lastLoadedOptions ?? LoadOptions()
+        change(&updated)
+        if let onReloadAtCurrentPosition {
+            try onReloadAtCurrentPosition(&updated)
+        }
+        lastReloadedOptions = updated
+        lastLoadedOptions = updated
+        reloadCallCount += 1
+        events.append("reloadAtCurrentPosition")
     }
 
     func stop(resetDisplayCriteria: Bool, finalTeardown: Bool) {
@@ -261,7 +276,7 @@ final class MockURLProtocol: URLProtocol {
             roomName: "Stua",
             hardwareProfile: "hdr10-512",
             allowSelfSignedLanTLS: true,
-            appVersion: "2.7.0",
+            appVersion: SideloadSafeStorage.currentAppVersionString(),
             osVersion: "tvOS 26.0",
             session: session,
             imageSession: session

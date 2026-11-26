@@ -188,9 +188,7 @@ public enum DeviceHardwareCapabilities: Sendable {
     public static let supportsHardwareAV1: Bool = {
         #if canImport(VideoToolbox) && canImport(CoreMedia)
         #if os(macOS)
-        if #available(macOS 11.0, *) {
-            VTRegisterSupplementalVideoDecoderIfAvailable(kCMVideoCodecType_AV1)
-        }
+        VTRegisterSupplementalVideoDecoderIfAvailable(kCMVideoCodecType_AV1)
         #endif
         return VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1)
         #else

@@ -220,4 +220,71 @@ final class DiskSWRStoreTests: XCTestCase {
             XCTAssertEqual(diskAfter, 0)
         }
     }
+
+    func testMultiTabCatalogAndLibrarySWRPersistenceAndScopeIsolation() async throws {
+        await DiskSWRStore.clearAllAsync()
+        defer { Task { await DiskSWRStore.clearAllAsync() } }
+
+        let host = "swr-multitab-\(UUID().uuidString.lowercased()).local"
+        let movieCatalog = TvCatalogResponse(
+            ok: true,
+            mediaType: "movie",
+            title: "Filmer",
+            sort: "popular",
+            localOnly: false,
+            unwatchedOnly: false,
+            page: 1,
+            limit: 24,
+            hasMore: true,
+            items: [
+                TvMediaCard(itemId: "movie:tmdb:693134", mediaType: "movie", ids: TvMediaIds(tmdb: 693134), title: "Dune: Part Two")
+            ]
+        )
+        let catalogData = try JSONEncoder().encode(movieCatalog)
+        DiskSWRStore.saveCatalogInBackground(
+            rawPayloadData: catalogData,
+            etag: "\"cat-movies-1\"",
+            kind: "movie",
+            serverHost: host,
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512",
+            decodedPayload: movieCatalog
+        )
+
+        let libResp = TvLibraryResponse(
+            ok: true,
+            section: "lists",
+            counts: TvLibraryCounts(watchlist: 1, localTotal: 2, localMovies: 1, localSeries: 1, nvme: 2, archive: 0, vfs: 0, customLists: 1, customListsCount: 1),
+            watchlist: [],
+            localItems: [],
+            customLists: [
+                TvLibraryCustomList(id: "custom:nordic", name: "Nordisk", itemCount: 4, browsePath: "/api/tv/v2/rows/custom%3Anordic")
+            ]
+        )
+        let libData = try JSONEncoder().encode(libResp)
+        DiskSWRStore.saveLibraryInBackground(
+            rawPayloadData: libData,
+            etag: "\"lib-lists-1\"",
+            section: "lists",
+            mediaType: "all",
+            serverHost: host,
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512",
+            decodedPayload: libResp
+        )
+
+        XCTAssertEqual(DiskSWRStore.catalogMemorySnapshot(kind: "movie", serverHost: host, roomName: "Stua", hardwareProfile: "hdr10-512")?.etag, "\"cat-movies-1\"")
+        XCTAssertNil(DiskSWRStore.catalogMemorySnapshot(kind: "series", serverHost: host, roomName: "Stua", hardwareProfile: "hdr10-512"))
+        XCTAssertEqual(DiskSWRStore.libraryMemorySnapshot(section: "lists", mediaType: "all", serverHost: host, roomName: "Stua", hardwareProfile: "hdr10-512")?.payload.resolvedCustomLists.first?.name, "Nordisk")
+
+        await DiskSWRStore.drainPendingWrites()
+        DiskSWRStore.clearMemory()
+
+        let reloadedCatalog = await DiskSWRStore.loadCatalogAsync(kind: "movie", serverHost: host, roomName: "Stua", hardwareProfile: "hdr10-512")
+        let reloadedLibrary = await DiskSWRStore.loadLibraryAsync(section: "lists", mediaType: "all", serverHost: host, roomName: "Stua", hardwareProfile: "hdr10-512")
+        XCTAssertEqual(reloadedCatalog?.etag, "\"cat-movies-1\"")
+        XCTAssertEqual(reloadedCatalog?.payload.items.first?.title, "Dune: Part Two")
+        XCTAssertEqual(reloadedLibrary?.etag, "\"lib-lists-1\"")
+        XCTAssertEqual(reloadedLibrary?.payload.resolvedCustomLists.count, 1)
+    }
 }

@@ -1,40 +1,5 @@
 import SwiftUI
 
-internal enum CustomRowContextPolicy {
-    nonisolated static func isOngoingList(
-        explicitFlag: Bool,
-        rowId: String,
-        sourceKind: String?
-    ) -> Bool {
-        if explicitFlag { return true }
-        if sourceKind == "active_series" || sourceKind == "system_continue" || sourceKind == "system_upcoming" {
-            return true
-        }
-        let lower = rowId.lowercased()
-        return lower == "medialogg-continue"
-            || lower == "continue-watching"
-            || lower == "upcoming-episodes"
-            || lower == "medialogg-upcoming"
-            || lower.contains("pagaende")
-            || lower.contains("active")
-            || lower.contains("continue")
-    }
-
-    nonisolated static func removeActionTitle(
-        explicitFlag: Bool,
-        rowId: String,
-        sourceKind: String?
-    ) -> String? {
-        if isOngoingList(explicitFlag: explicitFlag, rowId: rowId, sourceKind: sourceKind) {
-            return "Fjern fra pågående"
-        }
-        if rowId.hasPrefix("genre:") || sourceKind == "genre" || sourceKind == "local_library" {
-            return nil
-        }
-        return "Fjern fra listen"
-    }
-}
-
 /// Full-grid explorer for custom MediaLogg shelves or "Se alle" row links.
 struct CustomRowBrowseView: View {
     @Environment(AppSessionStore.self) private var sessionStore
@@ -260,10 +225,7 @@ struct CustomRowBrowseView: View {
     }
 
     private var effectiveRowId: String {
-        let stripped = pathOrRowId
-            .replacingOccurrences(of: "/api/tv/v1/rows/", with: "")
-            .split(separator: "?").first.map(String.init) ?? pathOrRowId
-        return stripped.removingPercentEncoding ?? stripped
+        CustomRowContextPolicy.extractRowId(from: pathOrRowId)
     }
 
     private var effectiveIsOngoing: Bool {

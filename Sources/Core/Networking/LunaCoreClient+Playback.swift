@@ -29,7 +29,7 @@ extension LunaCoreClient {
         )
         return try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/playback/prepare",
+            path: "/api/tv/v2/playback/prepare",
             body: PrepareBody(
                 itemId: itemId,
                 title: sanitizedTitle,
@@ -58,7 +58,7 @@ extension LunaCoreClient {
         }
         let _: TvMutationAckResponse = try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/playback/heartbeat",
+            path: "/api/tv/v2/playback/heartbeat",
             body: CancelInflightBody(
                 sessionId: sessionId,
                 resolveId: resolveId,
@@ -97,7 +97,7 @@ extension LunaCoreClient {
         )
         return try await sendJSONWithStatus(
             method: "POST",
-            path: "/api/tv/v1/playback/resolve",
+            path: "/api/tv/v2/playback/resolve",
             body: ResolveBody(
                 itemId: itemId,
                 title: sanitizedTitle,
@@ -111,7 +111,7 @@ extension LunaCoreClient {
 
     public func fetchResolveSnapshot(resolveId: String) async throws -> TvResolveSocketEvent {
         let encoded = resolveId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? resolveId
-        return try await sendJSON(method: "GET", path: "/api/tv/v1/playback/resolve/\(encoded)")
+        return try await sendJSON(method: "GET", path: "/api/tv/v2/playback/resolve/\(encoded)")
     }
 
     public func sendHeartbeat(
@@ -121,28 +121,53 @@ extension LunaCoreClient {
         durationSeconds: Double,
         completed: Bool? = nil
     ) async throws -> TvHeartbeatResponse {
+        try await sendHeartbeat(
+            sessionId: sessionId,
+            state: state,
+            positionSeconds: positionSeconds,
+            durationSeconds: durationSeconds,
+            completed: completed,
+            subtitleDelayMs: nil,
+            qos: nil
+        )
+    }
+
+    public func sendHeartbeat(
+        sessionId: String,
+        state: String,
+        positionSeconds: Double,
+        durationSeconds: Double,
+        completed: Bool? = nil,
+        subtitleDelayMs: Int? = nil,
+        qos: TvPlaybackQosPayload? = nil
+    ) async throws -> TvHeartbeatResponse {
         struct HeartbeatBody: Encodable, Sendable {
             let sessionId: String
             let state: String
             let positionSeconds: Double
             let durationSeconds: Double
             let completed: Bool?
+            let subtitleDelayMs: Int?
+            let qos: TvPlaybackQosPayload?
         }
         return try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/playback/heartbeat",
+            path: "/api/tv/v2/playback/heartbeat",
             body: HeartbeatBody(
                 sessionId: sessionId,
                 state: state,
                 positionSeconds: positionSeconds,
                 durationSeconds: durationSeconds,
-                completed: completed
+                completed: completed,
+                subtitleDelayMs: subtitleDelayMs,
+                qos: qos
             )
         )
     }
 
     public func fetchAlternatives(sessionId: String) async throws -> TvAlternativesResponse {
-        try await sendJSON(method: "GET", path: "/api/tv/v1/playback/\(sessionId)/alternatives")
+        let encoded = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
+        return try await sendJSON(method: "GET", path: "/api/tv/v2/playback/\(encoded)/alternatives")
     }
 
     public func fetchItemCandidates(
@@ -164,7 +189,7 @@ extension LunaCoreClient {
         )
         return try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/playback/candidates",
+            path: "/api/tv/v2/playback/candidates",
             body: CandidatesBody(
                 itemId: itemId,
                 title: sanitizedTitle,
@@ -182,11 +207,60 @@ extension LunaCoreClient {
             let candidateId: String
             let positionSeconds: Double
         }
+        let encoded = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
         let res: TvSwitchResponse = try await sendJSON(
             method: "POST",
-            path: "/api/tv/v1/playback/\(sessionId)/switch",
+            path: "/api/tv/v2/playback/\(encoded)/switch",
             body: SwitchBody(candidateId: candidateId, positionSeconds: positionSeconds)
         )
         return res.playbackSession
+    }
+
+    public func searchAndAttachSubtitles(
+        sessionId: String,
+        languages: [String] = ["nob", "nor", "no"],
+        forced: Bool? = nil,
+        cleanSdh: Bool? = nil
+    ) async throws -> TvSubtitleSearchAttachResponse {
+        struct SearchAttachBody: Encodable, Sendable {
+            let languages: [String]
+            let forced: Bool?
+            let cleanSdh: Bool?
+        }
+        let encoded = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
+        return try await sendJSON(
+            method: "POST",
+            path: "/api/tv/v2/playback/\(encoded)/subtitles/search-and-attach",
+            body: SearchAttachBody(languages: languages, forced: forced, cleanSdh: cleanSdh)
+        )
+    }
+
+    public func autoAlignSubtitles(
+        sessionId: String,
+        subtitleId: String? = nil,
+        trackIndex: Int? = nil,
+        language: String? = nil,
+        subtitleDelayMs: Int? = nil,
+        applyToFile: Bool? = nil
+    ) async throws -> TvSubtitleAutoAlignResponse {
+        struct AutoAlignBody: Encodable, Sendable {
+            let subtitleId: String?
+            let trackIndex: Int?
+            let language: String?
+            let subtitleDelayMs: Int?
+            let applyToFile: Bool?
+        }
+        let encoded = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
+        return try await sendJSON(
+            method: "POST",
+            path: "/api/tv/v2/playback/\(encoded)/subtitles/auto-align",
+            body: AutoAlignBody(
+                subtitleId: subtitleId,
+                trackIndex: trackIndex,
+                language: language,
+                subtitleDelayMs: subtitleDelayMs,
+                applyToFile: applyToFile
+            )
+        )
     }
 }

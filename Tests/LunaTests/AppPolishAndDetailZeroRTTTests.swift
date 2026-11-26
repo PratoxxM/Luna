@@ -151,17 +151,17 @@ final class AppPolishAndDetailZeroRTTTests: XCTestCase {
             let bodyStr = String(data: bodyData, encoding: .utf8) ?? ""
             let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
             switch url.path {
-            case "/api/tv/v1/items/series/series:tmdb:79291":
+            case "/api/tv/v2/items/series/series:tmdb:79291":
                 return (resp, Data(detailJSON.utf8))
-            case "/api/tv/v1/items/series/79291/seasons/3":
+            case "/api/tv/v2/items/series/79291/seasons/3":
                 return (resp, Data(season3JSON.utf8))
-            case "/api/tv/v1/playback/prepare":
+            case "/api/tv/v2/playback/prepare":
                 prepareBodies.withLock { $0.append(bodyStr) }
                 if Task.isCancelled {
                     cancelledPrepareCount.withLock { $0 += 1 }
                 }
                 return (resp, Data(#"{"ok":true,"status":"prepared","prepareToken":"tok-lykkeland-s3e2"}"#.utf8))
-            case "/api/tv/v1/playback/heartbeat":
+            case "/api/tv/v2/playback/heartbeat":
                 if bodyStr.contains("\"cancelInflight\":true") {
                     cancelledPrepareCount.withLock { $0 += 1 }
                 }
@@ -223,7 +223,7 @@ final class AppPolishAndDetailZeroRTTTests: XCTestCase {
             "tier": "nvme",
             "isActive": true
           },
-          "stream": { "url": "/api/tv/v1/stream/sess-0rtt-dune2/tok-0rtt-stream-9911/video.mkv" },
+          "stream": { "url": "/api/tv/v2/stream/sess-0rtt-dune2/tok-0rtt-stream-9911/video.mkv" },
           "aetherConfig": {
             "preferDualLayerDolbyVision": false,
             "dolbyVisionHandling": "automatic",
