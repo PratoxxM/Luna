@@ -107,7 +107,6 @@ public final class AetherEngine: ObservableObject {
     public var scrubPreviewDrawsInView: Bool { get }
     public var supportsCacheBackedStills: Bool { get }
     public func scrubThumbnail(atSeconds seconds: Double, maxWidth: Int = 320) async -> CGImage?
-    @discardableResult
     public func showScrubPreview(atSeconds seconds: Double, in view: AetherScrubPreviewView) async -> ScrubPreviewPlacement?
 
     // Load, Reload, Held Outgoing Picture & Transport Controls
@@ -345,11 +344,11 @@ public enum SpatialSpeakerLayout: String, Sendable {
 }
 
 public enum PlaybackState: Equatable, Sendable {
-    case idle, loading, playing, paused, seeking, ended, error
+    case idle, loading, playing, paused, seeking, ended, error(String)
 }
 
 public enum PlaybackPhase: Equatable, Sendable {
-    case idle, loading, playing, paused, seeking, rebuffering, stalled, ended
+    case idle, loading, playing, paused, seeking, rebuffering, stalled(reconnecting: Bool), ended
     case error(String)
 }
 
