@@ -130,6 +130,11 @@ public struct LunaToast: View {
         self.tone = tone
     }
 
+    public nonisolated static func shouldDisplayMessage(_ message: String?) -> Bool {
+        guard let message else { return false }
+        return !message.isEmpty
+    }
+
     public var body: some View {
         HStack(spacing: 10) {
             Circle()
@@ -151,7 +156,7 @@ public struct LunaToast: View {
 public extension View {
     func lunaBottomToast(message: String?, tone: LunaToastTone = .danger) -> some View {
         overlay(alignment: .bottomLeading) {
-            if let message, !message.isEmpty {
+            if LunaToast.shouldDisplayMessage(message), let message {
                 LunaToast(message: message, tone: tone)
                     .padding(.leading, LunaTheme.horizontalGutter)
                     .padding(.bottom, LunaTokens.Layout.safeBottom)

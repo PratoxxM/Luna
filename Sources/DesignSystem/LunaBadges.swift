@@ -69,13 +69,19 @@ public struct LunaCardProgressBar: View {
         percent > 2 && percent < 95
     }
 
+    public nonisolated static func filledWidth(percent: Double?, trackWidth: CGFloat) -> CGFloat {
+        let clampedPercent = min(100.0, max(0.0, percent ?? 0))
+        let clampedTrack = max(0, trackWidth)
+        return clampedTrack * CGFloat(clampedPercent / 100.0)
+    }
+
     public var body: some View {
         if isVisible {
             ZStack(alignment: .leading) {
                 Capsule().fill(LunaTokens.Edge.progressTrack)
                 Capsule()
                     .fill(LunaTheme.amber)
-                    .frame(width: trackWidth * CGFloat(percent / 100.0))
+                    .frame(width: Self.filledWidth(percent: percent, trackWidth: trackWidth))
             }
             .frame(width: trackWidth, height: 6)
         }
@@ -84,23 +90,38 @@ public struct LunaCardProgressBar: View {
 
 /// Subtle `8 pt` storage tier indicator placed ahead of card/detail metadata text (never over artwork).
 public struct LunaTierDotView: View {
+    public enum TierIndicatorStyle: Equatable, Sendable {
+        case nvme
+        case archive
+        case none
+    }
+
     let availability: TvAvailabilityInfo
 
     public init(availability: TvAvailabilityInfo) {
         self.availability = availability
     }
 
+    public nonisolated static func resolveIndicatorStyle(for availability: TvAvailabilityInfo) -> TierIndicatorStyle {
+        if availability.isLocalNvme { return .nvme }
+        if availability.isLocalArchive { return .archive }
+        return .none
+    }
+
     public var body: some View {
-        if availability.isLocalNvme {
+        switch Self.resolveIndicatorStyle(for: availability) {
+        case .nvme:
             Circle()
                 .fill(LunaTheme.tierNvme)
                 .frame(width: 8, height: 8)
                 .accessibilityLabel(availability.resolvedBenefitLabel)
-        } else if availability.isLocalArchive {
+        case .archive:
             Circle()
                 .strokeBorder(LunaTheme.tierArchive, lineWidth: 1.5)
                 .frame(width: 8, height: 8)
                 .accessibilityLabel(availability.resolvedBenefitLabel)
+        case .none:
+            EmptyView()
         }
     }
 }

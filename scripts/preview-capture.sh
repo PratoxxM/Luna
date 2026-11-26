@@ -35,6 +35,8 @@ with sync_playwright() as p:
     page.screenshot(path="/out/preview-home.png")
 
     page.keyboard.press("ArrowDown")
+    page.wait_for_timeout(120)
+    page.keyboard.press("ArrowDown")
     page.wait_for_timeout(200)
     page.screenshot(path="/out/preview-home-poster-focus.png")
 
@@ -84,7 +86,7 @@ else
       --hide-scrollbars --window-size=1920,1080 --screenshot="$dest" "$url" 2>/dev/null
   }
   render_url "file:///preview/index.html?screen=home&guides=1&focus=right" "/out/preview-home.png"
-  render_url "file:///preview/index.html?screen=home&guides=1&focus=down" "/out/preview-home-poster-focus.png"
+  render_url "file:///preview/index.html?screen=home&guides=1&focus=down,down" "/out/preview-home-poster-focus.png"
   render_url "file:///preview/index.html?screen=catalog&guides=1&focus=down" "/out/preview-catalog.png"
   render_url "file:///preview/index.html?screen=library&guides=1" "/out/preview-library.png"
   render_url "file:///preview/index.html?screen=search&guides=1" "/out/preview-search.png"

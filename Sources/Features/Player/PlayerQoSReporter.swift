@@ -206,11 +206,13 @@ final class PlayerQoSReporter {
             prewarmedNextEpisodeItemId = prewarmInfo.itemId ?? prewarmInfo.nextEpisode?.itemId ?? host.sessionController.activeSession?.nextEpisode?.itemId
             prewarmedNextEpisodeSessionId = prewarmInfo.sessionId
             if let tok = prewarmInfo.streamToken, tok.count >= 8 {
-                if let oldTok = prewarmedNextEpisodeStreamToken, oldTok.count >= 8, oldTok != tok {
-                    EngineLog.unregisterSecret(oldTok)
+                if prewarmedNextEpisodeStreamToken != tok {
+                    if let oldTok = prewarmedNextEpisodeStreamToken, oldTok.count >= 8 {
+                        EngineLog.unregisterSecret(oldTok)
+                    }
+                    _ = EngineLog.registerSecret(tok)
+                    prewarmedNextEpisodeStreamToken = tok
                 }
-                _ = EngineLog.registerSecret(tok)
-                prewarmedNextEpisodeStreamToken = tok
             }
             if DeviceHardwareCapabilities.availableMemoryBytes() > 512 * 1024 * 1024 {
                 let headers = client.streamHTTPHeaders(for: streamURL)

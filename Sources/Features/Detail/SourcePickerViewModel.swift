@@ -241,12 +241,7 @@ internal final class SourcePickerViewModel {
             candidates = alt.alternatives
             activeCandidateId = alt.activeCandidateId
                 ?? alt.alternatives.first(where: { $0.isActive == true })?.candidateId
-        } catch is CancellationError {
-            if !didSelectCandidate {
-                stopOrphanSessionIfNeeded(context: context, client: client)
-            }
-            return
-        } catch let urlError as URLError where urlError.code == .cancelled {
+        } catch where LunaCoreError.isCancellation(error) {
             if !didSelectCandidate {
                 stopOrphanSessionIfNeeded(context: context, client: client)
             }

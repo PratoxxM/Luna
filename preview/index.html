@@ -188,55 +188,47 @@
     <main id="screen-catalog" class="screen">
       <section class="focus-section" data-section="catalog-filters">
         <div class="filter-strip">
-          <button class="pill-btn is-selected" data-focusable="true" data-entry-default="true" data-label="Mest populære">Mest populære</button>
-          <button class="pill-btn" data-focusable="true">Høyest rangert</button>
-          <button class="pill-btn" data-focusable="true">Nyeste</button>
+          <button class="pill-btn is-selected" data-focusable="true" data-entry-default="true" data-label="Mest populære">⇅ Mest populære</button>
+          <button class="pill-btn" data-focusable="true">Lokalt</button>
+          <button class="pill-btn" data-focusable="true">Skjul sette</button>
           <span class="filter-divider" aria-hidden="true"></span>
-          <button class="pill-btn" data-focusable="true">Sci-Fi</button>
-          <button class="pill-btn" data-focusable="true">Nordisk</button>
-          <button class="pill-btn" data-focusable="true">Drama</button>
-          <span class="filter-divider" aria-hidden="true"></span>
-          <button class="pill-btn" data-focusable="true">Kun lokale</button>
-          <button class="pill-btn" data-focusable="true">Usette</button>
+          <div class="filter-genres-scroll">
+            <button class="pill-btn is-selected" data-focusable="true">Alle sjangre</button>
+            <button class="pill-btn" data-focusable="true">Norsk</button>
+            <button class="pill-btn" data-focusable="true">Drama</button>
+            <button class="pill-btn" data-focusable="true">Komedie</button>
+            <button class="pill-btn" data-focusable="true">Sci-Fi &amp; Fantasy</button>
+            <button class="pill-btn" data-focusable="true">Thriller &amp; Spenning</button>
+            <button class="pill-btn" data-focusable="true">Action &amp; Eventyr</button>
+            <button class="pill-btn" data-focusable="true">Krim &amp; Mysterier</button>
+          </div>
         </div>
       </section>
 
       <section class="focus-section" data-section="catalog-grid">
         <div class="catalog-grid">
           <div class="poster-slot grid-poster">
-            <article class="poster-card art-ochre" data-focusable="true" data-action="open-player">
-              <div class="poster-emblem">Dune:<br>Part Two</div>
-            </article>
+            <article class="poster-card art-ochre" data-focusable="true" data-action="open-player" data-label="Dune: Part Two"></article>
             <div class="poster-grid-caption"><div class="poster-caption-title">Dune: Part Two</div><div class="poster-caption-meta card-subtitle"><span class="tier-dot nvme"></span>2024 · ★ 8,5</div></div>
           </div>
           <div class="poster-slot grid-poster">
-            <article class="poster-card art-aubergine" data-focusable="true" data-action="open-details">
-              <div class="poster-emblem">Nosferatu</div>
-            </article>
+            <article class="poster-card art-aubergine" data-focusable="true" data-action="open-details" data-label="Nosferatu"></article>
             <div class="poster-grid-caption"><div class="poster-caption-title">Nosferatu</div><div class="poster-caption-meta card-subtitle"><span class="tier-dot nvme"></span>2024 · ★ 7,7</div></div>
           </div>
           <div class="poster-slot grid-poster">
-            <article class="poster-card art-teal" data-focusable="true" data-action="open-details">
-              <div class="poster-emblem">Blade Runner 2049</div>
-            </article>
+            <article class="poster-card art-teal" data-focusable="true" data-action="open-details" data-label="Blade Runner 2049"></article>
             <div class="poster-grid-caption"><div class="poster-caption-title">Blade Runner 2049</div><div class="poster-caption-meta card-subtitle"><span class="tier-dot archive"></span>2017 · ★ 8,0</div></div>
           </div>
           <div class="poster-slot grid-poster">
-            <article class="poster-card art-ochre" data-focusable="true" data-action="open-details">
-              <div class="poster-emblem">Oppenheimer</div>
-            </article>
+            <article class="poster-card art-ochre" data-focusable="true" data-action="open-details" data-label="Oppenheimer"></article>
             <div class="poster-grid-caption"><div class="poster-caption-title">Oppenheimer</div><div class="poster-caption-meta card-subtitle"><span class="tier-dot nvme"></span>2023 · ★ 8,3</div></div>
           </div>
           <div class="poster-slot grid-poster">
-            <article class="poster-card art-aubergine" data-focusable="true" data-action="open-details">
-              <div class="poster-emblem">Interstellar</div>
-            </article>
+            <article class="poster-card art-aubergine" data-focusable="true" data-action="open-details" data-label="Interstellar"></article>
             <div class="poster-grid-caption"><div class="poster-caption-title">Interstellar</div><div class="poster-caption-meta card-subtitle"><span class="tier-dot nvme"></span>2014 · ★ 8,7</div></div>
           </div>
           <div class="poster-slot grid-poster">
-            <article class="poster-card art-navy" data-focusable="true" data-action="open-details">
-              <div class="poster-emblem">Arrival</div>
-            </article>
+            <article class="poster-card art-navy" data-focusable="true" data-action="open-details" data-label="Arrival"></article>
             <div class="poster-grid-caption"><div class="poster-caption-title">Arrival</div><div class="poster-caption-meta card-subtitle"><span class="tier-dot archive"></span>2016 · ★ 7,9</div></div>
           </div>
         </div>
@@ -247,10 +239,10 @@
     <main id="screen-library" class="screen">
       <section class="focus-section" data-section="library-filters">
         <div class="filter-strip">
-          <button class="pill-btn is-selected" data-focusable="true" data-entry-default="true" data-lib-filter="movies">Filmer · 6</button>
-          <button class="pill-btn" data-focusable="true" data-lib-filter="series">Serier · 3</button>
-          <button class="pill-btn" data-focusable="true" data-lib-filter="watchlist">Huskeliste · 2</button>
-          <button class="pill-btn" data-focusable="true" data-lib-filter="lists">Lister · 2</button>
+          <button class="pill-btn is-selected" data-focusable="true" data-entry-default="true" data-lib-filter="movies">Filmer <span class="pill-badge">6</span></button>
+          <button class="pill-btn" data-focusable="true" data-lib-filter="series">Serier <span class="pill-badge">3</span></button>
+          <button class="pill-btn" data-focusable="true" data-lib-filter="watchlist">Huskeliste <span class="pill-badge">2</span></button>
+          <button class="pill-btn" data-focusable="true" data-lib-filter="lists">Lister <span class="pill-badge">2</span></button>
         </div>
       </section>
 
@@ -274,39 +266,27 @@
       <section class="focus-section" data-section="search-grid">
         <div class="search-grid">
           <div class="poster-slot grid-poster">
-            <article class="poster-card art-ochre" data-focusable="true" data-action="open-player">
-              <div class="poster-emblem">Dune:<br>Part Two</div>
-            </article>
+            <article class="poster-card art-ochre" data-focusable="true" data-action="open-player" data-label="Dune: Part Two"></article>
             <div class="poster-grid-caption"><div class="poster-caption-title">Dune: Part Two</div><div class="poster-caption-meta card-subtitle"><span class="tier-dot nvme"></span>2024 · ★ 8,5</div></div>
           </div>
           <div class="poster-slot grid-poster">
-            <article class="poster-card art-navy" data-focusable="true" data-action="open-details">
-              <div class="poster-emblem">Dune</div>
-            </article>
+            <article class="poster-card art-navy" data-focusable="true" data-action="open-details" data-label="Dune"></article>
             <div class="poster-grid-caption"><div class="poster-caption-title">Dune</div><div class="poster-caption-meta card-subtitle"><span class="tier-dot nvme"></span>2021 · ★ 8,0</div></div>
           </div>
           <div class="poster-slot grid-poster">
-            <article class="poster-card art-aubergine" data-focusable="true" data-action="open-details">
-              <div class="poster-emblem">Dune:<br>Prophecy</div>
-            </article>
+            <article class="poster-card art-aubergine" data-focusable="true" data-action="open-details" data-label="Dune: Prophecy"></article>
             <div class="poster-grid-caption"><div class="poster-caption-title">Dune: Prophecy</div><div class="poster-caption-meta">2024 · Serie</div></div>
           </div>
           <div class="poster-slot grid-poster">
-            <article class="poster-card art-teal" data-focusable="true" data-action="open-details">
-              <div class="poster-emblem">Blade Runner 2049</div>
-            </article>
+            <article class="poster-card art-teal" data-focusable="true" data-action="open-details" data-label="Blade Runner 2049"></article>
             <div class="poster-grid-caption"><div class="poster-caption-title">Blade Runner 2049</div><div class="poster-caption-meta card-subtitle"><span class="tier-dot archive"></span>2017 · ★ 8,0</div></div>
           </div>
           <div class="poster-slot grid-poster">
-            <article class="poster-card art-navy" data-focusable="true" data-action="open-details">
-              <div class="poster-emblem">Arrival</div>
-            </article>
+            <article class="poster-card art-navy" data-focusable="true" data-action="open-details" data-label="Arrival"></article>
             <div class="poster-grid-caption"><div class="poster-caption-title">Arrival</div><div class="poster-caption-meta card-subtitle"><span class="tier-dot archive"></span>2016 · ★ 7,9</div></div>
           </div>
           <div class="poster-slot grid-poster">
-            <article class="poster-card art-ochre" data-focusable="true" data-action="open-details">
-              <div class="poster-emblem">Sicario</div>
-            </article>
+            <article class="poster-card art-ochre" data-focusable="true" data-action="open-details" data-label="Sicario"></article>
             <div class="poster-grid-caption"><div class="poster-caption-title">Sicario</div><div class="poster-caption-meta card-subtitle"><span class="tier-dot nvme"></span>2015 · ★ 7,7</div></div>
           </div>
         </div>
@@ -333,7 +313,7 @@
       <section class="focus-section" data-section="detail-episodes">
         <div class="section-header">
           <div style="display: flex; align-items: center; gap: 16px;">
-            <button class="pill-btn is-selected" data-focusable="true" data-label="Sesong 28">Sesong 28 ⌄</button>
+            <button class="pill-btn is-selected" data-focusable="true" data-label="Sesong 28">⌄ Sesong 28</button>
             <span class="section-sub">10 episoder</span>
           </div>
         </div>

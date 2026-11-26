@@ -415,7 +415,7 @@ struct Etappe6ContractAcceptanceTests {
         #expect(origAudio?.id == 2)
         #expect(SmartTrackRuleEngine.evaluate(activeAudio: origAudio?.asSmartDescriptor, subtitleTracks: subs) == .selectTrack(10))
 
-        let store = PlaybackPreferenceStore(defaults: defaults)
+        let store = PlaybackPreferenceStore(suiteName: suite)
         store.setPreferNorwegianAudio(true, forItemId: "movie:tmdb:129")
         #expect(store.preferNorwegianAudio(forItemId: "movie:tmdb:129"))
 

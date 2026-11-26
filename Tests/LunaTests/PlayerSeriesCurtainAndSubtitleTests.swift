@@ -39,7 +39,20 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
         XCTAssertFalse(nextOnly.relocateToTop)
         XCTAssertEqual(nextOnly.bottomInset, 300)
 
-        // 4. Bottom OSD + active series card simultaneously -> relocates cleanly to top (84 pt, or 340 pt below NerdHUD)
+        XCTAssertEqual(SubtitleOverlayLayout.nerdHUDProtectedRect.minY, 60)
+        XCTAssertEqual(SubtitleOverlayLayout.nerdHUDProtectedRect.maxY, 348)
+
+        let cleanWithHud = SubtitleOverlayLayout.verticalPlacement(
+            isBottomBarVisible: false,
+            isQuickPanelOpen: false,
+            isNerdHUDVisible: true,
+            activeSeriesOverlay: .none
+        )
+        XCTAssertFalse(cleanWithHud.relocateToTop)
+        XCTAssertEqual(cleanWithHud.topInset, 360)
+        XCTAssertGreaterThan(cleanWithHud.topInset, SubtitleOverlayLayout.nerdHUDProtectedRect.maxY)
+
+        // 4. Bottom OSD + active series card simultaneously -> relocates cleanly to top (84 pt, or 360 pt below NerdHUD)
         let osdAndNext = SubtitleOverlayLayout.verticalPlacement(
             isBottomBarVisible: true,
             isQuickPanelOpen: false,
@@ -57,7 +70,7 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
             activeSeriesOverlay: .skipPrompt
         )
         XCTAssertTrue(osdAndNextWithHud.relocateToTop)
-        XCTAssertEqual(osdAndNextWithHud.topInset, 340)
+        XCTAssertEqual(osdAndNextWithHud.topInset, 360)
         XCTAssertGreaterThan(osdAndNextWithHud.topInset, SubtitleOverlayLayout.nerdHUDProtectedRect.maxY)
 
         // 5. Open QuickPanel + NerdHUD -> upper-right cinema corridor (x = 856..1830, y >= 72)
@@ -79,7 +92,7 @@ final class PlayerSeriesCurtainAndSubtitleTests: XCTestCase {
         )
         XCTAssertFalse(
             subtitleCorridorRect.intersects(SubtitleOverlayLayout.nerdHUDProtectedRect),
-            "Relocated top subtitle corridor must never overlap NerdHUDView (x=90..830, y=42..330)"
+            "Relocated top subtitle corridor must never overlap NerdHUDView (x=90..830, y=60..348)"
         )
 
         // 6. Interactive scrubbing relocates subtitles to top so ScrubPreviewBubbleView never overlaps cues

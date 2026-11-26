@@ -86,6 +86,9 @@ extension PlayerTrackController {
             }
             subtitleActionStatusMessage = LunaCopy.subtitleAttachedStatus
             return true
+        } catch where LunaCoreError.isCancellation(error) {
+            subtitleActionStatusMessage = nil
+            return false
         } catch {
             subtitleActionStatusMessage = LunaCopy.friendlyErrorMessage(error, fallback: LunaCopy.noSubtitlesFoundStatus)
             return false
@@ -143,11 +146,14 @@ extension PlayerTrackController {
                     subtitleDelayMs: res.subtitleDelayMs
                 )
                 host.sessionController.activeSession = updatedSession
-                try? await reloadExternalSubtitlesInPlace(session: updatedSession, client: client)
+                try await reloadExternalSubtitlesInPlace(session: updatedSession, client: client)
             }
             let formattedOffset = PlaybackSyncTimingPolicy.formatSignedDelayMs(subtitleDelayMs)
             subtitleActionStatusMessage = "\(LunaCopy.subtitlesAlignedStatus) · \(formattedOffset)"
             return true
+        } catch where LunaCoreError.isCancellation(error) {
+            subtitleActionStatusMessage = nil
+            return false
         } catch {
             subtitleActionStatusMessage = LunaCopy.friendlyErrorMessage(error, fallback: LunaCopy.subtitlesAlignFailedStatus)
             return false
@@ -162,8 +168,8 @@ extension PlayerTrackController {
     }
 
     func performSwitchToHDR10BaseLayer() async {
+        let previousOverride = comfort.dualLayerOverride
         comfort.dualLayerOverride = .forceOff
-        host?.qosReporter.resetDolbyVisionFallback()
         guard let host,
               !host.sessionController.isResolving,
               !host.sessionController.isSwitchingSource,
@@ -184,15 +190,27 @@ extension PlayerTrackController {
 
         engine.maximumSubtitleAdvanceSeconds = 0
         engine.maximumSubtitleDelaySeconds = 10
-        try? await transport.reloadAtCurrentPosition { options in
-            PlayerEngineConfigurator.applyRestoreDisplayAndUpscaleOptions(snapshot, session: session, to: &options)
-            if let extSubs { options.externalSubtitles = extSubs }
+        do {
+            try await transport.reloadAtCurrentPosition { options in
+                PlayerEngineConfigurator.applyRestoreDisplayAndUpscaleOptions(snapshot, session: session, to: &options)
+                if let extSubs { options.externalSubtitles = extSubs }
+            }
+            guard !Task.isCancelled else { return }
+            host.qosReporter.resetDolbyVisionFallback()
+            if subtitleDelayMs != 0 {
+                transport.setSoftwareSubtitleDelay(self.subtitleDelaySeconds)
+            }
+            host.qosReporter.showTransientBanner(LunaCopy.switchToHDR10BaseLayerTitle)
+        } catch where LunaCoreError.isCancellation(error) {
+            comfort.dualLayerOverride = previousOverride
+            return
+        } catch {
+            comfort.dualLayerOverride = previousOverride
+            guard !Task.isCancelled else { return }
+            host.qosReporter.showTransientBanner(
+                LunaCopy.friendlyErrorMessage(error, fallback: "Kunne ikke bytte til HDR10-baselag.")
+            )
         }
-        guard !Task.isCancelled else { return }
-        if subtitleDelayMs != 0 {
-            transport.setSoftwareSubtitleDelay(self.subtitleDelaySeconds)
-        }
-        host.qosReporter.showTransientBanner(LunaCopy.switchToHDR10BaseLayerTitle)
     }
 
     private func reloadExternalSubtitlesInPlace(session: TvPlaybackSession, client: LunaCoreClient) async throws {

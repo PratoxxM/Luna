@@ -134,7 +134,9 @@ final class PlayerSessionController {
             if let oldTok = registeredStreamToken, oldTok.count >= 8, oldTok != preTok {
                 EngineLog.unregisterSecret(oldTok)
             }
-            _ = EngineLog.registerSecret(preTok)
+            if !request.preparedStreamSecretRegistered && registeredStreamToken != preTok {
+                _ = EngineLog.registerSecret(preTok)
+            }
             registeredStreamToken = preTok
         }
         didTeardown = false
@@ -246,7 +248,9 @@ final class PlayerSessionController {
         try Task.checkCancellation()
 
         let previousToken = registeredStreamToken
-        if session.streamToken.count >= 8 { _ = EngineLog.registerSecret(session.streamToken) }
+        if session.streamToken.count >= 8, session.streamToken != previousToken {
+            _ = EngineLog.registerSecret(session.streamToken)
+        }
         // AE-G02: Disable forward subtitle prefetch while preserving 10 s delay history.
         engine.maximumSubtitleAdvanceSeconds = 0
         engine.maximumSubtitleDelaySeconds = 10

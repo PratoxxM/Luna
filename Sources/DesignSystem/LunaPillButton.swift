@@ -156,6 +156,27 @@ public struct LunaPillButton: View {
         }
     }
 
+    public nonisolated static func resolveTrailingDotColor(
+        isFocused: Bool,
+        prominence: LunaButtonProminence = .glassPill,
+        accent: LunaButtonAccent = .amber
+    ) -> Color {
+        if isFocused {
+            if accent == .coral && prominence != .primary {
+                return LunaTheme.coral
+            }
+            return LunaTokens.Text.onAccent
+        }
+        switch accent {
+        case .coral:
+            return LunaTheme.coral
+        case .warn:
+            return LunaTheme.warn
+        case .amber, .emerald:
+            return LunaTheme.moonlight
+        }
+    }
+
     public var body: some View {
         Button(action: action) {
             LunaPillLabel(
@@ -224,7 +245,13 @@ private struct LunaPillLabel: View {
             }
             if showsTrailingDot {
                 Circle()
-                    .fill(effectiveFocused && !isDestructiveFocus ? LunaTokens.Text.onAccent : LunaTheme.amber)
+                    .fill(
+                        LunaPillButton.resolveTrailingDotColor(
+                            isFocused: effectiveFocused,
+                            prominence: prominence,
+                            accent: accent
+                        )
+                    )
                     .frame(width: 8, height: 8)
             }
         }

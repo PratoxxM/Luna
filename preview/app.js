@@ -115,9 +115,7 @@
       container.className = 'library-grid';
       container.innerHTML = items.map((item) => `
         <div class="poster-slot grid-poster">
-          <article class="poster-card ${item.art}" data-focusable="true" data-action="open-details">
-            <div class="poster-emblem">${item.title}</div>
-          </article>
+          <article class="poster-card ${item.art}" data-focusable="true" data-action="open-details" data-label="${item.title}"></article>
           <div class="poster-grid-caption">
             <div class="poster-caption-title">${item.title}</div>
             <div class="poster-caption-meta card-subtitle"><span class="tier-dot ${item.cls === 'tier-nvme' ? 'nvme' : 'archive'}"></span>${item.year}</div>
@@ -391,13 +389,26 @@
     }
   });
 
-  switchScreen(currentScreen, true);
+  document.body.classList.add('is-bootstrapping');
   const initialPanel = params.get('panel');
-  if (currentScreen === 'player' && initialPanel) {
+  const shouldOpenInitialPanel = currentScreen === 'player' && !!initialPanel && !!QUICK_PANELS[initialPanel];
+  switchScreen(currentScreen, !shouldOpenInitialPanel);
+  if (shouldOpenInitialPanel) {
     openQuickPanel(initialPanel);
   }
-  const initialFocusDir = params.get('focus');
-  if (initialFocusDir === 'right') moveSpatialFocus('ArrowRight');
-  if (initialFocusDir === 'down') moveSpatialFocus('ArrowDown');
-  if (initialFocusDir === 'up') moveSpatialFocus('ArrowUp');
+  const initialFocusRaw = params.get('focus');
+  if (initialFocusRaw) {
+    const dirMap = {
+      right: 'ArrowRight',
+      left: 'ArrowLeft',
+      down: 'ArrowDown',
+      up: 'ArrowUp'
+    };
+    for (const step of initialFocusRaw.split(',')) {
+      const arrow = dirMap[step.trim().toLowerCase()];
+      if (arrow) moveSpatialFocus(arrow);
+    }
+  }
+  void document.body.offsetWidth;
+  document.body.classList.remove('is-bootstrapping');
 })();

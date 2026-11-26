@@ -372,7 +372,7 @@ final class PlayerQuickPanelAndSwitchTests: XCTestCase {
         let session = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(sessionJSON.utf8))
         let client = try MockURLProtocol.makeClient(host: host)
         let comfort = ComfortPreferences(defaults: defaults)
-        let prefStore = PlaybackPreferenceStore(defaults: defaults)
+        let prefStore = PlaybackPreferenceStore(suiteName: suite)
         let engine = try LunaApp.makeSharedEngine()
         defer {
             PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()

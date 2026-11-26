@@ -42,6 +42,21 @@ struct ConsumedPreResolveHandoff: Sendable {
     let preparedSession: TvPlaybackSession?
     let inflightPrepareTask: Task<TvPrepareResponse?, Never>?
     let inflightPrepareToken: String?
+    let preparedStreamSecretRegistered: Bool
+
+    init(
+        prepareToken: String?,
+        preparedSession: TvPlaybackSession?,
+        inflightPrepareTask: Task<TvPrepareResponse?, Never>?,
+        inflightPrepareToken: String?,
+        preparedStreamSecretRegistered: Bool = false
+    ) {
+        self.prepareToken = prepareToken
+        self.preparedSession = preparedSession
+        self.inflightPrepareTask = inflightPrepareTask
+        self.inflightPrepareToken = inflightPrepareToken
+        self.preparedStreamSecretRegistered = preparedStreamSecretRegistered
+    }
 }
 
 /// Coordinates `0 ms` initial (or `180 ms` debounced) `/api/tv/v2/playback/prepare`
@@ -160,6 +175,8 @@ final class DetailPreResolveController {
         if matchesPreparedItem, matchesPreparedStart, let token = preparedToken, !token.isEmpty {
             let session = preparedPlaybackSession
             let handedSessionId = session?.sessionId ?? preparedSessionId ?? token
+            let didTransferRegisteredSecret = (session?.streamToken.count ?? 0) >= 8
+                && prewarmedStreamToken == session?.streamToken
             markSessionHandedOver(handedSessionId)
             preparedToken = nil
             preparedSessionId = nil
@@ -174,7 +191,8 @@ final class DetailPreResolveController {
                 prepareToken: token,
                 preparedSession: session,
                 inflightPrepareTask: nil,
-                inflightPrepareToken: nil
+                inflightPrepareToken: nil,
+                preparedStreamSecretRegistered: didTransferRegisteredSecret
             )
         }
 
@@ -352,11 +370,13 @@ final class DetailPreResolveController {
             self.isPreResolvedReady = true
 
             if let streamTok = prep.playbackSession?.streamToken, streamTok.count >= 8 {
-                if let oldTok = self.prewarmedStreamToken, oldTok.count >= 8, oldTok != streamTok {
-                    self.prewarmer.unregisterStreamSecret(oldTok)
+                if self.prewarmedStreamToken != streamTok {
+                    if let oldTok = self.prewarmedStreamToken, oldTok.count >= 8 {
+                        self.prewarmer.unregisterStreamSecret(oldTok)
+                    }
+                    self.prewarmer.registerStreamSecret(streamTok)
+                    self.prewarmedStreamToken = streamTok
                 }
-                self.prewarmer.registerStreamSecret(streamTok)
-                self.prewarmedStreamToken = streamTok
             }
 
             // Strictly respect `canClientPrewarmBytes == true` so mechanical archive drives

@@ -44,6 +44,10 @@ public struct LunaSheetContainer<Content: View>: View {
         self.content = content
     }
 
+    public nonisolated static func resolveTitleFont(usesSerif: Bool) -> SwiftUI.Font {
+        usesSerif ? LunaTheme.Font.titleSerif : LunaTheme.Font.pageTitle
+    }
+
     public var body: some View {
         ZStack {
             LunaTheme.canvas.ignoresSafeArea()
@@ -52,7 +56,7 @@ public struct LunaSheetContainer<Content: View>: View {
                 HStack(alignment: .firstTextBaseline, spacing: 16) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(title)
-                            .font(titleUsesSerif ? LunaTheme.Font.titleSerif : LunaTheme.Font.pageTitle)
+                            .font(Self.resolveTitleFont(usesSerif: titleUsesSerif))
                             .foregroundStyle(LunaTheme.linen)
                             .lineLimit(2)
 

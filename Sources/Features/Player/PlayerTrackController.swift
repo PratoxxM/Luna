@@ -354,21 +354,39 @@ final class PlayerTrackController {
               previewAudioOptions.isEmpty else { return }
         upscaleReloadTask?.cancel()
         upscaleReloadTask = Task { @MainActor [weak self] in
-            guard let self, let host = self.host else { return }
-            let snapshot = PlayerEngineConfigurator.captureReloadComfortSnapshot(
-                comfort: self.comfort,
-                audioEnhancement: self.audioEnhancement,
-                audioDelaySeconds: self.effectiveAudioDelaySecondsForActiveRoute()
-            )
-            let session = host.sessionController.activeSession
-            self.engine.maximumSubtitleAdvanceSeconds = 0
-            self.engine.maximumSubtitleDelaySeconds = 10
-            try? await self.transport.reloadAtCurrentPosition { options in
+            guard let self else { return }
+            await self.performLiveEngineOptionsReload()
+            if !Task.isCancelled {
+                self.upscaleReloadTask = nil
+            }
+        }
+    }
+
+    internal func performLiveEngineOptionsReload() async {
+        guard let host, !host.sessionController.isResolving, !host.sessionController.isSwitchingSource,
+              !host.sessionController.isDismissing, !host.sessionController.isTeardownCompleted,
+              previewAudioOptions.isEmpty else { return }
+        let snapshot = PlayerEngineConfigurator.captureReloadComfortSnapshot(
+            comfort: comfort,
+            audioEnhancement: audioEnhancement,
+            audioDelaySeconds: effectiveAudioDelaySecondsForActiveRoute()
+        )
+        let session = host.sessionController.activeSession
+        engine.maximumSubtitleAdvanceSeconds = 0
+        engine.maximumSubtitleDelaySeconds = 10
+        do {
+            try await transport.reloadAtCurrentPosition { options in
                 PlayerEngineConfigurator.applyRestoreDisplayAndUpscaleOptions(snapshot, session: session, to: &options)
             }
             guard !Task.isCancelled else { return }
-            if self.subtitleDelayMs != 0 { self.transport.setSoftwareSubtitleDelay(self.subtitleDelaySeconds) }
-            self.upscaleReloadTask = nil
+            if subtitleDelayMs != 0 { transport.setSoftwareSubtitleDelay(subtitleDelaySeconds) }
+        } catch where LunaCoreError.isCancellation(error) {
+            return
+        } catch {
+            guard !Task.isCancelled else { return }
+            host.qosReporter.showTransientBanner(
+                LunaCopy.friendlyErrorMessage(error, fallback: "Kunne ikke oppdatere avspillingsinnstillinger.")
+            )
         }
     }
 

@@ -17,7 +17,11 @@ struct DetailHeroHeaderView: View {
     @FocusState private var isAnyHeroButtonFocused: Bool
 
     private var heroMinHeight: CGFloat {
-        item.mediaType == "movie" ? 760 : 500
+        Self.heroMinHeight(for: item.mediaType)
+    }
+
+    nonisolated static func heroMinHeight(for mediaType: String) -> CGFloat {
+        mediaType == "movie" ? 760 : 500
     }
 
     var body: some View {
@@ -211,6 +215,14 @@ struct DetailHeroHeaderView: View {
     }
 
     private var detailMetadataLine: String {
+        Self.detailMetadataLine(for: item)
+    }
+
+    private var displayedBadges: [String] {
+        Self.displayedBadges(for: item)
+    }
+
+    nonisolated static func detailMetadataLine(for item: TvItemDetail) -> String {
         var parts: [String] = []
         if let year = item.year {
             parts.append(String(year))
@@ -233,7 +245,7 @@ struct DetailHeroHeaderView: View {
         return parts.joined(separator: " · ")
     }
 
-    private var displayedBadges: [String] {
+    nonisolated static func displayedBadges(for item: TvItemDetail) -> [String] {
         var seen: Set<String> = [
             "klar i vfs",
             "på nvme",

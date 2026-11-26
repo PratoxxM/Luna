@@ -158,8 +158,9 @@ final class HomeCatalogLibraryViewModelsTests: XCTestCase {
 
         XCTAssertEqual(LibraryFilterSection.allCases.map(\.label), ["Filmer", "Serier", "Huskeliste", "Lister"])
         let counts = TvLibraryCounts(watchlist: 3, localTotal: 5, localMovies: 2, localSeries: 3, nvme: 5, archive: 0, vfs: 0, customLists: 1, customListsCount: 4)
-        XCTAssertEqual(LibraryFilterSection.lists.pillTitle(counts: counts), "Lister · 4")
-        XCTAssertNil(LibraryFilterSection.lists.pillBadgeText(counts: counts))
+        XCTAssertEqual(LibraryFilterSection.lists.pillTitle(counts: counts), "Lister")
+        XCTAssertEqual(LibraryFilterSection.lists.pillBadgeText(counts: counts), "4")
+        XCTAssertNil(LibraryFilterSection.lists.pillBadgeText(counts: nil))
         XCTAssertNil(LibraryFilterSection.lists.emptyActionTitle)
         XCTAssertEqual(LibraryFilterSection.lists.emptyHeadline, LunaCopy.emptyCustomListsHeadline)
 

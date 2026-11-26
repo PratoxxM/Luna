@@ -53,22 +53,11 @@ public enum LibraryFilterSection: String, CaseIterable, Identifiable, Sendable {
     }
 
     public func pillTitle(counts: TvLibraryCounts?) -> String {
-        switch self {
-        case .lists:
-            guard let count = countValue(from: counts) else { return label }
-            return LunaCopy.listsPillTitle(count)
-        case .movies, .series, .watchlist:
-            return label
-        }
+        label
     }
 
     public func pillBadgeText(counts: TvLibraryCounts?) -> String? {
-        switch self {
-        case .lists:
-            return nil
-        case .movies, .series, .watchlist:
-            return countValue(from: counts).map(String.init)
-        }
+        countValue(from: counts).map(String.init)
     }
 
     public var apiSection: String {

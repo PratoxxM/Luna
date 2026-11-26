@@ -225,6 +225,38 @@ public struct LunaListRow: View {
         self.action = action
     }
 
+    public nonisolated static func resolveLeadingIconColor(
+        isDestructive: Bool,
+        isFocused: Bool
+    ) -> Color {
+        if isDestructive { return LunaTheme.coral }
+        return isFocused ? LunaTheme.linen : LunaTheme.moonlight
+    }
+
+    public nonisolated static func resolveTitleColor(
+        isDestructive: Bool,
+        dimUnfocusedTitle: Bool,
+        isFocused: Bool,
+        isSelected: Bool
+    ) -> Color {
+        if isDestructive { return LunaTheme.coral }
+        if dimUnfocusedTitle && !isFocused && !isSelected {
+            return LunaTheme.moonlight
+        }
+        return LunaTheme.linen
+    }
+
+    public nonisolated static func resolveTrailingColor(
+        trailingTextProminent: Bool,
+        isDestructive: Bool,
+        isFocused: Bool
+    ) -> Color {
+        if trailingTextProminent {
+            return isDestructive ? LunaTheme.coral : LunaTheme.linen
+        }
+        return isFocused ? LunaTheme.moonlight : LunaTheme.muted
+    }
+
     public var body: some View {
         Button(action: action) {
             LunaListRowLabel(
@@ -273,9 +305,10 @@ private struct LunaListRowLabel: View {
                 Image(systemName: leadingSystemImage)
                     .font(LunaTheme.Font.listRowIcon)
                     .foregroundStyle(
-                        isDestructive
-                            ? LunaTheme.coral
-                            : (effectiveFocused ? LunaTheme.linen : LunaTheme.moonlight)
+                        LunaListRow.resolveLeadingIconColor(
+                            isDestructive: isDestructive,
+                            isFocused: effectiveFocused
+                        )
                     )
                     .frame(width: 28, alignment: .center)
             }
@@ -345,17 +378,19 @@ private struct LunaListRowLabel: View {
     }
 
     private var titleColor: Color {
-        if isDestructive { return LunaTheme.coral }
-        if dimUnfocusedTitle && !effectiveFocused && !isSelected {
-            return LunaTheme.moonlight
-        }
-        return LunaTheme.linen
+        LunaListRow.resolveTitleColor(
+            isDestructive: isDestructive,
+            dimUnfocusedTitle: dimUnfocusedTitle,
+            isFocused: effectiveFocused,
+            isSelected: isSelected
+        )
     }
 
     private var trailingColor: Color {
-        if trailingTextProminent {
-            return isDestructive ? LunaTheme.coral : LunaTheme.linen
-        }
-        return effectiveFocused ? LunaTheme.moonlight : LunaTheme.muted
+        LunaListRow.resolveTrailingColor(
+            trailingTextProminent: trailingTextProminent,
+            isDestructive: isDestructive,
+            isFocused: effectiveFocused
+        )
     }
 }

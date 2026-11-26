@@ -24,10 +24,28 @@ struct DetailSeasonsSectionView: View {
     @Namespace private var episodesFocusNamespace
 
     private var selectedSeasonSummary: TvSeasonSummary? {
-        seasons.first { $0.seasonNumber == selectedSeasonNumber } ?? seasons.first
+        Self.selectedSeasonSummary(seasons: seasons, selectedSeasonNumber: selectedSeasonNumber)
     }
 
     private var nextEpisodeTargetID: String? {
+        Self.nextEpisodeTargetID(detail: detail, episodes: episodes)
+    }
+
+    nonisolated static func usesSeasonPickerSheet(seasonCount: Int) -> Bool {
+        seasonCount > 6
+    }
+
+    nonisolated static func selectedSeasonSummary(
+        seasons: [TvSeasonSummary],
+        selectedSeasonNumber: Int
+    ) -> TvSeasonSummary? {
+        seasons.first { $0.seasonNumber == selectedSeasonNumber } ?? seasons.first
+    }
+
+    nonisolated static func nextEpisodeTargetID(
+        detail: TvItemDetail,
+        episodes: [TvEpisodeCard]
+    ) -> String? {
         if let next = detail.nextUp,
            let nextMatch = episodes.first(where: {
                $0.seasonNumber == next.season && $0.episodeNumber == next.episode
@@ -37,9 +55,22 @@ struct DetailSeasonsSectionView: View {
         return episodes.first(where: { !$0.watched && $0.isUpcoming != true })?.id
     }
 
+    nonisolated static func scrollTargetEpisodeID(
+        overrideID: String?,
+        detail: TvItemDetail,
+        episodes: [TvEpisodeCard]
+    ) -> String? {
+        guard let targetID = overrideID ?? nextEpisodeTargetID(detail: detail, episodes: episodes),
+              episodes.contains(where: { $0.id == targetID }),
+              targetID != episodes.first?.id else {
+            return nil
+        }
+        return targetID
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: LunaTokens.Layout.headerGap) {
-            if seasons.count <= 6 {
+            if !Self.usesSeasonPickerSheet(seasonCount: seasons.count) {
                 HStack(spacing: 10) {
                     ForEach(seasons) { season in
                         let selected = selectedSeasonNumber == season.seasonNumber
@@ -167,9 +198,11 @@ struct DetailSeasonsSectionView: View {
     }
 
     private func scrollToTargetEpisode(overrideID: String? = nil) {
-        guard let targetID = overrideID ?? nextEpisodeTargetID,
-              episodes.contains(where: { $0.id == targetID }),
-              targetID != episodes.first?.id else { return }
+        guard let targetID = Self.scrollTargetEpisodeID(
+            overrideID: overrideID,
+            detail: detail,
+            episodes: episodes
+        ) else { return }
         episodeScrollPosition.scrollTo(id: targetID, anchor: .leading)
     }
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DetailMoreSheetView: View {
-    private enum ActionRowID: Hashable {
+    enum ActionRowID: Hashable, Sendable {
         case readOverview
         case toggleWatched
         case monitor
@@ -26,19 +26,49 @@ struct DetailMoreSheetView: View {
     @Namespace private var moreSheetFocusNamespace
 
     private var defaultAction: ActionRowID {
-        canReadOverview ? .readOverview : .toggleWatched
+        Self.defaultAction(canReadOverview: canReadOverview)
     }
 
     private var shouldShowMonitorButton: Bool {
+        Self.shouldShowMonitorButton(item: item)
+    }
+
+    private var shouldShowDeleteButton: Bool {
+        Self.shouldShowDeleteButton(item: item, hasLocalEpisodes: hasLocalEpisodes)
+    }
+
+    nonisolated static func defaultAction(canReadOverview: Bool) -> ActionRowID {
+        canReadOverview ? .readOverview : .toggleWatched
+    }
+
+    nonisolated static func shouldShowMonitorButton(item: TvItemDetail) -> Bool {
         if item.mediaType == "series" { return true }
         return item.availability?.isPhysicalLocal != true
     }
 
-    private var shouldShowDeleteButton: Bool {
+    nonisolated static func shouldShowDeleteButton(item: TvItemDetail, hasLocalEpisodes: Bool) -> Bool {
         item.availability?.isPhysicalLocal == true
             || item.availability?.isLocalVfs == true
             || hasLocalEpisodes
             || item.isMonitoredFlag
+    }
+
+    nonisolated static func monitorTitle(item: TvItemDetail) -> String {
+        if item.mediaType == "series" {
+            return item.isMonitoredFlag ? "Slutt å følge serien" : "Følg serien"
+        }
+        return item.isMonitoredFlag ? "Avbryt klargjøring" : "Gjør klar på forhånd"
+    }
+
+    nonisolated static func monitorIcon(item: TvItemDetail) -> String {
+        if item.mediaType == "series" {
+            return item.isMonitoredFlag ? "bell.fill" : "bell"
+        }
+        return item.isMonitoredFlag ? "arrow.down.circle.fill" : "arrow.down.circle"
+    }
+
+    nonisolated static func deleteTitle(mediaType: String) -> String {
+        mediaType == "series" ? "Slett fra samlingen" : "Slett filmen fra samlingen"
     }
 
     var body: some View {
@@ -103,7 +133,7 @@ struct DetailMoreSheetView: View {
                     LunaListDivider()
 
                     LunaListRow(
-                        title: item.mediaType == "series" ? "Slett fra samlingen" : "Slett filmen fra samlingen",
+                        title: Self.deleteTitle(mediaType: item.mediaType),
                         leadingSystemImage: "trash",
                         showsChevron: true,
                         isDestructive: true
@@ -122,17 +152,11 @@ struct DetailMoreSheetView: View {
     }
 
     private var monitorTitle: String {
-        if item.mediaType == "series" {
-            return item.isMonitoredFlag ? "Slutt å følge serien" : "Følg serien"
-        }
-        return item.isMonitoredFlag ? "Avbryt klargjøring" : "Gjør klar på forhånd"
+        Self.monitorTitle(item: item)
     }
 
     private var monitorIcon: String {
-        if item.mediaType == "series" {
-            return item.isMonitoredFlag ? "bell.fill" : "bell"
-        }
-        return item.isMonitoredFlag ? "arrow.down.circle.fill" : "arrow.down.circle"
+        Self.monitorIcon(item: item)
     }
 }
 

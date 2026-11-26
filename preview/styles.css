@@ -91,6 +91,8 @@ html, body {
   color: var(--text-secondary);
   font-size: 25px;
   font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
   transition: transform var(--spring), background var(--spring), border-color 180ms ease, box-shadow var(--spring), color 180ms ease;
 }
@@ -104,12 +106,16 @@ html, body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 0.5px solid var(--edge-subtle);
+  border: 0.5px solid transparent;
   background: var(--surface-2);
   color: var(--text-secondary);
   font-size: 24px;
   cursor: pointer;
   transition: transform var(--spring), background var(--spring), border-color 180ms ease, box-shadow var(--spring), color 180ms ease;
+}
+
+.top-bar .nav-icon-btn {
+  background: transparent;
 }
 
 .nav-tab.is-active {
@@ -137,20 +143,20 @@ html, body {
 
 .pill-btn {
   background: var(--glass-pill);
-  border: 0.5px solid var(--edge-subtle);
-  color: var(--text-primary);
+  border: 0.5px solid transparent;
+  color: var(--text-secondary);
 }
 
 .pill-btn.is-selected {
-  background: var(--surface-3);
-  border-color: rgba(214, 170, 99, 0.36);
-  color: var(--text-primary);
+  background: var(--surface-selected);
+  border-color: rgba(214, 170, 99, 0.45);
+  color: var(--accent);
   font-weight: 600;
 }
 
 .pill-btn.primary-action {
-  background: var(--surface-2);
-  border: 0.5px solid var(--edge-subtle);
+  background: var(--surface-3);
+  border: 0.5px solid rgba(214, 170, 99, 0.45);
   color: var(--text-primary);
   font-weight: 600;
 }
@@ -171,6 +177,24 @@ html, body {
   flex-shrink: 0;
 }
 .pill-btn.is-focused .pill-dot { background: var(--text-on-accent); }
+.pill-badge {
+  font-size: 22px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--edge-subtle);
+  color: var(--text-muted);
+  line-height: 1.1;
+}
+.pill-btn.is-selected .pill-badge {
+  background: rgba(255, 244, 230, 0.14);
+  color: var(--text-primary);
+}
+.pill-btn.is-focused .pill-badge {
+  background: rgba(10, 9, 8, 0.16);
+  color: var(--text-on-accent);
+}
 
 .guide-toggle {
   position: fixed;
@@ -288,12 +312,12 @@ html, body {
   font-weight: 500;
   white-space: nowrap;
   flex-shrink: 0;
-  background: rgba(10, 9, 8, 0.76);
-  border: 1px solid var(--edge-strong);
+  background: rgba(10, 9, 8, 0.75);
+  border: none;
   color: var(--text-primary);
 }
 
-.badge.tier-nvme { color: var(--ok); border-color: rgba(94, 191, 142, 0.42); }
+.badge.tier-nvme { color: var(--ok); }
 .badge.tier-archive { color: var(--text-secondary); }
 .badge.tier-stream { color: var(--stream); }
 
@@ -398,8 +422,21 @@ html, body {
 .poster-caption-meta  { font-size: 22px; color: var(--text-muted); }
 
 /* 6-Column Symmetric Grids (6 * 260 + 5 * 36 = 1740px) */
-.filter-strip { display: flex; gap: 14px; align-items: center; flex-wrap: nowrap; overflow-x: auto; padding: 6px 4px; }
-.filter-divider { width: 1px; height: 26px; background: rgba(255, 240, 222, 0.16); margin: 0 6px; flex-shrink: 0; }
+.filter-strip { display: flex; gap: 14px; align-items: center; flex-wrap: nowrap; overflow-x: auto; padding: 10px 4px; }
+.filter-genres-scroll {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 6px 56px 6px 4px;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 56px), transparent 100%);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 56px), transparent 100%);
+}
+.filter-genres-scroll::-webkit-scrollbar { display: none; }
+.filter-divider { width: 1px; height: 22px; background: rgba(255, 240, 222, 0.16); margin: 0 4px; flex-shrink: 0; }
 .catalog-grid, .library-grid, .search-grid {
   display: grid;
   grid-template-columns: repeat(6, 260px);
@@ -411,6 +448,7 @@ html, body {
 }
 .grid-poster.poster-slot { width: 260px; gap: 12px; }
 .grid-poster .poster-card { width: 260px; height: 390px; }
+.grid-poster .poster-emblem { display: none; }
 
 /* Search & Settings Screens */
 .search-header-row { display: flex; justify-content: space-between; align-items: center; }
@@ -584,12 +622,13 @@ html, body {
 
 /* Details Compact Hero & Season Strip */
 .detail-hero {
+  position: relative;
   display: flex;
   justify-content: space-between;
   gap: 48px;
-  padding: 28px 36px;
-  border-radius: 24px;
-  background: linear-gradient(135deg, rgba(22, 36, 58, 0.72), rgba(20, 17, 15, 0.94));
+  padding: 12px 0 18px 0;
+  border-radius: 0;
+  background: radial-gradient(65% 110% at 84% 30%, rgba(22, 36, 58, 0.45), transparent 72%);
 }
 
 .hero-serif { font-family: var(--font-serif); font-size: 64px; font-weight: 600; color: var(--text-primary); }
@@ -660,4 +699,11 @@ html, body {
   [data-focusable="true"].is-focused {
     transform: none !important;
   }
+}
+
+body.is-bootstrapping *,
+body.is-bootstrapping *::before,
+body.is-bootstrapping *::after {
+  transition: none !important;
+  animation: none !important;
 }

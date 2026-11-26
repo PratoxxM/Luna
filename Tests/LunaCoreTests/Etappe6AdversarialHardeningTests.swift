@@ -184,7 +184,7 @@ struct Etappe6AdversarialHardeningTests {
         let suite = "luna.v1.adv.sync.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let store = PlaybackPreferenceStore(defaults: defaults)
+        let store = PlaybackPreferenceStore(suiteName: suite)
         store.setSubtitleDelayMs(600_000, forCandidateId: "cand-max")
         #expect(store.subtitleDelayMs(forCandidateId: "cand-max") == 10_000)
         store.setSubtitleDelayMs(-600_000, forCandidateId: "cand-min")

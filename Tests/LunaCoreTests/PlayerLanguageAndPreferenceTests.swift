@@ -86,7 +86,7 @@ struct PlayerLanguageAndPreferenceTests {
         #expect(SideloadSafeStorage.preferNorwegianAudioPrefix.hasPrefix("luna.v1."))
         #expect(SideloadSafeStorage.candidateSubtitleDelayPrefix.hasPrefix("luna.v1."))
 
-        let store = PlaybackPreferenceStore(defaults: defaults)
+        let store = PlaybackPreferenceStore(suiteName: suite)
         #expect(!store.preferNorwegianAudio(forItemId: "movie:tmdb:129"))
         store.setPreferNorwegianAudio(true, forItemId: "movie:tmdb:129")
         #expect(store.preferNorwegianAudio(forItemId: "movie:tmdb:129"))

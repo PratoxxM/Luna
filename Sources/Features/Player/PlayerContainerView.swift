@@ -141,7 +141,7 @@ struct PlayerContainerView: View {
                     Spacer()
                 }
                 .padding(.horizontal, LunaTheme.horizontalGutter)
-                .padding(.top, 42)
+                .padding(.top, LunaTokens.Layout.safeTop)
                 .transition(.opacity)
                 .zIndex(3)
             }

@@ -104,6 +104,7 @@ struct SettingsServerDiagnosticsSectionView: View {
                             .focused($fallbackFocus, equals: .cancel)
                         }
                     }
+                    .padding(.horizontal, LunaTokens.Layout.listRowPadX)
                     .padding(.vertical, 8)
                     .focusSection()
                     .onExitCommand {
