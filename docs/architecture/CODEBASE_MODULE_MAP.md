@@ -70,7 +70,7 @@ Complete 1:1 module, endpoint, build, and XCTest inventory for `Luna` (enforced 
 | `Sources/Core/Networking/LunaCoreClient+Playback.swift` | Playback prepare, resolve, heartbeat (+ QoS/delay), source switch, item candidates & subtitle search/auto-align | `/playback/{prepare,candidates,resolve,heartbeat,*/switch,*/alternatives,*/subtitles/*}` | `PlaybackTitleAndNowPlayingTests.swift`, `SeriesFlowAndHomePolicyTests.swift`, `TvV2ClientAndPlaybackReceiptTests.swift` |
 | `Sources/Core/Networking/LunaCoreSessionPool.swift` | Shared ephemeral `URLSession` lanes (`api`, `artwork`, `ws`) + `LanURLSessionDelegate` | HTTP keep-alive & LAN self-signed TLS | `LunaCoreSessionPoolTests.swift` |
 | `Sources/Core/Networking/PlaybackResolveSocket.swift` | Protocol-abstracted (`PlaybackResolveSocketProviding`) `AsyncThrowingStream` WebSocket client for playback resolution progress | `WS /api/tv/v2/ws/playback/:resolveId` | `PlaybackResolveSocketTests.swift`, `TvV2ClientAndPlaybackReceiptTests.swift` |
-| `Packages/AetherBridge/Package.swift` | Local SwiftPM wrapper pinning `AetherEngine` `7.73.0` + 5 audio/DV traits (`tvOS 26.0`, Swift `6.2`) | SwiftPM (`TrueHD`, `DTSX`, `DualLayerDV`, `FelCurves`, `StillReshaping`) | — |
+| `Packages/AetherBridge/Package.swift` | Local SwiftPM wrapper pinning `AetherEngine` `7.75.0` + 5 audio/DV traits (`tvOS 26.0`, Swift `6.2`) | SwiftPM (`TrueHD`, `DTSX`, `DualLayerDV`, `FelCurves`, `StillReshaping`) | — |
 | `Packages/AetherBridge/Sources/AetherBridge/Exports.swift` | Public `@_exported import AetherEngine` re-export for app & test targets | — | — |
 
 ## 3. Design System & Feature Modules (`Sources/DesignSystem/`, `Sources/Features/`)

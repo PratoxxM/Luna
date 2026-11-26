@@ -1,4 +1,4 @@
-# AetherEngine (`7.73.0`) — Extracted Host API Reference
+# AetherEngine (`7.75.0`) — Extracted Host API Reference
 
 Canonical signature reference extracted directly from `Luna`'s `Packages/AetherBridge` and `Sources/` integration. Use these exact signatures when modifying playback, subtitle, audio, or prewarm logic on Linux without local Xcode autocompletion.
 
@@ -10,7 +10,7 @@ Canonical signature reference extracted directly from `Luna`'s `Packages/AetherB
 // Packages/AetherBridge/Package.swift (swift-tools-version: 6.2)
 .package(
     url: "https://github.com/superuser404notfound/AetherEngine.git",
-    exact: "7.73.0",
+    exact: "7.75.0",
     traits: [
         "TrueHDObjectAudio",
         "DTSXObjectAudio",
@@ -24,7 +24,7 @@ Canonical signature reference extracted directly from `Luna`'s `Packages/AetherB
 @_exported import AetherEngine
 
 public enum AetherBridgeInfo {
-    public static let pinnedAetherEngineVersion = "7.73.0"
+    public static let pinnedAetherEngineVersion = "7.75.0"
 }
 ```
 
@@ -42,22 +42,23 @@ public final class AetherEngine: ObservableObject {
     // Static Prewarm & Display Capabilities
     public static var displayCapabilities: DisplayCapabilities { get }
     @discardableResult
-    public static func prewarmDualLayerDolbyVision() async -> Bool
-    public static func isPrewarmed(url: URL) -> Bool
+    public nonisolated static func prewarmDualLayerDolbyVision() async -> Bool
+    public nonisolated static func isPrewarmed(url: URL) -> Bool
     @discardableResult
-    public static func prewarm(
+    public nonisolated static func prewarm(
         url: URL,
-        httpHeaders: [String: String],
-        byteBudget: Int
-    ) async -> Bool
-    public static func discardPrewarmedSources()
+        httpHeaders: [String: String] = [:],
+        byteBudget: Int? = nil
+    ) async -> SourcePrewarmReport
+    public nonisolated static func discardPrewarmedSources()
     public nonisolated static func discardRetainedSessionCache()
     public nonisolated static var retainedSessionCacheBytes: Int { get }
 
-    // Subtitle Window & Session Ownership Configuration
+    // Subtitle Window, Audio Session & Now Playing Configuration
     public var maximumSubtitleAdvanceSeconds: Double // Set to 0 to prevent 2nd parallel 4K HTTP stream
     public var maximumSubtitleDelaySeconds: Double   // Set to 10 for positive subtitle delay history
     public var heldPictureFrameWaitSeconds: Double
+    public var nativeAudioSessionActivationEnabled: Bool // default false; opt-in for bare AVPlayerLayer hosts
     public var ownsSoftwareNowPlaying: Bool
     public var ownsVideoNowPlayingSession: Bool
     public var ownsVideoNowPlayingCommands: Bool
@@ -65,6 +66,7 @@ public final class AetherEngine: ObservableObject {
 
     // Published Transport, Format & Track State
     @Published public private(set) var state: PlaybackState
+    @Published public internal(set) var errorInfo: PlaybackErrorInfo?
     @Published public private(set) var playbackPhase: PlaybackPhase
     @Published public private(set) var hasFirstFrameReadyForDisplay: Bool
     @Published public private(set) var isAwaitingDisplaySwitch: Bool
@@ -93,37 +95,44 @@ public final class AetherEngine: ObservableObject {
     @Published public private(set) var subtitleTracks: [TrackInfo]
     @Published public private(set) var activeSubtitleTrackIndex: Int?
     @Published public private(set) var subtitleCues: [SubtitleCue]
+    @Published public private(set) var fontAttachments: [FontAttachment]
     public var softwareSubtitleDelaySeconds: Double { get }
 
     // Isolated High-Frequency Sub-Objects (Observe ONLY in Leaf Views!)
-    public let clock: EngineClock
+    public let clock: PlaybackClock
     public let diagnostics: EngineDiagnostics
     public let systemCaptionRequest: PassthroughSubject<SystemCaptionRequest, Never>
 
     // Scrub Preview Capabilities & Generation
     public var scrubPreviewDrawsInView: Bool { get }
     public var supportsCacheBackedStills: Bool { get }
-    public func scrubThumbnail(atSeconds: Double, maxWidth: Int) async -> CGImage?
+    public func scrubThumbnail(atSeconds seconds: Double, maxWidth: Int = 320) async -> CGImage?
     @discardableResult
-    public func showScrubPreview(atSeconds: Double, in view: AetherScrubPreviewView) async -> Bool
+    public func showScrubPreview(atSeconds seconds: Double, in view: AetherScrubPreviewView) async -> ScrubPreviewPlacement?
 
-    // Load, Reload & Transport Controls
+    // Load, Reload, Held Outgoing Picture & Transport Controls
     @discardableResult
     public func load(
         url: URL,
-        startPosition: Double?,
-        options: LoadOptions
-    ) async throws -> LoadResult
+        startPosition: Double? = nil,
+        options: LoadOptions = .init(),
+        audioSourceStreamIndex: Int32? = nil,
+        discTitleID: Int? = nil
+    ) async throws -> SourceProbe?
     @discardableResult
     public func reloadAtCurrentPosition(
         applying change: (inout LoadOptions) -> Void
     ) async throws -> SessionOptionCorrectionOutcome
     public func prepareForItemReplacement()
+    @discardableResult
+    public func holdOutgoingPicture(on view: AetherStillView) async -> Bool
+    public func releaseOutgoingPicture()
     public func play()
     public func pause()
     public func togglePlayPause()
+    public func seek(to seconds: Double) async
     public func seek(to seconds: Double, exact: Bool) async
-    public func stop(resetDisplayCriteria: Bool, finalTeardown: Bool = false)
+    public func stop(resetDisplayCriteria: Bool = true, finalTeardown: Bool? = nil)
 
     // Live Track, Delay & Audio Shaping Controls
     public func selectAudioTrack(index: Int)
@@ -135,7 +144,7 @@ public final class AetherEngine: ObservableObject {
 
     // Now Playing System Controls
     public func setVideoNowPlayingInfo(_ info: [String: Any])
-    public func setNowPlayingTrackCommands(next: (() -> Void)?, previous: (() -> Void)?)
+    public func setNowPlayingTrackCommands(next: (@MainActor () -> Void)?, previous: (@MainActor () -> Void)?)
 }
 ```
 
@@ -145,20 +154,30 @@ public final class AetherEngine: ObservableObject {
 
 ```swift
 @MainActor
-public final class EngineClock: ObservableObject {
-    @Published public private(set) var currentTime: Double       // Observed in PlayerBottomBarView leaf views
-    @Published public private(set) var sourceTime: Double        // Observed in SubtitleOverlayView
-    @Published public private(set) var bufferedPosition: Double  // Observed in TimelineScrubberLeafView
+public final class PlaybackClock: ObservableObject {
+    @Published public internal(set) var currentTime: Double       // Observed in PlayerBottomBarView leaf views
+    @Published public internal(set) var sourceTime: Double        // Observed in SubtitleOverlayView
+    @Published public internal(set) var bufferedPosition: Double  // Observed in TimelineScrubberLeafView
 }
 
 @MainActor
 public final class EngineDiagnostics: ObservableObject {
-    @Published public private(set) var liveTelemetry: LiveTelemetry?       // 1 Hz — NerdHUDView only
-    @Published public private(set) var sessionCacheStatus: SessionCacheStatus
+    @Published public internal(set) var liveTelemetry: LiveTelemetry?       // 1 Hz — NerdHUDView only
+    @Published public internal(set) var sessionCacheStatus: SessionCacheStatus
 }
 
-public struct StartupProgress: Sendable {
-    public let fraction: Double
+public struct StartupProgress: Sendable, Equatable {
+    public let generation: UInt64
+    public let checkpoint: StartupCheckpoint
+    public var completed: Int { get }
+    public var total: Int { get }
+    public var fraction: Double { get }
+    public var stage: StartupStage { get }
+    public var isComplete: Bool { get }
+}
+
+public enum UpscaleScaler: Sendable, Hashable {
+    case automatic, lineArt, lanczos
 }
 
 public struct UpscaleStatus: Sendable, Equatable {
@@ -209,6 +228,40 @@ public struct SessionCacheStatus: Sendable, Equatable {
     public let currentForwardBytes: Int
     // Note: full memberwise init takes 22 parameters (17 non-defaulted); use `.inactive` or test formatting helpers directly.
 }
+
+public struct SourcePrewarmReport: Sendable, Equatable {
+    public let retainedBytes: Int
+    public let contentLength: Int64?
+    public let declined: String?
+    public var isWarm: Bool { get }
+}
+
+public struct ScrubPreviewPlacement: Sendable, Equatable {
+    public let actualSeconds: Double
+    public let validRange: Range<Double>
+}
+
+public struct PlaybackErrorKind: RawRepresentable, Sendable, Equatable, Hashable, Codable {
+    public let rawValue: String
+    public static let sourceOpenFailed: PlaybackErrorKind
+    public static let sourceRefused: PlaybackErrorKind
+    public static let sourceCertificateRejected: PlaybackErrorKind
+    public static let sourceFabricatesRanges: PlaybackErrorKind
+    public static let noPlayableTrackWithinBudget: PlaybackErrorKind
+    public static let vodSourceFailed: PlaybackErrorKind
+    public static let sourceRateLimited: PlaybackErrorKind
+    public static let audioBridgeProducedNoOutput: PlaybackErrorKind
+    public static let storageExhausted: PlaybackErrorKind
+}
+
+public struct PlaybackErrorInfo: Sendable, Equatable {
+    public let kind: PlaybackErrorKind
+    public let underlyingDomain: String?
+    public let underlyingCode: Int?
+    public let hlsDiagnosticReason: HLSIngestDiagnosticReason?
+    public let ffmpegErrorCode: Int?
+    public let message: String
+}
 ```
 
 ---
@@ -236,6 +289,7 @@ public struct LoadOptions: Sendable {
     public var preferredAudioLanguages: [String]
     public var preferredSubtitleLanguages: [String]
     public var skipsContainerAttachments: Bool
+    public var readsContainerAttachmentsAtOpen: Bool        // default false (defers Matroska attachments after first frame)
     public var generatesBackgroundScrubPreviews: Bool
     public var serveIFramePlaylist: Bool
     public var confirmAtmos: Bool
@@ -244,7 +298,8 @@ public struct LoadOptions: Sendable {
     public var untaggedVideoColor: UntaggedVideoColor         // .standard | .hdr10 | .hlg
     public var inverseTelecine: InverseTelecineMode           // .off | .auto
     public var upscalesLowResolutionVideo: Bool
-    public var upscaleScaler: UpscaleScaler                   // .automatic | .lineArt
+    public var upscaleScaler: UpscaleScaler                   // .automatic | .lineArt | .lanczos
+    public var upscalesFullHDVideo: Bool                      // default false; uses UpscaleScaler.lanczos on 1080p SDR
     public var forwardBufferSegments: Int?
     public var sessionCacheByteBudget: Int?
     public var sessionCacheFreeReserveBytes: Int
@@ -253,28 +308,31 @@ public struct LoadOptions: Sendable {
     public var retainsSessionCacheAfterStop: Bool
     public var liveJoinsAtPlaylistStart: Bool
     public var preferHDR10PlusOverForcedDolbyVision: Bool
+    public var recognizesBitmapSubtitleText: Bool             // default false; Vision OCR -> SubtitleImage.recognizedText
+    public var nativeRemoteHLSReadinessBudgetSeconds: Double? // nil keeps 45 s default
 }
 
 public struct ExternalSubtitleTrack: Sendable {
     public init(
         url: URL,
-        name: String?,
-        language: String?,
-        isForced: Bool,
-        isHearingImpaired: Bool,
-        isDefault: Bool,
-        httpHeaders: [String: String],
-        formatHint: String
+        name: String? = nil,
+        language: String? = nil,
+        isForced: Bool = false,
+        isHearingImpaired: Bool = false,
+        isDefault: Bool = false,
+        httpHeaders: [String: String]? = nil,
+        formatHint: String? = nil,
+        sourceStreamIndex: Int32? = nil
     )
 }
 
-public struct AudioShaping: Equatable, Sendable {
+public struct AudioShaping: Equatable, Sendable, Hashable {
     public init(
-        maxChannels: Int?,
-        dialogueGainDB: Double,
-        compressor: AudioCompressorPreset?, // .night | nil
-        loudnessTargetLUFS: Double?,
-        lfeMixDB: Double?
+        maxChannels: Int? = nil,
+        dialogueGainDB: Double = 0,
+        compressor: Compressor? = nil, // .night | nil
+        loudnessTargetLUFS: Double? = nil,
+        lfeMixDB: Double? = nil
     )
 }
 
@@ -296,7 +354,7 @@ public enum PlaybackPhase: Equatable, Sendable {
 }
 
 public enum VideoFormat: Equatable, Sendable {
-    case sdr, hdr10, hdr10Plus, hlg, dolbyVision
+    case sdr, hdr10, hdr10Plus, dolbyVision, hlg
 }
 
 public enum DolbyVisionConversion: Equatable, Sendable {
@@ -308,7 +366,7 @@ public enum VideoRoute: String, Equatable, Sendable {
 }
 
 public enum AudioDelivery: String, Equatable, Sendable {
-    case none, bridged // additional engine-internal cases exposed via rawValue: String
+    case none, noAudioInSource, streamCopy, bridged, decoded, droppedNoPipeline, playerManaged
 }
 ```
 
@@ -324,7 +382,7 @@ public struct TrackInfo: Identifiable, Equatable, Sendable {
     public let profile: String?
     public let language: String?
     public let channelLayout: String?
-    public let channels: Int32
+    public let channels: Int
     public let isAtmos: Bool
     public let isDTSX: Bool
     public let isForced: Bool
@@ -342,44 +400,81 @@ public struct ChapterInfo: Identifiable, Equatable, Sendable {
     public let durationSeconds: Double
 }
 
-public struct SubtitleCue: Identifiable, Sendable {
-    public let id: String
+public struct FontAttachment: Sendable, Equatable {
+    public let filename: String
+    public let mimeType: String
+    public let data: Data
+}
+
+public struct SubtitleCue: Identifiable, Sendable, Equatable {
+    public let id: Int
     public let startTime: Double
     public let endTime: Double
+    public let body: Body // .text(String) | .image(SubtitleImage) | .richText([SubtitleTextRun])
     public let placement: SubtitleTextPlacement?
-    public let body: SubtitleCueBody // .text(String) | .richText([SubtitleTextRun]) | .image(SubtitleBitmap)
+    public var recognizedText: SubtitleRecognizedText? { get }
+    public var text: String? { get }
+    public var isForced: Bool { get }
 }
 
-public struct SubtitleBitmap: Sendable {
+public struct SubtitleImage: @unchecked Sendable {
+    public let cgImage: CGImage
     public let position: CGRect
     public let canvasSize: CGSize
-    public let cgImage: CGImage
+    public let isForced: Bool
+    public let recognizedText: SubtitleRecognizedText?
 }
 
-public struct SubtitleTextPlacement: Sendable {
+public struct SubtitleRecognizedText: Sendable, Equatable {
+    public struct Line: Sendable, Equatable {
+        public let text: String
+        public let confidence: Float
+        public let boundingBox: CGRect
+    }
+    public enum Level: Sendable, Equatable { case accurate, fast }
+    public let lines: [Line]
+    public let language: String?
+    public let level: Level
+    public var text: String? { get }
+}
+
+public struct SubtitleTextPlacement: Sendable, Equatable {
     public let alignment: Int?     // ASS numpad 1...9
     public let position: CGPoint?  // Normalized 0...1
 }
 
-public struct SubtitleTextRun: Sendable {
+public struct SubtitleColor: Sendable, Equatable {
+    public let r: UInt8
+    public let g: UInt8
+    public let b: UInt8
+}
+
+public struct SubtitleTextRun: Sendable, Equatable {
     public let text: String
+    public let color: SubtitleColor?
     public let isBold: Bool
     public let isItalic: Bool
     public let isUnderlined: Bool
     public let isStruckThrough: Bool
-    public let color: (r: UInt8, g: UInt8, b: UInt8)?
+    public let fontName: String?
+    public let fontSize: Int?
+    public var isStyled: Bool { get }
 }
 
 // SwiftUI & UIKit Render Surfaces
-public struct AetherPlayerSurface: View {
+public struct AetherPlayerSurface: UIViewRepresentable {
     public init(engine: AetherEngine)
 }
 
 @MainActor
 public final class AetherScrubPreviewView: UIView {
-    public init()
     public var videoGravity: AVLayerVideoGravity
     public func clear()
+}
+
+@MainActor
+public final class AetherStillView: UIView {
+    public var videoGravity: AVLayerVideoGravity
 }
 
 // Secret Redaction & LAN TLS Trust Hooks

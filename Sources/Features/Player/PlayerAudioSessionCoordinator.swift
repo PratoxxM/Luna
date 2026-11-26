@@ -39,7 +39,7 @@ private actor NativeAudioSessionActivator {
 }
 
 /// Aligns `AVAudioSession` native-layer activation, QMS menu refresh-rate preservation,
-/// wireless route lip-sync compensation, and held HDMI display-criteria resets with `AetherEngine` 7.73.0.
+/// wireless route lip-sync compensation, and held HDMI display-criteria resets with `AetherEngine` 7.75.0.
 @MainActor
 final class PlayerAudioSessionCoordinator {
     static let shared = PlayerAudioSessionCoordinator()

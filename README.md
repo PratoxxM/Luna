@@ -33,7 +33,7 @@
 
 ## Development
 
-`Luna.xcodeproj` is generated from [`project.yml`](project.yml) with [XcodeGen](https://github.com/yonaskolb/XcodeGen), and `AetherEngine` (`7.73.0`) traits are configured in [`Packages/AetherBridge`](Packages/AetherBridge/Package.swift). See [`CODEBASE_MODULE_MAP.md`](docs/architecture/CODEBASE_MODULE_MAP.md) for the module and `/api/tv/v2` endpoint overview.
+`Luna.xcodeproj` is generated from [`project.yml`](project.yml) with [XcodeGen](https://github.com/yonaskolb/XcodeGen), and `AetherEngine` (`7.75.0`) traits are configured in [`Packages/AetherBridge`](Packages/AetherBridge/Package.swift). See [`CODEBASE_MODULE_MAP.md`](docs/architecture/CODEBASE_MODULE_MAP.md) for the module and `/api/tv/v2` endpoint overview.
 
 ## License
 
