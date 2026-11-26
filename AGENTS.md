@@ -2,7 +2,7 @@
 
 ## 1. Purpose & Public-Repository Security Rules
 
-`Luna` (`v3.0.0`, pure `tvOS 26.0` / Swift `6.2`) is a public, standalone tvOS client powered by `AetherEngine` (`7.75.0`) and backed by the native LunaCore TV API (`/api/tv/v2` on `:8090` / `:8920`).
+`Luna` (`v3.0.0`, pure `tvOS 26.0` / Swift `6.2`) is a public, standalone tvOS client powered by `AetherEngine` (`7.76.0`) and backed by the native LunaCore TV API (`/api/tv/v2` on `:8090` / `:8920`).
 
 Because this repository is **public on GitHub**, these rules are hard invariants:
 
@@ -27,7 +27,7 @@ Because this repository is **public on GitHub**, these rules are hard invariants
 
 - **Full module-to-endpoint-to-test index (enforced 1:1 by `ops/bin/luna-check`)**: [`docs/architecture/CODEBASE_MODULE_MAP.md`](docs/architecture/CODEBASE_MODULE_MAP.md)
 - **Canonical Lampelys 10-foot tvOS UI/UX specification**: [`docs/LUNA_TVOS_LAMPELYS_REVIEW.md`](docs/LUNA_TVOS_LAMPELYS_REVIEW.md)
-- **Canonical `AetherEngine` (`7.75.0`) API signatures (never guess signatures)**: [`docs/aether-engine-api.md`](docs/aether-engine-api.md)
+- **Canonical `AetherEngine` (`7.76.0`) API signatures (never guess signatures)**: [`docs/aether-engine-api.md`](docs/aether-engine-api.md)
 - **App lifecycle, `--preview-screen` launch mode & single `@MainActor` engine**: `Sources/App/LunaApp.swift`, `Sources/App/PreviewLaunchConfiguration.swift`, `Sources/App/PreviewMockFixtures.swift`, `Sources/App/MainNavigationShell.swift`, `Sources/App/LunaTopBarView.swift`
 - **Discovery, pairing & config**: `Sources/Core/Discovery/BonjourServerBrowser.swift`, `Sources/Core/Config/ServerConfiguration.swift`, `Sources/Core/Config/SideloadSafeStorage.swift`, `Sources/Features/Onboarding/PairingOnboardingView.swift`
 - **Linux-testable core (`Package.swift` -> `LunaCore`)**: `Sources/Core/Networking/*`, `Sources/Core/Models/*`, `Sources/Core/Catalog/CatalogShelfIndexer.swift`, `Sources/Core/Playback/PlaybackCoreAbstractions.swift`, `Sources/Core/Cache/DiskSWRStore.swift`, `Tests/LunaCoreTests/LunaCoreLinuxTests.swift`
@@ -42,7 +42,7 @@ Development happens on Linux/Docker without a local macOS SDK:
 2. **Keep pure business logic Linux-native (`LunaCore`)**: Non-UI networking, models, shelf indexing, SWR caching, and playback/scrub/track policies & watchdogs (`PlaybackCurtainWatchdog`, `PlaybackCurtainPresentationPolicy`, `PlaybackTrackIntent`, `PlayerTimelinePolicy`, `RemoteScrubMath`, `SeriesFlowPolicy`, `PlaybackStopReceipt`) live in pure Swift (`Package.swift` -> `LunaCore`) with zero `UIKit`, `SwiftUI`, `TVUIKit`, or `AVFoundation` imports so `./scripts/test-core.sh` compiles and tests them locally in Docker (`swift:6.2`).
 3. **Run `./ops/bin/luna-check` locally**: Validates `0644`/`0755` permissions, `<= 800 LOC`, `>= 22 pt` tvOS typography floor, sideload safety, zero private infra/retired patterns, design token parity, and bidirectional doc-to-disk parity (`CODEBASE_MODULE_MAP.md` <-> `Sources/**/*.swift`, `Tests/LunaTests/*.swift` & `Tests/LunaCoreTests/*.swift`).
 4. **`project.yml` is the single source of truth for tvOS**: Never hand-edit or commit `Luna.xcodeproj` or `*.xcworkspace`. XcodeGen generates `Luna.xcodeproj` fresh inside GitHub Actions on every build.
-5. **SPM Traits via `Packages/AetherBridge`**: XcodeGen does not serialize SwiftPM `traits:` on remote packages, and `xcodebuild` has no CLI flag for package traits. All `AetherEngine` version pinning (`exact: "7.75.0"`) and optional traits (`TrueHDObjectAudio`, `DTSXObjectAudio`, `DualLayerDolbyVision`, `DolbyVisionFelCurves`, `DolbyVisionStillReshaping`) MUST stay in `Packages/AetherBridge/Package.swift`.
+5. **SPM Traits via `Packages/AetherBridge`**: XcodeGen does not serialize SwiftPM `traits:` on remote packages, and `xcodebuild` has no CLI flag for package traits. All `AetherEngine` version pinning (`exact: "7.76.0"`) and optional traits (`TrueHDObjectAudio`, `DTSXObjectAudio`, `DualLayerDolbyVision`, `DolbyVisionFelCurves`, `DolbyVisionStillReshaping`) MUST stay in `Packages/AetherBridge/Package.swift`.
 
 ## 6. Strict tvOS Guardrails & `AetherEngine` Host Rules
 
@@ -50,7 +50,7 @@ Development happens on Linux/Docker without a local macOS SDK:
 - **Strictly forbidden iOS-only APIs**: Never use `.navigationBarTitleDisplayMode`, bare `.onTapGesture` without focusable `Button` wrappers, `Slider`, iOS-only `Picker` `.wheel` / `.menu` styles, or `UIScreen.main` (`>= 22 pt` `LunaTheme.Font.*` typography only — raw `.font(.caption/.body/...)` is blocked by `luna-check`).
 - **Explicit Focus & Remote Handling**: Always manage tvOS focus explicitly with `@FocusState`, `.focusSection()`, `.prefersDefaultFocus(..., in:)`, `LunaChromelessButtonStyle` / `LunaFocusStyle`, and Siri Remote command handlers (`.onExitCommand`, `.onPlayPauseCommand`, `.onMoveCommand`, `SiriRemoteTouchSurface`). Respect tvOS overscan/action-safe margins (`90 pt` horizontal gutter, `60 pt` vertical safe margin).
 
-### tvOS 26 & `AetherEngine` (`7.75.0`) Rules
+### tvOS 26 & `AetherEngine` (`7.76.0`) Rules
 - Reuse a **single** `@MainActor` `AetherEngine` instance across the app lifetime (`LunaApp.swift`), setting `engine.maximumSubtitleAdvanceSeconds = 0` and `engine.maximumSubtitleDelaySeconds = 10` at initialization and before `engine.load(...)` so active subtitles never open a second parallel 4K HTTP stream.
 - Call `engine.prepareForItemReplacement()` for back-to-back episode transitions and seamless timecode source switches (`HeldStillPresenter`), and `engine.stop(resetDisplayCriteria: true)` when dismissing the player.
 - Hold `ResolvingCurtainView` visible until `hasFirstFrameReadyForDisplay && !isAwaitingDisplaySwitch` (with a 5-second fallback watchdog via `PlaybackCurtainWatchdog`) so HDMI range/frame-rate switches never flash black.

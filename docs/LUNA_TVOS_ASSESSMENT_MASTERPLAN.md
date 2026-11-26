@@ -8,7 +8,7 @@
 ## 1. Systemgrense og autoritativ referansebase
 
 ### 1.1 Systemgrense
-Vurderingen omfatter **utelukkende** `Luna` tvOS-klienten (`<repo-root>`, versjon `3.0.0`, `tvOS 26.0`, `Swift 6.2`, `AetherEngine 7.75.0`) og klientens observerbare kontrakt mot **LunaCore TV API (`/api/tv/v2`)** og lokal nettverksoppdagelse (`_lunacore._tcp`).
+Vurderingen omfatter **utelukkende** `Luna` tvOS-klienten (`<repo-root>`, versjon `3.0.0`, `tvOS 26.0`, `Swift 6.2`, `AetherEngine 7.76.0`) og klientens observerbare kontrakt mot **LunaCore TV API (`/api/tv/v2`)** og lokal nettverksoppdagelse (`_lunacore._tcp`).
 
 - **Inkludert:** Alle `.swift`-moduler under `Sources/` og `Packages/AetherBridge/`, testsuiter under `Tests/LunaCoreTests/` og `Tests/LunaTests/`, design tokens (`design/tokens.json`), lokal 1920×1080 Focus Sandbox (`preview/`), bygg- og portskript (`Package.swift`, `project.yml`, `Config/Info.plist`, `ops/bin/*`, `scripts/*`), samt CI-arbeidsflyter (`.github/workflows/*`).
 - **Ekskludert:** Interne implementasjonsdetaljer i serverkomponenter eller eksterne plattformer, private nettverksadresser, interne vertsnavn, hemmeligheter eller lokale filsystemstier. Alt som dokumenteres i vurderingen skal overholde kravene til et offentlig GitHub-repo (`ops/bin/luna-check`).
@@ -20,10 +20,10 @@ Vurderingen omfatter **utelukkende** `Luna` tvOS-klienten (`<repo-root>`, versjo
 | `AGENTS.md` | Harde invarianter for offentlig repo, ATVLoadly-sideloading (`luna.v1.*`), `<= 800` linjer/fil, Linux-vs-tvOS-deling, `AetherEngine`-regler og 3-stegs verifikasjonssløyfe |
 | `docs/architecture/CODEBASE_MODULE_MAP.md` | 1:1 modul-, endepunkt- og testoversikt (håndhevet toveis av `ops/bin/luna-check`) |
 | `docs/LUNA_TVOS_LAMPELYS_REVIEW.md` | Kanonisk Lampelys 10-foot UI/UX-standard («Én app, én hånd», §2, §4, §6, §8 og F1–F8) |
-| `docs/aether-engine-api.md` | Ekstraherte vertssignaturer for `AetherEngine` (`7.75.0`), `LoadOptions`, `PlaybackClock`, `EngineDiagnostics`, `EngineLog` og `EngineTLS` |
+| `docs/aether-engine-api.md` | Ekstraherte vertssignaturer for `AetherEngine` (`7.76.0`), `LoadOptions`, `PlaybackClock`, `EngineDiagnostics`, `EngineLog` og `EngineTLS` |
 | `design/tokens.json` (`v2.0.0`) | Autoritativ kilde for farger, typografi (`>= 22 pt`), dimensjoner og fokusbevegelse (`ops/bin/luna-design-tokens`) |
 | `Package.swift` & `project.yml` | Grenseflate mellom Linux-testbar `LunaCore` (`62` filer) og XcodeGen/tvOS-applikasjonen (`144` produksjons-/brofiler + `50` testfiler) |
-| `Packages/AetherBridge/Package.swift` | Versjonslåsing (`exact: "7.75.0"`) og 5 SwiftPM-traits (`TrueHDObjectAudio`, `DTSXObjectAudio`, `DualLayerDolbyVision`, `DolbyVisionFelCurves`, `DolbyVisionStillReshaping`) |
+| `Packages/AetherBridge/Package.swift` | Versjonslåsing (`exact: "7.76.0"`) og 5 SwiftPM-traits (`TrueHDObjectAudio`, `DTSXObjectAudio`, `DualLayerDolbyVision`, `DolbyVisionFelCurves`, `DolbyVisionStillReshaping`) |
 
 ---
 
@@ -93,7 +93,7 @@ Dekker `144` produksjons-/brofiler (`36 615` LOC) og `50` testfiler (`16 966` LO
 - [ ] **K1.1 Samtidighet & minnesikkerhet (Swift 6.2):** Verifisere `Mutex`, `actor`-isolasjon (`ArtworkPipeline`, `DiskSWRStorageActor`, `NativeAudioSessionActivator`), strukturert `Task`-kansellering og syklusfri `[weak host]`/`[weak self]` i de 5 spillerkontrollerne.
 - [ ] **K1.2 Feilhåndtering, kansellering & numeriske grenser:** Revidere `LunaCoreError`-mapping, stille `try?`-uttrykk og `isFinite`/`Int(exactly:)`-beskyttelse.
 - [ ] **K1.3 Sideload- & hemmeligholdshygiene:** Bekrefte fast `"luna.v1.*"`-lagring, Keychain `-34018`-fallback og symmetrisk `EngineLog.registerSecret`/`unregisterSecret` for både enhetstoken og strømmetokener.
-- [ ] **K1.4 Testdekning & testdobbel-troverdighet:** Kartlegge moduler med `—` i `CODEBASE_MODULE_MAP.md` og kontrollere at `PlayerTestDoubles` og `PreviewMockURLProtocol` speiler reell `AetherEngine 7.75.0`- og `/api/tv/v2`-oppførsel.
+- [ ] **K1.4 Testdekning & testdobbel-troverdighet:** Kartlegge moduler med `—` i `CODEBASE_MODULE_MAP.md` og kontrollere at `PlayerTestDoubles` og `PreviewMockURLProtocol` speiler reell `AetherEngine 7.76.0`- og `/api/tv/v2`-oppførsel.
 - [ ] **K1.5 Vedlikeholdbarhet & lokalisering:** Kontrollere filstørrelsesmarginer opp mot `800` LOC-grensen og `Localizable.xcstrings` (`nb`).
 
 ### 4.2 Dimensjon 2 — Struktur og arkitektur (`docs/assessment/02_ARKITEKTUR_OG_STRUKTUR.md`)
@@ -102,7 +102,7 @@ Dekker moduldeling, avhengighetsretning, tilstandseierskap og ressursprofiler:
 - [ ] **A2.2 Spiller- og tilstandseierskap:** Kontrollere én felles `@MainActor AetherEngine`, `AppSessionStore`-vifteutbredelse, 5-kontroller-dekomponering i `PlayerViewModel` og streng blad-observasjon (`0 Hz` i hvile).
 - [ ] **A2.3 Caching, koalescering & minneprofiler:** Evaluere `DeviceMemoryProfile` (`.standard` vs. `.high2026`), `InflightTaskCoalescer` per-venter-kansellering, `DiskSWRStore`, `ArtworkPipeline` og `4 GB` minneadvarselsflyt.
 - [ ] **A2.4 Nettverk, discovery & tillitsgrenser:** Revidere `BonjourServerBrowser` dual-stack IPv4/IPv6, `ServerFailoverPolicy`, `isSameOrigin` (`:8090`/`:8920`) og scoped LAN-TLS (`LanURLSessionDelegate` + `EngineTLS`).
-- [ ] **A2.5 Bygg-, trait- og dokumentstyring:** Kontrollere `project.yml` -> XcodeGen, `Packages/AetherBridge` (`7.75.0` + 5 traits) og 1:1-paritet i `CODEBASE_MODULE_MAP.md` + `design/tokens.json`.
+- [ ] **A2.5 Bygg-, trait- og dokumentstyring:** Kontrollere `project.yml` -> XcodeGen, `Packages/AetherBridge` (`7.76.0` + 5 traits) og 1:1-paritet i `CODEBASE_MODULE_MAP.md` + `design/tokens.json`.
 
 ### 4.3 Dimensjon 3 — Design / 10-foot tvOS UI/UX (`docs/assessment/03_DESIGN_TVOS_UI_UX.md`)
 Dekker visuell enhet, 3-meters lesbarhet, fokusarkitektur og F1–F8-etterlevelse på `v3.0.0`:
@@ -113,7 +113,7 @@ Dekker visuell enhet, 3-meters lesbarhet, fokusarkitektur og F1–F8-etterlevels
 - [ ] **D3.5 Skjerm-for-skjerm & visuell verifisering:** Inspisere alle 10 skjermområder via `scripts/preview-capture.sh` (`?guides=1`) og alle 21 renders i `tvos-vision.yml`.
 
 ### 4.4 Dimensjon 4 — Funksjonalitet for best mulig streaming fra LunaCore (`docs/assessment/04_STREAMING_LUNACORE_V2.md`)
-Dekker hele verdikjeden for rask, feilfri og bilde-/lydtro streaming over `/api/tv/v2` og `AetherEngine 7.75.0`:
+Dekker hele verdikjeden for rask, feilfri og bilde-/lydtro streaming over `/api/tv/v2` og `AetherEngine 7.76.0`:
 - [ ] **S4.1 Oppstart, SWR & `0-RTT` pre-resolve:** Verifisere `GET /bootstrap`, betinget `If-None-Match`/`304`, `DetailPreResolveController` (`0 ms`/`180 ms`), `canClientPrewarmBytes`-sperre for arkivdisker og `performWarmDirectMount`.
 - [ ] **S4.2 Oppslag & `AetherEngine`-konfigurasjon:** Revidere `POST /playback/resolve` + `WS /ws/playback/:resolveId` (`1.5 s` watchdog -> `750 ms` polling), `cancelInflightPlayback`, `LoadOptions` (`maximumSubtitleAdvanceSeconds = 0`, DV P7 FEL, AV1, MetalFX, `DeviceMemoryProfile`).
 - [ ] **S4.3 Teppe, HDMI QMS/Range & lydøkt:** Kontrollere `PlaybackCurtainWatchdog` (`5 s`) + `180 ms` sort-pause, `MenuDisplayMode` (`QMS` + `dvcC`), `deactivatesAudioSessionOnStop = false` og AirPlay/BT-lip-sync-nullstilling.

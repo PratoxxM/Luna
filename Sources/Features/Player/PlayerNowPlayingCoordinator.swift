@@ -16,7 +16,7 @@ enum NowPlayingArtworkFactory {
 }
 
 /// Publishes tvOS Control Center / iPhone Remote Now Playing metadata
-/// and decoded poster/backdrop artwork via `AetherEngine 7.75.0`.
+/// and decoded poster/backdrop artwork via `AetherEngine 7.76.0`.
 @MainActor
 enum PlayerNowPlayingCoordinator {
     static let nowPlayingArtworkMaxPixels = 900

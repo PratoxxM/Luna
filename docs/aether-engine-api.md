@@ -1,4 +1,4 @@
-# AetherEngine (`7.75.0`) — Extracted Host API Reference
+# AetherEngine (`7.76.0`) — Extracted Host API Reference
 
 Canonical signature reference extracted directly from `Luna`'s `Packages/AetherBridge` and `Sources/` integration. Use these exact signatures when modifying playback, subtitle, audio, or prewarm logic on Linux without local Xcode autocompletion.
 
@@ -10,7 +10,7 @@ Canonical signature reference extracted directly from `Luna`'s `Packages/AetherB
 // Packages/AetherBridge/Package.swift (swift-tools-version: 6.2)
 .package(
     url: "https://github.com/superuser404notfound/AetherEngine.git",
-    exact: "7.75.0",
+    exact: "7.76.0",
     traits: [
         "TrueHDObjectAudio",
         "DTSXObjectAudio",
@@ -24,7 +24,7 @@ Canonical signature reference extracted directly from `Luna`'s `Packages/AetherB
 @_exported import AetherEngine
 
 public enum AetherBridgeInfo {
-    public static let pinnedAetherEngineVersion = "7.75.0"
+    public static let pinnedAetherEngineVersion = "7.76.0"
 }
 ```
 
@@ -37,6 +37,7 @@ public enum AetherBridgeInfo {
 ```swift
 @MainActor
 public final class AetherEngine: ObservableObject {
+    public nonisolated static let version: String // "7.76.0"
     public init() throws
 
     // Static Prewarm & Display Capabilities
@@ -302,7 +303,7 @@ public struct LoadOptions: Sendable {
     public var forwardBufferSegments: Int?
     public var sessionCacheByteBudget: Int?
     public var sessionCacheFreeReserveBytes: Int
-    public var progressiveSegmentDelivery: Bool
+    public var progressiveSegmentDelivery: Bool // default true since 7.76.0 (AE#1129)
     public var externalSubtitles: [ExternalSubtitleTrack]
     public var retainsSessionCacheAfterStop: Bool
     public var liveJoinsAtPlaylistStart: Bool
@@ -326,12 +327,19 @@ public struct ExternalSubtitleTrack: Sendable {
 }
 
 public struct AudioShaping: Equatable, Sendable, Hashable {
+    public var maxChannels: Int?
+    public var dialogueGainDB: Double
+    public var compressor: Compressor?
+    public var loudnessTargetLUFS: Double?
+    public var lfeMixDB: Double?
+    public var binaural: Bool // renders >2ch (or rendered object-audio bed when alone) via AUSpatialMixer
     public init(
         maxChannels: Int? = nil,
         dialogueGainDB: Double = 0,
         compressor: Compressor? = nil, // .night | nil
         loudnessTargetLUFS: Double? = nil,
-        lfeMixDB: Double? = nil
+        lfeMixDB: Double? = nil,
+        binaural: Bool = false
     )
 }
 
@@ -390,6 +398,7 @@ public struct TrackInfo: Identifiable, Equatable, Sendable {
     public let isExternal: Bool
     public let isDefault: Bool
     public let isNativelyRenderedSubtitle: Bool
+    public let assHeader: String? // header-only in 7.76.0; Dialogue: lines lifted into cues (AE#1127)
 }
 
 public struct ChapterInfo: Identifiable, Equatable, Sendable {

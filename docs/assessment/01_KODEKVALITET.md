@@ -21,7 +21,7 @@ Totalt omfang i repoet (per `docs/architecture/CODEBASE_MODULE_MAP.md` og `ops/b
 | `Sources/Core/Playback/` | 14 | 1 758 | Rene politikker og matematikk for teppe, QMS/HDR-fallback, sporvalg, scrubbing, serieflyt, stoppkvittering |
 | `Sources/DesignSystem/` | 16 | 3 797 | Tokens, tema, typografi, fokusstil, tekstfelt, kort og delte primitiver |
 | `Sources/Features/` | 67 | 18 393 | `Browse` (5), `Detail` (11), `Home` (4), `Library` (3), `Onboarding` (2), `Player` (34 / 9 328 LOC), `Search` (2), `Settings` (4), `Shared` (2) |
-| `Packages/AetherBridge/` | 2 | 42 | `Package.swift` (trait-låsing `AetherEngine 7.75.0`) + `Exports.swift` |
+| `Packages/AetherBridge/` | 2 | 42 | `Package.swift` (trait-låsing `AetherEngine 7.76.0`) + `Exports.swift` |
 | `Tests/LunaCoreTests/` | 21 | 6 653 | Linux-kjørbare (`swift:6.2`) enhets-, kontrakt-, overflyt- og adversariale tester |
 | `Tests/LunaTests/` | 29 | 10 313 | 28 tvOS XCTest-suiter + `PlayerTestDoubles.swift` |
 
@@ -60,7 +60,7 @@ Totalt omfang i repoet (per `docs/architecture/CODEBASE_MODULE_MAP.md` og `ops/b
   - `Packages/AetherBridge/Package.swift` og `Packages/AetherBridge/Sources/AetherBridge/Exports.swift` (bygg-/trait-kontrakt og `@_exported import AetherEngine`-bro; krever CI-byggverifisering)
   - `Sources/DesignSystem/{LunaBadges,LunaListRow,LunaSheetContainer,LunaInlineStateViews}.swift` (nye F2-primitiver uten direkte enhetstest i tabellen)
   - `Sources/Features/Detail/{DetailHeroHeaderView,DetailMoreAndOverviewSheets,DetailSeasonsSectionView}.swift` (sentrale tvOS-fokus- og layoutkomponenter uten direkte XCTest-oppføring)
-- **Testdobbel-troverdighet:** Evaluere om `Tests/LunaTests/PlayerTestDoubles.swift`, `PreviewMockURLProtocol.swift` og `PreviewMockFixtures.swift` realistisk speiler `AetherEngine 7.75.0`-signaturer (`docs/aether-engine-api.md`) og `/api/tv/v2`-svar (inklusive feilkonvolutter og `WS`-tidslinjer).
+- **Testdobbel-troverdighet:** Evaluere om `Tests/LunaTests/PlayerTestDoubles.swift`, `PreviewMockURLProtocol.swift` og `PreviewMockFixtures.swift` realistisk speiler `AetherEngine 7.76.0`-signaturer (`docs/aether-engine-api.md`) og `/api/tv/v2`-svar (inklusive feilkonvolutter og `WS`-tidslinjer).
 
 ### 2.5 Vedlikeholdbarhet, modulstørrelse og norsk teksthygiene
 - **Hva som vurderes:** Teknisk gjeld, modulstørrelse mot `800` LOC-budsjettet (spesielt i `Sources/Features/Player/` på 34 filer / `9 328` LOC), død kode og lokalisering.

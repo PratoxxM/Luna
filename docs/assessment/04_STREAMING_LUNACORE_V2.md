@@ -1,7 +1,7 @@
 # Vedlegg 4: Funksjonalitet for best mulig streaming fra LunaCore (`/api/tv/v2`)
 
 > **Dimensjonsvekt:** 35 %  
-> **Overordnet mål:** Verifisere hvert ledd i den ende-til-ende streamingkjeden mellom `Luna` tvOS-klienten, `/api/tv/v2`-endepunktene og `AetherEngine 7.75.0` — fra oppdagelse og `0-RTT` forhåndsoppslag til flimmerfri bilde-/HDMI-overgang, tapsfri lyd, intelligent teksting, sømløst kildebytte, taktil spoling, serieflyt og trygg minne-/tokenhåndtering.
+> **Overordnet mål:** Verifisere hvert ledd i den ende-til-ende streamingkjeden mellom `Luna` tvOS-klienten, `/api/tv/v2`-endepunktene og `AetherEngine 7.76.0` — fra oppdagelse og `0-RTT` forhåndsoppslag til flimmerfri bilde-/HDMI-overgang, tapsfri lyd, intelligent teksting, sømløst kildebytte, taktil spoling, serieflyt og trygg minne-/tokenhåndtering.
 
 ---
 
@@ -30,7 +30,7 @@
   - `DetailPreResolveController`: `0 ms` / `180 ms` debounced `POST /playback/prepare`, `taskToken`-beskyttelse mot A->B->A-kappløp, gjenbruk av pågående `inflightPrepareTask` ved tidlig klikk på «Spill av», opprydding av foreldreløse økter, og **streng `canClientPrewarmBytes == true`-sperre** før `AetherEngine.prewarm` (beskytter spinn-ned på arkivlagring).
   - `performWarmDirectMount` (`PlayerSessionController+ResolveAndSwitch.swift`): spekulativ montering av forberedt strøm med bakgrunnspromotering til full økt og sømløst fall til kaldt oppslag ved utløpt/avvist økt.
 
-### 2.2 Playback-oppslag (`WS`/HTTP) og `AetherEngine 7.75.0` `LoadOptions`
+### 2.2 Playback-oppslag (`WS`/HTTP) og `AetherEngine 7.76.0` `LoadOptions`
 - **Hva som vurderes:** Driftssikkerheten i asynkront oppslag og at alle motorflagg matcher Apple TV-maskinvaren og `docs/aether-engine-api.md`.
 - **Kritiske kodepunkter:**
   - `PlayerResolvePipeline` + `PlaybackResolveSocket`: håndterer både umiddelbar `200` `TvPlaybackSession` og `wsPath` + `resolveId`; `WS /api/tv/v2/ws/playback/:resolveId` terminerer på `resolve.ready` / `resolve.failed`, med **`1.5 s` første-hendelse-watchdog** (`ResolveFirstEventLatch`) som automatisk faller tilbake til `GET /api/tv/v2/playback/resolve/{resolveId}` hvert `750 ms` (opptil 248 forsøk). Tidlig brukeravbrudd sender `POST /playback/heartbeat` med `cancelInflight: true`.

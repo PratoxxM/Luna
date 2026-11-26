@@ -56,7 +56,7 @@
 - **Hva som vurderes:** At Linux-test, CI-bygg, `AetherEngine`-traits og modulkartet aldri driver fra hverandre.
 - **Kritiske kodepunkter:**
   - `project.yml` som eneste kilde for XcodeGen (ingen sjekket inn `.xcodeproj`/`.xcworkspace`, `CODE_SIGNING_ALLOWED: NO`, `ENABLE_DEBUG_DYLIB: NO`, `local.lunacore`).
-  - `Packages/AetherBridge/Package.swift` som eneste eier av `AetherEngine` (`exact: "7.75.0"`) og de 5 påkrevde traitene (`TrueHDObjectAudio`, `DTSXObjectAudio`, `DualLayerDolbyVision`, `DolbyVisionFelCurves`, `DolbyVisionStillReshaping`).
+  - `Packages/AetherBridge/Package.swift` som eneste eier av `AetherEngine` (`exact: "7.76.0"`) og de 5 påkrevde traitene (`TrueHDObjectAudio`, `DTSXObjectAudio`, `DualLayerDolbyVision`, `DolbyVisionFelCurves`, `DolbyVisionStillReshaping`).
   - `docs/architecture/CODEBASE_MODULE_MAP.md` 1:1-paritet og `design/tokens.json` -> `LunaTokens.swift` / `preview/tokens.css` generering.
 
 ---
@@ -71,7 +71,7 @@
 - [ ] **Koalescering & SWR:** `InflightTaskCoalescer` isolerer kansellering per venter, `DiskSWRStore` bruker entydige fane-/filternøkler, og `HomeCatalogLibraryEdgeTests` / `DiskSWRStoreMultiTabLinuxTests` passerer.
 - [ ] **Discovery & failover:** `BonjourServerBrowser` avviser `%`-link-local IPv6, `ServerFailoverPolicy` håndterer `:8090`/`:8920`/`.local`/reserve uten løkker, og `LunaCoreSessionPool` skiller `api`, `artwork` og `ws` i separate ephemere `URLSession`-baner.
 - [ ] **Origin & TLS-tillit:** `isSameOrigin(_:)` sender aldri `Authorization`/`X-Device-Id` til eksterne verter, og `LanURLSessionDelegate` + `EngineTLS.serverTrustEvaluator` oppdateres konsistent ved innstillingsendring og failover.
-- [ ] **Bygg & trait-styring:** `Packages/AetherBridge/Package.swift` pinner `exact: "7.75.0"` og alle 5 traits; `project.yml` genererer gyldig tvOS 26.0-prosjekt i `build-tvos.yml` med korrekt `Info.plist`, `Assets.car` og `Top Shelf`.
+- [ ] **Bygg & trait-styring:** `Packages/AetherBridge/Package.swift` pinner `exact: "7.76.0"` og alle 5 traits; `project.yml` genererer gyldig tvOS 26.0-prosjekt i `build-tvos.yml` med korrekt `Info.plist`, `Assets.car` og `Top Shelf`.
 
 ---
 
