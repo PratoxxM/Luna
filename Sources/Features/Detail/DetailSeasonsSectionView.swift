@@ -240,7 +240,11 @@ struct DetailSeasonsSectionView: View {
     }
 }
 
-private struct DetailSeasonPickerSheetView: View {
+struct DetailSeasonPickerSheetView: View {
+    nonisolated static let gridColumnCount: Int = 3
+    nonisolated static let minimumColumnWidth: CGFloat = 280
+    nonisolated static let preferredGridWidth: CGFloat = LunaTokens.Layout.sheetWideW - LunaTokens.Layout.sheetPadding * 2
+
     let seriesTitle: String
     let seasons: [TvSeasonSummary]
     let selectedSeasonNumber: Int
@@ -252,8 +256,8 @@ private struct DetailSeasonPickerSheetView: View {
     @Namespace private var seasonGridNamespace
 
     private let gridColumns = Array(
-        repeating: GridItem(.flexible(), spacing: 18, alignment: .leading),
-        count: 4
+        repeating: GridItem(.flexible(minimum: minimumColumnWidth), spacing: 18, alignment: .leading),
+        count: gridColumnCount
     )
 
     var body: some View {
@@ -284,7 +288,9 @@ private struct DetailSeasonPickerSheetView: View {
                 }
                 .scrollTargetLayout()
                 .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(idealWidth: Self.preferredGridWidth, maxWidth: .infinity)
             .scrollPosition($seasonScrollPosition)
             .onAppear {
                 focusedSeasonNumber = selectedSeasonNumber

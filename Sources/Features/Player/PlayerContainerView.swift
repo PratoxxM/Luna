@@ -63,6 +63,7 @@ struct PlayerContainerView: View {
         let isQuickPanelOpen = (osd.activeQuickPanel != nil)
         let isBottomBarShown = osd.isBottomBarShown(viewModel: viewModel)
         let isHUDResting = osd.isHUDResting(viewModel: viewModel)
+        let isNerdHUDVisible = comfort.showNerdHUD && !isHUDResting && !isQuickPanelOpen
         let statusToast = osd.activeTopStatusToast(viewModel: viewModel)
         let effectiveSeriesOverlay: ActiveSeriesOverlayKind =
             (viewModel.isPictureReadyForReveal && !isQuickPanelOpen && !viewModel.isScrubbing && viewModel.fatalError == nil)
@@ -100,6 +101,7 @@ struct PlayerContainerView: View {
                     activeQuickPanel: osd.activeQuickPanel,
                     isBottomBarShown: isBottomBarShown,
                     isQuickPanelOpen: isQuickPanelOpen,
+                    isNerdHUDVisible: isNerdHUDVisible,
                     activeSeriesOverlay: effectiveSeriesOverlay,
                     isScrubbing: viewModel.isScrubbing
                 )
@@ -121,7 +123,7 @@ struct PlayerContainerView: View {
                     subtitleDelaySeconds: viewModel.subtitleDelaySeconds,
                     isBottomBarVisible: isBottomBarShown,
                     isQuickPanelOpen: isQuickPanelOpen,
-                    isNerdHUDVisible: comfort.showNerdHUD,
+                    isNerdHUDVisible: isNerdHUDVisible,
                     activeSeriesOverlay: effectiveSeriesOverlay,
                     isScrubbing: viewModel.isScrubbing
                 )
@@ -146,7 +148,7 @@ struct PlayerContainerView: View {
             }
 
             // 3. Optional 1 Hz Isolated Nerd-HUD (top-left, also dims during 12s OLED pause rest)
-            if comfort.showNerdHUD && viewModel.isPictureReadyForReveal && !isHUDResting {
+            if comfort.showNerdHUD && viewModel.isPictureReadyForReveal && !isHUDResting && !isQuickPanelOpen {
                 VStack {
                     HStack {
                         NerdHUDView(engine: engine, viewModel: viewModel)
@@ -156,6 +158,7 @@ struct PlayerContainerView: View {
                 }
                 .padding(.horizontal, LunaTheme.horizontalGutter)
                 .padding(.top, LunaTokens.Layout.safeTop)
+                .ignoresSafeArea()
                 .transition(.opacity)
                 .zIndex(3)
             }

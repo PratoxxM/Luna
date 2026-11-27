@@ -170,7 +170,19 @@ struct DetailOverviewSheetView: View {
     let onClose: () -> Void
 
     @FocusState private var focusedChunkIndex: Int?
+    @State private var contentHeight: CGFloat = 280
     @Namespace private var overviewFocusNamespace
+
+    private static let topScrollFadeHeight: CGFloat = 12
+    private static let bottomScrollFadeHeight: CGFloat = 14
+    nonisolated static let maxScrollAreaHeight: CGFloat = 620
+
+    nonisolated static func resolvedScrollHeight(
+        contentHeight: CGFloat,
+        maxHeight: CGFloat = maxScrollAreaHeight
+    ) -> CGFloat {
+        min(max(contentHeight, 96), maxHeight)
+    }
 
     private var focusableParagraphs: [String] {
         Self.makeFocusableChunks(from: overview)
@@ -212,6 +224,7 @@ struct DetailOverviewSheetView: View {
 
     var body: some View {
         let paragraphs = focusableParagraphs
+        let isScrollable = contentHeight > Self.maxScrollAreaHeight + 2
 
         LunaSheetContainer(
             title: item.title,
@@ -220,7 +233,7 @@ struct DetailOverviewSheetView: View {
             maxHeight: 860,
             onClose: onClose
         ) {
-            ScrollView(.vertical, showsIndicators: true) {
+            ScrollView(.vertical, showsIndicators: isScrollable) {
                 VStack(alignment: .leading, spacing: 18) {
                     ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, paragraph in
                         OverviewParagraphChunkView(
@@ -235,7 +248,20 @@ struct DetailOverviewSheetView: View {
                     }
                 }
                 .padding(.vertical, 6)
+                .onGeometryChange(for: CGFloat.self) { geo in
+                    geo.size.height
+                } action: { newHeight in
+                    if newHeight > 10, abs(contentHeight - newHeight) > 1 {
+                        contentHeight = newHeight
+                    }
+                }
             }
+            .frame(height: Self.resolvedScrollHeight(contentHeight: contentHeight))
+            .optionalOverviewScrollMask(
+                enabled: isScrollable,
+                topHeight: Self.topScrollFadeHeight,
+                bottomHeight: Self.bottomScrollFadeHeight
+            )
             .defaultFocus($focusedChunkIndex, 0, priority: .userInitiated)
             .focusScope(overviewFocusNamespace)
         }
@@ -255,6 +281,7 @@ private struct OverviewParagraphChunkView: View {
             .font(LunaTheme.Font.body)
             .foregroundStyle(isFocused ? LunaTheme.linen : LunaTheme.moonlight)
             .lineSpacing(8)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, isMultiChunk ? 16 : 0)
             .padding(.vertical, isMultiChunk ? 10 : 0)
@@ -262,5 +289,38 @@ private struct OverviewParagraphChunkView: View {
                 RoundedRectangle(cornerRadius: LunaTokens.Radius.chip, style: .continuous)
                     .fill(isMultiChunk && isFocused ? LunaTheme.surfaceRaised : Color.clear)
             )
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func optionalOverviewScrollMask(
+        enabled: Bool,
+        topHeight: CGFloat,
+        bottomHeight: CGFloat
+    ) -> some View {
+        if enabled {
+            self.mask {
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [.clear, LunaTheme.pureBlack],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: topHeight)
+
+                    LunaTheme.pureBlack
+
+                    LinearGradient(
+                        colors: [LunaTheme.pureBlack, .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: bottomHeight)
+                }
+            }
+        } else {
+            self
+        }
     }
 }

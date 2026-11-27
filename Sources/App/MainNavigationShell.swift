@@ -82,7 +82,7 @@ struct MainNavigationShell: View {
                 switch screen {
                 case .playerSource: return .source
                 case .playerAudio: return .audio
-                case .playerPicture, .playerNerdHud: return .picture
+                case .playerPicture: return .picture
                 case .playerChapters: return .chapters
                 case .playerSubtitles: return .subtitles
                 case .playerError: return nil

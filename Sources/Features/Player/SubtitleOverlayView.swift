@@ -441,7 +441,7 @@ struct SubtitleOverlayView: View {
     }
 
     /// Lifts or relocates PGS/DVB bitmap subtitles cleanly above bottom OSD / series continuity
-    /// cards (`placement.bottomInset`) and outside `NerdHUDView` (`x = 90..830, y = 60..348`).
+    /// cards (`placement.bottomInset`) and outside `NerdHUDView` (`x = 90..830, y = 60..428`).
     static func adjustedBitmapRect(
         baseRect: CGRect,
         containerSize: CGSize,

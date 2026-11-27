@@ -104,7 +104,7 @@ struct PlayerOverlayPolicyAndStingerTests {
         #expect(next.bottomInset == 300)
 
         #expect(SubtitleOverlayLayout.nerdHUDProtectedLayoutRect.minY == 60)
-        #expect(SubtitleOverlayLayout.nerdHUDProtectedLayoutRect.maxY == 348)
+        #expect(SubtitleOverlayLayout.nerdHUDProtectedLayoutRect.maxY == 428)
 
         let normalWithHud = SubtitleOverlayLayout.verticalPlacement(
             isBottomBarVisible: false,
@@ -113,7 +113,7 @@ struct PlayerOverlayPolicyAndStingerTests {
             activeSeriesOverlay: .none
         )
         #expect(!normalWithHud.relocateToTop)
-        #expect(normalWithHud.topInset == 360)
+        #expect(normalWithHud.topInset == 440)
         #expect(Double(normalWithHud.topInset) > SubtitleOverlayLayout.nerdHUDProtectedLayoutRect.maxY)
 
         let osdAndNextWithHud = SubtitleOverlayLayout.verticalPlacement(
@@ -123,7 +123,7 @@ struct PlayerOverlayPolicyAndStingerTests {
             activeSeriesOverlay: .nextEpisodeCard
         )
         #expect(osdAndNextWithHud.relocateToTop)
-        #expect(osdAndNextWithHud.topInset == 360)
+        #expect(osdAndNextWithHud.topInset == 440)
         #expect(Double(osdAndNextWithHud.topInset) > SubtitleOverlayLayout.nerdHUDProtectedLayoutRect.maxY)
 
         let quickPanelWithHud = SubtitleOverlayLayout.verticalPlacement(

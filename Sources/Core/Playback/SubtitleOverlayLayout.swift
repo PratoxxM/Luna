@@ -33,11 +33,11 @@ public struct SubtitleLayoutRect: Equatable, Sendable {
 /// Pure subtitle placement rules preventing collisions with bottom OSD (`320 pt`),
 /// series continuity overlays (`.skipPrompt` `168 pt`, `.nextEpisodeCard` `300 pt`, or
 /// relocated to top when bottom OSD + series card are visible simultaneously), open quick-panel
-/// popovers, and `NerdHUDView` (`x = 90..830 pt`, `y = 60..348 pt`).
+/// popovers, and `NerdHUDView` (`x = 90..830 pt`, `y = 60..428 pt`).
 public enum SubtitleOverlayLayout: Sendable {
-    public static let nerdHUDProtectedLayoutRect = SubtitleLayoutRect(x: 90, y: 60, width: 740, height: 288)
+    public static let nerdHUDProtectedLayoutRect = SubtitleLayoutRect(x: 90, y: 60, width: 740, height: 368)
     #if canImport(CoreGraphics)
-    public static let nerdHUDProtectedRect = CGRect(x: 90, y: 60, width: 740, height: 288)
+    public static let nerdHUDProtectedRect = CGRect(x: 90, y: 60, width: 740, height: 368)
     #endif
     public static let skipPromptBottomInset: SubtitleLayoutScalar = 168
     public static let nextEpisodeBottomInset: SubtitleLayoutScalar = 300
@@ -93,7 +93,7 @@ public enum SubtitleOverlayLayout: Sendable {
         if isBottomBarVisible && activeSeriesOverlay != .none {
             return VerticalPlacement(
                 relocateToTop: true,
-                topInset: isNerdHUDVisible ? 360 : 84,
+                topInset: isNerdHUDVisible ? 440 : 84,
                 bottomInset: 0,
                 leadingInset: 120,
                 trailingInset: 120
@@ -116,7 +116,7 @@ public enum SubtitleOverlayLayout: Sendable {
 
         return VerticalPlacement(
             relocateToTop: false,
-            topInset: isNerdHUDVisible ? 360 : 72,
+            topInset: isNerdHUDVisible ? 440 : 72,
             bottomInset: resolvedBottomInset,
             leadingInset: 120,
             trailingInset: 120

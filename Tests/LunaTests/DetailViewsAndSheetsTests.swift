@@ -195,6 +195,13 @@ final class DetailViewsAndSheetsTests: XCTestCase {
         let longOverview = "\(sentenceA). \(sentenceB)"
         let splitChunks = DetailOverviewSheetView.makeFocusableChunks(from: longOverview)
         XCTAssertEqual(splitChunks, ["\(sentenceA).", sentenceB])
+
+        XCTAssertEqual(DetailOverviewSheetView.maxScrollAreaHeight, 620)
+        XCTAssertEqual(DetailOverviewSheetView.resolvedScrollHeight(contentHeight: 24), 96)
+        XCTAssertEqual(DetailOverviewSheetView.resolvedScrollHeight(contentHeight: 96), 96)
+        XCTAssertEqual(DetailOverviewSheetView.resolvedScrollHeight(contentHeight: 340), 340)
+        XCTAssertEqual(DetailOverviewSheetView.resolvedScrollHeight(contentHeight: 620), 620)
+        XCTAssertEqual(DetailOverviewSheetView.resolvedScrollHeight(contentHeight: 980), 620)
     }
 
     // MARK: - K-2 (7/7): DetailSeasonsSectionView & Season 0 Specials
@@ -202,6 +209,12 @@ final class DetailViewsAndSheetsTests: XCTestCase {
     func testDetailSeasonsSelectionOrderSpecialsAndScrollTargeting() {
         XCTAssertFalse(DetailSeasonsSectionView.usesSeasonPickerSheet(seasonCount: 6))
         XCTAssertTrue(DetailSeasonsSectionView.usesSeasonPickerSheet(seasonCount: 7))
+        XCTAssertEqual(DetailSeasonPickerSheetView.gridColumnCount, 3)
+        XCTAssertGreaterThanOrEqual(DetailSeasonPickerSheetView.minimumColumnWidth, 280)
+        XCTAssertEqual(
+            DetailSeasonPickerSheetView.preferredGridWidth,
+            LunaTokens.Layout.sheetWideW - LunaTokens.Layout.sheetPadding * 2
+        )
 
         let seasons = [
             TvSeasonSummary(seasonNumber: 1, name: "Season 1", episodeCount: 9, posterUrl: nil, airDate: nil),

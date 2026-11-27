@@ -9,6 +9,7 @@ struct PlayerPreviewCinemaStageView: View {
     let activeQuickPanel: PlayerQuickPanelTab?
     let isBottomBarShown: Bool
     let isQuickPanelOpen: Bool
+    var isNerdHUDVisible: Bool = false
     var activeSeriesOverlay: ActiveSeriesOverlayKind = .none
     var isScrubbing: Bool = false
 
@@ -16,7 +17,7 @@ struct PlayerPreviewCinemaStageView: View {
         let placement = SubtitleOverlayLayout.verticalPlacement(
             isBottomBarVisible: isBottomBarShown,
             isQuickPanelOpen: isQuickPanelOpen,
-            isNerdHUDVisible: comfort.showNerdHUD,
+            isNerdHUDVisible: isNerdHUDVisible,
             activeSeriesOverlay: activeSeriesOverlay,
             isScrubbing: isScrubbing
         )
