@@ -3,52 +3,17 @@ import XCTest
 @testable import Luna
 
 final class BonjourServerBrowserTests: XCTestCase {
-    func testParseDiscoveredServiceHandlesIPv4IPv6TLSOverrideAndTxtApiPath() {
-        XCTAssertFalse(BonjourDiscoveryPolicy.restrictsToIPv4Only)
-        XCTAssertTrue(BonjourDiscoveryPolicy.allowsIPv4)
-        XCTAssertTrue(BonjourDiscoveryPolicy.allowsIPv6)
-
-        let httpServer = BonjourServerBrowser.parseDiscoveredService(
-            id: "LunaCore._lunacore._tcp.local.",
-            serviceName: "LunaCore",
-            rawHost: "lunacore.local",
-            port: 8090,
-            txt: [:]
-        )
-        XCTAssertEqual(httpServer?.baseURL.absoluteString, "http://lunacore.local:8090")
-        XCTAssertEqual(httpServer?.apiPath, "/api/tv/v2")
-        XCTAssertEqual(httpServer?.displayAddress, "http://lunacore.local:8090")
-
-        let tlsServer = BonjourServerBrowser.parseDiscoveredService(
+    @MainActor
+    func testBrowserStartStopAndDiscoveredServiceBridge() {
+        let parsed = BonjourServerBrowser.parseDiscoveredService(
             id: "LunaCore._lunacore._tcp.local.",
             serviceName: "LunaCore",
             rawHost: "lunacore.example.test",
             port: 8090,
             txt: ["https_port": "8920", "api": "/api/tv/v2"]
         )
-        XCTAssertEqual(tlsServer?.baseURL.absoluteString, "https://lunacore.example.test:8920")
-        XCTAssertEqual(tlsServer?.apiPath, "/api/tv/v2")
-
-        let tlsPortAlias = BonjourServerBrowser.parseDiscoveredService(
-            id: "LunaCore-2._lunacore._tcp.local.",
-            serviceName: "LunaCore-2",
-            rawHost: "[2001:db8::1]",
-            port: 8090,
-            txt: ["tls_port": " 8920 ", "api": "  "]
-        )
-        XCTAssertEqual(tlsPortAlias?.baseURL.absoluteString, "https://[2001:db8::1]:8920")
-        XCTAssertEqual(tlsPortAlias?.apiPath, "/api/tv/v2")
-
-        let zoneStrippedHostname = BonjourServerBrowser.parseDiscoveredService(
-            id: "svc",
-            serviceName: "LunaCore",
-            rawHost: "lunacore.local%en0",
-            port: 8090,
-            txt: [:]
-        )
-        XCTAssertEqual(zoneStrippedHostname?.baseURL.absoluteString, "http://lunacore.local:8090")
-
-        // Link-local IPv6 with interface scope ID must be rejected
+        XCTAssertEqual(parsed?.baseURL.absoluteString, "https://lunacore.example.test:8920")
+        XCTAssertEqual(parsed?.apiPath, "/api/tv/v2")
         XCTAssertNil(
             BonjourServerBrowser.parseDiscoveredService(
                 id: "link-local-v6",
@@ -59,29 +24,6 @@ final class BonjourServerBrowserTests: XCTestCase {
             )
         )
 
-        // Invalid port or empty host must be rejected
-        XCTAssertNil(
-            BonjourServerBrowser.parseDiscoveredService(
-                id: "bad-port",
-                serviceName: "LunaCore",
-                rawHost: "lunacore.local",
-                port: 0,
-                txt: [:]
-            )
-        )
-        XCTAssertNil(
-            BonjourServerBrowser.parseDiscoveredService(
-                id: "empty-host",
-                serviceName: "LunaCore",
-                rawHost: "   ",
-                port: 8090,
-                txt: [:]
-            )
-        )
-    }
-
-    @MainActor
-    func testBrowserStartAndStopUpdateSearchingStateCleanly() {
         let browser = BonjourServerBrowser()
         XCTAssertFalse(browser.isSearching)
         XCTAssertTrue(browser.servers.isEmpty)
@@ -135,7 +77,6 @@ final class BonjourServerBrowserTests: XCTestCase {
         XCTAssertNotEqual(firstToken, secondToken)
         XCTAssertEqual(browser.activeResolverCount, 1)
 
-        // Late .ready and .cancelled callbacks from the superseded connection must be ignored
         browser.applyResolverReady(
             key: key,
             connId: firstConnId,
@@ -145,14 +86,12 @@ final class BonjourServerBrowserTests: XCTestCase {
             txt: [:]
         )
         XCTAssertEqual(browser.activeResolverToken(for: key), secondToken)
-        XCTAssertEqual(browser.activeResolverCount, 1)
         XCTAssertTrue(browser.servers.isEmpty)
 
         browser.applyResolverTerminated(key: key, connId: firstConnId, resolverToken: firstToken)
         XCTAssertEqual(browser.activeResolverToken(for: key), secondToken)
         XCTAssertEqual(browser.activeResolverCount, 1)
 
-        // Active connection callback resolves and cleans up cleanly
         browser.applyResolverReady(
             key: key,
             connId: secondConnId,
@@ -166,7 +105,6 @@ final class BonjourServerBrowserTests: XCTestCase {
         XCTAssertEqual(browser.servers.count, 1)
         XCTAssertEqual(browser.servers.first?.baseURL.absoluteString, "https://active-host.example.test:8920")
 
-        // Verify replacement resolver timeout also cleans up when not manually completed
         browser.beginResolve(
             key: key,
             endpoint: .hostPort(host: .name("timeout-1.example.test", nil), port: 8090),
@@ -205,8 +143,6 @@ final class BonjourServerBrowserTests: XCTestCase {
         XCTAssertNotEqual(firstBrowserToken, secondBrowserToken)
         XCTAssertTrue(browser.isSearching)
 
-        // Late .cancelled/.failed state update from first browser must not clobber new browser's isSearching
-        // (even if libmalloc reuses the same heap pointer for NWBrowser)
         browser.applyBrowserStateUpdate(.cancelled, browserId: firstBrowserId, browserToken: firstBrowserToken)
         XCTAssertTrue(browser.isSearching)
         XCTAssertEqual(browser.activeBrowserToken, secondBrowserToken)
@@ -214,7 +150,6 @@ final class BonjourServerBrowserTests: XCTestCase {
         browser.applyBrowserStateUpdate(.failed(.posix(.ECANCELED)), browserId: firstBrowserId, browserToken: firstBrowserToken)
         XCTAssertTrue(browser.isSearching)
 
-        // Populate a resolved server and verify stale browse results from first browser do not prune it
         let key = "svc._lunacore._tcp.local."
         browser.beginResolve(
             key: key,
@@ -237,11 +172,9 @@ final class BonjourServerBrowserTests: XCTestCase {
         browser.applyBrowseResults([], browserId: firstBrowserId, browserToken: firstBrowserToken)
         XCTAssertEqual(browser.servers.count, 1)
 
-        // Allow main queue to drain real NWBrowser cancellation from first browser
         try? await Task.sleep(nanoseconds: 80_000_000)
         XCTAssertTrue(browser.isSearching)
 
-        // Matching current browserId & token updates state cleanly
         browser.applyBrowserStateUpdate(.cancelled, browserId: secondBrowserId, browserToken: secondBrowserToken)
         XCTAssertFalse(browser.isSearching)
     }

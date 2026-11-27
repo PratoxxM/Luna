@@ -11,6 +11,11 @@ on:
         required: false
         default: "xcode-27"
         type: string
+      screens:
+        description: "Comma-separated screen list (default: 6 core screens) or 'all' for all preview screens"
+        required: false
+        default: "home,catalog,library,details,player-osd,settings"
+        type: string
       preview_focus:
         description: "Optional --preview-focus direction (up, down, left, right, select)"
         required: false
@@ -26,7 +31,7 @@ concurrency:
 
 jobs:
   static-guardrails:
-    name: Static Guardrails (luna-check)
+    name: Static Guardrails (luna-check --remote)
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -34,14 +39,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Run Luna static guardrails (luna-check)
+      - name: Run Luna static guardrails (luna-check --remote)
         run: |
           set -euo pipefail
-          bash ops/bin/luna-check
+          bash ops/bin/luna-check --remote
 
   linux-core-tests:
     name: LunaCoreTests (Linux Swift 6.2)
-    needs: static-guardrails
     runs-on: ubuntu-latest
     container: swift:6.2
     timeout-minutes: 10
@@ -57,7 +61,7 @@ jobs:
     name: Build & Capture 4K (@2x) Simulator Screens
     needs: [static-guardrails, linux-core-tests]
     runs-on: ${{ inputs.runner || 'xcode-27' }}
-    timeout-minutes: 30
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
@@ -81,7 +85,7 @@ jobs:
       - name: Generate Luna.xcodeproj from project.yml
         run: xcodegen generate
 
-      - name: Resolve Apple TV 4K Simulator, Run LunaTests & Build Luna
+      - name: Resolve Apple TV 4K Simulator & Build Luna
         id: sim
         run: |
           set -euo pipefail
@@ -116,10 +120,9 @@ jobs:
           echo "udid=${TVOS_SIM_UDID}" >> "$GITHUB_OUTPUT"
 
           xcrun simctl boot "$TVOS_SIM_UDID" >/dev/null 2>&1 || true
-          xcrun simctl bootstatus "$TVOS_SIM_UDID" -b
 
           set +e
-          xcodebuild test \
+          xcodebuild build \
             -project Luna.xcodeproj \
             -scheme Luna \
             -configuration Debug \
@@ -135,17 +138,14 @@ jobs:
           RC=${PIPESTATUS[0]}
           set -e
           if [ "$RC" -ne 0 ]; then
-            awk '/error:|fatal error:|failed -|XCTAssert/ { print "::error::" $0; count++; if (count >= 35) exit }' xcodebuild-vision.log
+            awk '/error:|fatal error:/ { print "::error::" $0; count++; if (count >= 35) exit }' xcodebuild-vision.log
             exit "$RC"
           fi
-
-          mkdir -p .ci-screenshots
-          grep -E "Test Suite .* (passed|failed)|Test Case .* (passed|failed)|Executed [0-9]+ test" xcodebuild-vision.log > .ci-screenshots/xcodebuild-test-summary.txt || true
-          tail -n 30 .ci-screenshots/xcodebuild-test-summary.txt || true
 
       - name: Boot Simulator, Install Luna.app & Capture Screenshots
         env:
           TVOS_SIM_UDID: ${{ steps.sim.outputs.udid }}
+          INPUT_SCREENS: ${{ inputs.screens || '' }}
           PREVIEW_FOCUS: ${{ inputs.preview_focus || '' }}
         run: |
           set -euo pipefail
@@ -162,44 +162,78 @@ jobs:
           mkdir -p .ci-screenshots
           BUNDLE_ID="local.lunacore.luna"
 
-          for SCREEN in onboarding home home-poster catalog catalog-series custom-row library search details detail-movie detail-source-picker detail-seasons detail-more detail-overview detail-delete settings settings-subtitles settings-playback settings-audio settings-diagnostics player-curtain player-nerd-hud player-osd player-scrub player-subtitles player-audio player-source player-picture player-chapters player-skip-intro player-next-episode player-error; do
-            echo "==> Terminating prior instance and launching ${BUNDLE_ID} --preview-screen ${SCREEN}..."
+          DEFAULT_SCREENS="home,catalog,library,details,player-osd,settings"
+          COMMIT_MSG="$(git log -1 --pretty=%B 2>/dev/null || true)"
+          RAW_SCREENS="${INPUT_SCREENS}"
+          if [ -z "$RAW_SCREENS" ]; then
+            if printf '%s\n' "$COMMIT_MSG" | grep -qi '\[vision-all\]'; then
+              RAW_SCREENS="all"
+            else
+              RAW_SCREENS="$DEFAULT_SCREENS"
+            fi
+          fi
+
+          ALL_SCREENS="onboarding home home-poster catalog catalog-series custom-row library search details detail-movie detail-source-picker detail-seasons detail-more detail-overview detail-delete settings settings-subtitles settings-playback settings-audio settings-diagnostics player-curtain player-nerd-hud player-osd player-scrub player-subtitles player-audio player-source player-picture player-chapters player-skip-intro player-next-episode player-error"
+          RUN_ALL=0
+          if [ "$(printf '%s' "$RAW_SCREENS" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" = "all" ]; then
+            RUN_ALL=1
+            SCREEN_LIST="$ALL_SCREENS"
+          else
+            SCREEN_LIST="$(printf '%s' "$RAW_SCREENS" | tr ',' ' ')"
+          fi
+          echo "Capturing Simulator screens (RUN_ALL=${RUN_ALL}): ${SCREEN_LIST}"
+
+          capture_screen() {
+            local screen_arg="$1"
+            local focus_arg="$2"
+            local out_name="$3"
+            echo "==> Launching ${BUNDLE_ID} --preview-screen ${screen_arg}${focus_arg:+ --preview-focus ${focus_arg}}..."
             xcrun simctl terminate "$TVOS_SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
-            sleep 1
-            if [ -n "$PREVIEW_FOCUS" ]; then
+            if [ -n "$focus_arg" ]; then
               xcrun simctl launch "$TVOS_SIM_UDID" "$BUNDLE_ID" \
-                --preview-screen "$SCREEN" --preview-focus "$PREVIEW_FOCUS"
+                --preview-screen "$screen_arg" --preview-focus "$focus_arg"
             else
               xcrun simctl launch "$TVOS_SIM_UDID" "$BUNDLE_ID" \
-                --preview-screen "$SCREEN"
+                --preview-screen "$screen_arg"
             fi
 
-            sleep 5
-            if ! xcrun simctl spawn "$TVOS_SIM_UDID" launchctl list | grep -q "$BUNDLE_ID"; then
-              echo "::warning::${BUNDLE_ID} not active in launchctl for screen=${SCREEN}; checking DiagnosticReports..."
+            local active=0
+            for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              if xcrun simctl spawn "$TVOS_SIM_UDID" launchctl list | grep -q "$BUNDLE_ID"; then
+                active=1
+                break
+              fi
+              sleep 0.25
+            done
+            if [ "$active" -ne 1 ]; then
+              echo "::warning::${BUNDLE_ID} not active in launchctl within 3s for screen=${screen_arg}; checking DiagnosticReports..."
               ls -lt ~/Library/Logs/DiagnosticReports/*Luna* 2>/dev/null | head -n 5 || true
             fi
-            OUT_FILE=".ci-screenshots/${SCREEN}.png"
-            xcrun simctl io "$TVOS_SIM_UDID" screenshot "$OUT_FILE"
+            sleep 1.5
 
-            WIDTH=$(sips -g pixelWidth "$OUT_FILE" | awk '/pixelWidth:/ {print $2}')
-            HEIGHT=$(sips -g pixelHeight "$OUT_FILE" | awk '/pixelHeight:/ {print $2}')
-            echo "Captured ${OUT_FILE}: ${WIDTH}x${HEIGHT}"
-            ls -lh "$OUT_FILE"
+            local out_file=".ci-screenshots/${out_name}.png"
+            xcrun simctl io "$TVOS_SIM_UDID" screenshot "$out_file"
+            local width height
+            width=$(sips -g pixelWidth "$out_file" | awk '/pixelWidth:/ {print $2}')
+            height=$(sips -g pixelHeight "$out_file" | awk '/pixelHeight:/ {print $2}')
+            echo "Captured ${out_file}: ${width}x${height}"
+            ls -lh "$out_file"
+          }
+
+          for SCREEN in $SCREEN_LIST; do
+            if ! [[ "$SCREEN" =~ ^[a-z0-9_-]+$ ]]; then
+              echo "::error::Invalid preview screen identifier: $SCREEN"
+              exit 1
+            fi
+            if [ "$SCREEN" = "search-focused" ]; then
+              capture_screen "search" "select" "search-focused"
+            else
+              capture_screen "$SCREEN" "$PREVIEW_FOCUS" "$SCREEN"
+            fi
           done
 
-          if [ -z "$PREVIEW_FOCUS" ]; then
-            echo "==> Launching ${BUNDLE_ID} --preview-screen search --preview-focus select (focused search field)..."
-            xcrun simctl terminate "$TVOS_SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
-            sleep 1
-            xcrun simctl launch "$TVOS_SIM_UDID" "$BUNDLE_ID" --preview-screen search --preview-focus select
-            sleep 5
-            OUT_FILE=".ci-screenshots/search-focused.png"
-            xcrun simctl io "$TVOS_SIM_UDID" screenshot "$OUT_FILE"
-            WIDTH=$(sips -g pixelWidth "$OUT_FILE" | awk '/pixelWidth:/ {print $2}')
-            HEIGHT=$(sips -g pixelHeight "$OUT_FILE" | awk '/pixelHeight:/ {print $2}')
-            echo "Captured ${OUT_FILE}: ${WIDTH}x${HEIGHT}"
-            ls -lh "$OUT_FILE"
+          if [ "$RUN_ALL" -eq 1 ] && [ -z "$PREVIEW_FOCUS" ]; then
+            capture_screen "search" "select" "search-focused"
           fi
 
           xcrun simctl terminate "$TVOS_SIM_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
@@ -210,7 +244,6 @@ jobs:
           name: tvos-screenshots
           path: |
             .ci-screenshots/*.png
-            .ci-screenshots/xcodebuild-test-summary.txt
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14

@@ -1,5 +1,7 @@
 import AetherBridge
+import CoreGraphics
 import Foundation
+import ImageIO
 import Synchronization
 import XCTest
 @testable import Luna
@@ -72,25 +74,18 @@ final class MockPlayerTransport: PlayerTransportControlling {
     }
 
     func togglePlayPause() {
-        if state == .playing {
-            pause()
-        } else {
-            play()
-        }
+        if state == .playing { pause() } else { play() }
     }
 
     func seek(to seconds: Double, exact: Bool) async {
         currentTime = seconds
         events.append("seek(\(Int(seconds)),\(exact))")
-        if let onSeek {
-            await onSeek(seconds, exact)
-        }
+        if let onSeek { await onSeek(seconds, exact) }
     }
 
     func setAudioDelay(_ seconds: Double) {
         lastAudioDelaySeconds = seconds
-        let ms = Int((seconds * 1000.0).rounded())
-        events.append("audioDelay(\(ms)ms)")
+        events.append("audioDelay(\(Int((seconds * 1000.0).rounded()))ms)")
         onSetAudioDelay?(seconds)
     }
 
@@ -101,8 +96,7 @@ final class MockPlayerTransport: PlayerTransportControlling {
 
     func setSoftwareSubtitleDelay(_ seconds: Double) {
         lastSubtitleDelaySeconds = seconds
-        let ms = Int((seconds * 1000.0).rounded())
-        events.append("subtitleDelay(\(ms)ms)")
+        events.append("subtitleDelay(\(Int((seconds * 1000.0).rounded()))ms)")
     }
 
     func selectAudioTrack(index: Int) {
@@ -129,12 +123,7 @@ final class MockPlayerTransport: PlayerTransportControlling {
     func holdOutgoingPicture() async -> Bool {
         holdOutgoingPictureCallCount += 1
         events.append("holdOutgoingPicture")
-        let held: Bool
-        if let onHoldOutgoingPicture {
-            held = await onHoldOutgoingPicture()
-        } else {
-            held = holdOutgoingPictureResult
-        }
+        let held = if let onHoldOutgoingPicture { await onHoldOutgoingPicture() } else { holdOutgoingPictureResult }
         isHoldingOutgoingPicture = held
         return held
     }
@@ -154,23 +143,17 @@ final class MockPlayerTransport: PlayerTransportControlling {
         lastLoadedURL = url
         lastLoadedStartPosition = startPosition
         lastLoadedOptions = options
-        if let startPosition {
-            currentTime = startPosition
-        }
+        if let startPosition { currentTime = startPosition }
         state = options.autoplay ? .playing : .paused
         playbackPhase = options.autoplay ? .playing : .paused
         events.append("loadStream(\(startPosition.map { String(format: "%.1f", $0) } ?? "nil"))")
-        if let onLoadStream {
-            try await onLoadStream(url, startPosition, options)
-        }
+        if let onLoadStream { try await onLoadStream(url, startPosition, options) }
     }
 
     func reloadAtCurrentPosition(applying change: (inout LoadOptions) -> Void) async throws {
         var updated = lastReloadedOptions ?? lastLoadedOptions ?? LoadOptions()
         change(&updated)
-        if let onReloadAtCurrentPosition {
-            try onReloadAtCurrentPosition(&updated)
-        }
+        if let onReloadAtCurrentPosition { try onReloadAtCurrentPosition(&updated) }
         lastReloadedOptions = updated
         lastLoadedOptions = updated
         reloadCallCount += 1
@@ -238,6 +221,173 @@ actor TestStepGate {
     }
 }
 
+final class IsolatedDefaultsScope {
+    let suiteName: String
+    let defaults: UserDefaults
+
+    init(prefix: String = "luna.v1.test") throws {
+        let name = "\(prefix).\(UUID().uuidString)"
+        self.suiteName = name
+        self.defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+    }
+
+    func cleanup() {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+}
+
+@MainActor
+final class SharedTestEngineScope {
+    let engine: AetherEngine
+
+    init(configured: Bool = true) throws {
+        self.engine = configured ? try LunaApp.makeSharedEngine() : try AetherEngine()
+    }
+
+    func stop() {
+        PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+        engine.stop(resetDisplayCriteria: true)
+    }
+}
+
+enum PlayerTestFixtures {
+    static func makeMovieSession(
+        sessionId: String = "sess-movie-1",
+        streamToken: String = "tok-stream-secret-12345678",
+        roomName: String = "Kjellerstua",
+        hardwareProfile: String = "dv-fel-714",
+        itemId: String = "movie:tmdb:693134",
+        tmdbId: Int = 693134,
+        title: String = "Dune: Part Two",
+        originalLanguage: String? = nil,
+        runtimeSeconds: Double? = 9960,
+        candidateId: String = "cand-1",
+        headline: String = "4K HDR10+ TrueHD Atmos",
+        releaseTitle: String = "Dune.Part.Two.2160p",
+        source: String = "nvme",
+        tier: String? = "nvme",
+        resolution: String? = "2160p",
+        videoRangeType: String? = "HDR10",
+        videoCodec: String? = "hevc",
+        dvProfile: Int? = nil,
+        dvEnhancementLayer: String? = nil,
+        sizeBytes: Int64? = nil,
+        startPositionSeconds: Double? = nil,
+        declaredDurationSeconds: Double? = nil,
+        supportsByteRanges: Bool? = true,
+        canClientPrewarmBytes: Bool? = nil,
+        tracks: TvSessionTracks? = nil,
+        preferDualLayerDolbyVision: Bool = false,
+        foldsDolbyVisionFEL: Bool? = nil,
+        dolbyVisionHandling: String = "automatic",
+        objectAudioLayout: String? = nil,
+        skipsContainerAttachments: Bool? = nil,
+        generatesBackgroundScrubPreviews: Bool? = nil
+    ) -> TvPlaybackSession {
+        TvPlaybackSession(
+            sessionId: sessionId,
+            streamToken: streamToken,
+            roomName: roomName,
+            hardwareProfile: hardwareProfile,
+            item: TvPlaybackItemContext(
+                itemId: itemId, mediaType: "movie", ids: TvMediaIds(tmdb: tmdbId),
+                title: title, runtimeSeconds: runtimeSeconds, originalLanguage: originalLanguage
+            ),
+            selectedCandidate: TvCandidateInfo(
+                candidateId: candidateId, displayHeadline: headline, releaseTitle: releaseTitle,
+                source: source, tier: tier, resolution: resolution, videoRangeType: videoRangeType,
+                dvProfile: dvProfile, dvEnhancementLayer: dvEnhancementLayer, audioCodec: "TrueHD Atmos",
+                sizeBytes: sizeBytes, tvScore: 1200, isActive: true, explanationChips: nil,
+                releaseGroup: nil, isNorwegian: false, videoCodec: videoCodec
+            ),
+            stream: TvStreamEndpoint(
+                url: "/api/tv/v2/stream/\(sessionId)/\(streamToken)/video.mkv",
+                supportsByteRanges: supportsByteRanges,
+                canClientPrewarmBytes: canClientPrewarmBytes,
+                startPositionSeconds: startPositionSeconds,
+                declaredDurationSeconds: declaredDurationSeconds
+            ),
+            tracks: tracks,
+            aetherConfig: TvAetherConfig(
+                preferDualLayerDolbyVision: preferDualLayerDolbyVision,
+                foldsDolbyVisionFEL: foldsDolbyVisionFEL,
+                dolbyVisionHandling: dolbyVisionHandling,
+                matchContentEnabled: true,
+                objectAudioRendering: objectAudioLayout.map { TvObjectAudioConfig(mode: "render", layout: $0) },
+                audioBridgeMode: "lossless",
+                skipsContainerAttachments: skipsContainerAttachments,
+                generatesBackgroundScrubPreviews: generatesBackgroundScrubPreviews
+            )
+        )
+    }
+
+    static func makeEpisodeSession(
+        sessionId: String = "sess-ep-1",
+        streamToken: String = "tok-ep-secret-12345678",
+        roomName: String = "Stua",
+        hardwareProfile: String = "hdr10-512",
+        itemId: String = "episode:tmdb:95396:s2:e3",
+        tmdbId: Int = 95396,
+        title: String = "Who Is Alive?",
+        seriesTitle: String = "Severance",
+        season: Int = 2,
+        episode: Int = 3,
+        runtimeSeconds: Double? = 3180,
+        candidateId: String = "cand-ep-1",
+        nextEpisode: TvNextEpisodeSummary? = nil
+    ) -> TvPlaybackSession {
+        TvPlaybackSession(
+            sessionId: sessionId,
+            streamToken: streamToken,
+            roomName: roomName,
+            hardwareProfile: hardwareProfile,
+            item: TvPlaybackItemContext(
+                itemId: itemId, mediaType: "episode", ids: TvMediaIds(tmdb: tmdbId),
+                title: title, seriesTitle: seriesTitle, season: season, episode: episode,
+                runtimeSeconds: runtimeSeconds
+            ),
+            selectedCandidate: TvCandidateInfo(
+                candidateId: candidateId, displayHeadline: "4K HDR10+", releaseTitle: "Severance.2160p",
+                source: "nvme", tier: "nvme", resolution: "2160p", videoRangeType: "HDR10Plus",
+                dvProfile: nil, dvEnhancementLayer: nil, audioCodec: "Atmos", sizeBytes: nil,
+                tvScore: 1100, isActive: true, explanationChips: nil, releaseGroup: nil, isNorwegian: false
+            ),
+            stream: TvStreamEndpoint(url: "/api/tv/v2/stream/\(sessionId)/\(streamToken)/video.mkv"),
+            aetherConfig: TvAetherConfig(
+                preferDualLayerDolbyVision: false, dolbyVisionHandling: "automatic",
+                matchContentEnabled: true, audioBridgeMode: "lossless"
+            ),
+            nextEpisode: nextEpisode
+        )
+    }
+
+    static func sessionJSONObject(_ session: TvPlaybackSession) throws -> Any {
+        let data = try JSONEncoder().encode(session)
+        return try JSONSerialization.jsonObject(with: data)
+    }
+
+    static func makeImageData(utType: String = "public.png", width: Int = 16, height: Int = 16) throws -> Data {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = utType == "public.jpeg"
+            ? CGImageAlphaInfo.noneSkipLast.rawValue
+            : CGImageAlphaInfo.premultipliedLast.rawValue
+        let ctx = try XCTUnwrap(
+            CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                space: colorSpace, bitmapInfo: bitmapInfo
+            )
+        )
+        ctx.setFillColor(CGColor(red: 0.80, green: 0.60, blue: 0.32, alpha: 1.0))
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let cgImage = try XCTUnwrap(ctx.makeImage())
+        let out = NSMutableData()
+        let dest = try XCTUnwrap(CGImageDestinationCreateWithData(out as CFMutableData, utType as CFString, 1, nil))
+        CGImageDestinationAddImage(dest, cgImage, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(dest))
+        return out as Data
+    }
+}
+
 private struct MockProtocolDeliveryContext: @unchecked Sendable {
     let urlProtocol: MockURLProtocol
     let client: (any URLProtocolClient)?
@@ -253,9 +403,7 @@ final class MockURLProtocol: URLProtocol {
     private static let activeTasks = Mutex<[ObjectIdentifier: Task<Void, Never>]>([:])
 
     static func register(host: String, handler: @escaping Handler) {
-        registerAsync(host: host) { req in
-            try handler(req)
-        }
+        registerAsync(host: host) { req in try handler(req) }
     }
 
     static func registerAsync(host: String, handler: @escaping AsyncHandler) {
@@ -275,12 +423,8 @@ final class MockURLProtocol: URLProtocol {
     }
 
     static func bodyData(for request: URLRequest) -> Data {
-        if let body = request.httpBody {
-            return body
-        }
-        guard let stream = request.httpBodyStream else {
-            return Data()
-        }
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return Data() }
         stream.open()
         defer { stream.close() }
         var out = Data()
@@ -322,9 +466,7 @@ final class MockURLProtocol: URLProtocol {
         return handlers.withLock { $0[host] != nil }
     }
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
-        request
-    }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
         guard let host = request.url?.host?.lowercased(),
@@ -334,22 +476,14 @@ final class MockURLProtocol: URLProtocol {
         }
         Self.recordedRequests.withLock { $0[host, default: []].append(request) }
         let taskKey = ObjectIdentifier(self)
-        let context = MockProtocolDeliveryContext(
-            urlProtocol: self,
-            client: client,
-            request: request
-        )
+        let context = MockProtocolDeliveryContext(urlProtocol: self, client: client, request: request)
         Self.activeTasks.withLock { map in
             map[taskKey] = Task.detached(priority: .userInitiated) {
                 defer { _ = Self.activeTasks.withLock { $0.removeValue(forKey: taskKey) } }
                 do {
                     let (response, data) = try await handler(context.request)
                     guard !Task.isCancelled else { return }
-                    context.client?.urlProtocol(
-                        context.urlProtocol,
-                        didReceive: response,
-                        cacheStoragePolicy: .notAllowed
-                    )
+                    context.client?.urlProtocol(context.urlProtocol, didReceive: response, cacheStoragePolicy: .notAllowed)
                     context.client?.urlProtocol(context.urlProtocol, didLoad: data)
                     context.client?.urlProtocolDidFinishLoading(context.urlProtocol)
                 } catch {

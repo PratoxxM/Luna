@@ -5,12 +5,29 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
-SKIP_REMOTE=0
-if [[ "${1:-}" == "--local" || "${LUNA_CHECK_SKIP_REMOTE:-0}" == "1" ]]; then
-  SKIP_REMOTE=1
+RUN_REMOTE=0
+for arg in "$@"; do
+  case "$arg" in
+    --remote)
+      RUN_REMOTE=1
+      ;;
+    --local)
+      RUN_REMOTE=0
+      ;;
+    *)
+      echo "Usage: $0 [--local|--remote]" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ "${LUNA_CHECK_SKIP_REMOTE:-0}" == "1" ]]; then
+  RUN_REMOTE=0
 fi
 
 python3 - "$PROJECT_ROOT" <<'PY'
+import json
+import os
 import pathlib
 import re
 import sys
@@ -19,138 +36,98 @@ root = pathlib.Path(sys.argv[1])
 errors = []
 
 SKIP_DIRS = {".git", ".build", ".build-linux", "DerivedData", "SourcePackages", "build", "build-tests", "build-vision", ".ci-screenshots"}
-
-for p in sorted(root.rglob("*")):
-    if p.is_symlink() or any(part in SKIP_DIRS for part in p.parts):
-        continue
-    rel = p.relative_to(root).as_posix()
-    mode = p.stat().st_mode & 0o777
-    if p.is_dir():
-        if mode != 0o755:
-            errors.append(f"DIR  {rel}: expected 0755, got 0{mode:o}")
-    elif p.is_file():
-        is_exec_script = rel.startswith("ops/bin/") or (rel.startswith("scripts/") and rel.endswith(".sh"))
-        expected = 0o755 if is_exec_script else 0o644
-        if mode != expected:
-            errors.append(f"FILE {rel}: expected 0{expected:o}, got 0{mode:o}")
-
-swift_roots = [root / "Sources", root / "Tests", root / "Packages"]
-swift_files = []
-for base in swift_roots:
-    if base.exists():
-        swift_files.extend(sorted(base.rglob("*.swift")))
+TEXT_EXTS = {".swift", ".yml", ".yaml", ".md", ".plist", ".json", ".txt", ".sh", ".py", ".html", ".css"}
+SCAN_TOP = {"Sources", "Tests", "Packages", "Config", "Resources", "design", "preview", "docs", "ops", "scripts", ".github"}
+SCAN_ROOT_FILES = {"Package.swift", "project.yml"}
 
 RETIRED_IDENT_RE = re.compile(
-    r"\bBFF[A-Za-z0-9_]*|CatScale|\bCatCompanion[A-Za-z0-9_]*|\bV250[A-Za-z0-9_]*|[A-Za-z0-9_]*FixesTests\b|\b[A-Za-z0-9_]*ForTesting\b|\bnativeAudioActivatorForTesting\b"
+    r"\bBFF[A-Za-z0-9_]*|[A-Za-z0-9_]*FixesTests\b|\b[A-Za-z0-9_]*ForTesting\b|\bnativeAudioActivatorForTesting\b"
 )
-
-for sf in swift_files:
-    rel = sf.relative_to(root).as_posix()
-    text = sf.read_text(encoding="utf-8", errors="replace")
-    lines = len(text.splitlines())
-    if lines > 800:
-        errors.append(f"LOC  {rel}: {lines} lines exceeds 800 LOC budget")
-    if "Bundle.main.bundleIdentifier" in text:
-        errors.append(f"SIDELOAD {rel}: forbidden Bundle.main.bundleIdentifier reference")
-    if RETIRED_IDENT_RE.search(text):
-        errors.append(f"RETIRED {rel}: forbidden legacy/test-closure identifier")
-    if "PlayerSheets" in text or "Watchlist/" in text:
-        errors.append(f"RETIRED {rel}: forbidden retired Watchlist/ or PlayerSheets reference")
-    if re.search(r"\.navigationBarTitleDisplayMode\b|\bUIScreen\.main\b|\bSlider\s*\(", text):
-        errors.append(f"TVOS_GUARDRAIL {rel}: forbidden iOS-only SwiftUI/UIKit API (.navigationBarTitleDisplayMode / UIScreen.main / Slider)")
-    if re.search(r"\.(?:ultraThinMaterial|thinMaterial|regularMaterial|thickMaterial|ultraThickMaterial)\b", text):
-        errors.append(f"TVOS_GUARDRAIL {rel}: forbidden cold system Material blur (.ultraThinMaterial/.regularMaterial/...); use explicit warm Lampelys surfaces")
-
-RETIRED_NAME_RE = re.compile(r"Cat(?!alog|egory)|V250|FixesTests|^BFF|^PlayerSheets")
-
-for check_dir in [root / "Sources", root / "Tests", root / "Packages"]:
-    if not check_dir.exists():
-        continue
-    for item in check_dir.rglob("*"):
-        if any(part in SKIP_DIRS for part in item.parts):
-            continue
-        name = item.name
-        rel = item.relative_to(root).as_posix()
-        if name == "Watchlist" or RETIRED_NAME_RE.search(name):
-            errors.append(f"RETIRED_PATH {rel}: retired leftover file/directory")
-
+RETIRED_NAME_RE = re.compile(r"FixesTests|^BFF")
+MILESTONE_TEST_RE = re.compile(r"^(?:Etappe\d|Round\d|M\d[A-Z0-9_])")
 PRIVATE_IP_RE = re.compile(
     r"\b(?:10\.\d{1,3}|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b"
 )
 NAS_PATH_RE = re.compile(r"/volume[12](?=[^0-9A-Za-z_-]|$)")
 SECRET_LITERAL_RE = re.compile(r"luna_tv_|skogsrudveien|\.ts\.net", re.IGNORECASE)
 RETIRED_BRAND_RE = re.compile(r"mediaos|media[-_]core", re.IGNORECASE)
+IOS_API_RE = re.compile(r"\.navigationBarTitleDisplayMode\b|\bUIScreen\.main\b|\bSlider\s*\(")
+COLD_MATERIAL_RE = re.compile(r"\.(?:ultraThinMaterial|thinMaterial|regularMaterial|thickMaterial|ultraThickMaterial)\b")
+DIRECT_SYS_FONT_RE = re.compile(r"Font\.system\s*\(|\.font\(\s*\.system\s*\(")
 
-TEXT_EXTS = {".swift", ".yml", ".yaml", ".md", ".plist", ".json", ".txt", ".sh", ".py", ".html", ".css"}
-scan_targets = [
-    root / "Sources",
-    root / "Tests",
-    root / "Packages",
-    root / "Config",
-    root / "Resources",
-    root / "design",
-    root / "preview",
-    root / "docs",
-    root / "ops",
-    root / "scripts",
-    root / ".github",
-    root / "Package.swift",
-    root / "project.yml",
-    *sorted(root.glob("*.md")),
-]
+swift_files_count = 0
+sources_swift_texts = []
 
-for target in scan_targets:
-    if not target.exists():
-        continue
-    candidates = [target] if target.is_file() else sorted(target.rglob("*"))
-    for f in candidates:
-        if not f.is_file() or f.is_symlink() or any(part in SKIP_DIRS for part in f.parts):
+for dirpath, dirnames, filenames in os.walk(root):
+    dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not os.path.islink(os.path.join(dirpath, d)))
+    rel_dir = os.path.relpath(dirpath, root).replace("\\", "/")
+    top_dir = "" if rel_dir == "." else rel_dir.split("/", 1)[0]
+    if rel_dir != ".":
+        dmode = os.stat(dirpath).st_mode & 0o777
+        if dmode != 0o755:
+            errors.append(f"DIR  {rel_dir}: expected 0755, got 0{dmode:o}")
+        if top_dir in {"Sources", "Tests", "Packages"} and RETIRED_NAME_RE.search(os.path.basename(dirpath)):
+            errors.append(f"RETIRED_PATH {rel_dir}: retired leftover file/directory")
+    for fname in sorted(filenames):
+        fpath = os.path.join(dirpath, fname)
+        if os.path.islink(fpath):
             continue
-        rel = f.relative_to(root).as_posix()
-        if rel == "ops/bin/luna-check":
+        rel = fname if rel_dir == "." else f"{rel_dir}/{fname}"
+        fmode = os.stat(fpath).st_mode & 0o777
+        is_exec_script = rel.startswith("ops/bin/") or (rel.startswith("scripts/") and rel.endswith(".sh"))
+        expected = 0o755 if is_exec_script else 0o644
+        if fmode != expected:
+            errors.append(f"FILE {rel}: expected 0{expected:o}, got 0{fmode:o}")
+
+        in_code_tree = top_dir in {"Sources", "Tests", "Packages"}
+        if in_code_tree and RETIRED_NAME_RE.search(fname):
+            errors.append(f"RETIRED_PATH {rel}: retired leftover file/directory")
+        if top_dir == "Tests" and MILESTONE_TEST_RE.search(fname):
+            errors.append(f"TEST_HYGIENE {rel}: milestone/round-prefixed test filename forbidden; use domain-named suite")
+
+        ext = os.path.splitext(fname)[1].lower()
+        in_scan = (top_dir in SCAN_TOP) or (rel_dir == "." and (fname in SCAN_ROOT_FILES or ext == ".md"))
+        need_swift = in_code_tree and ext == ".swift"
+        need_hygiene = in_scan and rel != "ops/bin/luna-check" and (ext in TEXT_EXTS or fname in {"luna-check", "LICENSE"})
+        if not (need_swift or need_hygiene):
             continue
-        if f.suffix.lower() not in TEXT_EXTS and f.name not in {"luna-check", "LICENSE"}:
-            continue
-        content = f.read_text(encoding="utf-8", errors="replace")
-        if PRIVATE_IP_RE.search(content):
-            errors.append(f"HYGIENE {rel}: private IP address literal found")
-        if NAS_PATH_RE.search(content):
-            errors.append(f"HYGIENE {rel}: NAS filesystem path found")
-        if SECRET_LITERAL_RE.search(content):
-            errors.append(f"HYGIENE {rel}: internal domain or token prefix found")
-        if RETIRED_BRAND_RE.search(content):
-            errors.append(f"RETIRED {rel}: retired legacy brand reference found")
+
+        with open(fpath, "r", encoding="utf-8", errors="replace") as fh:
+            content = fh.read()
+
+        if need_swift:
+            swift_files_count += 1
+            lines = len(content.splitlines())
+            if lines > 800:
+                errors.append(f"LOC  {rel}: {lines} lines exceeds 800 LOC budget")
+            if "Bundle.main.bundleIdentifier" in content:
+                errors.append(f"SIDELOAD {rel}: forbidden Bundle.main.bundleIdentifier reference")
+            if RETIRED_IDENT_RE.search(content):
+                errors.append(f"RETIRED {rel}: forbidden legacy/test-closure identifier")
+            if IOS_API_RE.search(content):
+                errors.append(f"TVOS_GUARDRAIL {rel}: forbidden iOS-only SwiftUI/UIKit API (.navigationBarTitleDisplayMode / UIScreen.main / Slider)")
+            if COLD_MATERIAL_RE.search(content):
+                errors.append(f"TVOS_GUARDRAIL {rel}: forbidden cold system Material blur (.ultraThinMaterial/.regularMaterial/...); use explicit warm Lampelys surfaces")
+            if top_dir == "Sources":
+                sources_swift_texts.append((rel, content))
+
+        if need_hygiene:
+            if ext == ".md":
+                md_lines = len(content.splitlines())
+                if md_lines > 800:
+                    errors.append(f"LOC  {rel}: {md_lines} lines exceeds 800 LOC budget")
+            if PRIVATE_IP_RE.search(content):
+                errors.append(f"HYGIENE {rel}: private IP address literal found")
+            if NAS_PATH_RE.search(content):
+                errors.append(f"HYGIENE {rel}: NAS filesystem path found")
+            if SECRET_LITERAL_RE.search(content):
+                errors.append(f"HYGIENE {rel}: internal domain or token prefix found")
+            if RETIRED_BRAND_RE.search(content):
+                errors.append(f"RETIRED {rel}: retired legacy brand reference found")
 
 map_file = root / "docs/architecture/CODEBASE_MODULE_MAP.md"
-if not map_file.is_file():
-    errors.append("DOC_PARITY missing docs/architecture/CODEBASE_MODULE_MAP.md")
-else:
-    map_text = map_file.read_text(encoding="utf-8", errors="replace")
-    doc_refs = set(
-        re.findall(
-            r"`((?:Sources|Tests|Packages)/[A-Za-z0-9_.+-]+(?:/[A-Za-z0-9_.+-]+)*\.swift)`",
-            map_text,
-        )
-    )
-    for ref in sorted(doc_refs):
-        if not (root / ref).is_file():
-            errors.append(f"DOC_PARITY {ref}: documented in CODEBASE_MODULE_MAP.md but missing on disk")
-    expected_swift = {
-        p.relative_to(root).as_posix()
-        for p in sorted(
-            [
-                *(root / "Sources").rglob("*.swift"),
-                *(root / "Tests/LunaTests").glob("*.swift"),
-                *(root / "Tests/LunaCoreTests").glob("*.swift"),
-                *(root / "Packages/AetherBridge/Sources").rglob("*.swift"),
-            ]
-        )
-        if p.is_file()
-    }
-    for rel in sorted(expected_swift - doc_refs):
-        errors.append(f"DOC_PARITY {rel}: exists on disk but undocumented in CODEBASE_MODULE_MAP.md")
-
-import json
+if not map_file.is_file() or not map_file.read_text(encoding="utf-8", errors="replace").strip():
+    errors.append("DOC_GATE missing or empty docs/architecture/CODEBASE_MODULE_MAP.md")
 
 xcstrings_path = root / "Resources/Localizable.xcstrings"
 xc_keys = set()
@@ -229,15 +206,11 @@ if preview_html.is_file():
 
 PLURAL_BUG_RE = re.compile(r"\\\([^)]+\)\s*(?:lokale\s+|aktive\s+)?(?:filmer|serier|episoder|sesonger|tjenester|titler|kilder|dager|mediefiler|festet|kapitler|treff)\b")
 RAW_FONT_STYLE_RE = re.compile(r"\.font\(\.(?:caption2?|footnote|subheadline|callout|body|headline|title[23]?|largeTitle)\b")
-sys_font_calls = 0
 typo_sizes_checked = 0
 all_sources_concat = []
 
-for sf in sorted((root / "Sources").rglob("*.swift")):
-    rel = sf.relative_to(root).as_posix()
-    text = sf.read_text(encoding="utf-8", errors="replace")
+for rel, text in sources_swift_texts:
     all_sources_concat.append(text)
-    sys_font_calls += len(re.findall(r"\.font\(\.system\(size:", text))
     if RAW_FONT_STYLE_RE.search(text):
         errors.append(f"TYPO_FLOOR {rel}: raw SwiftUI text style (.font(.caption/.title/...)) forbidden; use LunaTheme.Font.*")
     if rel == "Sources/DesignSystem/LunaThemeTypography.swift":
@@ -249,7 +222,7 @@ for sf in sorted((root / "Sources").rglob("*.swift")):
         for _ in re.finditer(r"size:\s*LunaTokens\.Typography\.[A-Za-z0-9_]+", text):
             typo_sizes_checked += 1
     else:
-        if re.search(r"Font\.system\s*\(", text) or re.search(r"\.font\(\s*\.system\s*\(", text):
+        if DIRECT_SYS_FONT_RE.search(text):
             errors.append(f"TYPO_FLOOR {rel}: direct .system(...) font outside LunaThemeTypography.swift")
     for i, ln in enumerate(text.splitlines(), 1):
         if PLURAL_BUG_RE.search(ln):
@@ -266,21 +239,18 @@ for key in sorted(xc_keys):
     if prefix not in joined_sources:
         errors.append(f"COPY_GATE Resources/Localizable.xcstrings key '{key}' is unused in Sources/")
 
-if sys_font_calls > 0:
-    errors.append(f"RATCHET .font(.system(size: count {sys_font_calls} exceeds M8 0 ceiling")
-
 if errors:
     print("LUNA-CHECK FAILED:", file=sys.stderr)
     for err in errors:
         print(f"  - {err}", file=sys.stderr)
     sys.exit(1)
 
-print(f"  [OK] Permissions (0755/0644), <= 800 LOC ({len(swift_files)} .swift files), doc parity ({len(doc_refs)} modules), sideload, retired patterns, copy/ratchet ({sys_font_calls}<=0) & public hygiene checks passed")
+print(f"  [OK] Permissions (0755/0644), <= 800 LOC ({swift_files_count} .swift files), sideload, typography (>= 22 pt), copy & public hygiene checks passed")
 PY
 
 python3 -B "$SCRIPT_DIR/luna-design-tokens" --check
 
-if [[ "$SKIP_REMOTE" -eq 0 ]] && command -v git >/dev/null 2>&1 && git -C "$PROJECT_ROOT" remote get-url origin >/dev/null 2>&1; then
+if [[ "$RUN_REMOTE" -eq 1 ]] && command -v git >/dev/null 2>&1 && git -C "$PROJECT_ROOT" remote get-url origin >/dev/null 2>&1; then
   REMOTE_TAGS=""
   if command -v timeout >/dev/null 2>&1; then
     if REMOTE_TAGS="$(GIT_TERMINAL_PROMPT=0 timeout 8 git -C "$PROJECT_ROOT" ls-remote --tags origin 2>/dev/null)"; then

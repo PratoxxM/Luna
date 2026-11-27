@@ -27,19 +27,70 @@ jobs:
     name: Static Guardrails (Permissions, LOC & Public Hygiene)
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      needs_tvos_tests: ${{ steps.scope.outputs.needs_tvos_tests }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
 
-      - name: Run Luna static guardrails (luna-check)
+      - name: Run Luna static guardrails (luna-check --remote)
         run: |
           set -euo pipefail
-          bash ops/bin/luna-check
+          bash ops/bin/luna-check --remote
+
+      - name: Determine whether tvOS Simulator XCTest suite is required
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "push" ]; then
+            echo "Event is '${EVENT_NAME}'; enabling test-tvos."
+            echo "needs_tvos_tests=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+            echo "HEAD~1 unavailable; enabling test-tvos conservatively."
+            echo "needs_tvos_tests=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED="$(git diff --name-only HEAD~1 HEAD)"
+          echo "Changed files since HEAD~1:"
+          printf '%s\n' "$CHANGED"
+
+          NEEDS_TVOS="false"
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              Sources/App/*|\
+              Sources/DesignSystem/*|\
+              Sources/Features/*|\
+              Sources/Core/Cache/ArtworkPipeline.swift|\
+              Sources/Core/Cache/BlurHashImageCache.swift|\
+              Sources/Core/Config/ComfortPreferences+DarwinAdapter.swift|\
+              Sources/Core/Config/ServerConfiguration.swift|\
+              Sources/Core/Discovery/BonjourServerBrowser.swift|\
+              Packages/*|\
+              Resources/*|\
+              Config/*|\
+              project.yml|\
+              Tests/LunaTests/*|\
+              .github/workflows/*)
+                NEEDS_TVOS="true"
+                break
+                ;;
+            esac
+          done <<< "$CHANGED"
+
+          echo "Resolved needs_tvos_tests=${NEEDS_TVOS}"
+          echo "needs_tvos_tests=${NEEDS_TVOS}" >> "$GITHUB_OUTPUT"
 
   linux-core-tests:
     name: LunaCoreTests (Linux Swift 6.2)
-    needs: static-guardrails
     runs-on: ubuntu-latest
     container: swift:6.2
     timeout-minutes: 10
@@ -54,6 +105,7 @@ jobs:
   test-tvos:
     name: LunaTests (tvOS Simulator)
     needs: [static-guardrails, linux-core-tests]
+    if: needs.static-guardrails.outputs.needs_tvos_tests == 'true'
     runs-on: ${{ inputs.runner || 'xcode-27' }}
     timeout-minutes: 30
 
@@ -243,7 +295,7 @@ jobs:
     name: Publish Rolling Latest Release
     runs-on: ubuntu-latest
     needs: [static-guardrails, linux-core-tests, test-tvos, build-ipa]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.static-guardrails.result == 'success' && needs.linux-core-tests.result == 'success' && needs.build-ipa.result == 'success' && (needs.test-tvos.result == 'success' || needs.test-tvos.result == 'skipped')
     permissions:
       contents: write
     timeout-minutes: 10

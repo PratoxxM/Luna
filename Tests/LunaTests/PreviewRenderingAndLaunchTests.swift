@@ -1,3 +1,4 @@
+import AetherBridge
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -6,6 +7,10 @@ import XCTest
 @testable import Luna
 
 final class PreviewRenderingAndLaunchTests: XCTestCase {
+    func testAetherBridgePinnedVersionMatchesUpgrade() {
+        XCTAssertEqual(AetherBridgeInfo.pinnedAetherEngineVersion, "7.76.0")
+    }
+
     func testPreviewMockArtworkRendererGeneratesExpectedPNGDimensionsAndScrubPreview() throws {
         let heroData = PreviewMockArtworkRenderer.artworkPNG(named: "/preview-art/sand-backdrop.png")
         XCTAssertGreaterThan(heroData.count, 100)
