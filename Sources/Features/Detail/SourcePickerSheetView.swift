@@ -9,22 +9,43 @@ struct SourcePickerSheetView: View {
 
     @State private var viewModel = SourcePickerViewModel()
     @State private var reloadAttempt: Int = 0
+    @State private var focusNonce: Int = 0
     @FocusState private var focusedCandidateID: String?
     @Namespace private var sourcePickerFocusNamespace
 
-    private var preferredDefaultCandidateID: String? {
-        if let active = viewModel.activeCandidateId,
-           viewModel.candidates.contains(where: { $0.candidateId == active }) {
+    nonisolated static func preferredDefaultCandidateID(
+        candidates: [TvCandidateInfo],
+        activeCandidateId: String?
+    ) -> String? {
+        if let active = activeCandidateId,
+           candidates.contains(where: { $0.candidateId == active }) {
             return active
         }
-        if let marked = viewModel.candidates.first(where: { $0.isActive == true }) {
+        if let marked = candidates.first(where: { $0.isActive == true }) {
             return marked.id
         }
-        return viewModel.candidates.first?.id
+        return candidates.first?.id
+    }
+
+    nonisolated static func shouldTriggerDefaultFocus(
+        wasLoading: Bool,
+        isLoading: Bool,
+        errorMessage: String?,
+        candidates: [TvCandidateInfo]
+    ) -> Bool {
+        wasLoading && !isLoading && errorMessage == nil && !candidates.isEmpty
+    }
+
+    private var preferredDefaultCandidateID: String? {
+        Self.preferredDefaultCandidateID(
+            candidates: viewModel.candidates,
+            activeCandidateId: viewModel.activeCandidateId
+        )
     }
 
     var body: some View {
         let defaultID = preferredDefaultCandidateID
+        let hasInteractiveCandidates = !viewModel.isLoading && viewModel.errorMessage == nil && !viewModel.candidates.isEmpty
 
         LunaSheetContainer(
             title: "Velg utgave",
@@ -73,20 +94,37 @@ struct SourcePickerSheetView: View {
                     }
                     .padding(.vertical, 4)
                 }
-                .scrollClipDisabled()
                 .defaultFocus($focusedCandidateID, defaultID, priority: .userInitiated)
                 .focusScope(sourcePickerFocusNamespace)
+                .lunaEntryFocusTarget(
+                    nonce: focusNonce,
+                    isActive: hasInteractiveCandidates,
+                    focus: $focusedCandidateID,
+                    target: { preferredDefaultCandidateID }
+                )
             }
         }
         .onAppear {
             viewModel.handleAppear()
-            if let defaultID {
-                focusedCandidateID = defaultID
+            if hasInteractiveCandidates {
+                focusNonce &+= 1
             }
         }
-        .onChange(of: viewModel.candidates) { _, _ in
-            if let defaultID {
-                focusedCandidateID = defaultID
+        .onChange(of: viewModel.isLoading) { wasLoading, isLoading in
+            if isLoading {
+                focusedCandidateID = nil
+            } else if Self.shouldTriggerDefaultFocus(
+                wasLoading: wasLoading,
+                isLoading: isLoading,
+                errorMessage: viewModel.errorMessage,
+                candidates: viewModel.candidates
+            ) {
+                focusNonce &+= 1
+            }
+        }
+        .onChange(of: defaultID) { _, newDefaultID in
+            if hasInteractiveCandidates, focusedCandidateID == nil, newDefaultID != nil {
+                focusNonce &+= 1
             }
         }
         .task(id: reloadAttempt) {

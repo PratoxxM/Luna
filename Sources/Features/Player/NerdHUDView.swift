@@ -104,77 +104,89 @@ struct NerdHUDView: View {
         return Int(exactly: value.rounded())
     }
 
-    private var upscaleSummary: String {
-        let qos = viewModel.qosReporter
-        if let up = qos.activeUpscale, up.disabledReason == nil {
-            let srcW = Self.safeRoundedInt(Double(up.sourceSize.width)) ?? 0
-            let srcH = Self.safeRoundedInt(Double(up.sourceSize.height)) ?? 0
-            let dstW = Self.safeRoundedInt(Double(up.targetSize.width)) ?? 0
-            let dstH = Self.safeRoundedInt(Double(up.targetSize.height)) ?? 0
-            let stageLabel: String
+    static func upscaleSummary(
+        activeUpscale: UpscaleStatus?,
+        lowResUpscaleMode: LowResUpscaleMode,
+        upscalesFullHDVideo: Bool,
+        videoFormat: VideoFormat,
+        sourceVideoWidth: Int32,
+        sourceVideoHeight: Int32
+    ) -> String {
+        let activeInfo: ActiveUpscaleSummaryInfo? = activeUpscale.map { up in
+            let scalerPolicy: UpscaleScalerPolicy
             if up.scaler == .lineArt {
-                stageLabel = "Anime4K 2×"
-            } else if let ml = up.mlScale, ml.isFinite, ml > 1.01 {
-                let mlDouble = Double(ml)
-                let factor: String
-                if mlDouble == mlDouble.rounded(), let intScale = Int(exactly: mlDouble) {
-                    factor = "\(intScale)×"
-                } else {
-                    factor = "\(LunaCopy.formatDecimal(mlDouble, decimals: 1))×"
-                }
-                stageLabel = up.degraded ? "ANE \(factor)" : "ANE \(factor) + MetalFX"
+                scalerPolicy = .lineArt
+            } else if up.scaler == .lanczos {
+                scalerPolicy = .lanczos
             } else {
-                stageLabel = "MetalFX"
+                scalerPolicy = .automatic
             }
-            return "\(srcW)×\(srcH) → \(dstW)×\(dstH) (\(stageLabel))"
+            return ActiveUpscaleSummaryInfo(
+                sourceWidth: safeRoundedInt(Double(up.sourceSize.width)) ?? 0,
+                sourceHeight: safeRoundedInt(Double(up.sourceSize.height)) ?? 0,
+                targetWidth: safeRoundedInt(Double(up.targetSize.width)) ?? 0,
+                targetHeight: safeRoundedInt(Double(up.targetSize.height)) ?? 0,
+                scaler: scalerPolicy,
+                mlScale: up.mlScale.map(Double.init),
+                isDegraded: up.degraded
+            )
         }
-        if viewModel.comfort.lowResUpscaleMode == .off {
-            return "Nativ (Av)"
-        }
-        if let reason = qos.activeUpscale?.disabledReason, !reason.isEmpty {
-            return "Nativ (\(reason))"
-        }
-        if qos.videoFormat != .sdr {
-            return "Nativ (HDR-fallback)"
-        }
-        if qos.sourceVideoHeight >= 1440 || qos.sourceVideoWidth >= 2560 {
-            return "Nativ (4K-kilde)"
-        }
-        return "Nativ (Venter på ≤ 1080p SDR)"
+        return UpscaleSummaryFormatter.summary(
+            activeUpscale: activeInfo,
+            disabledReason: activeUpscale?.disabledReason,
+            lowResUpscaleMode: lowResUpscaleMode,
+            upscalesFullHDVideo: upscalesFullHDVideo,
+            isSDR: videoFormat == .sdr,
+            sourceVideoWidth: Int(sourceVideoWidth),
+            sourceVideoHeight: Int(sourceVideoHeight)
+        )
     }
 
-    private var speakerSetupLabel: String {
+    private var upscaleSummary: String {
         let qos = viewModel.qosReporter
-        switch viewModel.comfort.speakerLayoutOverride {
-        case .auto: return "Auto \(qos.sessionRoomAutoLayout)"
-        case .atmos512: return "5.1.2"
-        case .atmos714: return "7.1.4"
-        case .stereo: return "Stereo 2.0"
-        }
+        return Self.upscaleSummary(
+            activeUpscale: qos.activeUpscale,
+            lowResUpscaleMode: viewModel.comfort.lowResUpscaleMode,
+            upscalesFullHDVideo: viewModel.comfort.upscalesFullHDVideo,
+            videoFormat: qos.videoFormat,
+            sourceVideoWidth: qos.sourceVideoWidth,
+            sourceVideoHeight: qos.sourceVideoHeight
+        )
+    }
+
+    static func audioSummary(
+        speakerLayoutOverride: SpeakerLayoutOverrideMode,
+        sessionRoomAutoLayout: String,
+        audioFormatBadge: String,
+        audioDecoderLabel: String,
+        audioEnhancement: AudioEnhancementMode,
+        audioDelayMs: Int,
+        binauralStatus: AudioBinauralStatus
+    ) -> String {
+        let delayDisplay = audioDelayMs == 0 ? nil : ComfortPreferences.displayAudioDelayMs(audioDelayMs)
+        return AudioChainSummaryFormatter.summary(
+            speakerLayoutOverride: speakerLayoutOverride,
+            sessionRoomAutoLayout: sessionRoomAutoLayout,
+            audioFormatBadge: audioFormatBadge,
+            audioDecoderLabel: audioDecoderLabel,
+            audioEnhancement: audioEnhancement,
+            audioDelayDisplay: delayDisplay,
+            binauralStatus: binauralStatus
+        )
     }
 
     private var audioSummary: String {
         let qos = viewModel.qosReporter
         let track = viewModel.trackController
-        let setup = speakerSetupLabel
-        let formatBadge = qos.audioFormatBadge
-        let aDec = qos.activeAudioDecoder ?? qos.audioDelivery.rawValue
-        let formatPart: String = {
-            if formatBadge == setup || formatBadge == "Stereo 2.0" && setup == "Stereo 2.0" {
-                return setup
-            }
-            if viewModel.comfort.speakerLayoutOverride == .auto,
-               formatBadge.hasPrefix(qos.sessionRoomAutoLayout) {
-                return "Auto \(formatBadge)"
-            }
-            if formatBadge.hasPrefix(setup) {
-                return formatBadge
-            }
-            return "\(setup) · \(formatBadge)"
-        }()
-        let modePart = track.audioEnhancement == .reference ? "" : " · \(track.audioEnhancement.displayTitle)"
-        let delayPart = track.audioDelayMs == 0 ? "" : " · \(ComfortPreferences.displayAudioDelayMs(track.audioDelayMs))"
-        return "\(formatPart) (\(aDec))\(modePart)\(delayPart)"
+        return Self.audioSummary(
+            speakerLayoutOverride: viewModel.comfort.speakerLayoutOverride,
+            sessionRoomAutoLayout: qos.sessionRoomAutoLayout,
+            audioFormatBadge: qos.audioFormatBadge,
+            audioDecoderLabel: qos.activeAudioDecoder ?? qos.audioDelivery.rawValue,
+            audioEnhancement: track.audioEnhancement,
+            audioDelayMs: track.audioDelayMs,
+            binauralStatus: track.binauralStatus
+        )
     }
 
     private var bitrateSummary: String {

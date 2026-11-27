@@ -232,4 +232,102 @@ final class PlaybackTrackIntentAndSyncTests: XCTestCase {
             "Norsk · På NVMe · HEVC · 64,2 GB · Spilles nå"
         )
     }
+
+    func testSubtitleCueIndexHandlesOverlappingUnsortedBoundariesSeeksAndInvalidSpans() {
+        struct Cue {
+            let id: Int
+            let start: Double
+            let end: Double
+        }
+
+        // Empty index
+        var emptyIndex = SubtitleCueIndex([Cue](), startTime: \.start, endTime: \.end)
+        XCTAssertEqual(emptyIndex.activeOriginalIndices(at: 10.0), [])
+        XCTAssertEqual(emptyIndex.queryOriginalIndices(at: 10.0), [])
+
+        // Unsorted + overlapping ASS sign [10, 25) + shorter dialogue [15, 17) + invalid spans + 50 sequential cues
+        var cues: [Cue] = [
+            Cue(id: 0, start: 15.0, end: 17.0),           // shorter cue out of start order
+            Cue(id: 1, start: 10.0, end: 25.0),           // long overlapping ASS sign
+            Cue(id: 2, start: .nan, end: 5.0),            // NaN start -> filtered out
+            Cue(id: 3, start: 5.0, end: 5.0),             // zero-length -> filtered out
+            Cue(id: 4, start: 8.0, end: 6.0),             // inverted -> filtered out
+            Cue(id: 5, start: 17.0, end: 19.5),           // adjacent at boundary 17.0
+        ]
+        for i in 0..<50 {
+            let base = 30.0 + Double(i) * 2.0
+            cues.append(Cue(id: 6 + i, start: base, end: base + 1.5))
+        }
+
+        var index = SubtitleCueIndex(cues, startTime: \.start, endTime: \.end)
+
+        func expectedIndices(at t: Double) -> [Int] {
+            cues.enumerated().compactMap { idx, cue in
+                guard cue.start.isFinite, cue.end.isFinite, cue.end > cue.start else { return nil }
+                return (cue.start <= t && t < cue.end) ? idx : nil
+            }
+        }
+
+        // Non-finite query returns empty safely
+        XCTAssertEqual(index.activeOriginalIndices(at: .nan), [])
+        XCTAssertEqual(index.activeOriginalIndices(at: .infinity), [])
+
+        // Monotonic forward 10 Hz scan across overlaps and boundaries
+        for step in stride(from: 9.0, through: 26.0, by: 0.25) {
+            let got = index.activeOriginalIndices(at: step)
+            let expected = expectedIndices(at: step)
+            XCTAssertEqual(got, expected, "Mismatch at monotonic t=\(step)")
+            XCTAssertEqual(index.queryOriginalIndices(at: step), expected)
+        }
+
+        // Exact half-open bounds [start, end)
+        XCTAssertEqual(index.activeOriginalIndices(at: 10.0), [1])
+        XCTAssertEqual(index.activeOriginalIndices(at: 15.0), [0, 1])
+        XCTAssertEqual(index.activeOriginalIndices(at: 17.0), [1, 5], "At 17.0 cue 0 ended and cue 5 started while sign 1 remains active")
+        XCTAssertEqual(index.activeOriginalIndices(at: 20.0), [1], "At 20.0 long overlapping sign 1 must still be found behind shorter cues")
+        XCTAssertEqual(index.activeOriginalIndices(at: 25.0), [])
+
+        // Large forward jump (> 32 cues) followed by monotonic playback
+        XCTAssertEqual(index.activeOriginalIndices(at: 120.5), expectedIndices(at: 120.5))
+        XCTAssertEqual(index.activeOriginalIndices(at: 121.0), expectedIndices(at: 121.0))
+
+        // Backward seek / negative subtitle delay shift
+        XCTAssertEqual(index.activeOriginalIndices(at: 16.0), [0, 1])
+        XCTAssertEqual(index.activeOriginalIndices(at: 20.0), [1])
+    }
+
+    func testPlaybackErrorGuidancePolicyMapsAllCategoriesAndHttpCodes() {
+        XCTAssertTrue(
+            PlaybackErrorGuidancePolicy.userMessage(
+                category: .sourceOpenFailed,
+                underlyingCode: 401,
+                rawMessage: "err"
+            ).contains("HTTP 401")
+        )
+        XCTAssertTrue(
+            PlaybackErrorGuidancePolicy.userMessage(
+                category: .sourceRefused,
+                underlyingCode: 403,
+                rawMessage: "err"
+            ).contains("HTTP 403")
+        )
+        XCTAssertTrue(
+            PlaybackErrorGuidancePolicy.userMessage(
+                category: .sourceOpenFailed,
+                ffmpegErrorCode: -541478725,
+                rawMessage: "err"
+            ).contains("-541478725")
+        )
+
+        for category in PlaybackErrorCategory.allCases where category != .unknown {
+            let msg = PlaybackErrorGuidancePolicy.userMessage(category: category, rawMessage: "raw error")
+            XCTAssertFalse(msg.isEmpty)
+            XCTAssertNotEqual(msg, "raw error")
+        }
+
+        XCTAssertEqual(
+            PlaybackErrorGuidancePolicy.userMessage(category: .unknown, rawMessage: "404 Not Found"),
+            LunaCopy.friendlyEngineErrorMessage("404 Not Found")
+        )
+    }
 }

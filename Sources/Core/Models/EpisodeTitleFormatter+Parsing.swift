@@ -28,7 +28,7 @@ extension EpisodeTitleFormatter {
         let eDigits = lower[lower.index(after: eIdx)...]
         guard isAsciiDigits(sDigits), isAsciiDigits(eDigits),
               let s = Int(sDigits), let e = Int(eDigits),
-              s > 0, e > 0 else {
+              s >= 0, e > 0 else {
             return nil
         }
         return (s, e)
@@ -44,7 +44,7 @@ extension EpisodeTitleFormatter {
               sDigits.count <= 3,
               eDigits.count >= 2, eDigits.count <= 4,
               let s = Int(sDigits), let e = Int(eDigits),
-              s > 0, e > 0 else {
+              s >= 0, e > 0 else {
             return nil
         }
         return (s, e)
@@ -150,7 +150,7 @@ extension EpisodeTitleFormatter {
         if let episodeCode, !episodeCode.isEmpty {
             tokensToCheck.append(episodeCode.lowercased())
         }
-        if let season, let episode, season > 0, episode > 0 {
+        if let season, let episode, season >= 0, episode > 0 {
             for candidateToken in [
                 "s\(season)e\(episode)",
                 String(format: "%02dx%02d", season, episode),

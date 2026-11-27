@@ -314,6 +314,80 @@ public extension TvCandidateInfo {
         }
         return parts.joined(separator: " · ")
     }
+
+    var trimmedReleaseGroup: String? {
+        guard let raw = releaseGroup?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty,
+              raw.caseInsensitiveCompare("unknown") != .orderedSame else {
+            return nil
+        }
+        return raw
+    }
+
+    func deduplicatedExplanationChips(
+        excluding existingLowercasedTokens: Set<String> = [],
+        maxCount: Int = 3
+    ) -> [String] {
+        guard maxCount > 0, let rawChips = explanationChips, !rawChips.isEmpty else {
+            return []
+        }
+        var seen = existingLowercasedTokens
+        var result: [String] = []
+        for raw in rawChips {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let lower = trimmed.lowercased()
+            if lower == sourceBadgeLabel.lowercased() {
+                continue
+            }
+            if existingLowercasedTokens.contains(where: { $0.contains(lower) || lower.contains($0) }) {
+                continue
+            }
+            guard seen.insert(lower).inserted else { continue }
+            result.append(trimmed)
+            if result.count >= maxCount {
+                break
+            }
+        }
+        return result
+    }
+
+    func richRowSubtitle(
+        isRecommended: Bool,
+        activeLabel: String?,
+        compactForQuickPanel: Bool
+    ) -> String {
+        let baseSubtitle: String
+        if compactForQuickPanel {
+            baseSubtitle = inPlayerQuickRowSubtitle(
+                isRecommended: isRecommended,
+                activeLabel: activeLabel
+            )
+        } else {
+            let meta = quickRowMetadata(activeLabel: activeLabel)
+            baseSubtitle = (isNorwegian == true) ? "Norsk · \(meta)" : meta
+        }
+
+        var parts: [String] = [baseSubtitle]
+        let lowerBase = baseSubtitle.lowercased()
+
+        if let group = trimmedReleaseGroup, !lowerBase.contains(group.lowercased()) {
+            parts.append(group)
+        }
+
+        let existingTokens = Set(
+            parts.joined(separator: " · ")
+                .components(separatedBy: " · ")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty }
+        )
+        let chips = deduplicatedExplanationChips(
+            excluding: existingTokens,
+            maxCount: compactForQuickPanel ? 2 : 3
+        )
+        parts.append(contentsOf: chips)
+        return parts.joined(separator: " · ")
+    }
 }
 
 public struct PlayerDrawerAudioOption: Identifiable, Equatable, Sendable {

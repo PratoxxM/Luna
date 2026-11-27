@@ -67,6 +67,7 @@ final class MediaDetailViewModel {
     @ObservationIgnored weak var sessionContext: (any MediaDetailSessionContext)?
     @ObservationIgnored var lastSeenRefreshNonce: Int = -1
     @ObservationIgnored var postPlaybackReloadFallbackTask: Task<Void, Never>?
+    @ObservationIgnored var postPlaybackReloadGeneration: UInt64 = 0
     @ObservationIgnored var episodePreResolveTask: Task<Void, Never>?
     @ObservationIgnored var detailLoadTask: Task<Void, Never>?
     @ObservationIgnored var detailLoadGeneration: UInt64 = 0
@@ -138,11 +139,13 @@ final class MediaDetailViewModel {
         case .skip:
             return
         case .loadInitial:
+            postPlaybackReloadGeneration &+= 1
             postPlaybackReloadFallbackTask?.cancel()
             postPlaybackReloadFallbackTask = nil
             lastSeenRefreshNonce = sessionContext.homeRefreshNonce
             await runSerializedDetailLoad(preserveSeason: false, expectedScope: scopeKey)
         case .reloadPreservingSeason:
+            postPlaybackReloadGeneration &+= 1
             postPlaybackReloadFallbackTask?.cancel()
             postPlaybackReloadFallbackTask = nil
             lastSeenRefreshNonce = sessionContext.homeRefreshNonce
@@ -152,9 +155,8 @@ final class MediaDetailViewModel {
 
     func handleHomeRefreshNonceChange(_ newNonce: Int) {
         guard newNonce != lastSeenRefreshNonce else { return }
-        postPlaybackReloadFallbackTask?.cancel()
-        postPlaybackReloadFallbackTask = nil
         lastSeenRefreshNonce = newNonce
+        guard postPlaybackReloadFallbackTask == nil else { return }
         launchSerializedDetailLoad(preserveSeason: true)
     }
 
@@ -165,6 +167,7 @@ final class MediaDetailViewModel {
         if newTarget != nil {
             lastPlaybackLaunchAt = Date()
             preLaunchStopReceipt = sessionContext?.lastPlaybackStopReceipt
+            postPlaybackReloadGeneration &+= 1
             postPlaybackReloadFallbackTask?.cancel()
             postPlaybackReloadFallbackTask = nil
             episodePreResolveTask?.cancel()
@@ -174,17 +177,29 @@ final class MediaDetailViewModel {
         } else if let oldTarget {
             // Await the player's `PlaybackStopReceipt` directly (`0 ms` when already emitted)
             // across both the launched itemId (e.g. episode) and the detail itemId (e.g. series),
-            // then invalidate detail cache and refresh `nextUp` + resume position immediately.
+            // apply optimistic progress/completion immediately, then invalidate cache and refresh.
+            postPlaybackReloadGeneration &+= 1
+            let expectedGeneration = postPlaybackReloadGeneration
             postPlaybackReloadFallbackTask?.cancel()
             let lookupIDs = oldTarget.itemId == itemId ? [itemId] : [oldTarget.itemId, itemId]
             let timeout = stopReceiptTimeout
             postPlaybackReloadFallbackTask = Task { @MainActor [weak self] in
                 guard let self else { return }
-                if self.sessionContext != nil {
-                    _ = await self.awaitAnyStopReceipt(
-                        lookupIDs: lookupIDs,
-                        timeout: timeout
-                    )
+                defer {
+                    if self.postPlaybackReloadGeneration == expectedGeneration {
+                        self.postPlaybackReloadFallbackTask = nil
+                    }
+                }
+                if self.sessionContext != nil,
+                   let receipt = await self.awaitAnyStopReceipt(
+                       lookupIDs: lookupIDs,
+                       timeout: timeout
+                   ) {
+                    guard !Task.isCancelled,
+                          self.sessionContext?.activePlaybackTarget == nil else {
+                        return
+                    }
+                    self.applyOptimisticStopReceipt(receipt)
                 }
                 guard !Task.isCancelled,
                       self.sessionContext?.activePlaybackTarget == nil else {
@@ -195,7 +210,139 @@ final class MediaDetailViewModel {
                 }
                 ItemDetailMemoryCache.invalidate(itemId: self.itemId, tmdbId: self.detail?.ids.tmdb)
                 await self.runSerializedDetailLoad(preserveSeason: true, bypassCache: true)
+                if let sessionContext = self.sessionContext {
+                    self.lastSeenRefreshNonce = sessionContext.homeRefreshNonce
+                }
             }
+        }
+    }
+
+    func applyOptimisticStopReceipt(_ receipt: PlaybackStopReceipt) {
+        let pct: Double = receipt.durationSeconds > 0
+            ? min(100, max(0, (receipt.positionSeconds / receipt.durationSeconds) * 100.0))
+            : 0
+        let updatedProgress: TvWatchProgress? = receipt.completed
+            ? nil
+            : (receipt.positionSeconds > 0
+                ? TvWatchProgress(
+                    positionSeconds: receipt.positionSeconds,
+                    durationSeconds: receipt.durationSeconds,
+                    percent: pct,
+                    season: receipt.seasonNumber,
+                    episode: receipt.episodeNumber,
+                    watched: false
+                )
+                : nil)
+
+        if mediaType == "series" {
+            if let epIndex = episodes.firstIndex(where: { ep in
+                ep.itemId == receipt.itemId
+                    || (receipt.seasonNumber != nil && receipt.episodeNumber != nil
+                        && ep.seasonNumber == receipt.seasonNumber
+                        && ep.episodeNumber == receipt.episodeNumber)
+            }) {
+                episodes[epIndex].watched = receipt.completed
+                episodes[epIndex].progress = updatedProgress
+            }
+            if let current = detail {
+                var resolvedNextUp = current.nextUp
+                if receipt.completed,
+                   let s = receipt.seasonNumber,
+                   let e = receipt.episodeNumber,
+                   current.nextUp == nil || (current.nextUp?.season == s && current.nextUp?.episode == e),
+                   let nextEp = episodes.first(where: {
+                       !$0.watched
+                           && $0.isUpcoming != true
+                           && ($0.seasonNumber > s || ($0.seasonNumber == s && $0.episodeNumber > e))
+                   }) {
+                    resolvedNextUp = TvNextUpPointer(season: nextEp.seasonNumber, episode: nextEp.episodeNumber)
+                }
+                detail = TvItemDetail(
+                    itemId: current.itemId,
+                    mediaType: current.mediaType,
+                    ids: current.ids,
+                    title: current.title,
+                    originalTitle: current.originalTitle,
+                    tagline: current.tagline,
+                    overview: current.overview,
+                    overviewNo: current.overviewNo,
+                    overviewEn: current.overviewEn,
+                    year: current.year,
+                    status: current.status,
+                    runtimeSeconds: current.runtimeSeconds,
+                    genres: current.genres,
+                    voteAverage: current.voteAverage,
+                    rating: current.rating,
+                    imdbRating: current.imdbRating,
+                    imdbVotes: current.imdbVotes,
+                    rottenTomatoesScore: current.rottenTomatoesScore,
+                    metacriticScore: current.metacriticScore,
+                    cast: current.cast,
+                    castMembers: current.castMembers,
+                    posterUrl: current.posterUrl,
+                    backdropUrl: current.backdropUrl,
+                    cardBackdropUrl: current.cardBackdropUrl,
+                    logoUrl: current.logoUrl,
+                    dominantColor: current.dominantColor,
+                    blurHash: current.blurHash,
+                    badges: current.badges,
+                    nextAirDateBadge: current.nextAirDateBadge,
+                    inWatchlist: current.inWatchlist,
+                    watched: current.watched,
+                    monitored: current.monitored,
+                    monitorMode: current.monitorMode,
+                    availability: current.availability,
+                    progress: updatedProgress,
+                    selectedSeason: current.selectedSeason,
+                    nextUp: resolvedNextUp,
+                    nextEpisode: current.nextEpisode,
+                    seasons: current.seasons,
+                    episodes: current.episodes
+                )
+            }
+        } else if let current = detail {
+            detail = TvItemDetail(
+                itemId: current.itemId,
+                mediaType: current.mediaType,
+                ids: current.ids,
+                title: current.title,
+                originalTitle: current.originalTitle,
+                tagline: current.tagline,
+                overview: current.overview,
+                overviewNo: current.overviewNo,
+                overviewEn: current.overviewEn,
+                year: current.year,
+                status: current.status,
+                runtimeSeconds: current.runtimeSeconds,
+                genres: current.genres,
+                voteAverage: current.voteAverage,
+                rating: current.rating,
+                imdbRating: current.imdbRating,
+                imdbVotes: current.imdbVotes,
+                rottenTomatoesScore: current.rottenTomatoesScore,
+                metacriticScore: current.metacriticScore,
+                cast: current.cast,
+                castMembers: current.castMembers,
+                posterUrl: current.posterUrl,
+                backdropUrl: current.backdropUrl,
+                cardBackdropUrl: current.cardBackdropUrl,
+                logoUrl: current.logoUrl,
+                dominantColor: current.dominantColor,
+                blurHash: current.blurHash,
+                badges: current.badges,
+                nextAirDateBadge: current.nextAirDateBadge,
+                inWatchlist: current.inWatchlist,
+                watched: receipt.completed,
+                monitored: current.monitored,
+                monitorMode: current.monitorMode,
+                availability: current.availability,
+                progress: updatedProgress,
+                selectedSeason: current.selectedSeason,
+                nextUp: current.nextUp,
+                nextEpisode: current.nextEpisode,
+                seasons: current.seasons,
+                episodes: current.episodes
+            )
         }
     }
 
@@ -270,6 +417,7 @@ final class MediaDetailViewModel {
         if let sessionContext {
             self.sessionContext = sessionContext
         }
+        postPlaybackReloadGeneration &+= 1
         postPlaybackReloadFallbackTask?.cancel()
         postPlaybackReloadFallbackTask = nil
         episodePreResolveTask?.cancel()

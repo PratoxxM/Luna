@@ -105,6 +105,8 @@ final class PlayerRestoreController {
         PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
         cancelPendingPausedRestoreResume()
         host?.scrubController.cancelPendingScrubCommit()
+        host?.sessionController.cancelFirstFrameFallbackWatchdog()
+        host?.sessionController.releaseOutgoingPictureIfHeld()
         foregroundRestoreTask?.cancel()
         foregroundRestoreTask = nil
         isRestoringFromBackground = false
@@ -256,6 +258,8 @@ final class PlayerRestoreController {
         let savedResumePosition = max(0, transport.currentTime)
         userDesiredPlayingDuringRestore = nil
         isRestoringFromBackground = true
+        host.sessionController.cancelFirstFrameFallbackWatchdog()
+        host.sessionController.releaseOutgoingPictureIfHeld()
         host.sessionController.hasFirstFrameReadyForDisplay = false
         host.sessionController.firstFrameFallbackUnlocked = false
         host.sessionController.startupState.resolveStageLabel = "Gjenoppretter avspilling…"
@@ -286,17 +290,28 @@ final class PlayerRestoreController {
 
         do {
             host.trackController.isWirelessAudioRouteActive = PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
+            host.trackController.isBinauralAudioRouteActive = PlayerAudioSessionCoordinator.currentOutputUsesBinauralAudio()
+            let currentSession = host.sessionController.activeSession
             let snapshot = PlayerEngineConfigurator.captureReloadComfortSnapshot(
                 comfort: comfort,
                 audioEnhancement: host.trackController.audioEnhancement,
-                audioDelaySeconds: host.trackController.effectiveAudioDelaySecondsForActiveRoute()
+                audioDelaySeconds: host.trackController.effectiveAudioDelaySecondsForActiveRoute(),
+                binauralAudioActive: host.trackController.isBinauralAudioRouteActive,
+                session: currentSession
             )
-            let currentSession = host.sessionController.activeSession
+            let extSubs: [ExternalSubtitleTrack]? = if let currentSession,
+                let currentClient = host.sessionController.activeClient {
+                PlayerEngineConfigurator.externalSubtitleTracks(for: currentSession, client: currentClient)
+            } else {
+                nil
+            }
+            host.sessionController.cancelFirstFrameFallbackWatchdog()
             host.engine.maximumSubtitleAdvanceSeconds = 0
             host.engine.maximumSubtitleDelaySeconds = 10
             try await transport.reloadAtCurrentPosition { options in
                 options.autoplay = defaultShouldPlay
                 PlayerEngineConfigurator.applyRestoreDisplayAndUpscaleOptions(snapshot, session: currentSession, to: &options)
+                if let extSubs { options.externalSubtitles = extSubs }
             }
             guard !Task.isCancelled, !host.sessionController.isTeardownCompleted else { return }
             if host.trackController.subtitleDelayMs != 0 {
@@ -390,7 +405,10 @@ final class PlayerRestoreController {
             } else {
                 isRestoringFromBackground = false
                 userDesiredPlayingDuringRestore = nil
-                host.sessionController.fatalError = LunaCopy.friendlyErrorMessage(error)
+                host.sessionController.fatalError = PlayerEngineConfigurator.friendlyEngineFailure(
+                    error,
+                    engineErrorInfo: host.engine.errorInfo
+                )
             }
         }
     }

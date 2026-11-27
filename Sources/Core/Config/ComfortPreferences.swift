@@ -81,10 +81,25 @@ public final class ComfortPreferences {
         }
     }
 
+    public var recognizesBitmapSubtitleText: Bool {
+        didSet {
+            guard oldValue != recognizesBitmapSubtitleText else { return }
+            defaults.set(recognizesBitmapSubtitleText, forKey: SideloadSafeStorage.recognizesBitmapSubtitleTextKey)
+            notifyChanged()
+        }
+    }
+
+    public func effectiveRecognizesBitmapSubtitleText(
+        memoryTier: DeviceMemoryTier = DeviceHardwareCapabilities.memoryProfile.tier
+    ) -> Bool {
+        memoryTier == .high2026 && recognizesBitmapSubtitleText
+    }
+
     public var showNerdHUD: Bool {
         didSet {
             guard oldValue != showNerdHUD else { return }
             defaults.set(showNerdHUD, forKey: SideloadSafeStorage.showNerdHUDKey)
+            notifyChanged()
         }
     }
 
@@ -92,6 +107,7 @@ public final class ComfortPreferences {
         didSet {
             guard oldValue != menuDisplayMode else { return }
             defaults.set(menuDisplayMode.rawValue, forKey: SideloadSafeStorage.menuDisplayModeKey)
+            notifyChanged()
         }
     }
 
@@ -104,6 +120,15 @@ public final class ComfortPreferences {
         didSet {
             guard oldValue != lowResUpscaleMode else { return }
             defaults.set(lowResUpscaleMode.rawValue, forKey: SideloadSafeStorage.lowResUpscaleModeKey)
+            notifyChanged()
+        }
+    }
+
+    public var upscalesFullHDVideo: Bool {
+        didSet {
+            guard oldValue != upscalesFullHDVideo else { return }
+            defaults.set(upscalesFullHDVideo, forKey: SideloadSafeStorage.fullHDUpscaleEnabledKey)
+            notifyChanged()
         }
     }
 
@@ -123,6 +148,7 @@ public final class ComfortPreferences {
         didSet {
             guard oldValue != audioEnhancement else { return }
             defaults.set(audioEnhancement.rawValue, forKey: SideloadSafeStorage.audioEnhancementModeKey)
+            notifyChanged()
         }
     }
 
@@ -162,6 +188,7 @@ public final class ComfortPreferences {
 
         self.autoPlayNextEpisode = defaults.object(forKey: SideloadSafeStorage.autoPlayNextEpisodeKey) as? Bool ?? true
         self.smartNordicSubtitleRule = defaults.object(forKey: SideloadSafeStorage.smartNordicSubtitleRuleKey) as? Bool ?? true
+        self.recognizesBitmapSubtitleText = defaults.object(forKey: SideloadSafeStorage.recognizesBitmapSubtitleTextKey) as? Bool ?? false
         self.showNerdHUD = defaults.object(forKey: SideloadSafeStorage.showNerdHUDKey) as? Bool ?? false
         if let rawMenuMode = defaults.string(forKey: SideloadSafeStorage.menuDisplayModeKey),
            let parsedMenuMode = MenuDisplayMode(rawValue: rawMenuMode) {
@@ -174,6 +201,11 @@ public final class ComfortPreferences {
             self.lowResUpscaleMode = savedUpscale
         } else {
             self.lowResUpscaleMode = LowResUpscaleMode.defaultMode(for: memoryTier)
+        }
+        if let savedFullHD = defaults.object(forKey: SideloadSafeStorage.fullHDUpscaleEnabledKey) as? Bool {
+            self.upscalesFullHDVideo = savedFullHD
+        } else {
+            self.upscalesFullHDVideo = DeviceMemoryProfile.defaultFullHDUpscaleEnabled(for: memoryTier)
         }
         if defaults.object(forKey: SideloadSafeStorage.audioDelayMsKey) != nil {
             self.audioDelayMs = Self.clampAudioDelayMs(defaults.integer(forKey: SideloadSafeStorage.audioDelayMsKey))
@@ -201,14 +233,26 @@ public final class ComfortPreferences {
     }
 
     public func toDeviceOverrides() -> TvDeviceOverrides {
-        TvDeviceOverrides(
+        let explicitLowResMode: String? = defaults.object(forKey: SideloadSafeStorage.lowResUpscaleModeKey) != nil
+            ? lowResUpscaleMode.rawValue
+            : nil
+        let explicitFullHD: Bool? = defaults.object(forKey: SideloadSafeStorage.fullHDUpscaleEnabledKey) != nil
+            ? upscalesFullHDVideo
+            : nil
+        return TvDeviceOverrides(
             dualLayerOverride: dualLayerOverride.rawValue,
             speakerLayoutOverride: speakerLayoutOverride.rawValue,
             hdrSubtitlePreset: hdrSubtitlePreset.rawValue,
             subtitleFontScale: subtitleFontSize.scaleFactor,
             subtitleBoxOpacity: subtitleBoxOpacity.alpha,
             autoPlayNextEpisode: autoPlayNextEpisode,
-            smartNordicSubtitleRule: smartNordicSubtitleRule
+            smartNordicSubtitleRule: smartNordicSubtitleRule,
+            lowResUpscaleMode: explicitLowResMode,
+            upscalesFullHDVideo: explicitFullHD,
+            menuDisplayMode: menuDisplayMode.rawValue,
+            audioEnhancement: audioEnhancement.rawValue,
+            showNerdHUD: showNerdHUD,
+            recognizesBitmapSubtitleText: recognizesBitmapSubtitleText
         )
     }
 
@@ -249,6 +293,28 @@ public final class ComfortPreferences {
         }
         if let smartRule = ov.smartNordicSubtitleRule, smartRule != smartNordicSubtitleRule {
             smartNordicSubtitleRule = smartRule
+        }
+        if let parsedLowRes = LowResUpscaleMode.fromServerValue(ov.lowResUpscaleMode),
+           parsedLowRes != lowResUpscaleMode {
+            lowResUpscaleMode = parsedLowRes
+        }
+        if let fullHD = ov.upscalesFullHDVideo, fullHD != upscalesFullHDVideo {
+            upscalesFullHDVideo = fullHD
+        }
+        if let rawMenu = ov.menuDisplayMode,
+           let parsedMenu = MenuDisplayMode(rawValue: rawMenu),
+           parsedMenu != menuDisplayMode {
+            menuDisplayMode = parsedMenu
+        }
+        if let parsedAudio = AudioEnhancementMode.fromServerValue(ov.audioEnhancement),
+           parsedAudio != audioEnhancement {
+            audioEnhancement = parsedAudio
+        }
+        if let nerd = ov.showNerdHUD, nerd != showNerdHUD {
+            showNerdHUD = nerd
+        }
+        if let ocr = ov.recognizesBitmapSubtitleText, ocr != recognizesBitmapSubtitleText {
+            recognizesBitmapSubtitleText = ocr
         }
     }
 

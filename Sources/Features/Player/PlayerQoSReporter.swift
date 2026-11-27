@@ -42,6 +42,11 @@ final class PlayerQoSReporter {
     @ObservationIgnored var lastReportedServerState: String?
     @ObservationIgnored var lastTelemetrySnapshot: LiveTelemetry?
     @ObservationIgnored private var dvFallbackPolicy = DolbyVisionFallbackPolicy()
+    @ObservationIgnored private var stallCounter = PlaybackStallCounter()
+
+    var currentStallCount: Int {
+        stallCounter.stallCount
+    }
 
     init(
         comfort: ComfortPreferences,
@@ -70,11 +75,42 @@ final class PlayerQoSReporter {
         suggestsHDR10BaseLayer = false
     }
 
-    func resetTelemetryForSession() {
-        lastObservedPhase = .idle
-        lastReportedServerState = nil
+    func resetTelemetryForSession(
+        currentPhase: PlaybackPhase = .idle,
+        preserveLastReportedServerState: Bool = false
+    ) {
+        stallCounter.reset()
+        lastObservedPhase = currentPhase
+        if !preserveLastReportedServerState {
+            lastReportedServerState = nil
+        }
         lastTelemetrySnapshot = nil
         resetDolbyVisionFallback()
+    }
+
+    func recordPlaybackPhaseTransition(
+        from previousPhase: PlaybackPhase,
+        to nextPhase: PlaybackPhase,
+        isTransientTransition: Bool
+    ) {
+        stallCounter.recordTransition(
+            from: Self.stallPhaseKind(for: previousPhase),
+            to: Self.stallPhaseKind(for: nextPhase),
+            suppressCounting: isTransientTransition
+        )
+    }
+
+    nonisolated static func stallPhaseKind(for phase: PlaybackPhase) -> PlaybackStallPhaseKind {
+        switch phase {
+        case .loading, .seeking:
+            return .loadingOrSeeking
+        case .rebuffering:
+            return .rebuffering
+        case .stalled:
+            return .stalled
+        case .idle, .playing, .paused, .ended, .error:
+            return .normal
+        }
     }
 
     func resetDolbyVisionFallback() {
@@ -126,7 +162,10 @@ final class PlayerQoSReporter {
     }
 
     func sendHeartbeatOnce(overrideState: String?, completed: Bool = false) async {
-        guard let host,
+        guard !Task.isCancelled,
+              let host,
+              !host.sessionController.isDismissing,
+              !host.sessionController.isTeardownCompleted,
               let client = host.sessionController.activeClient,
               let session = host.sessionController.activeSession else {
             return
@@ -145,14 +184,26 @@ final class PlayerQoSReporter {
         let pos = max(0, transport.currentTime)
         let dur = max(0, host.sessionController.effectiveDurationSeconds)
         let delayMs = host.trackController.subtitleDelayMs
-        let qosPayload = lastTelemetrySnapshot.map {
-            TvPlaybackQosPayload(
-                videoRoute: videoRoute.rawValue,
-                forwardBufferSeconds: $0.forwardBufferSeconds,
-                droppedVideoFrames: $0.droppedFrameCount,
-                stallCount: nil
-            )
-        }
+        let stallCount = stallCounter.stallCount
+        let qosPayload: TvPlaybackQosPayload? = {
+            if let snapshot = lastTelemetrySnapshot {
+                return TvPlaybackQosPayload(
+                    videoRoute: videoRoute.rawValue,
+                    forwardBufferSeconds: snapshot.forwardBufferSeconds,
+                    droppedVideoFrames: snapshot.droppedFrameCount,
+                    stallCount: stallCount
+                )
+            }
+            if stallCount > 0 {
+                return TvPlaybackQosPayload(
+                    videoRoute: videoRoute == .none ? nil : videoRoute.rawValue,
+                    forwardBufferSeconds: nil,
+                    droppedVideoFrames: nil,
+                    stallCount: stallCount
+                )
+            }
+            return nil
+        }()
 
         do {
             let hb = try await client.sendHeartbeat(
@@ -164,6 +215,12 @@ final class PlayerQoSReporter {
                 subtitleDelayMs: delayMs != 0 ? delayMs : nil,
                 qos: qosPayload
             )
+            guard !Task.isCancelled,
+                  !host.sessionController.isDismissing,
+                  !host.sessionController.isTeardownCompleted,
+                  host.sessionController.activeSession?.sessionId == session.sessionId else {
+                return
+            }
             lastReportedServerState = stateString
             if let vfs = hb.vfsTelemetry, lastVfsTelemetry != vfs {
                 lastVfsTelemetry = vfs
@@ -178,6 +235,11 @@ final class PlayerQoSReporter {
                 await handleHeartbeatPendingCommand(cmd, client: client, currentPosition: pos)
             }
         } catch LunaCoreError.unauthorized {
+            guard !Task.isCancelled,
+                  !host.sessionController.isDismissing,
+                  !host.sessionController.isTeardownCompleted else {
+                return
+            }
             host.sessionController.onUnauthorized?()
         } catch let LunaCoreError.serverMessage(statusCode, _) where statusCode == 410 || statusCode == 404 {
             heartbeatTask?.cancel()
@@ -186,7 +248,12 @@ final class PlayerQoSReporter {
     }
 
     private func handleNextEpisodePrewarm(_ prewarmInfo: TvNextEpisodePrewarmInfo, client: LunaCoreClient) {
-        guard let host else { return }
+        guard !Task.isCancelled,
+              let host,
+              !host.sessionController.isDismissing,
+              !host.sessionController.isTeardownCompleted else {
+            return
+        }
         if let fallbackNext = prewarmInfo.nextEpisode,
            let cur = host.sessionController.activeSession,
            cur.nextEpisode == nil {
@@ -214,13 +281,18 @@ final class PlayerQoSReporter {
                     prewarmedNextEpisodeStreamToken = tok
                 }
             }
-            if DeviceHardwareCapabilities.availableMemoryBytes() > 512 * 1024 * 1024 {
+            let cand = host.sessionController.activeSession?.selectedCandidate
+            let prewarmBudget = PlaybackPrewarmBudgetPolicy.nextEpisodeByteBudget(
+                source: cand?.source,
+                tier: cand?.tier
+            )
+            if prewarmBudget > 0 {
                 let headers = client.streamHTTPHeaders(for: streamURL)
                 nextEpisodePrewarmTask?.cancel()
                 nextEpisodePrewarmTask = Task.detached(priority: .utility) {
                     guard !Task.isCancelled else { return }
                     if !AetherEngine.isPrewarmed(url: streamURL) {
-                        _ = await AetherEngine.prewarm(url: streamURL, httpHeaders: headers, byteBudget: 8 * 1024 * 1024)
+                        _ = await AetherEngine.prewarm(url: streamURL, httpHeaders: headers, byteBudget: prewarmBudget)
                     }
                 }
             }

@@ -58,6 +58,11 @@ public final class HomeViewModel {
         }
     }
 
+    public var tonightReasonLabel: String? {
+        let trimmed = homePayload?.tonight?.reasonLabel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed?.isEmpty == false) ? trimmed : nil
+    }
+
     public func scopeKey(for session: any TabSessionContext) -> String {
         "\(session.serverBaseURL?.absoluteString ?? "")#\(session.roomName)#\(session.hardwareProfile)"
     }
@@ -65,6 +70,7 @@ public final class HomeViewModel {
     public func handleActivation(session: any TabSessionContext, isActiveTab: Bool) async {
         guard isActiveTab else { return }
         let currentScope = scopeKey(for: session)
+        let syncedDiskScope = currentDiskScopeKey(for: session)
         await syncDiskSnapshotIfNeeded(session: session)
         if !isUnloadedForMemoryWarning,
            validatedScopeKey == currentScope,
@@ -82,7 +88,13 @@ public final class HomeViewModel {
         reloadGeneration &+= 1
         let gen = reloadGeneration
         lastSeenRefreshNonce = session.homeRefreshNonce
-        await revalidateHome(forceUnconditional: false, session: session, scopeKey: currentScope, generation: gen)
+        await revalidateHomeCore(
+            forceUnconditional: false,
+            session: session,
+            scopeKey: currentScope,
+            generation: gen,
+            alreadySyncedDiskScope: syncedDiskScope
+        )
     }
 
     public func handleHomeRefreshNonceChange(
@@ -149,6 +161,22 @@ public final class HomeViewModel {
         scopeKey: String? = nil,
         generation: UInt64? = nil
     ) async {
+        await revalidateHomeCore(
+            forceUnconditional: forceUnconditional,
+            session: session,
+            scopeKey: scopeKey,
+            generation: generation,
+            alreadySyncedDiskScope: nil
+        )
+    }
+
+    private func revalidateHomeCore(
+        forceUnconditional: Bool,
+        session: any TabSessionContext,
+        scopeKey: String? = nil,
+        generation: UInt64? = nil,
+        alreadySyncedDiskScope: String?
+    ) async {
         guard let client = session.makeHomeClient() else { return }
         let targetHost = session.serverBaseURL?.host
         let targetRoom = session.roomName
@@ -159,9 +187,10 @@ public final class HomeViewModel {
             roomName: targetRoom,
             hardwareProfile: targetProfile
         )
-        if loadedScopeKey != targetDiskScope
-            || homePayload?.roomName != targetRoom
-            || homePayload?.hardwareProfile != targetProfile {
+        if alreadySyncedDiskScope != targetDiskScope
+            && (loadedScopeKey != targetDiskScope
+                || homePayload?.roomName != targetRoom
+                || homePayload?.hardwareProfile != targetProfile) {
             await syncDiskSnapshotIfNeeded(session: session)
             guard !Task.isCancelled,
                   (generation == nil || generation == reloadGeneration),
@@ -290,10 +319,10 @@ public final class HomeViewModel {
     public func warmCatalogMetadataAfterHomePaintIfEligible(
         session: any TabSessionContext,
         isPreviewMode: Bool = false,
-        delayNanoseconds: UInt64 = 1_500_000_000
+        delayNanoseconds: UInt64 = 1_500_000_000,
+        memoryProfile: DeviceMemoryProfile = .current
     ) async {
-        let profile = DeviceMemoryProfile.current
-        guard profile.enableBackgroundCatalogMetadataWarmup,
+        guard memoryProfile.enableBackgroundCatalogMetadataWarmup,
               !visibleRows.isEmpty,
               !isInitialColdFetch,
               !session.hasActivePlayback,
@@ -305,13 +334,13 @@ public final class HomeViewModel {
         }
         guard !Task.isCancelled,
               !session.hasActivePlayback,
-              let client = session.makeHomeClient() else {
+              let client = session.makeCatalogClient() else {
             return
         }
         let baseURL = session.serverBaseURL
         let room = session.roomName
         let hwProfile = session.hardwareProfile
-        let pageSize = profile.catalogPageSize
+        let pageSize = memoryProfile.catalogPageSize
 
         for kind in ["movie", "series"] {
             guard !Task.isCancelled, !session.hasActivePlayback else { return }
@@ -322,7 +351,8 @@ public final class HomeViewModel {
                 hardwareProfile: hwProfile
             )
             let currentNonce = session.homeRefreshNonce
-            if let existing = CatalogBrowseMemoryCache.shared.snapshot(for: cacheKey),
+            let existing = CatalogBrowseMemoryCache.shared.snapshot(for: cacheKey)
+            if let existing,
                TabContentFreshnessPolicy.isCacheFresh(
                    hasCachedContent: !existing.items.isEmpty,
                    lastValidatedAt: existing.fetchedAt,
@@ -332,39 +362,100 @@ public final class HomeViewModel {
                ) {
                 continue
             }
-            let fetched: TvCatalogResponse? = await Task.detached(priority: .utility) {
-                try? await client.fetchCatalog(
+
+            var fallbackDiskSnap: CachedCatalogSnapshot?
+            let ifNoneMatch: String?
+            if let existing, !existing.items.isEmpty {
+                ifNoneMatch = existing.etag
+            } else {
+                let diskSnap: CachedCatalogSnapshot?
+                if let memSnap = DiskSWRStore.catalogMemorySnapshot(
+                    kind: kind,
+                    serverHost: baseURL?.host,
+                    roomName: room,
+                    hardwareProfile: hwProfile
+                ) {
+                    diskSnap = memSnap
+                } else {
+                    diskSnap = await DiskSWRStore.loadCatalogAsync(
+                        kind: kind,
+                        serverHost: baseURL?.host,
+                        roomName: room,
+                        hardwareProfile: hwProfile
+                    )
+                }
+                guard !Task.isCancelled, !session.hasActivePlayback else { return }
+                if let diskSnap, !diskSnap.payload.items.isEmpty {
+                    fallbackDiskSnap = diskSnap
+                    ifNoneMatch = diskSnap.etag
+                } else {
+                    ifNoneMatch = nil
+                }
+            }
+
+            let fetchTask = Task.detached(priority: .utility) {
+                try? await client.fetchCatalogConditional(
                     kind: kind,
                     genre: nil,
                     sort: "popular",
                     localOnly: false,
                     unwatchedOnly: false,
                     page: 1,
-                    limit: pageSize
+                    limit: pageSize,
+                    ifNoneMatch: ifNoneMatch
                 )
-            }.value
+            }
+            let fetched = await withTaskCancellationHandler {
+                await fetchTask.value
+            } onCancel: {
+                fetchTask.cancel()
+            }
             guard !Task.isCancelled,
                   !session.hasActivePlayback,
-                  let res = fetched,
-                  !res.items.isEmpty else {
+                  let result = fetched else {
                 continue
             }
-            CatalogBrowseMemoryCache.shared.store(
-                CatalogBrowseSnapshot(
-                    items: res.items,
-                    availableGenres: res.availableGenres ?? [],
-                    selectedGenreLabel: res.genre?.label,
-                    hasMore: res.hasMore,
-                    currentPage: 1,
-                    fetchedAt: Date(),
-                    refreshNonce: session.homeRefreshNonce
-                ),
-                for: cacheKey
-            )
-            if let raw = try? JSONEncoder().encode(res) {
+
+            switch result {
+            case .notModified:
+                if var refreshed = existing, !refreshed.items.isEmpty {
+                    refreshed.fetchedAt = Date()
+                    refreshed.refreshNonce = currentNonce
+                    CatalogBrowseMemoryCache.shared.store(refreshed, for: cacheKey)
+                } else if let diskSnap = fallbackDiskSnap, !diskSnap.payload.items.isEmpty {
+                    let res = diskSnap.payload
+                    CatalogBrowseMemoryCache.shared.store(
+                        CatalogBrowseSnapshot(
+                            items: res.items,
+                            availableGenres: res.availableGenres ?? [],
+                            selectedGenreLabel: res.genre?.label,
+                            hasMore: res.hasMore,
+                            currentPage: 1,
+                            fetchedAt: Date(),
+                            refreshNonce: currentNonce,
+                            etag: diskSnap.etag
+                        ),
+                        for: cacheKey
+                    )
+                }
+            case .updated(let res, let newEtag, let rawData):
+                guard !res.items.isEmpty else { continue }
+                CatalogBrowseMemoryCache.shared.store(
+                    CatalogBrowseSnapshot(
+                        items: res.items,
+                        availableGenres: res.availableGenres ?? [],
+                        selectedGenreLabel: res.genre?.label,
+                        hasMore: res.hasMore,
+                        currentPage: 1,
+                        fetchedAt: Date(),
+                        refreshNonce: currentNonce,
+                        etag: newEtag
+                    ),
+                    for: cacheKey
+                )
                 DiskSWRStore.saveCatalogInBackground(
-                    rawPayloadData: raw,
-                    etag: nil,
+                    rawPayloadData: rawData,
+                    etag: newEtag,
                     kind: kind,
                     serverHost: baseURL?.host,
                     roomName: room,

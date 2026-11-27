@@ -36,16 +36,11 @@ struct SourceCandidateRowView: View {
         let title = compactForQuickPanel
             ? candidate.inPlayerQuickRowTitle
             : candidate.quickRowTitle(isRecommended: isRecommended)
-        let subtitle: String = {
-            if compactForQuickPanel {
-                return candidate.inPlayerQuickRowSubtitle(
-                    isRecommended: isRecommended,
-                    activeLabel: isSelected ? activeStatusLabel : nil
-                )
-            }
-            let baseSubtitle = candidate.quickRowMetadata(activeLabel: isSelected ? activeStatusLabel : nil)
-            return (candidate.isNorwegian == true) ? "Norsk · \(baseSubtitle)" : baseSubtitle
-        }()
+        let subtitle = candidate.richRowSubtitle(
+            isRecommended: isRecommended,
+            activeLabel: isSelected ? activeStatusLabel : nil,
+            compactForQuickPanel: compactForQuickPanel
+        )
 
         LunaListRow(
             title: title,

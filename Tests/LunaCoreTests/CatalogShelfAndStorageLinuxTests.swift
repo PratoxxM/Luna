@@ -256,6 +256,51 @@ final class CatalogShelfAndStorageLinuxTests: XCTestCase {
         XCTAssertEqual(nextEpCfg?.screen, .playerNextEpisode)
         XCTAssertEqual(nextEpCfg?.screen.isPlayerScreen, true)
 
+        let onboardingCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "onboarding"])
+        XCTAssertEqual(onboardingCfg?.screen, .onboarding)
+        XCTAssertEqual(onboardingCfg?.screen.isPlayerScreen, false)
+
+        let customRowCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "custom-row"])
+        XCTAssertEqual(customRowCfg?.screen, .customRow)
+        XCTAssertEqual(customRowCfg?.screen.isPlayerScreen, false)
+
+        let subSetCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "settings-subtitles"])
+        XCTAssertEqual(subSetCfg?.screen, .settingsSubtitles)
+        XCTAssertEqual(subSetCfg?.screen.isPlayerScreen, false)
+
+        let playSetCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "settings-playback"])
+        XCTAssertEqual(playSetCfg?.screen, .settingsPlayback)
+        XCTAssertEqual(playSetCfg?.screen.isPlayerScreen, false)
+
+        let audSetCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "settings-audio"])
+        XCTAssertEqual(audSetCfg?.screen, .settingsAudio)
+        XCTAssertEqual(PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "settings-advanced"])?.screen, .settingsAudio)
+
+        let diagSetCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "settings-diagnostics"])
+        XCTAssertEqual(diagSetCfg?.screen, .settingsDiagnostics)
+        XCTAssertEqual(PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "settings-system"])?.screen, .settingsDiagnostics)
+
+        let detSeasonsCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "detail-seasons"])
+        XCTAssertEqual(detSeasonsCfg?.screen, .detailSeasons)
+        XCTAssertEqual(detSeasonsCfg?.screen.isPlayerScreen, false)
+
+        let detMoreCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "detail-more"])
+        XCTAssertEqual(detMoreCfg?.screen, .detailMore)
+
+        let detOverviewCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "detail-overview"])
+        XCTAssertEqual(detOverviewCfg?.screen, .detailOverview)
+
+        let detDeleteCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "detail-delete"])
+        XCTAssertEqual(detDeleteCfg?.screen, .detailDelete)
+
+        let curtainCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "player-curtain"])
+        XCTAssertEqual(curtainCfg?.screen, .playerCurtain)
+        XCTAssertEqual(curtainCfg?.screen.isPlayerScreen, true)
+
+        let nerdHudCfg = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", "player-nerd-hud"])
+        XCTAssertEqual(nerdHudCfg?.screen, .playerNerdHud)
+        XCTAssertEqual(nerdHudCfg?.screen.isPlayerScreen, true)
+
         for target in PreviewScreenTarget.allCases {
             let roundtrip = PreviewLaunchConfiguration.parse(arguments: ["Luna", "--preview-screen", target.rawValue])
             XCTAssertEqual(roundtrip?.screen, target)

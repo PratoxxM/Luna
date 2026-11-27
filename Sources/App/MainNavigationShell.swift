@@ -5,7 +5,6 @@ import AetherBridge
 struct MainNavigationShell: View {
     @Environment(AppSessionStore.self) private var sessionStore
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var navBarVisibility = LunaNavigationBarVisibility()
 
     let engine: AetherEngine
@@ -31,13 +30,13 @@ struct MainNavigationShell: View {
         switch previewConfiguration?.screen {
         case .catalog:
             initialTab = .movies
-        case .catalogSeries, .details:
+        case .catalogSeries, .details, .detailSeasons:
             initialTab = .series
         case .library:
             initialTab = .library
         case .search:
             initialTab = .search
-        case .settings:
+        case .settings, .settingsSubtitles, .settingsPlayback, .settingsAudio, .settingsDiagnostics:
             initialTab = .settings
         default:
             initialTab = .home
@@ -83,7 +82,7 @@ struct MainNavigationShell: View {
                 switch screen {
                 case .playerSource: return .source
                 case .playerAudio: return .audio
-                case .playerPicture: return .picture
+                case .playerPicture, .playerNerdHud: return .picture
                 case .playerChapters: return .chapters
                 case .playerSubtitles: return .subtitles
                 case .playerError: return nil
@@ -108,25 +107,49 @@ struct MainNavigationShell: View {
             .environment(sessionStore)
             .environment(sessionStore.comfort)
             .preferredColorScheme(.dark)
-        } else if previewConfiguration?.screen == .details {
+        } else if previewConfiguration?.screen == .customRow {
             NavigationStack {
-                MediaDetailView(
-                    mediaType: "series",
-                    itemId: "series:tmdb:246810",
-                    initialTitle: "Luksusfellen"
+                CustomRowBrowseView(
+                    title: "Nordisk spenning",
+                    pathOrRowId: "/api/tv/v2/rows/custom%3Anordic-noir"
                 )
             }
             .ignoresSafeArea()
             .environment(\.lunaSubpageVisibility, navBarVisibility.sink)
             .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
             .environment(sessionStore.comfort)
-        } else if previewConfiguration?.screen == .detailMovie || previewConfiguration?.screen == .detailSourcePicker {
+        } else if previewConfiguration?.screen == .details || previewConfiguration?.screen == .detailSeasons {
+            NavigationStack {
+                MediaDetailView(
+                    mediaType: "series",
+                    itemId: "series:tmdb:246810",
+                    initialTitle: "Luksusfellen",
+                    previewAutoOpenSheet: previewConfiguration?.screen == .detailSeasons ? .seasons : nil
+                )
+            }
+            .ignoresSafeArea()
+            .environment(\.lunaSubpageVisibility, navBarVisibility.sink)
+            .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
+            .environment(sessionStore.comfort)
+        } else if let screen = previewConfiguration?.screen,
+                  let autoOpenSheet: PreviewDetailAutoOpenSheet? = {
+                      switch screen {
+                      case .detailMovie: return Optional<PreviewDetailAutoOpenSheet>.none
+                      case .detailSourcePicker: return .sourcePicker
+                      case .detailMore: return .more
+                      case .detailOverview: return .overview
+                      case .detailDelete: return .delete
+                      default: return nil
+                      }
+                  }(),
+                  screen == .detailMovie || autoOpenSheet != nil {
             NavigationStack {
                 MediaDetailView(
                     mediaType: "movie",
                     itemId: "movie:tmdb:693134",
                     initialTitle: "Dune: Part Two",
-                    previewAutoOpenSourcePicker: previewConfiguration?.screen == .detailSourcePicker
+                    previewAutoOpenSourcePicker: screen == .detailSourcePicker,
+                    previewAutoOpenSheet: autoOpenSheet
                 )
             }
             .ignoresSafeArea()
@@ -138,11 +161,19 @@ struct MainNavigationShell: View {
         }
     }
 
+    private var previewSettingsCategory: SettingsCategory {
+        switch previewConfiguration?.screen {
+        case .settingsSubtitles: return .subtitles
+        case .settingsPlayback: return .playback
+        case .settingsAudio: return .advanced
+        case .settingsDiagnostics: return .system
+        default: return .roomAndDisplay
+        }
+    }
+
     private var mainTabbedShell: some View {
         @Bindable var sessionStore = sessionStore
         let isPlaybackActive = sessionStore.activePlaybackTarget != nil
-        let hideTopBar = navBarVisibility.isTopBarHidden
-        let interceptMenu = navBarVisibility.shouldInterceptMenuPress(hasActivePlayback: isPlaybackActive)
         let focusPosterPreview = previewConfiguration?.screen == .homePoster
 
         return ZStack(alignment: .topLeading) {
@@ -235,9 +266,12 @@ struct MainNavigationShell: View {
                 .tag(MainNavigationTab.search)
 
                 NavigationStack {
-                    SettingsView(isActiveTab: selectedTab == .settings)
-                        .toolbar(.hidden, for: .tabBar)
-                        .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
+                    SettingsView(
+                        initialCategory: previewSettingsCategory,
+                        isActiveTab: selectedTab == .settings
+                    )
+                    .toolbar(.hidden, for: .tabBar)
+                    .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: isPlaybackActive))
                 }
                 .toolbar(.hidden, for: .tabBar)
                 .tabItem {
@@ -248,60 +282,34 @@ struct MainNavigationShell: View {
             .ignoresSafeArea()
             .toolbar(.hidden, for: .tabBar)
 
-            LinearGradient(
-                stops: [
-                    .init(color: LunaTheme.canvas.opacity(0.92), location: 0.0),
-                    .init(color: LunaTheme.canvas.opacity(0.50), location: 0.62),
-                    .init(color: .clear, location: 1.0),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: LunaTokens.Layout.contentTop)
-            .ignoresSafeArea(edges: [.top, .horizontal])
-            .opacity(hideTopBar ? 0 : 1)
-            .allowsHitTesting(false)
-            .animation(
-                LunaFocusStyle.calmEaseOut(duration: 0.22, reduceMotion: reduceMotion) ?? .linear(duration: 0.01),
-                value: hideTopBar
-            )
-            .zIndex(9)
-
-            LunaTopBarView(
+            TopBarOverlayHostView(
+                navBarVisibility: navBarVisibility,
                 selectedTab: $selectedTab,
                 roomName: sessionStore.isRoomUnassigned ? "Velg rom i Innstillinger" : sessionStore.roomName,
-                focusRequestNonce: navBarVisibility.focusRequestNonce,
-                isUpwardBridgeEnabled: !hideTopBar && !navBarVisibility.isTopBarFocused && !navBarVisibility.isModalActive && !isPlaybackActive,
-                onFocusPresenceChanged: { isFocused in
-                    navBarVisibility.updateTopBarFocused(isFocused)
-                    if isFocused && allowColdHomeCardFocus {
+                isPlaybackActive: isPlaybackActive,
+                onClearColdHomeCardFocus: {
+                    if allowColdHomeCardFocus {
                         allowColdHomeCardFocus = false
                     }
-                },
-                onRequestDownwardContentFocus: { tab in
-                    allowColdHomeCardFocus = false
-                    navBarVisibility.requestContentEntryFocus(for: tab)
                 }
             )
-            .opacity(hideTopBar ? 0 : 1)
-            .offset(y: (!reduceMotion && hideTopBar) ? -24 : 0)
-            .allowsHitTesting(!hideTopBar)
-            .disabled(hideTopBar)
-            .animation(LunaFocusStyle.spring(reduceMotion: reduceMotion), value: hideTopBar)
             .zIndex(10)
         }
         .environment(\.lunaSubpageVisibility, navBarVisibility.sink)
-        .environment(\.lunaScrollToTopNonce, navBarVisibility.scrollToTopNonce)
-        .environment(\.lunaContentEntryFocusNonce, navBarVisibility.contentEntryFocusNonce)
+        .modifier(
+            NavigationShellVisibilityBridgeModifier(
+                navBarVisibility: navBarVisibility,
+                isPlaybackActive: isPlaybackActive
+            )
+        )
         .environment(\.lunaRoomAtmosphere, sessionStore.effectiveRoomAtmosphere)
         .environment(sessionStore.comfort)
         .onChange(of: selectedTab) { _, newTab in
-            allowColdHomeCardFocus = false
+            if allowColdHomeCardFocus {
+                allowColdHomeCardFocus = false
+            }
             navBarVisibility.syncActiveTab(newTab)
         }
-        .onExitCommand(perform: interceptMenu ? {
-            navBarVisibility.handleMenuPressToRevealTopBar()
-        } : nil)
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
             DiskSWRStore.clearMemory()
             let tabsToUnload = TabMemoryEvictionPolicy.inactiveTabsToUnload(activeTab: selectedTab)
@@ -379,5 +387,80 @@ struct MainNavigationShell: View {
         } catch {
             // Preserve cached room and hardware profile if LunaCore is briefly unreachable
         }
+    }
+}
+
+private struct TopBarOverlayHostView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let navBarVisibility: LunaNavigationBarVisibility
+    @Binding var selectedTab: MainNavigationTab
+    let roomName: String
+    let isPlaybackActive: Bool
+    let onClearColdHomeCardFocus: @MainActor () -> Void
+
+    var body: some View {
+        let hideTopBar = navBarVisibility.isTopBarHidden
+        let isUpwardBridgeEnabled = !hideTopBar
+            && !navBarVisibility.isTopBarFocused
+            && !navBarVisibility.isModalActive
+            && !isPlaybackActive
+
+        ZStack(alignment: .topLeading) {
+            LinearGradient(
+                stops: [
+                    .init(color: LunaTheme.canvas.opacity(0.92), location: 0.0),
+                    .init(color: LunaTheme.canvas.opacity(0.50), location: 0.62),
+                    .init(color: .clear, location: 1.0),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: LunaTokens.Layout.contentTop)
+            .ignoresSafeArea(edges: [.top, .horizontal])
+            .opacity(hideTopBar ? 0 : 1)
+            .allowsHitTesting(false)
+            .animation(
+                LunaFocusStyle.calmEaseOut(duration: 0.22, reduceMotion: reduceMotion) ?? .linear(duration: 0.01),
+                value: hideTopBar
+            )
+
+            LunaTopBarView(
+                selectedTab: $selectedTab,
+                roomName: roomName,
+                focusRequestNonce: navBarVisibility.focusRequestNonce,
+                isUpwardBridgeEnabled: isUpwardBridgeEnabled,
+                onFocusPresenceChanged: { isFocused in
+                    navBarVisibility.updateTopBarFocused(isFocused)
+                    if isFocused {
+                        onClearColdHomeCardFocus()
+                    }
+                },
+                onRequestDownwardContentFocus: { tab in
+                    onClearColdHomeCardFocus()
+                    navBarVisibility.requestContentEntryFocus(for: tab)
+                }
+            )
+            .opacity(hideTopBar ? 0 : 1)
+            .offset(y: (!reduceMotion && hideTopBar) ? -24 : 0)
+            .allowsHitTesting(!hideTopBar)
+            .disabled(hideTopBar)
+            .animation(LunaFocusStyle.spring(reduceMotion: reduceMotion), value: hideTopBar)
+        }
+    }
+}
+
+private struct NavigationShellVisibilityBridgeModifier: ViewModifier {
+    let navBarVisibility: LunaNavigationBarVisibility
+    let isPlaybackActive: Bool
+
+    func body(content: Content) -> some View {
+        let interceptMenu = navBarVisibility.shouldInterceptMenuPress(hasActivePlayback: isPlaybackActive)
+        content
+            .environment(\.lunaScrollToTopNonce, navBarVisibility.scrollToTopNonce)
+            .environment(\.lunaContentEntryFocusNonce, navBarVisibility.contentEntryFocusNonce)
+            .onExitCommand(perform: interceptMenu ? {
+                navBarVisibility.handleMenuPressToRevealTopBar()
+            } : nil)
     }
 }

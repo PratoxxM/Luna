@@ -8,6 +8,7 @@ public final class SearchViewModel {
     public let isRootTab: Bool
 
     public var query: String
+    public var selectedKind: TvSearchKindFilter = .all
     public private(set) var results: [TvMediaCard] = []
     public private(set) var localCount: Int = 0
     public private(set) var isSearching: Bool = false
@@ -15,6 +16,7 @@ public final class SearchViewModel {
     public var mutationErrorBanner: String?
     public private(set) var recentSearches: [String] = []
     public private(set) var lastCompletedQuery: String = ""
+    public private(set) var lastCompletedKind: TvSearchKindFilter = .all
     public private(set) var didConsumeInitialQuery: Bool = false
     public private(set) var searchRetryNonce: Int = 0
     public private(set) var lastHandledRetryNonce: Int = 0
@@ -61,6 +63,7 @@ public final class SearchViewModel {
         results = []
         localCount = 0
         lastCompletedQuery = ""
+        lastCompletedKind = .all
         errorMessage = nil
         isSearching = false
     }
@@ -116,7 +119,7 @@ public final class SearchViewModel {
             return
         }
 
-        if !isRetry && !nonceChanged && !isUnloadedForMemoryWarning && trimmed == lastCompletedQuery && !results.isEmpty && errorMessage == nil {
+        if !isRetry && !nonceChanged && !isUnloadedForMemoryWarning && trimmed == lastCompletedQuery && selectedKind == lastCompletedKind && !results.isEmpty && errorMessage == nil {
             isSearching = false
             return
         }
@@ -178,9 +181,10 @@ public final class SearchViewModel {
         }
         isSearching = true
         errorMessage = nil
+        let requestedKind = selectedKind
 
         do {
-            let res = try await client.searchFull(query: trimmed, limit: 30)
+            let res = try await client.searchFull(query: trimmed, limit: 30, kind: requestedKind.rawValue)
             guard !Task.isCancelled, (generation == nil || generation == searchGeneration) else {
                 if generation == nil || generation == searchGeneration {
                     isSearching = false
@@ -190,6 +194,7 @@ public final class SearchViewModel {
             results = res.items
             localCount = res.localCount ?? 0
             lastCompletedQuery = trimmed
+            lastCompletedKind = requestedKind
             isUnloadedForMemoryWarning = false
             if !res.items.isEmpty {
                 recentSearches = session.recordRecentSearch(trimmed)
@@ -304,6 +309,7 @@ public final class SearchViewModel {
         results = []
         localCount = 0
         lastCompletedQuery = ""
+        lastCompletedKind = .all
         isSearching = false
         isUnloadedForMemoryWarning = true
     }

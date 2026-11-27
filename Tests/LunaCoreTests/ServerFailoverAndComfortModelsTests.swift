@@ -167,6 +167,58 @@ final class ServerFailoverAndComfortModelsTests: XCTestCase {
 
         XCTAssertEqual(LowResUpscaleMode.defaultMode(for: .high2026), .auto)
         XCTAssertEqual(LowResUpscaleMode.defaultMode(for: .standard), .off)
+        XCTAssertEqual(LowResUpscaleMode.auto.shortDescription, "MetalFX for < 1080p SDR · 4K og HDR urørt.")
+        XCTAssertFalse(LowResUpscaleMode.auto.shortDescription.contains("Kun < 1080p"))
+        XCTAssertTrue(DeviceMemoryProfile.defaultFullHDUpscaleEnabled(for: .high2026))
+        XCTAssertFalse(DeviceMemoryProfile.defaultFullHDUpscaleEnabled(for: .standard))
+        XCTAssertTrue(DeviceMemoryProfile(physicalMemoryBytes: 8 * 1_073_741_824, activeProcessorCount: 6).defaultFullHDUpscaleEnabled)
+        XCTAssertFalse(DeviceMemoryProfile(physicalMemoryBytes: 4 * 1_073_741_824, activeProcessorCount: 6).defaultFullHDUpscaleEnabled)
+
+        XCTAssertEqual(
+            UpscaleLoadPolicy.resolve(lowResMode: .off, upscalesFullHDVideo: false),
+            UpscaleLoadPolicy(upscalesLowResolutionVideo: false, scaler: .automatic, upscalesFullHDVideo: false)
+        )
+        XCTAssertEqual(
+            UpscaleLoadPolicy.resolve(lowResMode: .off, upscalesFullHDVideo: true),
+            UpscaleLoadPolicy(upscalesLowResolutionVideo: false, scaler: .lanczos, upscalesFullHDVideo: true)
+        )
+        XCTAssertEqual(
+            UpscaleLoadPolicy.resolve(lowResMode: .auto, upscalesFullHDVideo: false),
+            UpscaleLoadPolicy(upscalesLowResolutionVideo: true, scaler: .automatic, upscalesFullHDVideo: false)
+        )
+        XCTAssertEqual(
+            UpscaleLoadPolicy.resolve(lowResMode: .auto, upscalesFullHDVideo: true),
+            UpscaleLoadPolicy(upscalesLowResolutionVideo: true, scaler: .automatic, upscalesFullHDVideo: true)
+        )
+        XCTAssertEqual(
+            UpscaleLoadPolicy.resolve(lowResMode: .animeLineArt, upscalesFullHDVideo: false),
+            UpscaleLoadPolicy(upscalesLowResolutionVideo: true, scaler: .lineArt, upscalesFullHDVideo: false)
+        )
+        XCTAssertEqual(
+            UpscaleLoadPolicy.resolve(lowResMode: .animeLineArt, upscalesFullHDVideo: true),
+            UpscaleLoadPolicy(upscalesLowResolutionVideo: true, scaler: .lineArt, upscalesFullHDVideo: false)
+        )
+
+        let fullHDSDR = TvCandidateInfo(
+            candidateId: "cand-1080p-sdr", displayHeadline: "1080p SDR", releaseTitle: "Test.1080p.SDR",
+            source: "nvme", tier: "nvme", resolution: "1080p", videoRangeType: "SDR",
+            dvProfile: nil, dvEnhancementLayer: nil, audioCodec: "EAC3", sizeBytes: nil,
+            tvScore: 100, isActive: false, explanationChips: nil, releaseGroup: nil, isNorwegian: false
+        )
+        XCTAssertTrue(fullHDSDR.isLikelyFullHDSDRForUpscale)
+        XCTAssertFalse(fullHDSDR.isLikelySub1080pSDRForUpscale)
+        XCTAssertTrue(fullHDSDR.isLikelyLowResolutionSDRForUpscale)
+
+        let subHDSDR = TvCandidateInfo(
+            candidateId: "cand-720p-sdr", displayHeadline: "720p SDR", releaseTitle: "Test.720p.SDR",
+            source: "nvme", tier: "nvme", resolution: "720p", videoRangeType: "SDR",
+            dvProfile: nil, dvEnhancementLayer: nil, audioCodec: "EAC3", sizeBytes: nil,
+            tvScore: 100, isActive: false, explanationChips: nil, releaseGroup: nil, isNorwegian: false
+        )
+        XCTAssertFalse(subHDSDR.isLikelyFullHDSDRForUpscale)
+        XCTAssertTrue(subHDSDR.isLikelySub1080pSDRForUpscale)
+        XCTAssertTrue(subHDSDR.isLikelyLowResolutionSDRForUpscale)
+
         XCTAssertEqual(MenuDisplayMode.allCases.count, 3)
         XCTAssertEqual(AudioEnhancementMode.allCases.count, 3)
         XCTAssertEqual(DualLayerOverrideMode.allCases.count, 3)

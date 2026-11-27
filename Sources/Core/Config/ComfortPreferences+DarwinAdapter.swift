@@ -23,15 +23,34 @@ public extension SubtitleFontSizePreset {
     }
 }
 
+public extension UpscaleScalerPolicy {
+    var aetherScaler: UpscaleScaler {
+        switch self {
+        case .automatic:
+            return .automatic
+        case .lineArt:
+            return .lineArt
+        case .lanczos:
+            return .lanczos
+        }
+    }
+}
+
 public extension ComfortPreferences {
-    func buildAudioShaping(enhancement: AudioEnhancementMode) -> AudioShaping {
-        let params = enhancement.shapingParameters(effectiveSpeakerLayout: effectiveSpeakerLayout)
+    func buildAudioShaping(
+        enhancement: AudioEnhancementMode,
+        binaural: Bool = false,
+        effectiveSpeakerLayoutOverride: String? = nil
+    ) -> AudioShaping {
+        let layout = effectiveSpeakerLayoutOverride ?? effectiveSpeakerLayout
+        let params = enhancement.shapingParameters(effectiveSpeakerLayout: layout)
         return AudioShaping(
             maxChannels: params.maxChannels,
             dialogueGainDB: params.dialogueGainDB,
             compressor: params.usesNightCompressor ? .night : nil,
             loudnessTargetLUFS: params.loudnessTargetLUFS,
-            lfeMixDB: params.lfeMixDB
+            lfeMixDB: params.lfeMixDB,
+            binaural: binaural
         )
     }
 }

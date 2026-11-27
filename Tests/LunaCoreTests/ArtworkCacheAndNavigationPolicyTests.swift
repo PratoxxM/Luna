@@ -6,7 +6,9 @@ final class ArtworkCacheAndNavigationPolicyTests: XCTestCase {
     func testArtworkSubjectKeyNormalizationAndCacheKeys() throws {
         let lanHttp = try XCTUnwrap(URL(string: "http://192.0.2.10:8090/api/tv/v2/img/card/tmdb/dune.jpg"))
         let lanHttps = try XCTUnwrap(URL(string: "https://lunacore.example.test:8920/api/tv/v2/img/backdrop/tmdb/dune.jpg"))
+        let lanBackdrop4K = try XCTUnwrap(URL(string: "https://lunacore.example.test:8920/api/tv/v2/img/backdrop4k/tmdb/dune.jpg"))
         let mediaV2 = try XCTUnwrap(URL(string: "https://lunacore.example.test:8920/api/media/v2/img/still/tmdb/dune.jpg"))
+        let mediaV2Backdrop4K = try XCTUnwrap(URL(string: "https://lunacore.example.test:8920/api/media/v2/img/backdrop4k/tmdb/dune.jpg"))
         let legacyV1 = try XCTUnwrap(URL(string: "http://192.0.2.10:8090/api/tv/v1/img/card/tmdb/dune.jpg"))
 
         XCTAssertEqual(
@@ -18,7 +20,15 @@ final class ArtworkCacheAndNavigationPolicyTests: XCTestCase {
             "tvimg-landscape:tmdb/dune.jpg"
         )
         XCTAssertEqual(
+            ArtworkSubjectKey.canonicalSubjectIdentity(for: lanBackdrop4K),
+            "tvimg-landscape:tmdb/dune.jpg"
+        )
+        XCTAssertEqual(
             ArtworkSubjectKey.canonicalSubjectIdentity(for: mediaV2),
+            "tvimg-landscape:tmdb/dune.jpg"
+        )
+        XCTAssertEqual(
+            ArtworkSubjectKey.canonicalSubjectIdentity(for: mediaV2Backdrop4K),
             "tvimg-landscape:tmdb/dune.jpg"
         )
         XCTAssertEqual(
@@ -179,5 +189,193 @@ final class ArtworkCacheAndNavigationPolicyTests: XCTestCase {
         XCTAssertTrue(vis.isTopBarHidden)
         vis.leaveSubpage(subpageToken)
         XCTAssertFalse(vis.isSubpageActive)
+    }
+
+    func testThreadSafeLRUMemoryCacheEvictionOrderAndReadPromotion() {
+        let cache = ThreadSafeLRUMemoryCache<String>(totalCostLimit: 1_000, countLimit: 3)
+        cache.insert("A", forKey: "kA", cost: 100)
+        cache.insert("B", forKey: "kB", cost: 100)
+        cache.insert("C", forKey: "kC", cost: 100)
+
+        // Read hit on oldest entry promotes kA to MRU; kB becomes LRU victim.
+        XCTAssertEqual(cache.image(forKey: "kA"), "A")
+        cache.insert("D", forKey: "kD", cost: 100)
+
+        XCTAssertEqual(cache.count, 3)
+        XCTAssertEqual(cache.totalCost, 300)
+        XCTAssertNil(cache.image(forKey: "kB"))
+        XCTAssertEqual(cache.image(forKey: "kA"), "A")
+        XCTAssertEqual(cache.image(forKey: "kC"), "C")
+        XCTAssertEqual(cache.image(forKey: "kD"), "D")
+    }
+
+    func testThreadSafeLRUMemoryCacheOverwriteCostAndOversizedAndZeroCostEdges() {
+        let cache = ThreadSafeLRUMemoryCache<String>(totalCostLimit: 100, countLimit: 10)
+        cache.insert("zero", forKey: "k0", cost: 0)
+        XCTAssertEqual(cache.totalCost, 1, "Zero/negative cost must clamp to 1")
+        cache.insert("neg", forKey: "kNeg", cost: -42)
+        XCTAssertEqual(cache.totalCost, 2)
+
+        cache.insert("small", forKey: "k1", cost: 30)
+        XCTAssertEqual(cache.totalCost, 32)
+
+        // Overwrite existing key with larger then smaller cost
+        cache.insert("bigger", forKey: "k1", cost: 60)
+        XCTAssertEqual(cache.totalCost, 62)
+        cache.insert("smaller", forKey: "k1", cost: 10)
+        XCTAssertEqual(cache.totalCost, 12)
+        XCTAssertEqual(cache.image(forKey: "k1"), "smaller")
+
+        // Single oversized entry (> totalCostLimit) removes prior key and leaves other entries intact
+        cache.insert("huge", forKey: "k1", cost: 500)
+        XCTAssertNil(cache.image(forKey: "k1"))
+        XCTAssertEqual(cache.image(forKey: "k0"), "zero")
+        XCTAssertEqual(cache.image(forKey: "kNeg"), "neg")
+        XCTAssertEqual(cache.count, 2)
+        XCTAssertEqual(cache.totalCost, 2)
+
+        // Brand-new oversized entry does not wipe existing cache
+        cache.insert("brand-new-huge", forKey: "kHuge", cost: 500)
+        XCTAssertNil(cache.image(forKey: "kHuge"))
+        XCTAssertEqual(cache.count, 2)
+        XCTAssertEqual(cache.totalCost, 2)
+
+        // Lowering totalCostLimit evicts LRU entries down to new limit
+        cache.insert("keep", forKey: "kKeep", cost: 50)
+        XCTAssertEqual(cache.image(forKey: "kKeep"), "keep")
+        cache.totalCostLimit = 51
+        XCTAssertLessThanOrEqual(cache.totalCost, 51)
+        XCTAssertEqual(cache.image(forKey: "kKeep"), "keep")
+
+        cache.removeAll()
+        XCTAssertEqual(cache.count, 0)
+        XCTAssertEqual(cache.totalCost, 0)
+        XCTAssertNil(cache.image(forKey: "kKeep"))
+    }
+
+    func testThreadSafeLRUMemoryCacheBestImageForSubjectKeyAndEvictionFallback() {
+        let cache = ThreadSafeLRUMemoryCache<String>(totalCostLimit: 10_000, countLimit: 3)
+        cache.insert("low-res", forKey: "poster#480", subjectKey: "tmdb:dune", cost: 10, qualityRank: 480)
+        cache.insert("high-res", forKey: "poster#1280", subjectKey: "tmdb:dune", cost: 20, qualityRank: 1280)
+
+        XCTAssertEqual(cache.bestImage(forSubjectKey: "tmdb:dune"), "high-res")
+        // Refresh low-res to MRU, then insert two entries to evict high-res (now LRU)
+        XCTAssertEqual(cache.image(forKey: "poster#480"), "low-res")
+        cache.insert("other-1", forKey: "other#1", subjectKey: "tmdb:other1", cost: 10, qualityRank: 500)
+        cache.insert("other-2", forKey: "other#2", subjectKey: "tmdb:other2", cost: 10, qualityRank: 500)
+
+        XCTAssertNil(cache.image(forKey: "poster#1280"))
+        XCTAssertEqual(
+            cache.bestImage(forSubjectKey: "tmdb:dune"),
+            "low-res",
+            "Evicting highest-rank variant must fall back to remaining lower-rank variant for same subjectKey"
+        )
+
+        // Overwriting a key with a different subjectKey cleans up the previous subjectBest
+        cache.insert("reassigned", forKey: "poster#480", subjectKey: "tmdb:new", cost: 10, qualityRank: 780)
+        XCTAssertNil(cache.bestImage(forSubjectKey: "tmdb:dune"))
+        XCTAssertEqual(cache.bestImage(forSubjectKey: "tmdb:new"), "reassigned")
+
+        // Overwriting a key with subjectKey == nil removes it from subjectBest
+        cache.insert("no-subject", forKey: "poster#480", subjectKey: nil, cost: 10, qualityRank: 780)
+        XCTAssertNil(cache.bestImage(forSubjectKey: "tmdb:new"))
+    }
+
+    func testThreadSafeLRUMemoryCacheRecomputesSubjectBestOnSameSubjectLowerRankOverwrite() {
+        let cache = ThreadSafeLRUMemoryCache<String>(totalCostLimit: 10_000, countLimit: 4)
+        cache.insert("low-res", forKey: "poster#480", subjectKey: "tmdb:dune", cost: 10, qualityRank: 480)
+        cache.insert("high-res", forKey: "poster#1280", subjectKey: "tmdb:dune", cost: 20, qualityRank: 1280)
+        XCTAssertEqual(cache.bestImage(forSubjectKey: "tmdb:dune"), "high-res")
+
+        // Overwrite the active subjectBest slot with the same subjectKey and a lower qualityRank
+        cache.insert("downgraded", forKey: "poster#1280", subjectKey: "tmdb:dune", cost: 10, qualityRank: 200)
+        XCTAssertEqual(
+            cache.bestImage(forSubjectKey: "tmdb:dune"),
+            "low-res",
+            "Downgrading the active subjectBest slot must recompute and promote the higher-ranked sibling"
+        )
+        XCTAssertEqual(cache.image(forKey: "poster#1280"), "downgraded")
+
+        // Overwriting the promoted sibling with an even higher rank updates bestImage accordingly
+        cache.insert("upgraded", forKey: "poster#480", subjectKey: "tmdb:dune", cost: 15, qualityRank: 900)
+        XCTAssertEqual(cache.bestImage(forSubjectKey: "tmdb:dune"), "upgraded")
+        XCTAssertEqual(cache.image(forKey: "poster#480"), "upgraded")
+    }
+
+    func testPreferredPosterPathPrefetchResolutionFallback() throws {
+        let baseURL = try XCTUnwrap(URL(string: "http://192.0.2.10:8090"))
+        let client = LunaCoreClient(
+            baseURL: baseURL,
+            deviceID: "dev-1",
+            deviceToken: "tok-1",
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512",
+            allowSelfSignedLanTLS: false,
+            appVersion: "3.0.0",
+            osVersion: "Linux-CI"
+        )
+
+        let cards = [
+            TvMediaCard(
+                itemId: "movie:1",
+                mediaType: "movie",
+                ids: TvMediaIds(tmdb: 1),
+                title: "Anchor",
+                posterUrl: "https://image.tmdb.org/t/p/w342/anchor.jpg"
+            ),
+            TvMediaCard(
+                itemId: "movie:2",
+                mediaType: "movie",
+                ids: TvMediaIds(tmdb: 2),
+                title: "CardBackdropOnly",
+                posterUrl: nil,
+                backdropUrl: "https://image.tmdb.org/t/p/w780/bd2.jpg",
+                cardBackdropUrl: "https://image.tmdb.org/t/p/w500/cb2.jpg"
+            ),
+            TvMediaCard(
+                itemId: "movie:3",
+                mediaType: "movie",
+                ids: TvMediaIds(tmdb: 3),
+                title: "BackdropOnly",
+                posterUrl: nil,
+                backdropUrl: "https://image.tmdb.org/t/p/w500/bd3.jpg",
+                cardBackdropUrl: nil
+            ),
+            TvMediaCard(
+                itemId: "movie:4",
+                mediaType: "movie",
+                ids: TvMediaIds(tmdb: 4),
+                title: "OutsideWindow",
+                posterUrl: "https://image.tmdb.org/t/p/w342/p4.jpg"
+            ),
+        ]
+
+        let posterURLs = ArtworkDiskCache.prefetchArtworkURLs(
+            in: cards,
+            afterIndex: 0,
+            isBackdrop: false,
+            window: 2,
+            client: client
+        )
+        XCTAssertEqual(posterURLs.map(\.absoluteString), [
+            "https://image.tmdb.org/t/p/w780/cb2.jpg",
+            "https://image.tmdb.org/t/p/w780/bd3.jpg",
+        ])
+
+        let backdropURLs = ArtworkDiskCache.prefetchArtworkURLs(
+            in: cards,
+            afterIndex: 0,
+            isBackdrop: true,
+            window: 2,
+            client: client
+        )
+        XCTAssertEqual(backdropURLs.map(\.absoluteString), [
+            "https://image.tmdb.org/t/p/w1280/cb2.jpg",
+            "https://image.tmdb.org/t/p/w1280/bd3.jpg",
+        ])
+
+        XCTAssertTrue(ArtworkDiskCache.prefetchArtworkURLs(in: cards, afterIndex: -1, isBackdrop: false, window: 2, client: client).isEmpty)
+        XCTAssertTrue(ArtworkDiskCache.prefetchArtworkURLs(in: cards, afterIndex: cards.count - 1, isBackdrop: false, window: 2, client: client).isEmpty)
+        XCTAssertTrue(ArtworkDiskCache.prefetchArtworkURLs(in: cards, afterIndex: 0, isBackdrop: false, window: 0, client: client).isEmpty)
     }
 }

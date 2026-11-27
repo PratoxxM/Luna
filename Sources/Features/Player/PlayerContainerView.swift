@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import AetherBridge
 
 struct PlayerContainerView: View {
@@ -79,7 +80,19 @@ struct PlayerContainerView: View {
                 .ignoresSafeArea()
                 .zIndex(0)
 
-            if isPreviewMode && viewModel.fatalError == nil {
+            // 0.2 Held outgoing still frame for seamless source & episode replacement
+            if !isPreviewMode {
+                AetherStillViewRepresentable(
+                    isHeld: viewModel.sessionController.isHoldingOutgoingPicture,
+                    onMount: { viewModel.sessionController.attachStillView($0) },
+                    onDismantle: { viewModel.sessionController.detachStillView() }
+                )
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .zIndex(0.2)
+            }
+
+            if isPreviewMode && viewModel.isPictureReadyForReveal && viewModel.fatalError == nil {
                 PlayerPreviewCinemaStageView(
                     client: client,
                     backdropPath: initialRequest.backdropUrl,
@@ -104,6 +117,7 @@ struct PlayerContainerView: View {
                 SubtitleOverlayView(
                     engine: engine,
                     comfort: comfort,
+                    fontRegistry: viewModel.sessionController.embeddedFontRegistry,
                     subtitleDelaySeconds: viewModel.subtitleDelaySeconds,
                     isBottomBarVisible: isBottomBarShown,
                     isQuickPanelOpen: isQuickPanelOpen,
@@ -234,5 +248,46 @@ struct PlayerContainerView: View {
             }
         }
         .onDisappear { handleDisappear() }
+    }
+}
+
+@MainActor
+private struct AetherStillViewRepresentable: UIViewRepresentable {
+    let isHeld: Bool
+    let onMount: @MainActor (AetherStillView) -> Void
+    let onDismantle: @MainActor () -> Void
+
+    @MainActor
+    final class Coordinator {
+        var onDismantle: @MainActor () -> Void
+
+        init(onDismantle: @escaping @MainActor () -> Void) {
+            self.onDismantle = onDismantle
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onDismantle: onDismantle)
+    }
+
+    func makeUIView(context: Context) -> AetherStillView {
+        let view = AetherStillView()
+        view.videoGravity = .resizeAspect
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        view.isUserInteractionEnabled = false
+        onMount(view)
+        view.alpha = isHeld ? 1 : 0
+        return view
+    }
+
+    func updateUIView(_ uiView: AetherStillView, context: Context) {
+        context.coordinator.onDismantle = onDismantle
+        uiView.alpha = isHeld ? 1 : 0
+    }
+
+    static func dismantleUIView(_ uiView: AetherStillView, coordinator: Coordinator) {
+        uiView.alpha = 0
+        coordinator.onDismantle()
     }
 }

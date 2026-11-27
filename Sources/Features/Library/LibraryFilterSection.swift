@@ -132,3 +132,47 @@ public enum LibraryFilterSection: String, CaseIterable, Identifiable, Sendable {
         }
     }
 }
+
+public enum LibraryTierFilter: String, CaseIterable, Identifiable, Sendable {
+    case all
+    case nvme
+    case archive
+    case vfs
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .all: return "Alle kilder"
+        case .nvme: return "NVMe"
+        case .archive: return "Arkiv"
+        case .vfs: return "InfiniDysk"
+        }
+    }
+
+    public func countValue(from counts: TvLibraryCounts?) -> Int? {
+        guard let counts else { return nil }
+        switch self {
+        case .all: return counts.localTotal
+        case .nvme: return counts.nvme
+        case .archive: return counts.archive
+        case .vfs: return counts.vfs
+        }
+    }
+}
+
+public enum LibrarySortOption: String, CaseIterable, Identifiable, Sendable {
+    case recent
+    case rating
+    case title
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .recent: return "Nylig lagt til"
+        case .rating: return "Høyest vurdert"
+        case .title: return "Alfabetisk"
+        }
+    }
+}

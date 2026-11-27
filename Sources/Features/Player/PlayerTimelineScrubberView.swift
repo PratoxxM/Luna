@@ -125,7 +125,7 @@ struct TimelineScrubberLeafView: View {
                             originSeconds: scrubState.originSeconds,
                             chapterTitle: chapterTitle,
                             previewImage: scrubState.previewImage,
-                            drawsInCompositorView: engine.scrubPreviewDrawsInView,
+                            drawsInCompositorView: engine.scrubPreviewDrawsInView && scrubState.previewImage == nil,
                             onMountCompositorView: { compView in
                                 viewModel.scrubController.attachCompositorPreviewView(compView)
                             }
@@ -149,6 +149,8 @@ struct TimelineScrubberLeafView: View {
                     Text(Self.formatSeconds(displayTime))
                         .font(LunaTheme.Font.subtitle.monospacedDigit())
                         .foregroundStyle(isScrubbing ? LunaTheme.amber : LunaTheme.moonlight)
+                        .lineLimit(1)
+                        .layoutPriority(1)
 
                     if inlineMovieChapterMode, !viewModel.chapters.isEmpty, !isScrubbing {
                         TimelineActiveChapterLabel(
@@ -165,10 +167,14 @@ struct TimelineScrubberLeafView: View {
                     Text("Klikk for å spille herfra")
                         .font(LunaTheme.Font.caption)
                         .foregroundStyle(LunaTheme.moonlight.opacity(0.78))
+                        .lineLimit(1)
+                        .layoutPriority(1)
                 } else if showPausedSwipeHint {
                     Text("Sveip for å spole")
                         .font(LunaTheme.Font.caption)
                         .foregroundStyle(LunaTheme.muted.opacity(0.72))
+                        .lineLimit(1)
+                        .layoutPriority(1)
                 }
 
                 Spacer()
@@ -176,6 +182,8 @@ struct TimelineScrubberLeafView: View {
                 Text("−\(Self.formatSeconds(max(0, effectiveDuration - displayTime)))")
                     .font(LunaTheme.Font.subtitle.monospacedDigit())
                     .foregroundStyle(LunaTheme.moonlight.opacity(0.84))
+                    .lineLimit(1)
+                    .layoutPriority(1)
             }
         }
         .onAppear {

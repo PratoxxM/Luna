@@ -164,6 +164,9 @@ public final class LunaNavigationBarVisibility {
             },
             reportScrollSample: { [weak self] oldSample, newSample, tab in
                 self?.reportScrollSample(oldSample, newSample, for: tab)
+            },
+            revealTopBar: { [weak self] in
+                self?.handleUpNavigationToRevealTopBar()
             }
         )
     }
@@ -265,6 +268,15 @@ public final class LunaNavigationBarVisibility {
         scrollToTopNonce &+= 1
     }
 
+    public func handleUpNavigationToRevealTopBar(now: Date = Date()) {
+        guard !isTopBarFocused, !isSubpageActive, !isModalActive else { return }
+        isCollapsedByScroll = false
+        pendingMenuBypassExit = false
+        menuRevealGraceUntil = now.addingTimeInterval(Self.menuFocusBounceGraceSeconds)
+        focusRequestNonce &+= 1
+        scrollToTopNonce &+= 1
+    }
+
     public func requestContentEntryFocus(for tab: MainNavigationTab) {
         activeTab = tab
         pendingMenuBypassExit = false
@@ -280,12 +292,30 @@ public struct LunaSubpageVisibilitySink: Sendable {
     public let enterModal: @MainActor @Sendable (UUID) -> Void
     public let leaveModal: @MainActor @Sendable (UUID) -> Void
     public let reportScrollSample: @MainActor @Sendable (ScrollTopSample?, ScrollTopSample, MainNavigationTab) -> Void
+    public let revealTopBar: @MainActor @Sendable () -> Void
+
+    public init(
+        enterSubpage: @escaping @MainActor @Sendable (UUID) -> Void,
+        leaveSubpage: @escaping @MainActor @Sendable (UUID) -> Void,
+        enterModal: @escaping @MainActor @Sendable (UUID) -> Void,
+        leaveModal: @escaping @MainActor @Sendable (UUID) -> Void,
+        reportScrollSample: @escaping @MainActor @Sendable (ScrollTopSample?, ScrollTopSample, MainNavigationTab) -> Void,
+        revealTopBar: @escaping @MainActor @Sendable () -> Void = {}
+    ) {
+        self.enterSubpage = enterSubpage
+        self.leaveSubpage = leaveSubpage
+        self.enterModal = enterModal
+        self.leaveModal = leaveModal
+        self.reportScrollSample = reportScrollSample
+        self.revealTopBar = revealTopBar
+    }
 
     public static let noop = LunaSubpageVisibilitySink(
         enterSubpage: { _ in },
         leaveSubpage: { _ in },
         enterModal: { _ in },
         leaveModal: { _ in },
-        reportScrollSample: { _, _, _ in }
+        reportScrollSample: { _, _, _ in },
+        revealTopBar: {}
     )
 }

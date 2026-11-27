@@ -57,7 +57,7 @@ extension LunaCoreClient {
     public func fetchItemDetail(mediaType: String, itemId: String, seasonNumber: Int? = nil) async throws -> TvItemDetail {
         let encodedId = itemId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? itemId
         var path = "/api/tv/v2/items/\(mediaType)/\(encodedId)"
-        if let seasonNumber, seasonNumber > 0 {
+        if let seasonNumber, seasonNumber >= 0 {
             path += "?season=\(seasonNumber)"
         }
         let res: TvItemDetailResponse = try await sendJSON(method: "GET", path: path)
@@ -71,9 +71,10 @@ extension LunaCoreClient {
         )
     }
 
-    public func searchFull(query: String, limit: Int = 30) async throws -> TvSearchResponse {
+    public func searchFull(query: String, limit: Int = 30, kind: String = "all") async throws -> TvSearchResponse {
         let items = [
             URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "kind", value: kind),
             URLQueryItem(name: "limit", value: String(max(1, limit))),
         ]
         let path = buildQueryPath("/api/tv/v2/search", queryItems: items)

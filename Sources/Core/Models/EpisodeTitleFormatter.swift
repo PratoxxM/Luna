@@ -5,7 +5,7 @@ import Foundation
 /// and playback launch/prepare/resolve API requests.
 public enum EpisodeTitleFormatter: Sendable {
     public static func formatEpisodeCode(season: Int?, episode: Int?) -> String? {
-        guard let season, let episode, season > 0, episode > 0 else {
+        guard let season, let episode, season >= 0, episode > 0 else {
             return nil
         }
         return String(format: "S%02dE%02d", season, episode)
@@ -36,7 +36,7 @@ public enum EpisodeTitleFormatter: Sendable {
             if let combined = parseSeasonEpisodeToken(token) {
                 return combined
             }
-            if part.hasPrefix("s"), let num = Int(part.dropFirst()), num > 0 {
+            if part.hasPrefix("s"), let num = Int(part.dropFirst()), num >= 0 {
                 parsedSeason = num
             } else if part.hasPrefix("e"), let num = Int(part.dropFirst()), num > 0 {
                 parsedEpisode = num
@@ -53,14 +53,14 @@ public enum EpisodeTitleFormatter: Sendable {
         season: Int?,
         episode: Int?
     ) -> (season: Int?, episode: Int?) {
-        if let season, let episode, season > 0, episode > 0 {
+        if let season, let episode, season >= 0, episode > 0 {
             return (season, episode)
         }
         if let parsed = parseEpisodeFromItemId(itemId) {
             return (parsed.season, parsed.episode)
         }
         return (
-            (season ?? 0) > 0 ? season : nil,
+            season.flatMap { $0 >= 0 ? $0 : nil },
             (episode ?? 0) > 0 ? episode : nil
         )
     }
@@ -75,7 +75,7 @@ public enum EpisodeTitleFormatter: Sendable {
         if let seriesTitle, !seriesTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return true
         }
-        if let season, let episode, season > 0, episode > 0 {
+        if let season, let episode, season >= 0, episode > 0 {
             return true
         }
         if parseEpisodeFromItemId(itemId) != nil {

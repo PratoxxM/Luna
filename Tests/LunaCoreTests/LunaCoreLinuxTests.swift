@@ -380,7 +380,7 @@ final class LunaCoreLinuxTests: XCTestCase {
         XCTAssertNil(foreignHeaders["Authorization"])
         XCTAssertNil(foreignHeaders["X-Device-Id"])
 
-        // 2. Easynews HTTPS candidate badge & /api/tv/v2/img/{card,still}/ -> /backdrop/ hero4K upgrade
+        // 2. Easynews HTTPS candidate badge & /api/tv/v2/img/{card,still,backdrop}/ -> /backdrop4k/ hero4K upgrade
         let easynewsCand = try JSONDecoder().decode(
             TvCandidateInfo.self,
             from: Data(#"{"candidateId":"easy-1","displayHeadline":"4K WEB-DL","releaseTitle":"Example.2026.2160p","source":"easynews","tier":"ssd"}"#.utf8)
@@ -389,11 +389,11 @@ final class LunaCoreLinuxTests: XCTestCase {
 
         XCTAssertEqual(
             tlsClient.resolveArtworkURL("/api/tv/v2/img/card/tmdb/hero.jpg", target: .hero4K)?.absoluteString,
-            "https://lunacore.local:8920/api/tv/v2/img/backdrop/tmdb/hero.jpg"
+            "https://lunacore.local:8920/api/tv/v2/img/backdrop4k/tmdb/hero.jpg"
         )
         XCTAssertEqual(
             tlsClient.resolveArtworkURL("/api/tv/v2/img/still/tmdb/ep.jpg", target: .hero4K)?.absoluteString,
-            "https://lunacore.local:8920/api/tv/v2/img/backdrop/tmdb/ep.jpg"
+            "https://lunacore.local:8920/api/tv/v2/img/backdrop4k/tmdb/ep.jpg"
         )
         XCTAssertEqual(
             tlsClient.resolveArtworkURL("/api/tv/v2/img/card/tmdb/hero.jpg", target: .landscape2x)?.absoluteString,

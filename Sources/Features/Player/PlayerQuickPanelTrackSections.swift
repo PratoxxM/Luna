@@ -247,6 +247,13 @@ extension PlayerQuickPanelView {
                 .foregroundStyle(LunaTheme.muted)
                 .lineLimit(1)
 
+            if let binauralNotice = track.binauralAudioStatusNotice {
+                Text(binauralNotice)
+                    .font(LunaTheme.Font.badge)
+                    .foregroundStyle(LunaTheme.muted)
+                    .lineLimit(1)
+            }
+
             HStack(spacing: 8) {
                 ForEach(SpeakerLayoutOverrideMode.quickPanelCases) { mode in
                     LunaPillButton(

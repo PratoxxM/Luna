@@ -18,7 +18,7 @@ public struct PosterCardView: View {
     public static let gridCaptionSpacing: CGFloat = 14
     public static let gridCaptionHeight: CGFloat = 60
 
-    @FocusState private var isFocused: Bool
+    @State private var urlMemo = ArtworkURLMemoBox()
 
     public init(
         card: TvMediaCard,
@@ -45,9 +45,44 @@ public struct PosterCardView: View {
     }
 
     public var body: some View {
-        let posterURL = client?.resolveArtworkURL(card.preferredPosterPath, target: .poster2x)
-        let captionHeight: CGFloat = showRestingTitle ? Self.gridCaptionHeight : Self.shelfCaptionHeight
-        let outerSpacing: CGFloat = showRestingTitle ? Self.gridCaptionSpacing : Self.shelfCaptionSpacing
+        let posterURL = urlMemo.resolve(
+            path: card.preferredPosterPath,
+            client: client,
+            target: .poster2x
+        )
+
+        PosterCardFocusContentView(
+            card: card,
+            client: client,
+            posterURL: posterURL,
+            width: width,
+            height: height,
+            showStorageBadge: showStorageBadge,
+            showRestingTitle: showRestingTitle,
+            focusRequestNonce: focusRequestNonce,
+            onSelect: onSelect,
+            onPlayShortcut: onPlayShortcut
+        )
+    }
+}
+
+private struct PosterCardFocusContentView: View {
+    let card: TvMediaCard
+    let client: LunaCoreClient?
+    let posterURL: URL?
+    let width: CGFloat
+    let height: CGFloat
+    let showStorageBadge: Bool
+    let showRestingTitle: Bool
+    let focusRequestNonce: Int
+    let onSelect: () -> Void
+    let onPlayShortcut: (() -> Void)?
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        let captionHeight: CGFloat = showRestingTitle ? PosterCardView.gridCaptionHeight : PosterCardView.shelfCaptionHeight
+        let outerSpacing: CGFloat = showRestingTitle ? PosterCardView.gridCaptionSpacing : PosterCardView.shelfCaptionSpacing
         let showCaption = showRestingTitle || isFocused
 
         VStack(alignment: .leading, spacing: outerSpacing) {
@@ -93,7 +128,7 @@ public struct PosterCardView: View {
                 )
             }
             .lunaChromelessButton(RoundedRectangle(cornerRadius: LunaTheme.posterRadius, style: .continuous))
-            .lunaCardLampGlow(isFocused: isFocused)
+            .lunaCardLampGlow(isFocused: isFocused, cornerRadius: LunaTheme.posterRadius)
             .focused($isFocused)
             .lunaRequestDirectFocus(nonce: focusRequestNonce, isFocused: $isFocused)
             .accessibilityLabel(card.title)
@@ -125,7 +160,7 @@ public struct PosterCardView: View {
             }
             .fixedSize(horizontal: false, vertical: true)
             .frame(minWidth: width, idealWidth: width, maxWidth: width, minHeight: captionHeight, maxHeight: captionHeight, alignment: .topLeading)
-            .lunaFocusCaptionReveal(isVisible: showCaption, isFocused: isFocused)
+            .lunaFocusCaptionReveal(isVisible: showCaption, isFocused: isFocused, animate: !showRestingTitle)
         }
     }
 

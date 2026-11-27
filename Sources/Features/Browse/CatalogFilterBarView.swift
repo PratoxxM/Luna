@@ -3,7 +3,7 @@ import SwiftUI
 /// Focus-isolated catalog filter & genre bar (`F-10`):
 /// - Fixed left zone keeps sort trigger (`arrow.up.arrow.down`), `Lokalt`, and `Skjul sette`
 ///   permanently visible at `x = 90`.
-/// - Right zone scrolls genre pills horizontally behind a `56 pt` trailing alpha fade mask
+/// - Right zone scrolls genre pills horizontally behind a `56 pt` trailing edge fade overlay
 ///   so genre chips never clip harshly against the screen edge.
 struct CatalogFilterBarView: View {
     nonisolated static let trailingMaskFadeWidth: CGFloat = 56
@@ -109,16 +109,14 @@ struct CatalogFilterBarView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentMargins(.zero, for: .scrollContent)
-                .mask {
-                    HStack(spacing: 0) {
-                        LunaTheme.pureBlack
-                        LinearGradient(
-                            colors: [LunaTheme.pureBlack, .clear],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                        .frame(width: Self.trailingMaskFadeWidth)
-                    }
+                .overlay(alignment: .trailing) {
+                    LinearGradient(
+                        colors: [.clear, LunaTheme.canvas.opacity(0.88), LunaTheme.canvas],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: Self.trailingMaskFadeWidth)
+                    .allowsHitTesting(false)
                 }
             } else {
                 Spacer(minLength: 0)

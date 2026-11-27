@@ -53,6 +53,16 @@ struct SettingsView: View {
         _selectedCategory = State(initialValue: initialCategory)
     }
 
+    nonisolated static func shouldRevealTopBarOnUpMove(
+        isActiveTab: Bool,
+        directionIsUp: Bool,
+        focusedCategory: SettingsCategory?,
+        isRightPanel: Bool
+    ) -> Bool {
+        guard isActiveTab, directionIsUp, !isRightPanel else { return false }
+        return focusedCategory == SettingsCategory.allCases.first
+    }
+
     var body: some View {
         let caps = AetherEngine.displayCapabilities
 
@@ -75,6 +85,15 @@ struct SettingsView: View {
             .padding(.top, 12)
             .focusScope(settingsSidebarNamespace)
             .focusSection()
+            .onMoveCommand { direction in
+                guard Self.shouldRevealTopBarOnUpMove(
+                    isActiveTab: isActiveTab,
+                    directionIsUp: direction == .up,
+                    focusedCategory: focusedCategory,
+                    isRightPanel: false
+                ) else { return }
+                subpageVisibility.revealTopBar()
+            }
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: LunaTokens.Layout.sectionGap) {
@@ -91,6 +110,9 @@ struct SettingsView: View {
             .lunaRootScrollTopBarTracking(tab: .settings)
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .focusSection()
+            .onChange(of: selectedCategory) { _, _ in
+                scrollPosition.scrollTo(edge: .top)
+            }
             .onChange(of: scrollToTopNonce) { _, _ in
                 guard isActiveTab else { return }
                 withAnimation(LunaFocusStyle.calmEaseOut(duration: 0.22, reduceMotion: reduceMotion)) {

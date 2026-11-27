@@ -26,6 +26,7 @@ protocol PlayerTransportControlling: AnyObject {
     var activeAudioTrackIndex: Int? { get }
     var subtitleTrackDescriptors: [SmartTrackDescriptor] { get }
     var activeSubtitleTrackIndex: Int? { get }
+    var heldPictureFrameWaitSeconds: Double { get }
     func play()
     func pause()
     func togglePlayPause()
@@ -36,6 +37,9 @@ protocol PlayerTransportControlling: AnyObject {
     func selectAudioTrack(index: Int)
     func selectSubtitleTrack(index: Int)
     func clearSubtitle()
+    func attachStillView(_ view: AetherStillView?)
+    @discardableResult func holdOutgoingPicture() async -> Bool
+    func releaseOutgoingPicture()
     func prepareForItemReplacement()
     func loadStream(url: URL, startPosition: Double?, options: LoadOptions) async throws
     func reloadAtCurrentPosition(applying change: (inout LoadOptions) -> Void) async throws
@@ -47,11 +51,15 @@ extension PlayerTransportControlling {
     var activeAudioTrackIndex: Int? { nil }
     var subtitleTrackDescriptors: [SmartTrackDescriptor] { [] }
     var activeSubtitleTrackIndex: Int? { nil }
+    var heldPictureFrameWaitSeconds: Double { 0 }
     func setAudioShaping(_: AudioShaping) {}
     func setSoftwareSubtitleDelay(_: Double) {}
     func selectAudioTrack(index _: Int) {}
     func selectSubtitleTrack(index _: Int) {}
     func clearSubtitle() {}
+    func attachStillView(_: AetherStillView?) {}
+    @discardableResult func holdOutgoingPicture() async -> Bool { false }
+    func releaseOutgoingPicture() {}
     func prepareForItemReplacement() {}
     func loadStream(url _: URL, startPosition _: Double?, options _: LoadOptions) async throws {}
     func reloadAtCurrentPosition(applying _: (inout LoadOptions) -> Void) async throws {}
@@ -60,6 +68,11 @@ extension PlayerTransportControlling {
 @MainActor
 final class AetherEngineTransport: PlayerTransportControlling {
     private let engine: AetherEngine
+    private weak var stillView: AetherStillView?
+    private var holdGeneration: UInt64 = 0
+    private var inFlightHoldCount: Int = 0
+    private var isHoldingStill: Bool = false
+    private var hasUnclaimedEngineHold: Bool = false
 
     init(engine: AetherEngine) {
         self.engine = engine
@@ -70,6 +83,7 @@ final class AetherEngineTransport: PlayerTransportControlling {
     var videoRoute: VideoRoute { engine.videoRoute }
     var currentTime: Double { engine.currentTime }
     var needsForegroundVideoRestore: Bool { engine.needsForegroundVideoRestore }
+    var heldPictureFrameWaitSeconds: Double { engine.heldPictureFrameWaitSeconds }
     var audioTrackDescriptors: [PlaybackAudioTrackDescriptor] {
         engine.audioTracks.map(PlaybackAudioTrackDescriptor.init(track:))
     }
@@ -117,6 +131,71 @@ final class AetherEngineTransport: PlayerTransportControlling {
 
     func clearSubtitle() {
         engine.clearSubtitle()
+    }
+
+    func attachStillView(_ view: AetherStillView?) {
+        if stillView !== view {
+            stillView?.alpha = 0
+            holdGeneration &+= 1
+            let hadEngineHold = isHoldingStill || hasUnclaimedEngineHold
+            isHoldingStill = false
+            if hadEngineHold {
+                if inFlightHoldCount == 0 {
+                    hasUnclaimedEngineHold = false
+                    engine.releaseOutgoingPicture()
+                } else {
+                    hasUnclaimedEngineHold = true
+                }
+            }
+        }
+        stillView = view
+        if !isHoldingStill {
+            view?.alpha = 0
+        }
+    }
+
+    @discardableResult
+    func holdOutgoingPicture() async -> Bool {
+        guard let targetView = stillView else {
+            if hasUnclaimedEngineHold && !isHoldingStill && inFlightHoldCount == 0 {
+                hasUnclaimedEngineHold = false
+                engine.releaseOutgoingPicture()
+            }
+            return false
+        }
+        holdGeneration &+= 1
+        let token = holdGeneration
+        inFlightHoldCount += 1
+        let held: Bool
+        do {
+            defer { inFlightHoldCount -= 1 }
+            held = await engine.holdOutgoingPicture(on: targetView)
+        }
+        if held, stillView === targetView, token == holdGeneration {
+            isHoldingStill = true
+            hasUnclaimedEngineHold = false
+            targetView.alpha = 1
+            return true
+        }
+        if held {
+            hasUnclaimedEngineHold = true
+        }
+        if stillView !== targetView || (!isHoldingStill && inFlightHoldCount == 0) {
+            targetView.alpha = 0
+        }
+        if (held || hasUnclaimedEngineHold) && !isHoldingStill && inFlightHoldCount == 0 {
+            hasUnclaimedEngineHold = false
+            engine.releaseOutgoingPicture()
+        }
+        return false
+    }
+
+    func releaseOutgoingPicture() {
+        holdGeneration &+= 1
+        isHoldingStill = false
+        hasUnclaimedEngineHold = false
+        stillView?.alpha = 0
+        engine.releaseOutgoingPicture()
     }
 
     func prepareForItemReplacement() {

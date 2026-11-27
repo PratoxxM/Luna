@@ -78,6 +78,10 @@ extension ServerSessionCore {
             defaults.set(device.hardwareProfile, forKey: SideloadSafeStorage.hardwareProfileKey)
             clientInputsChanged = true
         }
+        let nextExplicit = device.hardwareProfileExplicit ?? true
+        if nextExplicit != isHardwareProfileExplicit {
+            self.isHardwareProfileExplicit = nextExplicit
+        }
         if device.atmosphere != serverAtmosphere {
             self.serverAtmosphere = device.atmosphere
         }
@@ -120,6 +124,7 @@ extension ServerSessionCore {
         self.roomName = roomName
         self.isRoomUnassigned = false
         self.hardwareProfile = hardwareProfile
+        self.isHardwareProfileExplicit = true
         let matchedRoom = availableRooms.first {
             $0.roomName == roomName && $0.hardwareProfile == hardwareProfile
         } ?? availableRooms.first { $0.hardwareProfile == hardwareProfile }

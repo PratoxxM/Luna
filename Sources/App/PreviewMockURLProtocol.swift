@@ -64,6 +64,26 @@ final class PreviewMockURLProtocol: URLProtocol {
 
     private static func routeJSON(for url: URL) -> Data {
         let path = url.path
+        if path == "/api/tv/v2/pair/request" {
+            let reqRes = TvPairingRequestResponse(
+                ok: true,
+                pairingCode: "preview-pair-1",
+                displayCode: "482 917",
+                expiresAt: "2026-12-31T23:59:59Z",
+                pollIntervalSeconds: 60
+            )
+            return (try? LunaCoreClient.encodeJSON(reqRes)) ?? Data("{}".utf8)
+        }
+        if path.hasPrefix("/api/tv/v2/pair/poll/") {
+            let pollRes = TvPairingPollResponse(
+                ok: true,
+                status: "pending",
+                deviceToken: nil,
+                device: nil,
+                error: nil
+            )
+            return (try? LunaCoreClient.encodeJSON(pollRes)) ?? Data("{}".utf8)
+        }
         if path == "/api/tv/v2/bootstrap" {
             let boot = TvBootstrapResponse(
                 ok: true,
@@ -86,7 +106,73 @@ final class PreviewMockURLProtocol: URLProtocol {
         if path == "/api/tv/v2/library" {
             let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
             let mediaType = comps?.queryItems?.first(where: { $0.name == "mediaType" })?.value ?? "movie"
-            return (try? LunaCoreClient.encodeJSON(PreviewMockFixtures.libraryResponse(mediaType: mediaType))) ?? Data("{}".utf8)
+            let tier = comps?.queryItems?.first(where: { $0.name == "tier" })?.value ?? "all"
+            let sort = comps?.queryItems?.first(where: { $0.name == "sort" })?.value ?? "recent"
+            var response = PreviewMockFixtures.libraryResponse(mediaType: mediaType)
+            if tier != "all" || sort != "recent" {
+                var filtered = response.localItems
+                if tier != "all" {
+                    filtered = filtered.filter { card in
+                        let cardTier = (card.availability?.tier ?? "").lowercased()
+                        return cardTier == tier.lowercased()
+                    }
+                }
+                if sort == "rating" {
+                    filtered.sort { ($0.imdbRating ?? 0) > ($1.imdbRating ?? 0) }
+                } else if sort == "title" {
+                    filtered.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+                }
+                response = TvLibraryResponse(
+                    ok: response.ok,
+                    section: response.section,
+                    activeFilters: TvLibraryActiveFilters(tier: tier, mediaType: mediaType, sort: sort),
+                    counts: response.counts,
+                    watchlist: response.watchlist,
+                    localItems: filtered,
+                    localHasMore: false,
+                    customLists: response.customLists
+                )
+            }
+            return (try? LunaCoreClient.encodeJSON(response)) ?? Data("{}".utf8)
+        }
+        if path.hasPrefix("/api/tv/v2/rows/") {
+            let rowRes = TvRowPageResponse(
+                ok: true,
+                rowId: "custom:nordic-noir",
+                sourceKind: "custom",
+                title: "Nordisk spenning",
+                offset: 0,
+                limit: 36,
+                totalEstimate: PreviewMockFixtures.seriesCards.count,
+                hasMore: false,
+                nextPath: nil,
+                items: PreviewMockFixtures.seriesCards
+            )
+            return (try? LunaCoreClient.encodeJSON(rowRes)) ?? Data("{}".utf8)
+        }
+        if path == "/api/tv/v2/delete/preflight" {
+            let preflightJSON = #"""
+            {
+              "preflightId": "preview-pf-1",
+              "target": {
+                "kind": "movie",
+                "scope": "title",
+                "season": null,
+                "episode": null,
+                "title": "Dune: Part Two",
+                "year": 2024,
+                "monitored": true
+              },
+              "files": {
+                "count": 1,
+                "logicalBytes": 53687091200,
+                "physicalBytes": 53687091200
+              },
+              "blockers": [],
+              "warnings": []
+            }
+            """#
+            return Data(preflightJSON.utf8)
         }
         if path == "/api/tv/v2/search" {
             let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -118,12 +204,34 @@ final class PreviewMockURLProtocol: URLProtocol {
             return (try? LunaCoreClient.encodeJSON(cat)) ?? Data("{}".utf8)
         }
         if path.contains("/seasons/") {
+            let isSpecials = path.hasSuffix("/seasons/0")
+            let seasonNum = isSpecials ? 0 : 28
+            let episodes = isSpecials
+                ? [
+                    TvEpisodeCard(
+                        itemId: "episode:tmdb:246810:s0:e1",
+                        seasonNumber: 0,
+                        episodeNumber: 1,
+                        title: "Tilbakeblikk",
+                        overview: "Høydepunkter og oppfølging fra tidligere sesonger.",
+                        stillUrl: "/preview-art/teal-backdrop.png",
+                        airDate: "2025-12-20",
+                        isUpcoming: false,
+                        airDateBadge: nil,
+                        voteAverage: 7.5,
+                        runtimeSeconds: 2520,
+                        watched: false,
+                        availability: TvAvailabilityInfo(state: "instant", tier: "nvme"),
+                        progress: nil
+                    )
+                ]
+                : PreviewMockFixtures.luksusfellenSeason28Episodes
             let seasonRes = TvSeasonDetailResponse(
                 ok: true,
                 tmdbId: 246810,
-                seasonNumber: 28,
-                title: "Sesong 28",
-                episodes: PreviewMockFixtures.luksusfellenSeason28Episodes
+                seasonNumber: seasonNum,
+                title: LunaCopy.localizedSeasonTitle(nil, seasonNumber: seasonNum),
+                episodes: episodes
             )
             return (try? LunaCoreClient.encodeJSON(seasonRes)) ?? Data("{}".utf8)
         }

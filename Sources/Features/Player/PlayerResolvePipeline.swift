@@ -183,8 +183,8 @@ enum PlayerResolvePipeline {
                     qos: nil
                 )
                 let effectiveCompleted = isCompleted || (hb?.watchCompleted == true)
-                if let onStopReceipt, let itemId, !itemId.isEmpty {
-                    let receipt = PlaybackStopReceipt(
+                let receipt: PlaybackStopReceipt? = if onStopReceipt != nil, let itemId, !itemId.isEmpty {
+                    PlaybackStopReceipt(
                         itemId: itemId,
                         mediaType: mediaType,
                         seasonNumber: seasonNumber,
@@ -194,10 +194,16 @@ enum PlayerResolvePipeline {
                         completed: effectiveCompleted,
                         recordedAt: Date()
                     )
-                    await onStopReceipt(receipt)
+                } else {
+                    nil
                 }
-                if let onComplete {
-                    await onComplete()
+                if receipt != nil || onComplete != nil {
+                    await MainActor.run {
+                        if let receipt, let onStopReceipt {
+                            onStopReceipt(receipt)
+                        }
+                        onComplete?()
+                    }
                 }
             }
         } else if let client = snapshot.client,
@@ -237,8 +243,8 @@ enum PlayerResolvePipeline {
                         )
                     }
                 }
-                if let onStopReceipt, let itemId, !itemId.isEmpty {
-                    let receipt = PlaybackStopReceipt(
+                let receipt: PlaybackStopReceipt? = if onStopReceipt != nil, let itemId, !itemId.isEmpty {
+                    PlaybackStopReceipt(
                         itemId: itemId,
                         mediaType: mediaType,
                         seasonNumber: seasonNumber,
@@ -248,10 +254,16 @@ enum PlayerResolvePipeline {
                         completed: isCompleted,
                         recordedAt: Date()
                     )
-                    await onStopReceipt(receipt)
+                } else {
+                    nil
                 }
-                if let onComplete {
-                    await onComplete()
+                if receipt != nil || onComplete != nil {
+                    await MainActor.run {
+                        if let receipt, let onStopReceipt {
+                            onStopReceipt(receipt)
+                        }
+                        onComplete?()
+                    }
                 }
             }
         } else {

@@ -9,6 +9,7 @@ extension PlayerSessionController {
         fatalError = nil
         host.qosReporter.transientBannerMessage = nil
         isResolving = true
+        cancelFirstFrameFallbackWatchdog()
         firstFrameFallbackUnlocked = false
         host.trackController.resetFlagsForResolve()
         if let prepSession = request.preparedSession {
@@ -20,12 +21,14 @@ extension PlayerSessionController {
             startupState.resolvePercent = 16
             startupState.resolveHeadline = nil
         }
+        let initialHeavyStream = PlayerEngineConfigurator.isLikelyHeavySoftwareSession(
+            request.preparedSession,
+            dualLayerOverride: comfort.dualLayerOverride,
+            lowResUpscaleMode: comfort.lowResUpscaleMode,
+            upscalesFullHDVideo: comfort.upscalesFullHDVideo
+        )
         ArtworkPipeline.shared.enterPlaybackMemoryMode(
-            isHeavySoftwareStream: PlayerEngineConfigurator.isLikelyHeavySoftwareSession(
-                request.preparedSession,
-                dualLayerOverride: comfort.dualLayerOverride,
-                lowResUpscaleMode: comfort.lowResUpscaleMode
-            ),
+            isHeavySoftwareStream: initialHeavyStream,
             preservedURLs: PlayerEngineConfigurator.curtainPreservedURLs(
                 request: request,
                 session: request.preparedSession,
@@ -34,6 +37,7 @@ extension PlayerSessionController {
         )
         UIApplication.shared.isIdleTimerDisabled = true
 
+        var didAttemptEngineLoad = false
         do {
             var effectivePreparedSession = request.preparedSession
             var effectivePrepareToken = request.prepareToken
@@ -62,7 +66,10 @@ extension PlayerSessionController {
                     prepareToken: effectivePrepareToken,
                     request: request,
                     client: client,
-                    autoplay: autoplay
+                    autoplay: autoplay,
+                    alreadyHadPreparedSession: request.preparedSession != nil,
+                    initialHeavyStream: initialHeavyStream,
+                    didAttemptEngineLoad: &didAttemptEngineLoad
                 )
                 return
             }
@@ -79,10 +86,22 @@ extension PlayerSessionController {
                 status: status,
                 startRes: startRes,
                 client: client,
-                onResolveIdChanged: { [weak self] in self?.activeResolveId = $0 },
+                onResolveIdChanged: { [weak self] resolveId in
+                    self?.activeResolveId = resolveId
+                    if resolveId != nil {
+                        self?.releaseOutgoingPictureIfHeld()
+                    }
+                },
                 onProgress: { [weak self] in self?.applyResolveProgressEvent($0) }
             )
-            try await finishColdMount(resolved, request: request, client: client, autoplay: autoplay)
+            try await finishColdMount(
+                resolved,
+                request: request,
+                client: client,
+                autoplay: autoplay,
+                initialHeavyStream: initialHeavyStream,
+                didAttemptEngineLoad: &didAttemptEngineLoad
+            )
         } catch where LunaCoreError.isCancellation(error) {
             return
         } catch LunaCoreError.unauthorized {
@@ -94,7 +113,10 @@ extension PlayerSessionController {
             guard !Task.isCancelled else { return }
             isResolving = false
             UIApplication.shared.isIdleTimerDisabled = false
-            fatalError = LunaCopy.friendlyErrorMessage(error)
+            fatalError = PlayerEngineConfigurator.friendlyEngineFailure(
+                error,
+                engineErrorInfo: didAttemptEngineLoad ? engine.errorInfo : nil
+            )
         }
     }
 
@@ -103,22 +125,33 @@ extension PlayerSessionController {
         prepareToken: String?,
         request: PlaybackLaunchRequest,
         client: LunaCoreClient,
-        autoplay: Bool
+        autoplay: Bool,
+        alreadyHadPreparedSession: Bool,
+        initialHeavyStream: Bool,
+        didAttemptEngineLoad: inout Bool
     ) async throws {
         guard let host else { return }
         pendingHandedOverSessionId = prepSession.sessionId
-        ArtworkPipeline.shared.enterPlaybackMemoryMode(
-            isHeavySoftwareStream: PlayerEngineConfigurator.isLikelyHeavySoftwareSession(
-                prepSession,
-                dualLayerOverride: comfort.dualLayerOverride,
-                lowResUpscaleMode: comfort.lowResUpscaleMode
-            ),
-            preservedURLs: PlayerEngineConfigurator.curtainPreservedURLs(
-                request: request,
-                session: prepSession,
-                client: client
-            )
+        let warmHeavyStream = PlayerEngineConfigurator.isLikelyHeavySoftwareSession(
+            prepSession,
+            dualLayerOverride: comfort.dualLayerOverride,
+            lowResUpscaleMode: comfort.lowResUpscaleMode,
+            upscalesFullHDVideo: comfort.upscalesFullHDVideo
         )
+        if PlayerEngineConfigurator.shouldUpgradePlaybackMemoryMode(
+            alreadyHadPreparedSession: alreadyHadPreparedSession,
+            initialHeavyStream: initialHeavyStream,
+            resolvedHeavyStream: warmHeavyStream
+        ) {
+            ArtworkPipeline.shared.enterPlaybackMemoryMode(
+                isHeavySoftwareStream: true,
+                preservedURLs: PlayerEngineConfigurator.curtainPreservedURLs(
+                    request: request,
+                    session: prepSession,
+                    client: client
+                )
+            )
+        }
         startupState.resolveHeadline = prepSession.selectedCandidate.displayHeadline
         startupState.resolveStageLabel = "Tilpasser skjerm og starter avspilling…"
         startupState.resolvePercent = 95
@@ -137,6 +170,7 @@ extension PlayerSessionController {
 
         do {
             isSpeculativeWarmMountInFlight = true
+            didAttemptEngineLoad = true
             try await mountSessionInEngine(
                 prepSession,
                 client: client,
@@ -157,7 +191,12 @@ extension PlayerSessionController {
                     status: status,
                     startRes: startRes,
                     client: client,
-                    onResolveIdChanged: { [weak self] in self?.activeResolveId = $0 },
+                    onResolveIdChanged: { [weak self] resolveId in
+                        self?.activeResolveId = resolveId
+                        if resolveId != nil {
+                            self?.releaseOutgoingPictureIfHeld()
+                        }
+                    },
                     onProgress: { [weak self] in self?.applyResolveProgressEvent($0) }
                 )
                 if let promoted, !Task.isCancelled, !isTeardownCompleted, !isDismissing {
@@ -166,8 +205,35 @@ extension PlayerSessionController {
                         host.trackController.rebuildMergedChapters()
                     } else {
                         let promotedIntent = host.trackController.captureCurrentTrackIntent()
+                        isSwitchingSource = true
+                        activeSwitchGeneration &+= 1
+                        let switchGeneration = activeSwitchGeneration
+                        var holdToken: UInt64?
+                        var handoffHoldToFirstFrameGate = false
+                        defer {
+                            if !handoffHoldToFirstFrameGate {
+                                releaseOutgoingPicture(ifMatching: holdToken)
+                                if activeSwitchGeneration == switchGeneration {
+                                    isReplacingSourceItem = false
+                                    isSwitchingSource = false
+                                }
+                            }
+                        }
+
+                        cancelFirstFrameFallbackWatchdog()
+                        holdToken = await beginOutgoingPictureHold()
+                        try Task.checkCancellation()
+                        guard !isDismissing, !isTeardownCompleted else { throw CancellationError() }
+
+                        cancelFirstFrameFallbackWatchdog()
+                        isReplacingSourceItem = true
+                        hasFirstFrameReadyForDisplay = false
+                        firstFrameFallbackUnlocked = false
+                        embeddedFontRegistry.clearAndUnregisterAll()
+                        host.scrubController.clearServerTrickplayCache()
                         transport.prepareForItemReplacement()
                         let livePos = max(0, transport.currentTime)
+                        didAttemptEngineLoad = true
                         try await mountSessionInEngine(
                             promoted,
                             client: client,
@@ -175,8 +241,16 @@ extension PlayerSessionController {
                             autoplay: autoplay,
                             trackIntent: promotedIntent
                         )
+                        handoffHoldToFirstFrameGate = true
+                        isReplacingSourceItem = false
+                        isSwitchingSource = false
+                        armFirstFrameFallbackWatchdog()
+                        evaluateOutgoingPictureRelease()
                     }
                 }
+            }
+            if !Task.isCancelled, !isTeardownCompleted, !isDismissing {
+                scheduleAlternativesPrefetch()
             }
         } catch where LunaCoreError.isCancellation(error) {
             isSpeculativeWarmMountInFlight = false
@@ -186,6 +260,7 @@ extension PlayerSessionController {
             fatalError = nil
             try Task.checkCancellation()
             guard !isTeardownCompleted, !isDismissing else { return }
+            didAttemptEngineLoad = false
             let (status, startRes) = try await withTaskCancellationHandler(
                 operation: { try await promoteTask.value },
                 onCancel: { promoteTask.cancel() }
@@ -194,10 +269,22 @@ extension PlayerSessionController {
                 status: status,
                 startRes: startRes,
                 client: client,
-                onResolveIdChanged: { [weak self] in self?.activeResolveId = $0 },
+                onResolveIdChanged: { [weak self] resolveId in
+                    self?.activeResolveId = resolveId
+                    if resolveId != nil {
+                        self?.releaseOutgoingPictureIfHeld()
+                    }
+                },
                 onProgress: { [weak self] in self?.applyResolveProgressEvent($0) }
             )
-            try await finishColdMount(fallbackSession, request: request, client: client, autoplay: autoplay)
+            try await finishColdMount(
+                fallbackSession,
+                request: request,
+                client: client,
+                autoplay: autoplay,
+                initialHeavyStream: initialHeavyStream || warmHeavyStream,
+                didAttemptEngineLoad: &didAttemptEngineLoad
+            )
         }
     }
 
@@ -205,7 +292,9 @@ extension PlayerSessionController {
         _ resolvedSession: TvPlaybackSession,
         request: PlaybackLaunchRequest,
         client: LunaCoreClient,
-        autoplay: Bool
+        autoplay: Bool,
+        initialHeavyStream: Bool,
+        didAttemptEngineLoad: inout Bool
     ) async throws {
         guard let host else { return }
         pendingHandedOverSessionId = resolvedSession.sessionId
@@ -213,20 +302,29 @@ extension PlayerSessionController {
         pendingInflightPrepareToken = nil
         try Task.checkCancellation()
         guard !isTeardownCompleted, !isDismissing else { throw CancellationError() }
-        ArtworkPipeline.shared.enterPlaybackMemoryMode(
-            isHeavySoftwareStream: PlayerEngineConfigurator.isLikelyHeavySoftwareSession(
-                resolvedSession,
-                dualLayerOverride: comfort.dualLayerOverride,
-                lowResUpscaleMode: comfort.lowResUpscaleMode
-            ),
-            preservedURLs: PlayerEngineConfigurator.curtainPreservedURLs(
-                request: request,
-                session: resolvedSession,
-                client: client
-            )
+        let resolvedHeavyStream = PlayerEngineConfigurator.isLikelyHeavySoftwareSession(
+            resolvedSession,
+            dualLayerOverride: comfort.dualLayerOverride,
+            lowResUpscaleMode: comfort.lowResUpscaleMode,
+            upscalesFullHDVideo: comfort.upscalesFullHDVideo
         )
+        if PlayerEngineConfigurator.shouldUpgradePlaybackMemoryMode(
+            alreadyHadPreparedSession: false,
+            initialHeavyStream: initialHeavyStream,
+            resolvedHeavyStream: resolvedHeavyStream
+        ) {
+            ArtworkPipeline.shared.enterPlaybackMemoryMode(
+                isHeavySoftwareStream: true,
+                preservedURLs: PlayerEngineConfigurator.curtainPreservedURLs(
+                    request: request,
+                    session: resolvedSession,
+                    client: client
+                )
+            )
+        }
         startupState.resolveStageLabel = "Tilpasser skjerm og starter avspilling…"
         startupState.resolvePercent = 95
+        didAttemptEngineLoad = true
         try await mountSessionInEngine(
             resolvedSession,
             client: client,
@@ -235,8 +333,11 @@ extension PlayerSessionController {
         )
         fatalError = nil
         isResolving = false
+        isReplacingSourceItem = false
         armFirstFrameFallbackWatchdog()
+        evaluateOutgoingPictureRelease()
         host.qosReporter.startHeartbeatLoop()
+        scheduleAlternativesPrefetch()
     }
 
     func applyResolveProgressEvent(_ event: TvResolveSocketEvent) {
@@ -251,17 +352,82 @@ extension PlayerSessionController {
         switchSourceTask = Task { @MainActor [weak self] in await self?.switchSource(to: candidateId) }
     }
 
+    func scheduleAlternativesPrefetch(delayNanoseconds: UInt64 = 350_000_000) {
+        guard let session = activeSession,
+              alternativesSessionId != session.sessionId,
+              !isDismissing,
+              !isTeardownCompleted else {
+            return
+        }
+        let expectedSessionId = session.sessionId
+        alternativesPrefetchTask?.cancel()
+        alternativesPrefetchTask = Task { @MainActor [weak self] in
+            if delayNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: delayNanoseconds)
+            }
+            guard !Task.isCancelled,
+                  let self,
+                  !self.isDismissing,
+                  !self.isTeardownCompleted,
+                  self.activeSession?.sessionId == expectedSessionId,
+                  self.alternativesSessionId != expectedSessionId else {
+                return
+            }
+            await self.loadAlternatives()
+        }
+    }
+
     func loadAlternatives() async {
-        guard let client = activeClient, let session = activeSession else { return }
+        guard let client = activeClient,
+              let session = activeSession,
+              !isDismissing,
+              !isTeardownCompleted else {
+            return
+        }
+        let targetSessionId = session.sessionId
+        if alternativesSessionId == targetSessionId {
+            return
+        }
+        if let existingTask = alternativesLoadTask,
+           alternativesLoadingSessionId == targetSessionId {
+            await existingTask.value
+            return
+        }
+        alternativesLoadTask?.cancel()
+        alternativesLoadingSessionId = targetSessionId
         isLoadingAlternatives = true
-        defer { isLoadingAlternatives = false }
-        do {
-            let res = try await client.fetchAlternatives(sessionId: session.sessionId)
-            alternatives = res.alternatives
-            markAlternativesLoaded(forSessionId: session.sessionId)
-        } catch LunaCoreError.unauthorized {
-            onUnauthorized?()
-        } catch {}
+
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.alternativesLoadingSessionId == targetSessionId {
+                    self.isLoadingAlternatives = false
+                    self.alternativesLoadTask = nil
+                    self.alternativesLoadingSessionId = nil
+                }
+            }
+            do {
+                let res = try await client.fetchAlternatives(sessionId: targetSessionId)
+                guard !Task.isCancelled,
+                      !self.isDismissing,
+                      !self.isTeardownCompleted,
+                      self.activeSession?.sessionId == targetSessionId else {
+                    return
+                }
+                self.alternatives = res.alternatives
+                self.markAlternativesLoaded(forSessionId: targetSessionId)
+            } catch LunaCoreError.unauthorized {
+                guard !Task.isCancelled,
+                      !self.isDismissing,
+                      !self.isTeardownCompleted,
+                      self.activeSession?.sessionId == targetSessionId else {
+                    return
+                }
+                self.onUnauthorized?()
+            } catch {}
+        }
+        alternativesLoadTask = task
+        await task.value
     }
 
     func switchSource(to candidateId: String) async {
@@ -272,10 +438,25 @@ extension PlayerSessionController {
         host.trackController.flushPendingAudioDelayCommitIfNeeded()
         let capturedIntent = host.trackController.captureCurrentTrackIntent()
         host.scrubController.resetScrubStateOnSessionChange()
+        host.scrubController.clearServerTrickplayCache()
         let currentPos = max(0, transport.currentTime)
         isSwitchingSource = true
+        activeSwitchGeneration &+= 1
+        let switchGeneration = activeSwitchGeneration
         startupState.resolveStageLabel = "Bytter utgave sømløst på samme tidskode…"
         startupState.resolvePercent = 70
+
+        var holdToken: UInt64?
+        var handoffHoldToFirstFrameGate = false
+        defer {
+            if !handoffHoldToFirstFrameGate {
+                releaseOutgoingPicture(ifMatching: holdToken)
+                if activeSwitchGeneration == switchGeneration {
+                    isReplacingSourceItem = false
+                    isSwitchingSource = false
+                }
+            }
+        }
 
         do {
             let updatedSession = try await client.switchCandidate(
@@ -283,6 +464,19 @@ extension PlayerSessionController {
                 candidateId: candidateId,
                 positionSeconds: currentPos
             )
+            try Task.checkCancellation()
+            guard !isDismissing, !didTeardown else { throw CancellationError() }
+
+            cancelFirstFrameFallbackWatchdog()
+            holdToken = await beginOutgoingPictureHold()
+            try Task.checkCancellation()
+            guard !isDismissing, !didTeardown else { throw CancellationError() }
+
+            cancelFirstFrameFallbackWatchdog()
+            isReplacingSourceItem = true
+            hasFirstFrameReadyForDisplay = false
+            firstFrameFallbackUnlocked = false
+            embeddedFontRegistry.clearAndUnregisterAll()
             transport.prepareForItemReplacement()
             try await mountSessionInEngine(
                 updatedSession,
@@ -290,14 +484,21 @@ extension PlayerSessionController {
                 overrideStartPosition: updatedSession.stream.startPositionSeconds ?? currentPos,
                 trackIntent: capturedIntent
             )
+            handoffHoldToFirstFrameGate = true
+            isReplacingSourceItem = false
             isSwitchingSource = false
+            armFirstFrameFallbackWatchdog()
+            evaluateOutgoingPictureRelease()
+            scheduleAlternativesPrefetch()
         } catch LunaCoreError.unauthorized {
-            isSwitchingSource = false
             onUnauthorized?()
         } catch {
-            isSwitchingSource = false
-            guard !Task.isCancelled else { return }
-            host.qosReporter.showTransientBanner("Utgavebytte feilet: \(LunaCopy.friendlyErrorMessage(error))")
+            guard !Task.isCancelled, !isDismissing, !didTeardown else { return }
+            let msg = PlayerEngineConfigurator.friendlyEngineFailure(
+                error,
+                engineErrorInfo: engine.errorInfo
+            )
+            host.qosReporter.showTransientBanner("Utgavebytte feilet: \(msg)")
         }
     }
 
@@ -306,14 +507,40 @@ extension PlayerSessionController {
         client: LunaCoreClient,
         fallbackPosition: Double
     ) async {
-        guard let host, !isSwitchingSource, !isResolving else { return }
+        guard let host, !isSwitchingSource, !isResolving, !isDismissing, !didTeardown else { return }
         host.trackController.flushPendingAudioDelayCommitIfNeeded()
         let capturedIntent = host.trackController.captureCurrentTrackIntent()
         host.scrubController.resetScrubStateOnSessionChange()
+        host.scrubController.clearServerTrickplayCache()
         isSwitchingSource = true
+        activeSwitchGeneration &+= 1
+        let switchGeneration = activeSwitchGeneration
         startupState.resolveStageLabel = "Bytter utgave valgt fra iPhone…"
         startupState.resolvePercent = 75
+
+        var holdToken: UInt64?
+        var handoffHoldToFirstFrameGate = false
+        defer {
+            if !handoffHoldToFirstFrameGate {
+                releaseOutgoingPicture(ifMatching: holdToken)
+                if activeSwitchGeneration == switchGeneration {
+                    isReplacingSourceItem = false
+                    isSwitchingSource = false
+                }
+            }
+        }
+
         do {
+            cancelFirstFrameFallbackWatchdog()
+            holdToken = await beginOutgoingPictureHold()
+            try Task.checkCancellation()
+            guard !isDismissing, !didTeardown else { throw CancellationError() }
+
+            cancelFirstFrameFallbackWatchdog()
+            isReplacingSourceItem = true
+            hasFirstFrameReadyForDisplay = false
+            firstFrameFallbackUnlocked = false
+            embeddedFontRegistry.clearAndUnregisterAll()
             transport.prepareForItemReplacement()
             try await mountSessionInEngine(
                 switchedSession,
@@ -321,10 +548,19 @@ extension PlayerSessionController {
                 overrideStartPosition: switchedSession.stream.startPositionSeconds ?? fallbackPosition,
                 trackIntent: capturedIntent
             )
+            handoffHoldToFirstFrameGate = true
+            isReplacingSourceItem = false
             isSwitchingSource = false
+            armFirstFrameFallbackWatchdog()
+            evaluateOutgoingPictureRelease()
+            scheduleAlternativesPrefetch()
         } catch {
-            isSwitchingSource = false
-            host.qosReporter.showTransientBanner("Utgavebytte feilet: \(LunaCopy.friendlyErrorMessage(error))")
+            guard !Task.isCancelled, !isDismissing, !didTeardown else { return }
+            let msg = PlayerEngineConfigurator.friendlyEngineFailure(
+                error,
+                engineErrorInfo: engine.errorInfo
+            )
+            host.qosReporter.showTransientBanner("Utgavebytte feilet: \(msg)")
         }
     }
 }

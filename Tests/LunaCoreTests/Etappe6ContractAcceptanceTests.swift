@@ -184,7 +184,7 @@ struct Etappe6ContractAcceptanceTests {
         #expect(sentPaths.allSatisfy { $0.hasPrefix("/api/tv/v2/") })
 
         let heroImg = client.resolveArtworkURL("/api/tv/v2/img/card/tmdb/hero.jpg", target: .hero4K)
-        #expect(heroImg?.absoluteString == "https://\(host):8920/api/tv/v2/img/backdrop/tmdb/hero.jpg")
+        #expect(heroImg?.absoluteString == "https://\(host):8920/api/tv/v2/img/backdrop4k/tmdb/hero.jpg")
         let wsURL = PlaybackResolveSocket.makeWebSocketURL(baseURL: client.baseURL, wsPath: "/api/tv/v2/ws/playback/res-v2")
         #expect(wsURL?.absoluteString == "wss://\(host):8920/api/tv/v2/ws/playback/res-v2")
     }

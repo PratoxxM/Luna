@@ -150,4 +150,28 @@ final class PlaybackAudioSessionAndQMSCriteriaTests: XCTestCase {
         coordinator.handleDetailDisappear(isLaunchingPlayback: false, isShowingSourcePicker: false)
         XCTAssertEqual(counter.count, 1)
     }
+
+    @MainActor
+    func testBinauralHeadphonePortClassificationAndCachedMenuRefreshRateGuard() {
+        XCTAssertTrue(PlayerAudioSessionCoordinator.isBinauralAudioRoute(portTypes: [.bluetoothA2DP]))
+        XCTAssertTrue(PlayerAudioSessionCoordinator.isBinauralAudioRoute(portTypes: [.bluetoothLE]))
+        XCTAssertTrue(PlayerAudioSessionCoordinator.isBinauralAudioRoute(portTypes: [.bluetoothHFP]))
+        XCTAssertFalse(PlayerAudioSessionCoordinator.isBinauralAudioRoute(portTypes: [.airPlay]))
+        XCTAssertFalse(PlayerAudioSessionCoordinator.isBinauralAudioRoute(portTypes: [.HDMI]))
+        XCTAssertFalse(PlayerAudioSessionCoordinator.isBinauralAudioRoute(portTypes: []))
+
+        let coordinator = PlayerAudioSessionCoordinator()
+        XCTAssertTrue(
+            coordinator.recordSampledMenuRefreshRate(
+                rawHz: 50.0,
+                hasPreferredDisplayCriteria: false,
+                isDisplayModeSwitchInProgress: false,
+                hasActivePlayback: false
+            )
+        )
+        XCTAssertEqual(coordinator.cachedMenuRefreshRateHz, 50.0)
+        // Must skip CADisplayLink sampling once cachedMenuRefreshRateHz is populated
+        coordinator.sampleMenuRefreshRateIfIdle(hasActivePlayback: false)
+        XCTAssertEqual(coordinator.cachedMenuRefreshRateHz, 50.0)
+    }
 }

@@ -218,7 +218,7 @@ extension MediaDetailViewModel {
             tmdbId: detail.ids.tmdb,
             tvdbId: detail.ids.tvdb,
             title: detail.title,
-            subtitle: "Sesong \(seasonNum)",
+            subtitle: LunaCopy.localizedSeasonTitle(nil, seasonNumber: seasonNum),
             scope: .season,
             season: seasonNum
         )
@@ -297,6 +297,12 @@ extension MediaDetailViewModel {
         return base
     }
 
+    private func fallbackTargetSeason(for item: TvItemDetail) -> Int {
+        item.seasons?.first(where: { $0.seasonNumber > 0 })?.seasonNumber
+            ?? item.seasons?.first?.seasonNumber
+            ?? (selectedSeasonNumber >= 0 ? selectedSeasonNumber : 1)
+    }
+
     func primaryPlayLabel(_ item: TvItemDetail) -> String {
         let inProgress = (item.progress?.positionSeconds ?? 0) > 30 && (item.progress?.percent ?? 0) < 90
         if item.mediaType == "series" {
@@ -308,7 +314,8 @@ extension MediaDetailViewModel {
                 }
                 return "Spill S\(next.season) E\(next.episode)"
             }
-            return item.watched ? "Spill på nytt S1 E1" : "Spill S1 E1"
+            let fallbackSeason = fallbackTargetSeason(for: item)
+            return item.watched ? "Spill på nytt S\(fallbackSeason) E1" : "Spill S\(fallbackSeason) E1"
         }
         if inProgress {
             return "Fortsett"
@@ -327,7 +334,8 @@ extension MediaDetailViewModel {
         let itemProgPos: Double? = (item.progress?.percent ?? 0) < 90 ? item.progress?.positionSeconds : 0
         if item.mediaType == "series" {
             let rewatchFromStart = item.nextUp == nil && item.watched
-            let s = rewatchFromStart ? 1 : (item.nextUp?.season ?? selectedSeasonNumber)
+            let fallbackSeason = fallbackTargetSeason(for: item)
+            let s = rewatchFromStart ? fallbackSeason : (item.nextUp?.season ?? fallbackSeason)
             let playable = episodes.filter { $0.isUpcoming != true }
             let e = rewatchFromStart ? 1 : (item.nextUp?.episode ?? playable.first?.episodeNumber ?? 1)
             let epId: String

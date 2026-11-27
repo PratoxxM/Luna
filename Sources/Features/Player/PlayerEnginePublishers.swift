@@ -37,6 +37,17 @@ extension PlayerViewModel {
                 if self.qosReporter.playbackPhase != phase {
                     self.qosReporter.playbackPhase = phase
                 }
+                let isTransientTransition = self.sessionController.isResolving
+                    || self.sessionController.isSwitchingSource
+                    || self.sessionController.isReplacingSourceItem
+                    || self.restoreController.isRestoringFromBackground
+                    || self.sessionController.isDismissing
+                    || self.sessionController.isTeardownCompleted
+                self.qosReporter.recordPlaybackPhaseTransition(
+                    from: previousPhase,
+                    to: phase,
+                    isTransientTransition: isTransientTransition
+                )
                 self.restoreController.updateIdleTimer(for: phase)
                 if self.restoreController.isForegroundActive,
                    !self.restoreController.isRestoringFromBackground,
@@ -55,7 +66,10 @@ extension PlayerViewModel {
                     self.sessionController.isResolving = false
                     self.sessionController.isSwitchingSource = false
                     if self.sessionController.fatalError == nil {
-                        self.sessionController.fatalError = LunaCopy.friendlyEngineErrorMessage(errMsg)
+                        self.sessionController.fatalError = PlayerEngineConfigurator.friendlyEngineErrorMessage(
+                            rawMessage: errMsg,
+                            errorInfo: self.engine.errorInfo
+                        )
                     }
                     Task { @MainActor [weak self] in
                         guard let self, !self.sessionController.isDismissing, !self.sessionController.isTeardownCompleted else { return }
@@ -173,6 +187,17 @@ extension PlayerViewModel {
             .sink { [weak self] idx in
                 guard let self, self.trackController.activeSubtitleTrackIndex != idx else { return }
                 self.trackController.activeSubtitleTrackIndex = idx
+            }
+            .store(in: &cancellables)
+
+        engine.$fontAttachments
+            .sink { [weak self] attachments in
+                guard let self,
+                      !self.sessionController.isDismissing,
+                      !self.sessionController.isTeardownCompleted else {
+                    return
+                }
+                self.sessionController.embeddedFontRegistry.ingest(attachments: attachments)
             }
             .store(in: &cancellables)
 

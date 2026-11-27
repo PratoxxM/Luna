@@ -208,196 +208,206 @@ final class DesignPrimitivesAndDetailViewTests: XCTestCase {
         XCTAssertFalse(statusPill.showsSpinner)
     }
 
-    // MARK: - K-2 (5/7): DetailHeroHeaderView
+    // MARK: - M2: Focus Performance, Memoization, Filter Bar & Card FocusSurface Compatibility
 
-    func testDetailHeroHeaderFormattingAndBadgeDeduplication() {
-        XCTAssertEqual(DetailHeroHeaderView.heroMinHeight(for: "movie"), 760)
-        XCTAssertEqual(DetailHeroHeaderView.heroMinHeight(for: "series"), 500)
+    @MainActor
+    func testArtworkURLMemoBoxCachesRepeatedResolutionsAndInvalidatesOnInputChange() throws {
+        let memo = ArtworkURLMemoBox()
+        let baseA = try XCTUnwrap(URL(string: "http://lunacore-a.local:8090"))
+        let baseB = try XCTUnwrap(URL(string: "http://lunacore-b.local:8090"))
 
-        let seriesDetail = makeDetail(
-            mediaType: "series",
-            year: 2022,
-            genres: ["Sci-Fi", "Drama", "Thriller"],
-            imdbRating: 8.7,
-            badges: ["På NVMe", " 4K HDR10+ ", "4k hdr10+", "TrueHD Atmos", "Kommer: I morgen", "DV", "Ekstra"],
-            nextAirDateBadge: "I morgen",
-            seasons: [
-                TvSeasonSummary(seasonNumber: 0, name: "Specials", episodeCount: 2, posterUrl: nil, airDate: nil),
-                TvSeasonSummary(seasonNumber: 1, name: "Season 1", episodeCount: 9, posterUrl: nil, airDate: nil),
-                TvSeasonSummary(seasonNumber: 2, name: "Season 2", episodeCount: 10, posterUrl: nil, airDate: nil),
-            ]
+        var resolverCalls = 0
+        let first = memo.resolve(path: "/api/tv/v2/img/card/1", baseURL: baseA, target: .poster2x) {
+            resolverCalls += 1
+            return URL(string: "http://lunacore-a.local:8090/api/tv/v2/img/card/1")
+        }
+        let repeated = memo.resolve(path: "/api/tv/v2/img/card/1", baseURL: baseA, target: .poster2x) {
+            resolverCalls += 1
+            return URL(string: "http://lunacore-a.local:8090/api/tv/v2/img/card/unexpected")
+        }
+        XCTAssertEqual(resolverCalls, 1)
+        XCTAssertEqual(first, repeated)
+
+        _ = memo.resolve(path: "/api/tv/v2/img/card/2", baseURL: baseA, target: .poster2x) {
+            resolverCalls += 1
+            return URL(string: "http://lunacore-a.local:8090/api/tv/v2/img/card/2")
+        }
+        XCTAssertEqual(resolverCalls, 2)
+
+        _ = memo.resolve(path: "/api/tv/v2/img/card/2", baseURL: baseB, target: .poster2x) {
+            resolverCalls += 1
+            return URL(string: "http://lunacore-b.local:8090/api/tv/v2/img/card/2")
+        }
+        XCTAssertEqual(resolverCalls, 3)
+
+        _ = memo.resolve(path: "/api/tv/v2/img/card/2", baseURL: baseB, target: .landscape2x) {
+            resolverCalls += 1
+            return URL(string: "http://lunacore-b.local:8090/api/tv/v2/img/card/2")
+        }
+        XCTAssertEqual(resolverCalls, 4)
+
+        let clientMemo = ArtworkURLMemoBox()
+        XCTAssertNil(clientMemo.resolve(path: "/api/tv/v2/img/card/9", client: nil, target: .poster2x))
+
+        let clientA = LunaCoreClient(
+            baseURL: baseA,
+            deviceID: "tv-m2-test",
+            deviceToken: "tok",
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512",
+            allowSelfSignedLanTLS: false
         )
-
-        let seriesMeta = DetailHeroHeaderView.detailMetadataLine(for: seriesDetail)
-        XCTAssertEqual(
-            seriesMeta,
-            "2022 · Sci-Fi, Drama · \(LunaCopy.seasonsCount(2)) · ★ 8,7 · Ny episode I morgen"
+        let clientB = LunaCoreClient(
+            baseURL: baseB,
+            deviceID: "tv-m2-test",
+            deviceToken: "tok",
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512",
+            allowSelfSignedLanTLS: false
         )
-        XCTAssertEqual(
-            DetailHeroHeaderView.displayedBadges(for: seriesDetail),
-            ["4K HDR10+", "TrueHD Atmos", "DV"]
-        )
+        let resolvedA = clientMemo.resolve(path: "/api/tv/v2/img/card/9", client: clientA, target: .poster2x)
+        let resolvedARepeat = clientMemo.resolve(path: "/api/tv/v2/img/card/9", client: clientA, target: .poster2x)
+        let resolvedB = clientMemo.resolve(path: "/api/tv/v2/img/card/9", client: clientB, target: .poster2x)
+        XCTAssertEqual(resolvedA?.host, "lunacore-a.local")
+        XCTAssertEqual(resolvedA, resolvedARepeat)
+        XCTAssertEqual(resolvedB?.host, "lunacore-b.local")
+    }
 
-        let movieDetail = makeDetail(
+    func testCachedArtworkShouldSkipAsyncLoadRequiresExactEpochValidMatch() {
+        XCTAssertTrue(
+            CachedArtworkView.shouldSkipAsyncLoad(
+                targetImageKey: "movie-1#px820",
+                currentMemoryEpoch: 3,
+                retainDuringPlayback: false,
+                loadedKey: nil,
+                loadedIsExact: false,
+                loadedEpoch: 0,
+                syncHitKey: "movie-1#px820",
+                syncHitIsExact: true,
+                syncHitEpoch: 3
+            )
+        )
+        XCTAssertTrue(
+            CachedArtworkView.shouldSkipAsyncLoad(
+                targetImageKey: "movie-1#px820",
+                currentMemoryEpoch: 3,
+                retainDuringPlayback: false,
+                loadedKey: "movie-1#px820",
+                loadedIsExact: true,
+                loadedEpoch: 3,
+                syncHitKey: nil,
+                syncHitIsExact: false,
+                syncHitEpoch: 0
+            )
+        )
+        XCTAssertFalse(
+            CachedArtworkView.shouldSkipAsyncLoad(
+                targetImageKey: nil,
+                currentMemoryEpoch: 3,
+                retainDuringPlayback: false,
+                loadedKey: "movie-1#px820",
+                loadedIsExact: true,
+                loadedEpoch: 3,
+                syncHitKey: "movie-1#px820",
+                syncHitIsExact: true,
+                syncHitEpoch: 3
+            )
+        )
+        XCTAssertFalse(
+            CachedArtworkView.shouldSkipAsyncLoad(
+                targetImageKey: "movie-1#px820",
+                currentMemoryEpoch: 4,
+                retainDuringPlayback: false,
+                loadedKey: "movie-1#px820",
+                loadedIsExact: true,
+                loadedEpoch: 3,
+                syncHitKey: "movie-1#px820",
+                syncHitIsExact: true,
+                syncHitEpoch: 3
+            )
+        )
+        XCTAssertTrue(
+            CachedArtworkView.shouldSkipAsyncLoad(
+                targetImageKey: "movie-1#px820",
+                currentMemoryEpoch: 4,
+                retainDuringPlayback: true,
+                loadedKey: "movie-1#px820",
+                loadedIsExact: true,
+                loadedEpoch: 3,
+                syncHitKey: nil,
+                syncHitIsExact: false,
+                syncHitEpoch: 0
+            )
+        )
+        XCTAssertFalse(
+            CachedArtworkView.shouldSkipAsyncLoad(
+                targetImageKey: "movie-1#px820",
+                currentMemoryEpoch: 3,
+                retainDuringPlayback: false,
+                loadedKey: nil,
+                loadedIsExact: false,
+                loadedEpoch: 0,
+                syncHitKey: "movie-1#px820",
+                syncHitIsExact: false,
+                syncHitEpoch: 3
+            )
+        )
+    }
+
+    @MainActor
+    func testCatalogFilterBarAndCardFocusSurfaceCompatibility() throws {
+        XCTAssertEqual(CatalogFilterBarView.trailingMaskFadeWidth, 56)
+        let genreJSON = Data(#"{"slug":"drama","label":"Drama","browsePath":"/api/tv/v2/catalog/movie?genre=drama"}"#.utf8)
+        let chip = try JSONDecoder().decode(TvGenreChip.self, from: genreJSON)
+        let filterBar = CatalogFilterBarView(
+            categoryTitle: "Filmer",
+            availableGenres: [chip],
+            selectedSort: .constant("popular"),
+            localOnly: .constant(false),
+            unwatchedOnly: .constant(false),
+            selectedGenreSlug: .constant(nil),
+            selectedGenreLabel: .constant(nil),
+            entryFocusNonce: 0,
+            isEntryActive: true,
+            onScrollToTop: {},
+            onMoveDown: {}
+        )
+        XCTAssertEqual(filterBar.categoryTitle, "Filmer")
+
+        let baseURL = try XCTUnwrap(URL(string: "http://lunacore.local:8090"))
+        let client = LunaCoreClient(
+            baseURL: baseURL,
+            deviceID: "tv-m2-test",
+            deviceToken: "tok",
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512",
+            allowSelfSignedLanTLS: false
+        )
+        let card = TvMediaCard(
+            itemId: "movie:tmdb:693134",
             mediaType: "movie",
+            ids: TvMediaIds(tmdb: 693134),
+            title: "Dune: Part Two",
             year: 2024,
-            runtimeSeconds: 9960,
-            genres: ["Sci-Fi"],
-            imdbRating: 8.5,
-            badges: ["Klar i VFS", "I Arkiv", "Strømmes ved start", "Starter umiddelbart", "Kommer", "HDR10"]
+            posterUrl: "/api/tv/v2/img/card/693134",
+            cardBackdropUrl: "/api/tv/v2/img/backdrop/693134"
         )
-        XCTAssertEqual(
-            DetailHeroHeaderView.detailMetadataLine(for: movieDetail),
-            "2024 · Sci-Fi · 2 t 46 min · ★ 8,5"
-        )
-        XCTAssertEqual(DetailHeroHeaderView.displayedBadges(for: movieDetail), ["HDR10"])
-    }
+        let poster = PosterCardView(card: card, client: client, showRestingTitle: true, onSelect: {})
+        let backdrop = BackdropCardView(card: card, client: client, variant: .continueWatching, onPrimaryAction: {})
+        XCTAssertEqual(poster.card.itemId, "movie:tmdb:693134")
+        XCTAssertEqual(backdrop.variant, .continueWatching)
+        XCTAssertEqual(PosterCardView.shelfCaptionSpacing, 10)
+        XCTAssertEqual(PosterCardView.shelfCaptionHeight, 52)
+        XCTAssertEqual(PosterCardView.gridCaptionSpacing, 14)
+        XCTAssertEqual(PosterCardView.gridCaptionHeight, 60)
 
-    // MARK: - K-2 (6/7): DetailMoreAndOverviewSheets
-
-    func testDetailMoreSheetActionsAndOverviewChunking() {
-        XCTAssertEqual(DetailMoreSheetView.defaultAction(canReadOverview: true), .readOverview)
-        XCTAssertEqual(DetailMoreSheetView.defaultAction(canReadOverview: false), .toggleWatched)
-
-        let localMovie = makeDetail(
-            mediaType: "movie",
-            monitored: false,
-            availability: TvAvailabilityInfo(state: "instant", tier: "nvme")
-        )
-        let remoteMovie = makeDetail(
-            mediaType: "movie",
-            monitored: true,
-            availability: TvAvailabilityInfo(state: "remote", tier: "vfs")
-        )
-        let unmonitoredRemoteMovie = makeDetail(
-            mediaType: "movie",
-            monitored: false,
-            availability: TvAvailabilityInfo(state: "remote", tier: "usenet")
-        )
-        let monitoredSeries = makeDetail(mediaType: "series", monitored: true)
-        let unmonitoredSeries = makeDetail(mediaType: "series", monitored: false)
-
-        XCTAssertFalse(DetailMoreSheetView.shouldShowMonitorButton(item: localMovie))
-        XCTAssertTrue(DetailMoreSheetView.shouldShowMonitorButton(item: remoteMovie))
-        XCTAssertTrue(DetailMoreSheetView.shouldShowMonitorButton(item: unmonitoredSeries))
-
-        XCTAssertTrue(DetailMoreSheetView.shouldShowDeleteButton(item: localMovie, hasLocalEpisodes: false))
-        XCTAssertTrue(DetailMoreSheetView.shouldShowDeleteButton(item: remoteMovie, hasLocalEpisodes: false))
-        XCTAssertTrue(DetailMoreSheetView.shouldShowDeleteButton(item: unmonitoredSeries, hasLocalEpisodes: true))
-        XCTAssertFalse(DetailMoreSheetView.shouldShowDeleteButton(item: unmonitoredSeries, hasLocalEpisodes: false))
-
-        XCTAssertEqual(DetailMoreSheetView.monitorTitle(item: monitoredSeries), "Slutt å følge serien")
-        XCTAssertEqual(DetailMoreSheetView.monitorIcon(item: monitoredSeries), "bell.fill")
-        XCTAssertEqual(DetailMoreSheetView.monitorTitle(item: unmonitoredSeries), "Følg serien")
-        XCTAssertEqual(DetailMoreSheetView.monitorIcon(item: unmonitoredSeries), "bell")
-        XCTAssertEqual(DetailMoreSheetView.monitorTitle(item: remoteMovie), "Avbryt klargjøring")
-        XCTAssertEqual(DetailMoreSheetView.monitorIcon(item: remoteMovie), "arrow.down.circle.fill")
-        XCTAssertEqual(DetailMoreSheetView.monitorTitle(item: unmonitoredRemoteMovie), "Gjør klar på forhånd")
-        XCTAssertEqual(DetailMoreSheetView.monitorIcon(item: unmonitoredRemoteMovie), "arrow.down.circle")
-
-        XCTAssertEqual(DetailMoreSheetView.deleteTitle(mediaType: "series"), "Slett fra samlingen")
-        XCTAssertEqual(DetailMoreSheetView.deleteTitle(mediaType: "movie"), "Slett filmen fra samlingen")
-
-        XCTAssertEqual(DetailOverviewSheetView.makeFocusableChunks(from: "   \n  "), ["   \n  "])
-        XCTAssertEqual(
-            DetailOverviewSheetView.makeFocusableChunks(from: "Første avsnitt.\n\nAndre avsnitt."),
-            ["Første avsnitt.", "Andre avsnitt."]
-        )
-        let sentenceA = String(repeating: "a", count: 160)
-        let sentenceB = String(repeating: "b", count: 160)
-        let longOverview = "\(sentenceA). \(sentenceB)"
-        let splitChunks = DetailOverviewSheetView.makeFocusableChunks(from: longOverview)
-        XCTAssertEqual(splitChunks, ["\(sentenceA).", sentenceB])
-    }
-
-    // MARK: - K-2 (7/7): DetailSeasonsSectionView
-
-    func testDetailSeasonsSelectionNextEpisodeAndScrollTargeting() {
-        XCTAssertFalse(DetailSeasonsSectionView.usesSeasonPickerSheet(seasonCount: 6))
-        XCTAssertTrue(DetailSeasonsSectionView.usesSeasonPickerSheet(seasonCount: 7))
-
-        let seasons = [
-            TvSeasonSummary(seasonNumber: 1, name: "Season 1", episodeCount: 9, posterUrl: nil, airDate: nil),
-            TvSeasonSummary(seasonNumber: 2, name: "Season 2", episodeCount: 10, posterUrl: nil, airDate: nil),
-        ]
-        XCTAssertEqual(
-            DetailSeasonsSectionView.selectedSeasonSummary(seasons: seasons, selectedSeasonNumber: 2)?.seasonNumber,
-            2
-        )
-        XCTAssertEqual(
-            DetailSeasonsSectionView.selectedSeasonSummary(seasons: seasons, selectedSeasonNumber: 99)?.seasonNumber,
-            1
-        )
-        XCTAssertNil(DetailSeasonsSectionView.selectedSeasonSummary(seasons: [], selectedSeasonNumber: 1))
-
-        let ep1 = TvEpisodeCard(itemId: "ep-1", seasonNumber: 2, episodeNumber: 1, title: "E1", watched: true)
-        let ep2 = TvEpisodeCard(itemId: "ep-2", seasonNumber: 2, episodeNumber: 2, title: "E2", isUpcoming: true, watched: false)
-        let ep3 = TvEpisodeCard(itemId: "ep-3", seasonNumber: 2, episodeNumber: 3, title: "E3", isUpcoming: false, watched: false)
-        let episodes = [ep1, ep2, ep3]
-
-        let detailWithNextUp = makeDetail(
-            mediaType: "series",
-            nextUp: TvNextUpPointer(season: 2, episode: 3)
-        )
-        XCTAssertEqual(
-            DetailSeasonsSectionView.nextEpisodeTargetID(detail: detailWithNextUp, episodes: episodes),
-            "ep-3"
-        )
-        XCTAssertEqual(
-            DetailSeasonsSectionView.scrollTargetEpisodeID(overrideID: nil, detail: detailWithNextUp, episodes: episodes),
-            "ep-3"
-        )
-        XCTAssertNil(
-            DetailSeasonsSectionView.scrollTargetEpisodeID(overrideID: "ep-1", detail: detailWithNextUp, episodes: episodes)
-        )
-        XCTAssertNil(
-            DetailSeasonsSectionView.scrollTargetEpisodeID(overrideID: "missing", detail: detailWithNextUp, episodes: episodes)
-        )
-        XCTAssertEqual(
-            DetailSeasonsSectionView.scrollTargetEpisodeID(overrideID: "ep-2", detail: detailWithNextUp, episodes: episodes),
-            "ep-2"
-        )
-
-        let detailWithoutNextUp = makeDetail(mediaType: "series", nextUp: nil)
-        XCTAssertEqual(
-            DetailSeasonsSectionView.nextEpisodeTargetID(detail: detailWithoutNextUp, episodes: episodes),
-            "ep-3"
-        )
-        XCTAssertNil(
-            DetailSeasonsSectionView.nextEpisodeTargetID(detail: detailWithoutNextUp, episodes: [ep1, ep2])
-        )
-    }
-
-    private func makeDetail(
-        mediaType: String,
-        year: Int? = nil,
-        runtimeSeconds: Double? = nil,
-        genres: [String]? = nil,
-        imdbRating: Double? = nil,
-        badges: [String]? = nil,
-        nextAirDateBadge: String? = nil,
-        monitored: Bool? = nil,
-        availability: TvAvailabilityInfo? = nil,
-        nextUp: TvNextUpPointer? = nil,
-        seasons: [TvSeasonSummary]? = nil
-    ) -> TvItemDetail {
-        TvItemDetail(
-            itemId: "\(mediaType):tmdb:100",
-            mediaType: mediaType,
-            ids: TvMediaIds(tmdb: 100),
-            title: "Eksempeltittel",
-            year: year,
-            runtimeSeconds: runtimeSeconds,
-            genres: genres,
-            imdbRating: imdbRating,
-            badges: badges,
-            nextAirDateBadge: nextAirDateBadge,
-            inWatchlist: false,
-            watched: false,
-            monitored: monitored,
-            availability: availability,
-            nextUp: nextUp,
-            seasons: seasons
-        )
+        let _ = Color.clear.lunaCardLampGlow(isFocused: true)
+        let _ = Color.clear.lunaCardLampGlow(isFocused: false, cornerRadius: LunaTheme.posterRadius)
+        let _ = Color.clear.lunaFocusCaptionReveal(isVisible: true, isFocused: true)
+        let _ = Color.clear.lunaFocusCaptionReveal(isVisible: true, isFocused: false, animate: false)
+        let _ = Color.clear.lunaFocusSurface(.card, isFocused: true, cornerRadius: LunaTheme.cardRadius)
+        let _ = Color.clear.lunaFocusSurface(.control, isFocused: true, cornerRadius: LunaTokens.Radius.pill)
+        let _ = Color.clear.lunaFocusSurface(.control, isFocused: true, cornerRadius: LunaTokens.Radius.pill, accentColor: LunaTheme.coral)
+        let _ = Color.clear.lunaFocusSurface(.listRow, isFocused: true)
     }
 }

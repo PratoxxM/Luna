@@ -7,8 +7,6 @@ public enum BackdropCardVariant: Sendable {
 }
 
 public struct BackdropCardView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     let card: TvMediaCard
     let client: LunaCoreClient?
     let variant: BackdropCardVariant
@@ -18,7 +16,7 @@ public struct BackdropCardView: View {
     let onPrimaryAction: () -> Void
     let onPlayShortcut: (() -> Void)?
 
-    @FocusState private var isFocused: Bool
+    @State private var urlMemo = ArtworkURLMemoBox()
 
     public init(
         card: TvMediaCard,
@@ -45,7 +43,42 @@ public struct BackdropCardView: View {
     }
 
     public var body: some View {
-        let artworkURL = client?.resolveArtworkURL(card.preferredLandscapePath, target: .landscape2x)
+        let artworkURL = urlMemo.resolve(
+            path: card.preferredLandscapePath,
+            client: client,
+            target: .landscape2x
+        )
+
+        BackdropCardFocusContentView(
+            card: card,
+            client: client,
+            artworkURL: artworkURL,
+            variant: variant,
+            width: width,
+            height: height,
+            showStorageBadge: showStorageBadge,
+            focusRequestNonce: focusRequestNonce,
+            onPrimaryAction: onPrimaryAction,
+            onPlayShortcut: onPlayShortcut
+        )
+    }
+}
+
+private struct BackdropCardFocusContentView: View {
+    let card: TvMediaCard
+    let client: LunaCoreClient?
+    let artworkURL: URL?
+    let variant: BackdropCardVariant
+    let width: CGFloat
+    let height: CGFloat
+    let showStorageBadge: Bool
+    let focusRequestNonce: Int
+    let onPrimaryAction: () -> Void
+    let onPlayShortcut: (() -> Void)?
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
         let effectivePercent: Double? = variant == .upcomingEpisode ? nil : card.progress?.percent
         let progressBar = LunaCardProgressBar(percent: effectivePercent, trackWidth: width - 44)
 
@@ -129,7 +162,6 @@ public struct BackdropCardView: View {
                                     )
                                     .background(LunaTheme.amber, in: Circle())
                                     .opacity(isFocused ? 1.0 : 0.0)
-                                    .animation(reduceMotion ? .linear(duration: 0.01) : LunaFocusStyle.focusFade, value: isFocused)
                             }
                         }
 
@@ -146,7 +178,7 @@ public struct BackdropCardView: View {
             )
         }
         .lunaChromelessButton(RoundedRectangle(cornerRadius: LunaTheme.cardRadius, style: .continuous))
-        .lunaCardLampGlow(isFocused: isFocused)
+        .lunaCardLampGlow(isFocused: isFocused, cornerRadius: LunaTheme.cardRadius)
         .focused($isFocused)
         .lunaRequestDirectFocus(nonce: focusRequestNonce, isFocused: $isFocused)
         .accessibilityLabel(card.title)

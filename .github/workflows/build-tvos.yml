@@ -109,36 +109,26 @@ jobs:
               print(candidates[0][3])
           ' || true)
 
-          if [ -n "$TVOS_SIM_UDID" ]; then
-            echo "Pre-booting & running LunaTests on tvOS Simulator ($TVOS_SIM_UDID)..."
-            xcrun simctl boot "$TVOS_SIM_UDID" >/dev/null 2>&1 || true
-            run_xcodebuild xcodebuild test \
-              -project Luna.xcodeproj \
-              -scheme Luna \
-              -destination "platform=tvOS Simulator,id=$TVOS_SIM_UDID" \
-              -derivedDataPath build-tests \
-              -clonedSourcePackagesDirPath build/SourcePackages \
-              COMPILER_INDEX_STORE_ENABLE=NO \
-              DEBUG_INFORMATION_FORMAT=dwarf \
-              COMPILATION_CACHE_ENABLE_CACHING=YES \
-              CODE_SIGN_IDENTITY="" \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGNING_ALLOWED=NO
-          else
-            echo "No booted/available tvOS Simulator found; running build-for-testing for generic/platform=tvOS Simulator..."
-            run_xcodebuild xcodebuild build-for-testing \
-              -project Luna.xcodeproj \
-              -scheme Luna \
-              -destination 'generic/platform=tvOS Simulator' \
-              -derivedDataPath build-tests \
-              -clonedSourcePackagesDirPath build/SourcePackages \
-              COMPILER_INDEX_STORE_ENABLE=NO \
-              DEBUG_INFORMATION_FORMAT=dwarf \
-              COMPILATION_CACHE_ENABLE_CACHING=YES \
-              CODE_SIGN_IDENTITY="" \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGNING_ALLOWED=NO
+          if [ -z "$TVOS_SIM_UDID" ]; then
+            echo "::error::No available tvOS Simulator found on runner; refusing to skip LunaTests."
+            exit 1
           fi
+
+          echo "Pre-booting & running LunaTests on tvOS Simulator ($TVOS_SIM_UDID)..."
+          xcrun simctl boot "$TVOS_SIM_UDID" >/dev/null 2>&1 || true
+          xcrun simctl bootstatus "$TVOS_SIM_UDID" -b
+          run_xcodebuild xcodebuild test \
+            -project Luna.xcodeproj \
+            -scheme Luna \
+            -destination "platform=tvOS Simulator,id=$TVOS_SIM_UDID" \
+            -derivedDataPath build-tests \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            DEBUG_INFORMATION_FORMAT=dwarf \
+            COMPILATION_CACHE_ENABLE_CACHING=YES \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
 
   build-ipa:
     name: Build Unsigned Release IPA (arm64)

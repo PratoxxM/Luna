@@ -131,6 +131,7 @@ final class PlayerViewModel {
     var previewSubtitleOptions: [PlayerDrawerSubtitleOption] { get { trackController.previewSubtitleOptions } set { trackController.previewSubtitleOptions = newValue } }
     var chapters: [PlaybackChapter] { get { trackController.chapters } set { trackController.chapters = newValue } }
     var isWirelessAudioRouteActive: Bool { get { trackController.isWirelessAudioRouteActive } set { trackController.isWirelessAudioRouteActive = newValue } }
+    var isBinauralAudioRouteActive: Bool { get { trackController.isBinauralAudioRouteActive } set { trackController.isBinauralAudioRouteActive = newValue } }
     var kveldslysLockReason: String? { trackController.kveldslysLockReason }
     var preferNorwegianAudio: Bool { trackController.preferNorwegianAudio }
     var hasNorwegianAudioTrack: Bool { trackController.hasNorwegianAudioTrack }
@@ -142,7 +143,9 @@ final class PlayerViewModel {
     func togglePreferNorwegianAudio() { trackController.togglePreferNorwegianAudio() }
     func adjustAudioDelay(byMs deltaMs: Int) { trackController.adjustAudioDelay(byMs: deltaMs) }
     func flushPendingAudioDelayCommitIfNeeded() { trackController.flushPendingAudioDelayCommitIfNeeded() }
-    func handleAudioRouteChange(isWirelessOverride: Bool? = nil) { trackController.handleAudioRouteChange(isWirelessOverride: isWirelessOverride) }
+    func handleAudioRouteChange(isWirelessOverride: Bool? = nil, isBinauralOverride: Bool? = nil) {
+        trackController.handleAudioRouteChange(isWirelessOverride: isWirelessOverride, isBinauralOverride: isBinauralOverride)
+    }
     func setAudioEnhancement(_ mode: AudioEnhancementMode) { trackController.setAudioEnhancement(mode) }
     func selectSubtitleManually(_ index: Int) { trackController.selectSubtitleManually(index) }
     func clearSubtitleManually() { trackController.clearSubtitleManually() }

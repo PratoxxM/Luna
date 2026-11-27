@@ -439,9 +439,15 @@ final class PlaybackRestoreAndAudioSessionTests: XCTestCase {
         let vm = PlayerViewModel(engine: engine, comfort: comfort, transport: transport, bindOnInit: false)
         vm.isResolving = false
         vm.isWirelessAudioRouteActive = false
-        vm.handleAudioRouteChange(isWirelessOverride: true)
-        XCTAssertEqual(transport.events.last, "audioDelay(0ms)")
-        vm.handleAudioRouteChange(isWirelessOverride: false)
+        vm.isBinauralAudioRouteActive = false
+        vm.handleAudioRouteChange(isWirelessOverride: true, isBinauralOverride: true)
+        XCTAssertTrue(vm.isBinauralAudioRouteActive)
+        XCTAssertEqual(transport.lastAudioDelaySeconds, 0)
+        XCTAssertEqual(transport.lastAudioShaping?.binaural, true)
+        vm.handleAudioRouteChange(isWirelessOverride: true, isBinauralOverride: false)
+        XCTAssertFalse(vm.isBinauralAudioRouteActive)
+        XCTAssertEqual(transport.lastAudioShaping?.binaural, false)
+        vm.handleAudioRouteChange(isWirelessOverride: false, isBinauralOverride: false)
         XCTAssertEqual(transport.events.last, "audioDelay(-50ms)")
     }
 
@@ -510,6 +516,199 @@ final class PlaybackRestoreAndAudioSessionTests: XCTestCase {
         XCTAssertEqual(transport.lastReloadedOptions?.dolbyVisionHandling, .baseLayerOnly)
         XCTAssertEqual(transport.lastReloadedOptions?.upscalesLowResolutionVideo, true)
         XCTAssertEqual(transport.lastReloadedOptions?.upscaleScaler, .lineArt)
+        XCTAssertEqual(transport.lastReloadedOptions?.upscalesFullHDVideo, false)
+        XCTAssertEqual(engine.maximumSubtitleAdvanceSeconds, 0)
+        XCTAssertEqual(engine.maximumSubtitleDelaySeconds, 10)
         XCTAssertEqual(transport.state, .playing)
+
+        // Switching to .off + upscalesFullHDVideo = true must apply .lanczos on foreground restore
+        comfort.lowResUpscaleMode = .off
+        comfort.upscalesFullHDVideo = true
+        transport.needsForegroundVideoRestore = true
+        vm.handleScenePhaseChange(.background)
+        vm.handleScenePhaseChange(.active)
+        await vm.restoreController.foregroundRestoreTask?.value
+        XCTAssertEqual(transport.lastReloadedOptions?.upscalesLowResolutionVideo, false)
+        XCTAssertEqual(transport.lastReloadedOptions?.upscaleScaler, .lanczos)
+        XCTAssertEqual(transport.lastReloadedOptions?.upscalesFullHDVideo, true)
+    }
+
+    @MainActor
+    func testBuildLoadOptionsScrubPreviewsAndStereoBinauralSuppression() throws {
+        let suite = "luna.test.scrub.binaural.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        func makeSession(source: String, tier: String, dvProfile: Int? = nil, dvLayer: String? = nil) throws -> TvPlaybackSession {
+            let dvProfileLine = dvProfile.map { "\"dvProfile\": \($0)," } ?? ""
+            let dvLayerLine = dvLayer.map { "\"dvEnhancementLayer\": \"\($0)\"," } ?? ""
+            let json = #"""
+            {
+              "sessionId": "sess-sb-1",
+              "streamToken": "stream-placeholder-token",
+              "roomName": "Kino",
+              "hardwareProfile": "dv-fel-714",
+              "item": {
+                "itemId": "tmdb:movie:700",
+                "mediaType": "movie",
+                "ids": { "tmdb": 700 },
+                "title": "Eksempelfilm"
+              },
+              "selectedCandidate": {
+                "candidateId": "cand-1",
+                "displayHeadline": "4K HDR10",
+                "releaseTitle": "Eksempelfilm.2024.2160p",
+                \#(dvProfileLine)
+                \#(dvLayerLine)
+                "source": "\#(source)",
+                "tier": "\#(tier)"
+              },
+              "stream": {
+                "url": "/api/tv/v2/streams/sess-sb-1/master",
+                "supportsByteRanges": true
+              },
+              "aetherConfig": {
+                "preferDualLayerDolbyVision": false,
+                "dolbyVisionHandling": "automatic",
+                "matchContentEnabled": true,
+                "audioBridgeMode": "lossless",
+                "generatesBackgroundScrubPreviews": true
+              }
+            }
+            """#
+            return try JSONDecoder().decode(TvPlaybackSession.self, from: Data(json.utf8))
+        }
+
+        let client = LunaCoreClient(
+            baseURL: try XCTUnwrap(URL(string: "http://lunacore.local:8090")),
+            deviceID: "luna-test-device",
+            deviceToken: nil,
+            roomName: "Kino",
+            hardwareProfile: "dv-fel-714",
+            allowSelfSignedLanTLS: true
+        )
+        let high8GB = DeviceMemoryProfile(physicalMemoryBytes: 8 * 1_073_741_824, activeProcessorCount: 6)
+        let standard4GB = DeviceMemoryProfile(physicalMemoryBytes: 4 * 1_073_741_824, activeProcessorCount: 5)
+        let comfort = ComfortPreferences(defaults: defaults, memoryTier: .high2026)
+
+        // 1. .high2026 + NVMe + non-FEL -> scrub previews enabled
+        let nvmeSession = try makeSession(source: "nvme", tier: "nvme", dvProfile: 8, dvLayer: nil)
+        let nvmeOpts = PlayerEngineConfigurator.buildLoadOptions(
+            session: nvmeSession,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0,
+            binauralAudioActive: true,
+            memoryProfile: high8GB,
+            availableMemoryBytes: 2_200 * 1_048_576
+        )
+        XCTAssertTrue(nvmeOpts.generatesBackgroundScrubPreviews)
+        XCTAssertTrue(nvmeOpts.audioShaping.binaural)
+
+        // 2. .standard 4 GB on NVMe non-FEL -> scrub previews disabled
+        let standardNvmeOpts = PlayerEngineConfigurator.buildLoadOptions(
+            session: nvmeSession,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0,
+            memoryProfile: standard4GB,
+            availableMemoryBytes: 1_000 * 1_048_576
+        )
+        XCTAssertFalse(standardNvmeOpts.generatesBackgroundScrubPreviews)
+
+        // 3. .high2026 on archive / vfs / DV P7 FEL -> scrub previews disabled
+        for badSession in [
+            try makeSession(source: "archive", tier: "archive"),
+            try makeSession(source: "vfs", tier: "vfs"),
+            try makeSession(source: "nvme", tier: "nvme", dvProfile: 7, dvLayer: "FEL"),
+        ] {
+            let opts = PlayerEngineConfigurator.buildLoadOptions(
+                session: badSession,
+                client: client,
+                comfort: comfort,
+                audioEnhancement: .reference,
+                audioDelaySeconds: 0,
+                memoryProfile: high8GB,
+                availableMemoryBytes: 2_200 * 1_048_576
+            )
+            XCTAssertFalse(opts.generatesBackgroundScrubPreviews)
+        }
+
+        // 4. Stereo 2.0 explicit or auto "2.0" suppresses binaural and disables objectAudioRendering
+        comfort.speakerLayoutOverride = .stereo
+        let stereoBinauralOpts = PlayerEngineConfigurator.buildLoadOptions(
+            session: nvmeSession,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .dialogueLift,
+            audioDelaySeconds: 0,
+            binauralAudioActive: true,
+            memoryProfile: high8GB,
+            availableMemoryBytes: 2_200 * 1_048_576
+        )
+        XCTAssertFalse(stereoBinauralOpts.audioShaping.binaural)
+        XCTAssertEqual(stereoBinauralOpts.objectAudioRendering, .off)
+
+        comfort.speakerLayoutOverride = .auto
+        comfort.roomAutoSpeakerLayout = "2.0"
+        let autoStereoOpts = PlayerEngineConfigurator.buildLoadOptions(
+            session: nvmeSession,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0,
+            binauralAudioActive: true,
+            memoryProfile: high8GB,
+            availableMemoryBytes: 2_200 * 1_048_576
+        )
+        XCTAssertFalse(autoStereoOpts.audioShaping.binaural)
+        XCTAssertEqual(autoStereoOpts.objectAudioRendering, .off)
+
+        // 5. .auto with default roomAutoSpeakerLayout ("7.1.4") + session objectAudioRendering.layout == "2.0"
+        // must agree with PlayerTrackController: objectAudioRendering == .off, binaural == false, maxChannels == 2
+        comfort.roomAutoSpeakerLayout = "7.1.4"
+        let sessionStereoConfig = TvAetherConfig(
+            preferDualLayerDolbyVision: false,
+            dolbyVisionHandling: "automatic",
+            matchContentEnabled: true,
+            objectAudioRendering: TvObjectAudioConfig(mode: "render", layout: "2.0"),
+            audioBridgeMode: "lossless"
+        )
+        let sessionStereo20 = TvPlaybackSession(
+            sessionId: nvmeSession.sessionId,
+            streamToken: nvmeSession.streamToken,
+            roomName: nvmeSession.roomName,
+            hardwareProfile: nvmeSession.hardwareProfile,
+            item: nvmeSession.item,
+            selectedCandidate: nvmeSession.selectedCandidate,
+            stream: nvmeSession.stream,
+            aetherConfig: sessionStereoConfig
+        )
+        let sessionStereoOpts = PlayerEngineConfigurator.buildLoadOptions(
+            session: sessionStereo20,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0,
+            binauralAudioActive: true,
+            memoryProfile: high8GB,
+            availableMemoryBytes: 2_200 * 1_048_576
+        )
+        XCTAssertEqual(sessionStereoOpts.objectAudioRendering, .off)
+        XCTAssertFalse(sessionStereoOpts.audioShaping.binaural)
+        XCTAssertEqual(sessionStereoOpts.audioShaping.maxChannels, 2)
+
+        let sessionStereoSnapshot = PlayerEngineConfigurator.captureReloadComfortSnapshot(
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0,
+            binauralAudioActive: true,
+            session: sessionStereo20
+        )
+        XCTAssertEqual(sessionStereoSnapshot.effectiveSpeakerLayout, "2.0")
+        XCTAssertFalse(sessionStereoSnapshot.audioShaping.binaural)
+        XCTAssertEqual(sessionStereoSnapshot.audioShaping.maxChannels, 2)
     }
 }

@@ -72,6 +72,21 @@ extension PlayerQuickPanelView {
                 .prefersDefaultFocus(preferredActiveItemID == rowID, in: panelFocusNamespace)
             }
 
+            LunaListRow(
+                title: "1080p SDR → 4K (Lanczos)",
+                subtitle: comfort.lowResUpscaleMode == .animeLineArt
+                    ? "Overstyres av Animasjon (Anime4K 2×)"
+                    : nil,
+                trailingText: comfort.upscalesFullHDVideo ? "På" : "Av",
+                trailingTextProminent: comfort.upscalesFullHDVideo,
+                dimUnfocusedTitle: true,
+                externalIsFocused: focusedItemID == "pic-lanczos-1080p"
+            ) {
+                viewModel.trackController.setFullHDUpscaleLive(!comfort.upscalesFullHDVideo)
+            }
+            .id("pic-lanczos-1080p")
+            .focused($focusedItemID, equals: "pic-lanczos-1080p")
+
             LunaListDivider()
                 .padding(.vertical, 4)
 

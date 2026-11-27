@@ -25,6 +25,9 @@ struct LibraryHubView: View {
     @State private var mountedTracker = MountedEntryCardTracker()
     @State private var entryCardID: String?
     @State private var cardFocusNonce: Int = 0
+    @State private var tierSortFocusNonce: Int = 0
+    @State private var showSortSheet: Bool = false
+    @State private var sortModalToken = UUID()
 
     @FocusState private var focusedCustomListID: String?
     @FocusState private var fallbackFocus: LibraryFallbackFocus?
@@ -58,9 +61,27 @@ struct LibraryHubView: View {
                         scrollPosition.scrollTo(edge: .top)
                     },
                     onMoveDown: {
-                        focusFirstLibraryContentItem()
+                        if viewModel.supportsTierAndSortFilters {
+                            tierSortFocusNonce &+= 1
+                        } else {
+                            focusFirstLibraryContentItem()
+                        }
                     }
                 )
+
+                if viewModel.supportsTierAndSortFilters {
+                    LibraryTierAndSortStripView(
+                        viewModel: viewModel,
+                        focusRequestNonce: tierSortFocusNonce,
+                        isEntryActive: isActiveTab,
+                        onOpenSortSheet: {
+                            showSortSheet = true
+                        },
+                        onMoveDown: {
+                            focusFirstLibraryContentItem()
+                        }
+                    )
+                }
 
                 Group {
                     if viewModel.isLoading && viewModel.libraryPayload == nil {
@@ -110,6 +131,28 @@ struct LibraryHubView: View {
                 )
             )
         }
+        .sheet(isPresented: $showSortSheet) {
+            LibrarySortPickerSheetView(
+                selectedSort: viewModel.selectedSort,
+                onSelectSort: { nextSort in
+                    showSortSheet = false
+                    if viewModel.selectedSort != nextSort {
+                        viewModel.selectedSort = nextSort
+                    }
+                },
+                onClose: {
+                    showSortSheet = false
+                }
+            )
+            .preferredColorScheme(.dark)
+        }
+        .onChange(of: showSortSheet) { _, isPresented in
+            if isPresented {
+                subpageVisibility.enterModal(sortModalToken)
+            } else {
+                subpageVisibility.leaveModal(sortModalToken)
+            }
+        }
         .sheet(item: $pendingDeleteTarget) { target in
             DetailDeleteSheetView(
                 target: target,
@@ -140,8 +183,9 @@ struct LibraryHubView: View {
         }
         .onDisappear {
             viewModel.cancelAllTasks()
-            if pendingDeleteTarget == nil {
+            if pendingDeleteTarget == nil && !showSortSheet {
                 subpageVisibility.leaveModal(modalToken)
+                subpageVisibility.leaveModal(sortModalToken)
             }
         }
     }
@@ -358,6 +402,118 @@ private struct LibraryFilterStripView: View {
         .onMoveCommand { direction in
             if direction == .down {
                 onMoveDown()
+            }
+        }
+    }
+}
+
+private struct LibraryTierAndSortStripView: View {
+    @Bindable var viewModel: LibraryViewModel
+    let focusRequestNonce: Int
+    let isEntryActive: Bool
+    let onOpenSortSheet: @MainActor () -> Void
+    let onMoveDown: @MainActor () -> Void
+
+    @FocusState private var focusedControl: String?
+    @Namespace private var tierSortFocusNamespace
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(LibraryTierFilter.allCases) { tier in
+                let isSelected = viewModel.selectedTier == tier
+                let badge = viewModel.count(for: tier).map(String.init)
+                LunaPillButton(
+                    tier.label,
+                    badgeText: badge,
+                    isSelected: isSelected,
+                    prominence: .glassPill,
+                    size: .compact
+                ) {
+                    guard viewModel.selectedTier != tier else { return }
+                    viewModel.selectedTier = tier
+                }
+                .focused($focusedControl, equals: "tier-\(tier.rawValue)")
+                .prefersDefaultFocus(isSelected, in: tierSortFocusNamespace)
+            }
+
+            Rectangle()
+                .fill(LunaTheme.warmBorderStrong)
+                .frame(width: 1, height: 22)
+                .padding(.horizontal, 4)
+                .allowsHitTesting(false)
+
+            LunaPillButton(
+                viewModel.selectedSort.label,
+                systemImage: "arrow.up.arrow.down",
+                isSelected: viewModel.selectedSort != .recent,
+                prominence: .glassPill,
+                size: .compact
+            ) {
+                onOpenSortSheet()
+            }
+            .focused($focusedControl, equals: "sort-trigger")
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, LunaTheme.horizontalGutter)
+        .padding(.vertical, 4)
+        .focusScope(tierSortFocusNamespace)
+        .focusSection()
+        .lunaEntryFocusTarget(
+            nonce: focusRequestNonce,
+            isActive: isEntryActive,
+            focus: $focusedControl,
+            target: { "tier-\(viewModel.selectedTier.rawValue)" },
+            onTrigger: {}
+        )
+        .onMoveCommand { direction in
+            if direction == .down {
+                onMoveDown()
+            }
+        }
+    }
+}
+
+private struct LibrarySortPickerSheetView: View {
+    let selectedSort: LibrarySortOption
+    let onSelectSort: (LibrarySortOption) -> Void
+    let onClose: () -> Void
+
+    @FocusState private var focusedSort: LibrarySortOption?
+    @Namespace private var sortSheetNamespace
+
+    var body: some View {
+        LunaSheetContainer(
+            title: "Sortering",
+            subtitle: "Bibliotek",
+            width: .narrow,
+            maxHeight: 620,
+            onClose: onClose
+        ) {
+            LunaListGroup(showsSurface: false) {
+                let options = LibrarySortOption.allCases
+                ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
+                    let isSelected = option == selectedSort
+                    LunaListRow(
+                        title: option.label,
+                        isSelected: isSelected,
+                        externalIsFocused: focusedSort == option
+                    ) {
+                        onSelectSort(option)
+                    }
+                    .focused($focusedSort, equals: option)
+                    .prefersDefaultFocus(isSelected, in: sortSheetNamespace)
+
+                    if index < options.count - 1 {
+                        LunaListDivider()
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+            .defaultFocus($focusedSort, selectedSort, priority: .userInitiated)
+            .focusScope(sortSheetNamespace)
+            .onAppear {
+                focusedSort = selectedSort
             }
         }
     }

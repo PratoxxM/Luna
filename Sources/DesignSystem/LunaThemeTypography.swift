@@ -1,3 +1,4 @@
+import CoreText
 import SwiftUI
 
 public extension LunaTheme {
@@ -201,6 +202,58 @@ public extension LunaTheme {
             .system(
                 size: max(minimumPointSizeFloor, pointSize),
                 weight: weight
+            )
+        }
+
+        public static func subtitleCueCTFont(
+            descriptor: CTFontDescriptor,
+            size pointSize: CGFloat,
+            isBold: Bool,
+            isItalic: Bool
+        ) -> CTFont {
+            let clampedSize = max(minimumPointSizeFloor, pointSize)
+            var ctFont = CTFontCreateWithFontDescriptor(descriptor, clampedSize, nil)
+            var desiredTraits: CTFontSymbolicTraits = []
+            if isBold {
+                desiredTraits.insert(.boldTrait)
+            }
+            if isItalic {
+                desiredTraits.insert(.italicTrait)
+            }
+            if !desiredTraits.isEmpty,
+               let styled = CTFontCreateCopyWithSymbolicTraits(
+                   ctFont,
+                   clampedSize,
+                   nil,
+                   desiredTraits,
+                   desiredTraits
+               ) {
+                ctFont = styled
+            }
+            return ctFont
+        }
+
+        public static func subtitleCue(
+            descriptor: CTFontDescriptor?,
+            size pointSize: CGFloat,
+            isBold: Bool,
+            isItalic: Bool
+        ) -> SwiftUI.Font {
+            let clampedSize = max(minimumPointSizeFloor, pointSize)
+            guard let descriptor else {
+                let base = subtitleCue(
+                    size: clampedSize,
+                    weight: isBold ? .bold : .semibold
+                )
+                return isItalic ? base.italic() : base
+            }
+            return SwiftUI.Font(
+                subtitleCueCTFont(
+                    descriptor: descriptor,
+                    size: clampedSize,
+                    isBold: isBold,
+                    isItalic: isItalic
+                )
             )
         }
     }

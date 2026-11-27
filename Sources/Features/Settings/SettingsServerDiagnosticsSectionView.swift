@@ -18,6 +18,7 @@ struct SettingsServerDiagnosticsSectionView: View {
     let onRefreshCacheMetrics: () async -> Void
     @State private var isEditingFallbackURL: Bool = false
     @State private var fallbackURLDraft: String = ""
+    @State private var retainedVideoCacheBytes: Int = AetherEngine.retainedSessionCacheBytes
     @FocusState private var fallbackFocus: FallbackEditorFocus?
 
     var body: some View {
@@ -25,7 +26,7 @@ struct SettingsServerDiagnosticsSectionView: View {
             SettingsSectionPanel(title: "Om denne Apple TV-en") {
                 LunaInfoRow(
                     title: "App og motor",
-                    value: "Luna \(AppSessionStore.currentAppVersionDisplayString()) · AetherEngine \(AetherBridgeInfo.pinnedAetherEngineVersion)"
+                    value: "Luna \(AppSessionStore.currentAppVersionDisplayString()) · AetherEngine \(AetherEngine.version)"
                 )
                 LunaListDivider()
                 LunaInfoRow(
@@ -113,6 +114,8 @@ struct SettingsServerDiagnosticsSectionView: View {
                 }
                 LunaListDivider()
                 LunaInfoRow(title: "Bilde- og kataloghurtigbuffer", value: formattedCacheSize)
+                LunaListDivider()
+                LunaInfoRow(title: "Videohurtigbuffer i minne", value: formattedRetainedVideoCacheSize)
             }
 
             SettingsSectionPanel(title: "Vedlikehold") {
@@ -131,6 +134,7 @@ struct SettingsServerDiagnosticsSectionView: View {
                         await ArtworkPipeline.shared.clearAll()
                         AetherEngine.discardPrewarmedSources()
                         AetherEngine.discardRetainedSessionCache()
+                        retainedVideoCacheBytes = AetherEngine.retainedSessionCacheBytes
                         sessionStore.notifyContentMutated()
                         await onRefreshCacheMetrics()
                         cacheClearedNotice = true
@@ -148,6 +152,9 @@ struct SettingsServerDiagnosticsSectionView: View {
                     showReconnectDialog = true
                 }
             }
+        }
+        .task {
+            retainedVideoCacheBytes = AetherEngine.retainedSessionCacheBytes
         }
     }
 
@@ -167,10 +174,18 @@ struct SettingsServerDiagnosticsSectionView: View {
     }
 
     private var formattedCacheSize: String {
-        if cacheBytes <= 0 {
+        Self.formatMegabytes(cacheBytes)
+    }
+
+    private var formattedRetainedVideoCacheSize: String {
+        Self.formatMegabytes(Int64(retainedVideoCacheBytes))
+    }
+
+    private static func formatMegabytes(_ bytes: Int64) -> String {
+        if bytes <= 0 {
             return "0 MB"
         }
-        let mb = Double(cacheBytes) / 1_048_576.0
+        let mb = Double(bytes) / 1_048_576.0
         return LunaCopy.formatMegabytes(mb, decimals: 1)
     }
 }

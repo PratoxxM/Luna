@@ -7,34 +7,144 @@ import CryptoKit
 import Foundation
 import Synchronization
 
-#if canImport(CoreGraphics)
-internal final class ThreadSafeImageMemoryCache: Sendable {
-    private struct Entry: Sendable {
-        let image: CGImage
-        let cost: Int
-        let subjectKey: String?
-        var accessTick: UInt64
+public final class ThreadSafeLRUMemoryCache<Value: Sendable>: Sendable {
+    private struct Slot: Sendable {
+        var key: String
+        var value: Value?
+        var cost: Int
+        var subjectKey: String?
+        var qualityRank: Int
+        var prev: Int
+        var next: Int
     }
 
     private struct State: Sendable {
-        var entries: [String: Entry] = [:]
-        var subjectBest: [String: (key: String, width: Int)] = [:]
+        var slots: [Slot] = []
+        var freeIndices: [Int] = []
+        var keyToIndex: [String: Int] = [:]
+        var subjectSlots: [String: [Int]] = [:]
+        var subjectBest: [String: Int] = [:]
+        var head: Int = -1
+        var tail: Int = -1
         var totalCost: Int = 0
-        var tick: UInt64 = 0
         var totalCostLimit: Int
         var countLimit: Int
+
+        mutating func unlink(_ idx: Int) {
+            let prevIdx = slots[idx].prev
+            let nextIdx = slots[idx].next
+            if prevIdx != -1 {
+                slots[prevIdx].next = nextIdx
+            } else if head == idx {
+                head = nextIdx
+            }
+            if nextIdx != -1 {
+                slots[nextIdx].prev = prevIdx
+            } else if tail == idx {
+                tail = prevIdx
+            }
+            slots[idx].prev = -1
+            slots[idx].next = -1
+        }
+
+        mutating func linkAtHead(_ idx: Int) {
+            slots[idx].prev = -1
+            slots[idx].next = head
+            if head != -1 {
+                slots[head].prev = idx
+            }
+            head = idx
+            if tail == -1 {
+                tail = idx
+            }
+        }
+
+        mutating func moveToHead(_ idx: Int) {
+            guard head != idx else { return }
+            unlink(idx)
+            linkAtHead(idx)
+        }
+
+        mutating func recomputeSubjectBest(for subjectKey: String, in list: [Int]) {
+            var bestIdx = list[0]
+            var bestRank = slots[bestIdx].qualityRank
+            for candidate in list.dropFirst() {
+                let rank = slots[candidate].qualityRank
+                if rank >= bestRank {
+                    bestRank = rank
+                    bestIdx = candidate
+                }
+            }
+            subjectBest[subjectKey] = bestIdx
+        }
+
+        mutating func removeSlotFromSubject(_ idx: Int, subjectKey: String) {
+            if var list = subjectSlots[subjectKey] {
+                list.removeAll { $0 == idx }
+                if list.isEmpty {
+                    subjectSlots.removeValue(forKey: subjectKey)
+                    subjectBest.removeValue(forKey: subjectKey)
+                } else {
+                    subjectSlots[subjectKey] = list
+                    if subjectBest[subjectKey] == idx {
+                        recomputeSubjectBest(for: subjectKey, in: list)
+                    }
+                }
+            } else if subjectBest[subjectKey] == idx {
+                subjectBest.removeValue(forKey: subjectKey)
+            }
+        }
+
+        mutating func registerSlotInSubject(_ idx: Int, subjectKey: String) {
+            var list = subjectSlots[subjectKey] ?? []
+            if !list.contains(idx) {
+                list.append(idx)
+                subjectSlots[subjectKey] = list
+            }
+            if let currentBestIdx = subjectBest[subjectKey] {
+                if currentBestIdx == idx {
+                    recomputeSubjectBest(for: subjectKey, in: list)
+                } else if slots[idx].qualityRank >= slots[currentBestIdx].qualityRank {
+                    subjectBest[subjectKey] = idx
+                }
+            } else {
+                subjectBest[subjectKey] = idx
+            }
+        }
+
+        mutating func removeSlot(at idx: Int) {
+            let key = slots[idx].key
+            let cost = slots[idx].cost
+            let subjectKey = slots[idx].subjectKey
+            unlink(idx)
+            keyToIndex.removeValue(forKey: key)
+            totalCost = max(0, totalCost - cost)
+            if let subjectKey {
+                removeSlotFromSubject(idx, subjectKey: subjectKey)
+            }
+            slots[idx] = Slot(
+                key: "",
+                value: nil,
+                cost: 0,
+                subjectKey: nil,
+                qualityRank: 0,
+                prev: -1,
+                next: -1
+            )
+            freeIndices.append(idx)
+        }
     }
 
     private let state: Mutex<State>
 
-    init(totalCostLimit: Int, countLimit: Int = 420) {
+    public init(totalCostLimit: Int, countLimit: Int = 420) {
         self.state = Mutex(State(
             totalCostLimit: max(0, totalCostLimit),
             countLimit: max(0, countLimit)
         ))
     }
 
-    var totalCostLimit: Int {
+    public var totalCostLimit: Int {
         get { state.withLock { $0.totalCostLimit } }
         set {
             state.withLock { s in
@@ -44,83 +154,152 @@ internal final class ThreadSafeImageMemoryCache: Sendable {
         }
     }
 
-    func object(forKey key: String) -> CGImage? {
+    public var countLimit: Int {
+        get { state.withLock { $0.countLimit } }
+        set {
+            state.withLock { s in
+                s.countLimit = max(0, newValue)
+                Self.evictIfNeeded(&s)
+            }
+        }
+    }
+
+    public var count: Int {
+        state.withLock { $0.keyToIndex.count }
+    }
+
+    public var totalCost: Int {
+        state.withLock { $0.totalCost }
+    }
+
+    public func object(forKey key: String) -> Value? {
         image(forKey: key)
     }
 
-    func setObject(_ image: CGImage, forKey key: String, cost: Int? = nil, subjectKey: String? = nil) {
-        let resolvedCost = cost ?? max(1, image.bytesPerRow * image.height)
+    public func image(forKey key: String) -> Value? {
         state.withLock { s in
-            s.tick &+= 1
-            if let old = s.entries.removeValue(forKey: key) {
-                s.totalCost = max(0, s.totalCost - old.cost)
+            guard let idx = s.keyToIndex[key], let value = s.slots[idx].value else {
+                return nil
             }
-            let entry = Entry(
-                image: image,
-                cost: max(1, resolvedCost),
-                subjectKey: subjectKey,
-                accessTick: s.tick
-            )
-            s.entries[key] = entry
-            s.totalCost += entry.cost
-            if let subjectKey {
-                let existingWidth = s.subjectBest[subjectKey]?.width ?? 0
-                if existingWidth <= image.width {
-                    s.subjectBest[subjectKey] = (key: key, width: image.width)
+            s.moveToHead(idx)
+            return value
+        }
+    }
+
+    public func bestImage(forSubjectKey subjectKey: String) -> Value? {
+        state.withLock { s in
+            guard let bestIdx = s.subjectBest[subjectKey],
+                  let value = s.slots[bestIdx].value else {
+                return nil
+            }
+            s.moveToHead(bestIdx)
+            return value
+        }
+    }
+
+    public func insert(
+        _ value: Value,
+        forKey key: String,
+        subjectKey: String? = nil,
+        cost: Int,
+        qualityRank: Int? = nil
+    ) {
+        let resolvedCost = max(1, cost)
+        let resolvedRank = qualityRank ?? resolvedCost
+        state.withLock { s in
+            if s.totalCostLimit > 0 && resolvedCost > s.totalCostLimit {
+                if let existingIdx = s.keyToIndex[key] {
+                    s.removeSlot(at: existingIdx)
+                }
+                return
+            }
+
+            if let existingIdx = s.keyToIndex[key] {
+                let oldCost = s.slots[existingIdx].cost
+                let oldSubject = s.slots[existingIdx].subjectKey
+                if let oldSubject, oldSubject != subjectKey {
+                    s.removeSlotFromSubject(existingIdx, subjectKey: oldSubject)
+                }
+                s.totalCost = max(0, s.totalCost - oldCost) + resolvedCost
+                s.slots[existingIdx].value = value
+                s.slots[existingIdx].cost = resolvedCost
+                s.slots[existingIdx].subjectKey = subjectKey
+                s.slots[existingIdx].qualityRank = resolvedRank
+                s.moveToHead(existingIdx)
+                if let subjectKey {
+                    s.registerSlotInSubject(existingIdx, subjectKey: subjectKey)
+                }
+            } else {
+                let idx: Int
+                if let reused = s.freeIndices.popLast() {
+                    idx = reused
+                    s.slots[idx] = Slot(
+                        key: key,
+                        value: value,
+                        cost: resolvedCost,
+                        subjectKey: subjectKey,
+                        qualityRank: resolvedRank,
+                        prev: -1,
+                        next: -1
+                    )
+                } else {
+                    idx = s.slots.count
+                    s.slots.append(Slot(
+                        key: key,
+                        value: value,
+                        cost: resolvedCost,
+                        subjectKey: subjectKey,
+                        qualityRank: resolvedRank,
+                        prev: -1,
+                        next: -1
+                    ))
+                }
+                s.keyToIndex[key] = idx
+                s.totalCost += resolvedCost
+                s.linkAtHead(idx)
+                if let subjectKey {
+                    s.registerSlotInSubject(idx, subjectKey: subjectKey)
                 }
             }
             Self.evictIfNeeded(&s)
         }
     }
 
-    func image(forKey key: String) -> CGImage? {
+    public func removeAll() {
         state.withLock { s in
-            guard var entry = s.entries[key] else { return nil }
-            s.tick &+= 1
-            entry.accessTick = s.tick
-            s.entries[key] = entry
-            return entry.image
-        }
-    }
-
-    func bestImage(forSubjectKey subjectKey: String) -> CGImage? {
-        state.withLock { s in
-            guard let best = s.subjectBest[subjectKey] else { return nil }
-            guard var entry = s.entries[best.key] else {
-                s.subjectBest.removeValue(forKey: subjectKey)
-                return nil
-            }
-            s.tick &+= 1
-            entry.accessTick = s.tick
-            s.entries[best.key] = entry
-            return entry.image
-        }
-    }
-
-    func insert(_ image: CGImage, forKey key: String, subjectKey: String? = nil) {
-        setObject(image, forKey: key, cost: max(1, image.bytesPerRow * image.height), subjectKey: subjectKey)
-    }
-
-    func removeAll() {
-        state.withLock { s in
-            s.entries.removeAll()
+            s.slots.removeAll()
+            s.freeIndices.removeAll()
+            s.keyToIndex.removeAll()
+            s.subjectSlots.removeAll()
             s.subjectBest.removeAll()
+            s.head = -1
+            s.tail = -1
             s.totalCost = 0
         }
     }
 
     private static func evictIfNeeded(_ s: inout State) {
         while (s.totalCostLimit > 0 && s.totalCost > s.totalCostLimit)
-            || (s.countLimit > 0 && s.entries.count > s.countLimit) {
-            guard let victimKey = s.entries.min(by: { $0.value.accessTick < $1.value.accessTick })?.key,
-                  let removed = s.entries.removeValue(forKey: victimKey) else {
-                break
-            }
-            s.totalCost = max(0, s.totalCost - removed.cost)
-            if let subjectKey = removed.subjectKey, s.subjectBest[subjectKey]?.key == victimKey {
-                s.subjectBest.removeValue(forKey: subjectKey)
-            }
+            || (s.countLimit > 0 && s.keyToIndex.count > s.countLimit) {
+            let victimIdx = s.tail
+            guard victimIdx != -1 else { break }
+            s.removeSlot(at: victimIdx)
         }
+    }
+}
+
+#if canImport(CoreGraphics)
+internal typealias ThreadSafeImageMemoryCache = ThreadSafeLRUMemoryCache<CGImage>
+
+extension ThreadSafeLRUMemoryCache where Value == CGImage {
+    func setObject(_ image: CGImage, forKey key: String, cost: Int? = nil, subjectKey: String? = nil) {
+        let resolvedCost = cost ?? max(1, image.bytesPerRow * image.height)
+        insert(image, forKey: key, subjectKey: subjectKey, cost: resolvedCost, qualityRank: image.width)
+    }
+
+    func insert(_ image: CGImage, forKey key: String, subjectKey: String? = nil) {
+        let resolvedCost = max(1, image.bytesPerRow * image.height)
+        insert(image, forKey: key, subjectKey: subjectKey, cost: resolvedCost, qualityRank: image.width)
     }
 }
 #endif
@@ -228,6 +407,22 @@ public enum ArtworkDiskCache: Sendable {
         }
         let hex = String(decoding: hexBytes, as: UTF8.self)
         return (directoryURL ?? imageCacheDirectoryURL).appendingPathComponent("\(hex).img")
+    }
+
+    public static func prefetchArtworkURLs(
+        in cards: [TvMediaCard],
+        afterIndex index: Int,
+        isBackdrop: Bool,
+        window: Int,
+        client: LunaCoreClient
+    ) -> [URL] {
+        guard index >= 0, index + 1 < cards.count, window > 0 else { return [] }
+        let endIndex = min(cards.count, index + 1 + window)
+        let target: LunaCoreClient.ArtworkTargetWidth = isBackdrop ? .landscape2x : .poster2x
+        return cards[(index + 1)..<endIndex].compactMap { card in
+            let path = isBackdrop ? card.preferredLandscapePath : card.preferredPosterPath
+            return client.resolveArtworkURL(path, target: target)
+        }
     }
 
     @discardableResult

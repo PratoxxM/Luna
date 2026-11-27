@@ -251,7 +251,7 @@ extension LunaCoreClient {
             let applyToFile: Bool?
         }
         let encoded = sessionId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? sessionId
-        return try await sendJSON(
+        return try await sendJSONWithMappedError(
             method: "POST",
             path: "/api/tv/v2/playback/\(encoded)/subtitles/auto-align",
             body: AutoAlignBody(
@@ -260,7 +260,43 @@ extension LunaCoreClient {
                 language: language,
                 subtitleDelayMs: subtitleDelayMs,
                 applyToFile: applyToFile
-            )
+            ),
+            mapError: { status, code, message in
+                PlaybackSubtitleSyncActionPolicy.friendlyAlignErrorMessage(
+                    statusCode: status,
+                    code: code,
+                    serverMessage: message
+                )
+            }
         )
+    }
+
+    public func fetchScrubFrame(
+        sessionId: String,
+        atSeconds seconds: Double,
+        timeoutSeconds: TimeInterval = 6.0
+    ) async throws -> TvScrubFrameResult {
+        let bucket = PlaybackTrickplayPolicy.quantizedBucketSeconds(
+            for: seconds,
+            durationSeconds: 0
+        ) ?? ((seconds.isFinite && seconds >= 0 ? Int(exactly: seconds.rounded(.down)) : nil) ?? 0)
+        let path = PlaybackTrickplayPolicy.buildScrubFramePath(sessionId: sessionId, bucketSeconds: bucket)
+        let (status, data, http) = try await executeRawAuthorizedGET(
+            path: path,
+            accept: "image/jpeg,image/*;q=0.9",
+            timeoutSeconds: timeoutSeconds,
+            useImageSession: true
+        )
+        if status == 401 {
+            throw LunaCoreError.unauthorized
+        }
+        if status == 200, !data.isEmpty {
+            let cacheHeader = http?.value(forHTTPHeaderField: "X-Trickplay-Cache")?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .uppercased()
+            return .image(data: data, cacheHit: cacheHeader == "HIT")
+        }
+        let parsedErr = extractServerError(from: data)
+        return .unavailable(statusCode: status, code: parsedErr.code)
     }
 }

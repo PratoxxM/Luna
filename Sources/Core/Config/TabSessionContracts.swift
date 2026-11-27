@@ -55,7 +55,13 @@ public protocol LibraryClientProviding: CardMutatingClient {
 }
 
 public protocol SearchClientProviding: CardMutatingClient {
-    func searchFull(query: String, limit: Int) async throws -> TvSearchResponse
+    func searchFull(query: String, limit: Int, kind: String) async throws -> TvSearchResponse
+}
+
+public extension SearchClientProviding {
+    func searchFull(query: String, limit: Int = 30, kind: String = "all") async throws -> TvSearchResponse {
+        try await searchFull(query: query, limit: limit, kind: kind)
+    }
 }
 
 public protocol PairingClientProviding: Sendable {

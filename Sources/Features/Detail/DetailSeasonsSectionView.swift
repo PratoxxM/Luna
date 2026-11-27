@@ -10,6 +10,7 @@ struct DetailSeasonsSectionView: View {
     let detailGutter: CGFloat
     var restoreFocusEpisodeID: String? = nil
     var restoreFocusNonce: Int = 0
+    var previewAutoOpenSeasonPicker: Bool = false
 
     let onSelectSeason: (Int) -> Void
     var onEpisodeFocused: ((TvEpisodeCard) -> Void)? = nil
@@ -19,9 +20,14 @@ struct DetailSeasonsSectionView: View {
     let onDeleteEpisode: (TvEpisodeCard) -> Void
 
     @State private var showSeasonPickerSheet: Bool = false
+    @State private var didAutoOpenPreviewSeasonPicker: Bool = false
     @State private var episodeScrollPosition = ScrollPosition(idType: String.self)
     @Namespace private var seasonsFocusNamespace
     @Namespace private var episodesFocusNamespace
+
+    private var orderedSeasons: [TvSeasonSummary] {
+        Self.orderedSeasons(seasons)
+    }
 
     private var selectedSeasonSummary: TvSeasonSummary? {
         Self.selectedSeasonSummary(seasons: seasons, selectedSeasonNumber: selectedSeasonNumber)
@@ -35,11 +41,30 @@ struct DetailSeasonsSectionView: View {
         seasonCount > 6
     }
 
+    nonisolated static func orderedSeasons(_ seasons: [TvSeasonSummary]) -> [TvSeasonSummary] {
+        let regular = seasons.filter { $0.seasonNumber > 0 }
+        let specials = seasons.filter { $0.seasonNumber <= 0 }
+        return regular + specials
+    }
+
     nonisolated static func selectedSeasonSummary(
         seasons: [TvSeasonSummary],
         selectedSeasonNumber: Int
     ) -> TvSeasonSummary? {
-        seasons.first { $0.seasonNumber == selectedSeasonNumber } ?? seasons.first
+        seasons.first { $0.seasonNumber == selectedSeasonNumber }
+            ?? seasons.first { $0.seasonNumber > 0 }
+            ?? seasons.first
+    }
+
+    nonisolated static func seasonPickerTrailingMeta(for seasons: [TvSeasonSummary]) -> String {
+        let regularCount = seasons.filter { $0.seasonNumber > 0 }.count
+        let hasSpecials = seasons.contains { $0.seasonNumber == 0 }
+        if regularCount > 0 {
+            return hasSpecials
+                ? "\(LunaCopy.seasonsCount(regularCount)) · inkl. Spesialer"
+                : LunaCopy.seasonsCount(regularCount)
+        }
+        return hasSpecials ? "Spesialer" : LunaCopy.seasonsCount(seasons.count)
     }
 
     nonisolated static func nextEpisodeTargetID(
@@ -69,10 +94,11 @@ struct DetailSeasonsSectionView: View {
     }
 
     var body: some View {
+        let displaySeasons = orderedSeasons
         VStack(alignment: .leading, spacing: LunaTokens.Layout.headerGap) {
-            if !Self.usesSeasonPickerSheet(seasonCount: seasons.count) {
+            if !Self.usesSeasonPickerSheet(seasonCount: displaySeasons.count) {
                 HStack(spacing: 10) {
-                    ForEach(seasons) { season in
+                    ForEach(displaySeasons) { season in
                         let selected = selectedSeasonNumber == season.seasonNumber
                         LunaPillButton(
                             season.localizedName,
@@ -102,7 +128,8 @@ struct DetailSeasonsSectionView: View {
                 .focusSection()
             } else {
                 HStack(spacing: 16) {
-                    let activeName = selectedSeasonSummary?.localizedName ?? "Sesong \(selectedSeasonNumber)"
+                    let activeName = selectedSeasonSummary?.localizedName
+                        ?? LunaCopy.localizedSeasonTitle(nil, seasonNumber: selectedSeasonNumber)
                     LunaPillButton(
                         activeName,
                         systemImage: "chevron.down",
@@ -178,10 +205,16 @@ struct DetailSeasonsSectionView: View {
                 }
             }
         }
+        .onAppear {
+            if previewAutoOpenSeasonPicker && !didAutoOpenPreviewSeasonPicker {
+                didAutoOpenPreviewSeasonPicker = true
+                showSeasonPickerSheet = true
+            }
+        }
         .sheet(isPresented: $showSeasonPickerSheet) {
             DetailSeasonPickerSheetView(
                 seriesTitle: detail.title,
-                seasons: seasons,
+                seasons: displaySeasons,
                 selectedSeasonNumber: selectedSeasonNumber,
                 onPickSeason: { num in
                     showSeasonPickerSheet = false
@@ -227,7 +260,7 @@ private struct DetailSeasonPickerSheetView: View {
         LunaSheetContainer(
             title: "Velg sesong",
             subtitle: seriesTitle,
-            trailingMeta: LunaCopy.seasonsCount(seasons.count),
+            trailingMeta: DetailSeasonsSectionView.seasonPickerTrailingMeta(for: seasons),
             width: .wide,
             maxHeight: 860,
             onClose: onClose
@@ -253,7 +286,6 @@ private struct DetailSeasonPickerSheetView: View {
                 .padding(.vertical, 4)
             }
             .scrollPosition($seasonScrollPosition)
-            .scrollClipDisabled()
             .onAppear {
                 focusedSeasonNumber = selectedSeasonNumber
                 seasonScrollPosition.scrollTo(id: selectedSeasonNumber, anchor: .center)

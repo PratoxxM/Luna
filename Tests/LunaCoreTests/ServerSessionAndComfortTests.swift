@@ -198,6 +198,7 @@ final class ServerSessionAndComfortTests: XCTestCase {
 
         let stdComfort = ComfortPreferences(defaults: defaults, memoryTier: .standard)
         XCTAssertEqual(stdComfort.lowResUpscaleMode, .off)
+        XCTAssertFalse(stdComfort.upscalesFullHDVideo)
         XCTAssertEqual(stdComfort.speakerLayoutOverride, .auto)
         XCTAssertEqual(defaults.string(forKey: SideloadSafeStorage.speakerLayoutOverrideKey), "auto")
 
@@ -206,9 +207,17 @@ final class ServerSessionAndComfortTests: XCTestCase {
         defer { highDefaults.removePersistentDomain(forName: highSuite) }
         let highComfort = ComfortPreferences(defaults: highDefaults, memoryTier: .high2026)
         XCTAssertEqual(highComfort.lowResUpscaleMode, .auto)
+        XCTAssertTrue(highComfort.upscalesFullHDVideo)
 
         var syncCalls: [TvDeviceOverrides] = []
         stdComfort.onSyncRequested = { syncCalls.append($0) }
+
+        stdComfort.upscalesFullHDVideo = true
+        XCTAssertEqual(syncCalls.count, 1, "upscalesFullHDVideo must trigger server comfort sync")
+        XCTAssertEqual(syncCalls.last?.upscalesFullHDVideo, true)
+        XCTAssertEqual(defaults.object(forKey: SideloadSafeStorage.fullHDUpscaleEnabledKey) as? Bool, true)
+        XCTAssertTrue(ComfortPreferences(defaults: defaults, memoryTier: .standard).upscalesFullHDVideo)
+        syncCalls.removeAll()
 
         stdComfort.adoptServerOverrides(
             TvDeviceOverrides(

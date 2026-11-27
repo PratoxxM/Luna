@@ -49,6 +49,7 @@ enum PlayerEngineConfigurator {
         autoplay: Bool = true,
         suppressInitialSubtitleSelection: Bool = false,
         preferNorwegianAudio: Bool = false,
+        binauralAudioActive: Bool = false,
         displayCapabilities: DisplayCapabilities = AetherEngine.displayCapabilities,
         memoryProfile: DeviceMemoryProfile = DeviceHardwareCapabilities.memoryProfile,
         availableMemoryBytes: UInt64 = DeviceHardwareCapabilities.availableMemoryBytes()
@@ -101,8 +102,26 @@ enum PlayerEngineConfigurator {
 
         options.audioBridgeMode = cfg.audioBridgeMode == "lossless" ? .lossless : .surroundCompat
         options.audioDelaySeconds = audioDelaySeconds
-        options.audioShaping = comfort.buildAudioShaping(enhancement: audioEnhancement)
-        applySpeakerLayoutOverride(comfort.speakerLayoutOverride, session: session, to: &options)
+        let effectiveLayout = resolvedEffectiveSpeakerLayout(
+            comfortSpeakerLayoutOverride: comfort.speakerLayoutOverride,
+            comfortEffectiveSpeakerLayout: comfort.effectiveSpeakerLayout,
+            session: session
+        )
+        let effectiveBinaural = AudioBinauralPolicy.effectiveBinauralFlag(
+            isBinauralRouteActive: binauralAudioActive,
+            effectiveSpeakerLayout: effectiveLayout
+        )
+        options.audioShaping = comfort.buildAudioShaping(
+            enhancement: audioEnhancement,
+            binaural: effectiveBinaural,
+            effectiveSpeakerLayoutOverride: effectiveLayout
+        )
+        applySpeakerLayoutOverride(
+            comfort.speakerLayoutOverride,
+            effectiveSpeakerLayout: effectiveLayout,
+            session: session,
+            to: &options
+        )
 
         if preferNorwegianAudio || session.item.originalLanguage != nil {
             options.preferredAudioLanguages = OriginalLanguageTrackSelector.preferredAudioLanguageCodes(
@@ -118,12 +137,24 @@ enum PlayerEngineConfigurator {
         options.preferredSubtitleLanguages = (comfort.smartNordicSubtitleRule || suppressInitialSubtitleSelection)
             ? []
             : (cfg.preferredSubtitleLanguages ?? ["nob", "nor", "no", "eng"])
-        options.skipsContainerAttachments = cfg.skipsContainerAttachments ?? true
-        if options.preferDualLayerDolbyVision && memoryProfile.tier == .standard {
-            options.generatesBackgroundScrubPreviews = false
-        } else {
-            options.generatesBackgroundScrubPreviews = cfg.generatesBackgroundScrubPreviews ?? false
-        }
+        options.skipsContainerAttachments = false
+        options.readsContainerAttachmentsAtOpen = false
+        options.recognizesBitmapSubtitleText = comfort.effectiveRecognizesBitmapSubtitleText(
+            memoryTier: memoryProfile.tier
+        )
+        options.generatesBackgroundScrubPreviews = BackgroundScrubPreviewPolicy.shouldGenerate(
+            memoryTier: memoryProfile.tier,
+            availableMemoryBytes: availableMemoryBytes,
+            playbackMemoryShedFloorBytes: memoryProfile.playbackMemoryShedFloorBytes,
+            source: session.selectedCandidate.source,
+            tier: session.selectedCandidate.tier,
+            supportsByteRanges: session.stream.supportsByteRanges,
+            preferDualLayerDolbyVision: options.preferDualLayerDolbyVision,
+            dvProfile: session.selectedCandidate.dvProfile,
+            dvEnhancementLayer: session.selectedCandidate.dvEnhancementLayer,
+            requiresSoftwareVideoDecode: session.selectedCandidate.requiresSoftwareVideoDecode(),
+            serverConfigured: cfg.generatesBackgroundScrubPreviews
+        )
         options.serveIFramePlaylist = cfg.serveIFramePlaylist ?? false
         options.confirmAtmos = cfg.confirmAtmos ?? (memoryProfile.tier == .high2026)
 
@@ -152,18 +183,41 @@ enum PlayerEngineConfigurator {
         )
         options.declaredDurationSeconds = cfg.declaredDurationSeconds ?? session.stream.declaredDurationSeconds
 
-        applyLowResUpscaleMode(comfort.lowResUpscaleMode, to: &options)
+        applyUpscaleSettings(
+            lowResMode: comfort.lowResUpscaleMode,
+            upscalesFullHDVideo: comfort.upscalesFullHDVideo,
+            to: &options
+        )
         options.externalSubtitles = externalSubtitleTracks(for: session, client: client)
 
         return options
     }
 
+    nonisolated static func resolvedEffectiveSpeakerLayout(
+        comfortSpeakerLayoutOverride: SpeakerLayoutOverrideMode,
+        comfortEffectiveSpeakerLayout: String,
+        session: TvPlaybackSession?
+    ) -> String {
+        if comfortSpeakerLayoutOverride == .auto,
+           let sessionLayout = session?.aetherConfig.objectAudioRendering?.layout?
+               .trimmingCharacters(in: .whitespacesAndNewlines),
+           !sessionLayout.isEmpty {
+            return sessionLayout
+        }
+        return comfortEffectiveSpeakerLayout
+    }
+
     nonisolated static func applySpeakerLayoutOverride(
         _ overrideMode: SpeakerLayoutOverrideMode,
+        effectiveSpeakerLayout: String? = nil,
         session: TvPlaybackSession?,
         to options: inout LoadOptions
     ) {
-        if overrideMode == .stereo {
+        let resolvedLayout = effectiveSpeakerLayout
+            ?? (overrideMode == .auto ? session?.aetherConfig.objectAudioRendering?.layout : nil)
+        if overrideMode == .stereo
+            || (overrideMode == .auto
+                && resolvedLayout?.trimmingCharacters(in: .whitespacesAndNewlines) == "2.0") {
             options.objectAudioRendering = .off
             return
         }
@@ -199,8 +253,11 @@ enum PlayerEngineConfigurator {
 
     struct ReloadComfortSnapshot {
         let lowResUpscaleMode: LowResUpscaleMode
+        let upscalesFullHDVideo: Bool
         let speakerLayoutOverride: SpeakerLayoutOverrideMode
+        let effectiveSpeakerLayout: String
         let dualLayerOverride: DualLayerOverrideMode
+        let recognizesBitmapSubtitleText: Bool
         let audioDelaySeconds: Double
         let audioShaping: AudioShaping
     }
@@ -208,14 +265,32 @@ enum PlayerEngineConfigurator {
     static func captureReloadComfortSnapshot(
         comfort: ComfortPreferences,
         audioEnhancement: AudioEnhancementMode,
-        audioDelaySeconds: Double
+        audioDelaySeconds: Double,
+        binauralAudioActive: Bool = false,
+        session: TvPlaybackSession? = nil
     ) -> ReloadComfortSnapshot {
-        ReloadComfortSnapshot(
+        let effectiveLayout = resolvedEffectiveSpeakerLayout(
+            comfortSpeakerLayoutOverride: comfort.speakerLayoutOverride,
+            comfortEffectiveSpeakerLayout: comfort.effectiveSpeakerLayout,
+            session: session
+        )
+        let effectiveBinaural = AudioBinauralPolicy.effectiveBinauralFlag(
+            isBinauralRouteActive: binauralAudioActive,
+            effectiveSpeakerLayout: effectiveLayout
+        )
+        return ReloadComfortSnapshot(
             lowResUpscaleMode: comfort.lowResUpscaleMode,
+            upscalesFullHDVideo: comfort.upscalesFullHDVideo,
             speakerLayoutOverride: comfort.speakerLayoutOverride,
+            effectiveSpeakerLayout: effectiveLayout,
             dualLayerOverride: comfort.dualLayerOverride,
+            recognizesBitmapSubtitleText: comfort.effectiveRecognizesBitmapSubtitleText(),
             audioDelaySeconds: audioDelaySeconds,
-            audioShaping: comfort.buildAudioShaping(enhancement: audioEnhancement)
+            audioShaping: comfort.buildAudioShaping(
+                enhancement: audioEnhancement,
+                binaural: effectiveBinaural,
+                effectiveSpeakerLayoutOverride: effectiveLayout
+            )
         )
     }
 
@@ -224,28 +299,45 @@ enum PlayerEngineConfigurator {
         session: TvPlaybackSession?,
         to options: inout LoadOptions
     ) {
-        applyLowResUpscaleMode(snapshot.lowResUpscaleMode, to: &options)
-        applySpeakerLayoutOverride(snapshot.speakerLayoutOverride, session: session, to: &options)
+        applyUpscaleSettings(
+            lowResMode: snapshot.lowResUpscaleMode,
+            upscalesFullHDVideo: snapshot.upscalesFullHDVideo,
+            to: &options
+        )
+        applySpeakerLayoutOverride(
+            snapshot.speakerLayoutOverride,
+            effectiveSpeakerLayout: snapshot.effectiveSpeakerLayout,
+            session: session,
+            to: &options
+        )
         if snapshot.dualLayerOverride == .forceOff {
             options.preferDualLayerDolbyVision = false
             options.foldsDolbyVisionFEL = false
             options.dolbyVisionHandling = .baseLayerOnly
         }
+        options.skipsContainerAttachments = false
+        options.readsContainerAttachmentsAtOpen = false
+        options.recognizesBitmapSubtitleText = snapshot.recognizesBitmapSubtitleText
         options.audioDelaySeconds = snapshot.audioDelaySeconds
         options.audioShaping = snapshot.audioShaping
     }
 
+    nonisolated static func applyUpscaleSettings(
+        lowResMode: LowResUpscaleMode,
+        upscalesFullHDVideo: Bool,
+        to options: inout LoadOptions
+    ) {
+        let policy = UpscaleLoadPolicy.resolve(
+            lowResMode: lowResMode,
+            upscalesFullHDVideo: upscalesFullHDVideo
+        )
+        options.upscalesLowResolutionVideo = policy.upscalesLowResolutionVideo
+        options.upscaleScaler = policy.scaler.aetherScaler
+        options.upscalesFullHDVideo = policy.upscalesFullHDVideo
+    }
+
     nonisolated static func applyLowResUpscaleMode(_ mode: LowResUpscaleMode, to options: inout LoadOptions) {
-        switch mode {
-        case .off:
-            options.upscalesLowResolutionVideo = false
-        case .auto:
-            options.upscalesLowResolutionVideo = true
-            options.upscaleScaler = .automatic
-        case .animeLineArt:
-            options.upscalesLowResolutionVideo = true
-            options.upscaleScaler = .lineArt
-        }
+        applyUpscaleSettings(lowResMode: mode, upscalesFullHDVideo: false, to: &options)
     }
 
     nonisolated static func mapSpeakerLayout(_ raw: String?) -> SpatialSpeakerLayout {
@@ -262,6 +354,7 @@ enum PlayerEngineConfigurator {
         _ session: TvPlaybackSession?,
         dualLayerOverride: DualLayerOverrideMode = .auto,
         lowResUpscaleMode: LowResUpscaleMode = .off,
+        upscalesFullHDVideo: Bool = false,
         supportsHardwareAV1: Bool = DeviceHardwareCapabilities.supportsHardwareAV1
     ) -> Bool {
         guard let session else { return false }
@@ -285,10 +378,71 @@ enum PlayerEngineConfigurator {
                 }
             }
         }
-        if lowResUpscaleMode != .off && candidate.isLikelyLowResolutionSDRForUpscale {
+        if lowResUpscaleMode != .off && candidate.isLikelySub1080pSDRForUpscale {
+            return true
+        }
+        if (lowResUpscaleMode == .animeLineArt || upscalesFullHDVideo) && candidate.isLikelyFullHDSDRForUpscale {
             return true
         }
         return false
+    }
+
+    nonisolated static func shouldUpgradePlaybackMemoryMode(
+        alreadyHadPreparedSession: Bool,
+        initialHeavyStream: Bool,
+        resolvedHeavyStream: Bool
+    ) -> Bool {
+        !alreadyHadPreparedSession && !initialHeavyStream && resolvedHeavyStream
+    }
+
+    nonisolated static func errorCategory(for kind: PlaybackErrorKind) -> PlaybackErrorCategory {
+        switch kind {
+        case .sourceOpenFailed: return .sourceOpenFailed
+        case .sourceRefused: return .sourceRefused
+        case .sourceCertificateRejected: return .sourceCertificateRejected
+        case .sourceFabricatesRanges: return .sourceFabricatesRanges
+        case .noPlayableTrackWithinBudget: return .noPlayableTrackWithinBudget
+        case .vodSourceFailed: return .vodSourceFailed
+        case .sourceRateLimited: return .sourceRateLimited
+        case .audioBridgeProducedNoOutput: return .audioBridgeProducedNoOutput
+        case .storageExhausted: return .storageExhausted
+        default: return .unknown
+        }
+    }
+
+    nonisolated static func friendlyEngineErrorMessage(
+        rawMessage: String,
+        errorInfo: PlaybackErrorInfo?
+    ) -> String {
+        guard let errorInfo else {
+            return LunaCopy.friendlyEngineErrorMessage(rawMessage)
+        }
+        let effectiveRaw = errorInfo.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? rawMessage
+            : errorInfo.message
+        return PlaybackErrorGuidancePolicy.userMessage(
+            category: errorCategory(for: errorInfo.kind),
+            underlyingCode: errorInfo.underlyingCode,
+            ffmpegErrorCode: errorInfo.ffmpegErrorCode,
+            rawMessage: effectiveRaw
+        )
+    }
+
+    nonisolated static func friendlyEngineFailure(
+        _ error: Error,
+        engineErrorInfo: PlaybackErrorInfo?,
+        fallback: String = "Kunne ikke nå LunaCore akkurat nå. Prøv igjen om litt."
+    ) -> String {
+        if error is LunaCoreError || error is URLError {
+            return LunaCopy.friendlyErrorMessage(error, fallback: fallback)
+        }
+        if let engineErrorInfo {
+            return friendlyEngineErrorMessage(
+                rawMessage: error.localizedDescription,
+                errorInfo: engineErrorInfo
+            )
+        }
+        return LunaCopy.friendlyErrorMessage(error, fallback: fallback)
     }
 
     nonisolated static func canDirectMountPreparedSession(
@@ -350,6 +504,7 @@ extension PlayerViewModel {
         autoplay: Bool = true,
         suppressInitialSubtitleSelection: Bool = false,
         preferNorwegianAudio: Bool = false,
+        binauralAudioActive: Bool = false,
         displayCapabilities: DisplayCapabilities = AetherEngine.displayCapabilities,
         memoryProfile: DeviceMemoryProfile = DeviceHardwareCapabilities.memoryProfile,
         availableMemoryBytes: UInt64 = DeviceHardwareCapabilities.availableMemoryBytes()
@@ -363,6 +518,7 @@ extension PlayerViewModel {
             autoplay: autoplay,
             suppressInitialSubtitleSelection: suppressInitialSubtitleSelection,
             preferNorwegianAudio: preferNorwegianAudio,
+            binauralAudioActive: binauralAudioActive,
             displayCapabilities: displayCapabilities,
             memoryProfile: memoryProfile,
             availableMemoryBytes: availableMemoryBytes
@@ -373,12 +529,14 @@ extension PlayerViewModel {
         _ session: TvPlaybackSession?,
         dualLayerOverride: DualLayerOverrideMode = .auto,
         lowResUpscaleMode: LowResUpscaleMode = .off,
+        upscalesFullHDVideo: Bool = false,
         supportsHardwareAV1: Bool = DeviceHardwareCapabilities.supportsHardwareAV1
     ) -> Bool {
         PlayerEngineConfigurator.isLikelyHeavySoftwareSession(
             session,
             dualLayerOverride: dualLayerOverride,
             lowResUpscaleMode: lowResUpscaleMode,
+            upscalesFullHDVideo: upscalesFullHDVideo,
             supportsHardwareAV1: supportsHardwareAV1
         )
     }

@@ -117,9 +117,22 @@ public struct TvLibraryCounts: Codable, Equatable, Sendable {
     }
 }
 
+public struct TvLibraryActiveFilters: Codable, Equatable, Sendable {
+    public let tier: String?
+    public let mediaType: String?
+    public let sort: String?
+
+    public init(tier: String? = nil, mediaType: String? = nil, sort: String? = nil) {
+        self.tier = tier
+        self.mediaType = mediaType
+        self.sort = sort
+    }
+}
+
 public struct TvLibraryResponse: Codable, Equatable, Sendable {
     public let ok: Bool
     public let section: String
+    public let activeFilters: TvLibraryActiveFilters?
     public let counts: TvLibraryCounts
     public let watchlist: [TvMediaCard]
     public let localItems: [TvMediaCard]
@@ -131,21 +144,24 @@ public struct TvLibraryResponse: Codable, Equatable, Sendable {
     }
 
     public init(
-        ok: Bool, section: String, counts: TvLibraryCounts, watchlist: [TvMediaCard],
+        ok: Bool, section: String, activeFilters: TvLibraryActiveFilters? = nil,
+        counts: TvLibraryCounts, watchlist: [TvMediaCard],
         localItems: [TvMediaCard], localHasMore: Bool? = nil, customLists: [TvLibraryCustomList]? = nil
     ) {
-        self.ok = ok; self.section = section; self.counts = counts; self.watchlist = watchlist
+        self.ok = ok; self.section = section; self.activeFilters = activeFilters
+        self.counts = counts; self.watchlist = watchlist
         self.localItems = localItems; self.localHasMore = localHasMore; self.customLists = customLists
     }
 
     enum CodingKeys: String, CodingKey {
-        case ok, section, counts, watchlist, localItems, localHasMore, customLists
+        case ok, section, activeFilters, counts, watchlist, localItems, localHasMore, customLists
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.ok = try c.decode(Bool.self, forKey: .ok)
         self.section = try c.decode(String.self, forKey: .section)
+        self.activeFilters = try c.decodeIfPresent(TvLibraryActiveFilters.self, forKey: .activeFilters)
         self.counts = try c.decode(TvLibraryCounts.self, forKey: .counts)
         self.watchlist = try c.decode([TvMediaCard].self, forKey: .watchlist)
         self.localItems = try c.decode([TvMediaCard].self, forKey: .localItems)

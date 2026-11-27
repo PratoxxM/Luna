@@ -37,6 +37,7 @@ public enum LunaCoreError: LocalizedError, Sendable {
 
 private struct ServerErrorEnvelope: Decodable, Sendable {
     let error: String?
+    let code: String?
 }
 
 public enum ConditionalHTTPResult<Payload: Decodable & Sendable>: Sendable {
@@ -170,6 +171,11 @@ public struct LunaCoreClient: Sendable {
         }
     }
 
+    private static func hasHTTPOrHTTPSScheme(_ value: String) -> Bool {
+        value.range(of: "http://", options: [.anchored, .caseInsensitive]) != nil
+            || value.range(of: "https://", options: [.anchored, .caseInsensitive]) != nil
+    }
+
     public func resolveArtworkURL(
         _ rawPathOrURL: String?,
         target: ArtworkTargetWidth = .preserve
@@ -178,7 +184,7 @@ public struct LunaCoreClient: Sendable {
               !raw.isEmpty else {
             return nil
         }
-        let baseResolved = (raw.hasPrefix("http://") || raw.hasPrefix("https://"))
+        let baseResolved = Self.hasHTTPOrHTTPSScheme(raw)
             ? URL(string: raw)
             : buildAbsoluteURL(raw)
         guard let url = baseResolved, target != .preserve else {
@@ -188,27 +194,23 @@ public struct LunaCoreClient: Sendable {
     }
 
     public static func upgradeArtworkURL(_ url: URL, target: ArtworkTargetWidth) -> URL {
-        let rawAbs = url.absoluteString
-        if !rawAbs.contains("?") {
-            if let imgRange = rawAbs.range(of: "/api/tv/v2/img/")
-                ?? rawAbs.range(of: "/api/media/v2/img/")
-                ?? rawAbs.range(of: "/api/tv/v1/img/") {
-                if target == .hero4K {
-                    let suffix = rawAbs[imgRange.upperBound...]
-                    if suffix.hasPrefix("card/") {
-                        let replaced = rawAbs[..<imgRange.upperBound] + "backdrop/" + suffix.dropFirst("card/".count)
-                        return URL(string: String(replaced)) ?? url
-                    }
-                    if suffix.hasPrefix("still/") {
-                        let replaced = rawAbs[..<imgRange.upperBound] + "backdrop/" + suffix.dropFirst("still/".count)
-                        return URL(string: String(replaced)) ?? url
-                    }
-                }
-                return url
-            }
+        guard target != .preserve else {
+            return url
         }
 
         guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url
+        }
+
+        let imgPrefixes = ["/api/tv/v2/img/", "/api/media/v2/img/", "/api/tv/v1/img/"]
+        for prefix in imgPrefixes where comps.path.hasPrefix(prefix) {
+            if target == .hero4K {
+                let suffix = comps.path.dropFirst(prefix.count)
+                for variant in ["card/", "still/", "backdrop/"] where suffix.hasPrefix(variant) {
+                    comps.path = prefix + "backdrop4k/" + suffix.dropFirst(variant.count)
+                    return comps.url ?? url
+                }
+            }
             return url
         }
         var changed = false
@@ -253,7 +255,7 @@ public struct LunaCoreClient: Sendable {
     }
 
     public func buildAbsoluteURL(_ pathOrURL: String) -> URL? {
-        if pathOrURL.hasPrefix("http://") || pathOrURL.hasPrefix("https://") {
+        if Self.hasHTTPOrHTTPSScheme(pathOrURL) {
             return URL(string: pathOrURL)
         }
         let cleanBase = baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -369,8 +371,13 @@ public struct LunaCoreClient: Sendable {
         return req
     }
 
+    internal func extractServerError(from data: Data) -> (message: String?, code: String?) {
+        let env = try? Self.decodeJSON(ServerErrorEnvelope.self, from: data)
+        return (env?.error, env?.code)
+    }
+
     internal func extractServerErrorMessage(from data: Data) -> String? {
-        (try? Self.decodeJSON(ServerErrorEnvelope.self, from: data))?.error
+        extractServerError(from: data).message
     }
 
     internal func validateHTTPStatus(_ status: Int, data: Data) throws {
@@ -391,6 +398,32 @@ public struct LunaCoreClient: Sendable {
         let (data, rawResp) = try await session.data(for: req)
         let status = (rawResp as? HTTPURLResponse)?.statusCode ?? 500
         return (status, data)
+    }
+
+    internal func executeRawAuthorizedGET(
+        path: String,
+        accept: String,
+        timeoutSeconds: TimeInterval,
+        useImageSession: Bool = true
+    ) async throws -> (status: Int, data: Data, http: HTTPURLResponse?) {
+        guard let url = buildAbsoluteURL(path) else {
+            throw LunaCoreError.invalidURL(path)
+        }
+        var req = authorizedRequest(url: url, method: "GET", includeAuth: true)
+        req.setValue(accept, forHTTPHeaderField: "Accept")
+        req.timeoutInterval = timeoutSeconds
+        let targetSession: URLSession
+        if useImageSession {
+            targetSession = hasInjectedSession
+                ? imageSession
+                : LunaCoreSessionPool.shared.artworkSession(for: url, allowSelfSignedLanTLS: allowSelfSignedLanTLS)
+        } else {
+            targetSession = session
+        }
+        let (data, rawResp) = try await targetSession.data(for: req)
+        let http = rawResp as? HTTPURLResponse
+        let status = http?.statusCode ?? 500
+        return (status, data, http)
     }
 
     internal func sendConditionalGET<Payload: Decodable & Sendable>(
@@ -483,6 +516,35 @@ public struct LunaCoreClient: Sendable {
         req.httpBody = try Self.encodeJSON(body)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         return try await executeAndDecode(req)
+    }
+
+    internal func sendJSONWithMappedError<Body: Encodable & Sendable, Response: Decodable & Sendable>(
+        method: String,
+        path: String,
+        body: Body,
+        includeAuth: Bool = true,
+        mapError: (_ status: Int, _ code: String?, _ message: String?) -> String
+    ) async throws -> Response {
+        guard let url = buildAbsoluteURL(path) else {
+            throw LunaCoreError.invalidURL(path)
+        }
+        var req = authorizedRequest(url: url, method: method, includeAuth: includeAuth)
+        req.httpBody = try Self.encodeJSON(body)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let (data, rawResp) = try await session.data(for: req)
+        let status = (rawResp as? HTTPURLResponse)?.statusCode ?? 500
+        if status == 401 {
+            throw LunaCoreError.unauthorized
+        }
+        if status >= 400 {
+            let parsed = extractServerError(from: data)
+            throw LunaCoreError.serverMessage(status, mapError(status, parsed.code, parsed.message))
+        }
+        do {
+            return try await Self.decodeJSONAsync(Response.self, from: data)
+        } catch {
+            throw LunaCoreError.decodingFailed(error.localizedDescription)
+        }
     }
 
     private func executeAndDecode<Response: Decodable & Sendable>(

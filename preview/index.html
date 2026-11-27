@@ -14,8 +14,8 @@
     <header class="top-bar focus-section" data-section="topbar">
       <div class="nav-left">
         <div class="brand-cluster">
-          <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
-            <path d="M21.8 4.2A12.2 12.2 0 1 0 27.8 21.4A10.2 10.2 0 0 1 21.8 4.2Z" fill="#C48C3A"/>
+          <svg width="34" height="34" viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M21.8 4.2A12.2 12.2 0 1 0 27.8 21.4A10.2 10.2 0 0 1 21.8 4.2Z" fill="currentColor"/>
           </svg>
           <span class="room-label">Stua</span>
         </div>
@@ -39,6 +39,7 @@
       <section class="focus-section" data-section="home-continue">
         <div class="section-header">
           <h2 class="section-title">Fortsett</h2>
+          <span class="section-sub">I kveld · Fra iPhone</span>
         </div>
         <div class="shelf-row">
           <article class="backdrop-card art-ochre" data-focusable="true" data-action="open-player" data-label="Dune: Part Two">
@@ -122,9 +123,7 @@
         </div>
         <div class="shelf-row">
           <div class="poster-slot">
-            <article class="poster-card art-ochre" data-focusable="true" data-action="open-player" data-label="Poster: Dune: Part Two">
-              <div class="poster-emblem">Dune:<br>Part Two</div>
-            </article>
+            <article class="poster-card art-ochre" data-focusable="true" data-action="open-player" data-label="Poster: Dune: Part Two"></article>
             <div class="poster-focus-caption">
               <div class="poster-caption-title">Dune: Part Two</div>
               <div class="poster-caption-meta card-subtitle"><span class="tier-dot nvme"></span>2024 · ★ 8,5</div>
@@ -132,9 +131,7 @@
           </div>
 
           <div class="poster-slot">
-            <article class="poster-card art-aubergine" data-focusable="true" data-action="open-details" data-label="Poster: Nosferatu">
-              <div class="poster-emblem">Nosferatu</div>
-            </article>
+            <article class="poster-card art-aubergine" data-focusable="true" data-action="open-details" data-label="Poster: Nosferatu"></article>
             <div class="poster-focus-caption">
               <div class="poster-caption-title">Nosferatu</div>
               <div class="poster-caption-meta card-subtitle"><span class="tier-dot nvme"></span>2024 · ★ 7,7</div>
@@ -142,9 +139,7 @@
           </div>
 
           <div class="poster-slot">
-            <article class="poster-card art-teal" data-focusable="true" data-action="open-details" data-label="Poster: Blade Runner 2049">
-              <div class="poster-emblem">Blade Runner<br>2049</div>
-            </article>
+            <article class="poster-card art-teal" data-focusable="true" data-action="open-details" data-label="Poster: Blade Runner 2049"></article>
             <div class="poster-focus-caption">
               <div class="poster-caption-title">Blade Runner 2049</div>
               <div class="poster-caption-meta card-subtitle"><span class="tier-dot archive"></span>2017 · ★ 8,0</div>
@@ -152,9 +147,7 @@
           </div>
 
           <div class="poster-slot">
-            <article class="poster-card art-navy" data-focusable="true" data-action="open-details" data-label="Poster: Verdens verste menneske">
-              <div class="poster-emblem">Verdens verste<br>menneske</div>
-            </article>
+            <article class="poster-card art-navy" data-focusable="true" data-action="open-details" data-label="Poster: Verdens verste menneske"></article>
             <div class="poster-focus-caption">
               <div class="poster-caption-title">Verdens verste menneske</div>
               <div class="poster-caption-meta card-subtitle"><span class="tier-dot archive"></span>2021 · ★ 7,8</div>
@@ -162,9 +155,7 @@
           </div>
 
           <div class="poster-slot">
-            <article class="poster-card art-ochre" data-focusable="true" data-action="open-details" data-label="Poster: Oppenheimer">
-              <div class="poster-emblem">Oppenheimer</div>
-            </article>
+            <article class="poster-card art-ochre" data-focusable="true" data-action="open-details" data-label="Poster: Oppenheimer"></article>
             <div class="poster-focus-caption">
               <div class="poster-caption-title">Oppenheimer</div>
               <div class="poster-caption-meta card-subtitle"><span class="tier-dot nvme"></span>2023 · ★ 8,3</div>
@@ -172,9 +163,7 @@
           </div>
 
           <div class="poster-slot">
-            <article class="poster-card art-aubergine" data-focusable="true" data-action="open-details" data-label="Poster: Interstellar">
-              <div class="poster-emblem">Interstellar</div>
-            </article>
+            <article class="poster-card art-aubergine" data-focusable="true" data-action="open-details" data-label="Poster: Interstellar"></article>
             <div class="poster-focus-caption">
               <div class="poster-caption-title">Interstellar</div>
               <div class="poster-caption-meta card-subtitle"><span class="tier-dot nvme"></span>2014 · ★ 8,7</div>
@@ -235,7 +224,7 @@
       </section>
     </main>
 
-    <!-- 3. LIBRARY SCREEN (4 Horizontal Filter Pills + 6-Column Grid / Lists) -->
+    <!-- 3. LIBRARY SCREEN (4 Horizontal Filter Pills + Tier/Sort + 6-Column Grid / Lists) -->
     <main id="screen-library" class="screen">
       <section class="focus-section" data-section="library-filters">
         <div class="filter-strip">
@@ -243,6 +232,11 @@
           <button class="pill-btn" data-focusable="true" data-lib-filter="series">Serier <span class="pill-badge">3</span></button>
           <button class="pill-btn" data-focusable="true" data-lib-filter="watchlist">Huskeliste <span class="pill-badge">2</span></button>
           <button class="pill-btn" data-focusable="true" data-lib-filter="lists">Lister <span class="pill-badge">2</span></button>
+          <span class="filter-divider" aria-hidden="true"></span>
+          <button class="pill-btn is-selected" data-focusable="true" data-lib-tier="all">Alle kilder</button>
+          <button class="pill-btn" data-focusable="true" data-lib-tier="nvme">NVMe <span class="pill-badge">6</span></button>
+          <button class="pill-btn" data-focusable="true" data-lib-tier="archive">Arkiv <span class="pill-badge">2</span></button>
+          <button class="pill-btn" data-focusable="true" data-lib-sort="recent">⇅ Nylig lagt til</button>
         </div>
       </section>
 
@@ -259,6 +253,9 @@
             <span>🔍  Dune</span>
           </button>
           <button class="nav-icon-btn" data-focusable="true" aria-label="Tøm søk">✕</button>
+          <button class="pill-btn is-selected" data-focusable="true" data-search-kind="all">Alle</button>
+          <button class="pill-btn" data-focusable="true" data-search-kind="movie">Filmer</button>
+          <button class="pill-btn" data-focusable="true" data-search-kind="series">Serier</button>
         </div>
         <div class="section-sub" style="margin-top: 14px;">6 treff · 4 lokalt</div>
       </section>
@@ -299,7 +296,9 @@
         <div>
           <h1 class="hero-serif">Luksusfellen</h1>
           <div class="detail-meta">2008 · Reality, Økonomi · 28 sesonger · ★ 7,4 · <span style="color: var(--ok);">✓</span> Sett</div>
+          <div class="detail-ratings">RT 84 % · IMDb 1k stemmer</div>
           <div class="detail-format"><span class="tier-dot nvme"></span>1080p SDR · Stereo 2.0</div>
+          <div class="detail-tagline">Når hverdagsøkonomien tar overhånd.</div>
           <p class="detail-overview">Nordiske økonomer rydder opp i krevende privatøkonomi og setter opp varige planer for deltakere med ubetalte regninger.</p>
           <div class="detail-actions">
             <button class="pill-btn primary-action" data-focusable="true" data-entry-default="true" data-action="open-player"><span class="play-glyph">▶</span> Fortsett S28 · E4</button>
@@ -314,7 +313,7 @@
         <div class="section-header">
           <div style="display: flex; align-items: center; gap: 16px;">
             <button class="pill-btn is-selected" data-focusable="true" data-label="Sesong 28">⌄ Sesong 28</button>
-            <span class="section-sub">10 episoder</span>
+            <span class="section-sub">10 episoder · inkl. Spesialer</span>
           </div>
         </div>
         <div class="shelf-row">
@@ -341,6 +340,30 @@
               <div class="card-subtitle">45 min</div>
             </div>
           </article>
+        </div>
+      </section>
+
+      <section class="focus-section" data-section="detail-cast">
+        <div class="section-header">
+          <h2 class="section-title">Medvirkende</h2>
+          <span class="section-sub">3 personer</span>
+        </div>
+        <div class="cast-strip">
+          <button class="cast-card" data-focusable="true" data-label="Hallgeir Kvadsheim">
+            <div class="cast-avatar art-teal"></div>
+            <div class="cast-name">Hallgeir Kvadsheim</div>
+            <div class="cast-role">Økonomiekspert</div>
+          </button>
+          <button class="cast-card" data-focusable="true" data-label="Cecilie Lynum">
+            <div class="cast-avatar art-ochre"></div>
+            <div class="cast-name">Cecilie Lynum</div>
+            <div class="cast-role">Psykolog og rådgiver</div>
+          </button>
+          <button class="cast-card" data-focusable="true" data-label="Lene Drange">
+            <div class="cast-avatar art-navy"></div>
+            <div class="cast-name">Lene Drange</div>
+            <div class="cast-role">Økonomiekspert</div>
+          </button>
         </div>
       </section>
     </main>
@@ -373,17 +396,25 @@
               </div>
             </div>
             <div class="settings-divider"></div>
-            <div class="settings-card">
+            <div class="settings-card" id="settings-metalfx-card">
               <div>
                 <div class="quick-row-title">MetalFX 4K-oppskalering</div>
-                <div class="quick-row-sub">Kun &lt; 1080p 8-bit SDR · 4K og HDR urørt</div>
+                <div class="quick-row-sub" id="settings-metalfx-sub">MetalFX for &lt; 1080p SDR · 4K og HDR urørt.</div>
               </div>
               <div style="display: flex; gap: 10px;">
-                <button class="pill-btn" data-focusable="true">Av</button>
-                <button class="pill-btn is-selected" data-focusable="true">Auto</button>
-                <button class="pill-btn" data-focusable="true">Animasjon</button>
+                <button class="pill-btn" data-focusable="true" data-metalfx-mode="off">Av</button>
+                <button class="pill-btn is-selected" data-focusable="true" data-metalfx-mode="auto">Auto</button>
+                <button class="pill-btn" data-focusable="true" data-metalfx-mode="line_art">Animasjon</button>
               </div>
             </div>
+            <div class="settings-divider"></div>
+            <button class="settings-card settings-toggle-row" id="settings-lanczos-row" data-focusable="true" data-setting-toggle="lanczos" aria-pressed="true">
+              <div>
+                <div class="quick-row-title">1080p SDR → 4K (Lanczos)</div>
+                <div class="quick-row-sub" id="settings-lanczos-sub">Skalerer 1080p SDR til 4K · 4K og HDR urørt</div>
+              </div>
+              <span class="quick-row-value is-on" id="settings-lanczos-value">På</span>
+            </button>
             <div class="settings-divider"></div>
             <div class="settings-card">
               <div class="quick-row-sub">Skjermen støtter</div>
@@ -405,7 +436,7 @@
             <div class="section-sub" style="color: var(--text-secondary);">Severance · S2 E4 · Introduksjon</div>
             <div class="section-title" style="margin-top: 4px;">⏸ Woe's Hollow</div>
           </div>
-          <div class="section-sub">4K HDR10+ TrueHD Atmos · Ferdig kl. 23.18</div>
+          <div class="section-sub">4K HDR10+ TrueHD Atmos · Slutter kl. 23:18</div>
         </div>
         <div class="scrubber-bar">
           <div class="scrubber-buffer"></div>

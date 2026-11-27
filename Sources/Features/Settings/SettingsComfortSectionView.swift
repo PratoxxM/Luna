@@ -8,6 +8,8 @@ struct SettingsRoomDisplaySectionView: View {
     let caps: DisplayCapabilities
 
     var body: some View {
+        @Bindable var comfort = comfort
+
         SettingsSectionPanel(title: "Rom og skjerm") {
             if sessionStore.isRoomUnassigned {
                 LunaInfoRow(
@@ -85,6 +87,16 @@ struct SettingsRoomDisplaySectionView: View {
                     }
                 }
             }
+
+            LunaListDivider()
+
+            SettingsToggleRowButton(
+                title: "1080p SDR → 4K (Lanczos)",
+                subtitle: comfort.lowResUpscaleMode == .animeLineArt
+                    ? "Overstyres av Animasjon (Anime4K 2×)"
+                    : "Skalerer 1080p SDR til 4K · 4K og HDR urørt",
+                isOn: $comfort.upscalesFullHDVideo
+            )
 
             LunaListDivider()
 
@@ -197,6 +209,16 @@ struct SettingsSubtitlesSectionView: View {
                 subtitle: "Norsk tale uten tekst · utenlandsk tale med norsk/engelsk tekst",
                 isOn: $comfort.smartNordicSubtitleRule
             )
+
+            if DeviceHardwareCapabilities.memoryProfile.tier == .high2026 {
+                LunaListDivider()
+
+                SettingsToggleRowButton(
+                    title: "Konverter bildetekst med Vision OCR",
+                    subtitle: "Apple TV 4K (2026) · Gjør PGS/VobSub-dialog om til skarp tekst med Kveldslys",
+                    isOn: $comfort.recognizesBitmapSubtitleText
+                )
+            }
         }
     }
 }

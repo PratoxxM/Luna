@@ -372,4 +372,160 @@ final class DetailAndSourcePickerViewModelTests: XCTestCase {
         XCTAssertEqual(fetchCountWhenReplayReloaded.withLock { $0 }, true)
         XCTAssertEqual(vm.detail?.nextUp, TvNextUpPointer(season: 1, episode: 2))
     }
+
+    @MainActor
+    func testOptimisticStopReceiptUpdatesImmediatelyAndGuardsHomeRefreshNonceDoubleFetch() async throws {
+        let host = "detail-opt-receipt-\(UUID().uuidString.lowercased()).local"
+        defer {
+            DetailMockURLProtocol.unregister(host: host)
+            ItemDetailMemoryCache.shared.clear()
+        }
+        ItemDetailMemoryCache.shared.clear()
+
+        let fetches = Mutex(0)
+        let beforeJSON = #"""
+        {"ok":true,"item":{"itemId":"series:tmdb:95396","mediaType":"series","ids":{"tmdb":95396},"title":"Severance","inWatchlist":false,"watched":false,"selectedSeason":1,"nextUp":{"season":1,"episode":1},"seasons":[{"seasonNumber":1,"name":"Sesong 1","episodeCount":2}],"episodes":[{"itemId":"episode:tmdb:95396:s1:e1","seasonNumber":1,"episodeNumber":1,"title":"E1","watched":false},{"itemId":"episode:tmdb:95396:s1:e2","seasonNumber":1,"episodeNumber":2,"title":"E2","watched":false}]}}
+        """#
+        let afterJSON = #"""
+        {"ok":true,"item":{"itemId":"series:tmdb:95396","mediaType":"series","ids":{"tmdb":95396},"title":"Severance","inWatchlist":false,"watched":false,"selectedSeason":1,"nextUp":{"season":1,"episode":2},"seasons":[{"seasonNumber":1,"name":"Sesong 1","episodeCount":2}],"episodes":[{"itemId":"episode:tmdb:95396:s1:e1","seasonNumber":1,"episodeNumber":1,"title":"E1","watched":true},{"itemId":"episode:tmdb:95396:s1:e2","seasonNumber":1,"episodeNumber":2,"title":"E2","watched":false}]}}
+        """#
+
+        DetailMockURLProtocol.register(host: host) { request in
+            guard let url = request.url else { throw URLError(.badURL) }
+            let resp = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            if url.path.contains("/items/series/") {
+                let n = fetches.withLock { c -> Int in c += 1; return c }
+                return (resp, Data((n == 1 ? beforeJSON : afterJSON).utf8))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let context = LinuxDetailSessionContext()
+        context.client = DetailMockURLProtocol.makeClient(host: host)
+        let vm = MediaDetailViewModel(mediaType: "series", itemId: "series:tmdb:95396", initialTitle: "Severance")
+        vm.stopReceiptTimeout = .milliseconds(300)
+        await vm.handleTaskAppearance(scopeKey: "series#series:tmdb:95396#Kjellerstua#dv-fel-714", sessionContext: context)
+        XCTAssertEqual(fetches.withLock { $0 }, 1)
+
+        // Direct optimistic receipt test (partial watch + completion)
+        vm.applyOptimisticStopReceipt(
+            PlaybackStopReceipt(
+                itemId: "episode:tmdb:95396:s1:e1",
+                mediaType: "episode",
+                seasonNumber: 1,
+                episodeNumber: 1,
+                positionSeconds: 900,
+                durationSeconds: 1800,
+                completed: false
+            )
+        )
+        XCTAssertFalse(vm.episodes[0].watched)
+        XCTAssertEqual(vm.episodes[0].progress?.positionSeconds, 900)
+        XCTAssertEqual(vm.episodes[0].progress?.percent ?? 0, 50.0, accuracy: 0.1)
+
+        vm.applyOptimisticStopReceipt(
+            PlaybackStopReceipt(
+                itemId: "episode:tmdb:95396:s1:e1",
+                mediaType: "episode",
+                seasonNumber: 1,
+                episodeNumber: 1,
+                positionSeconds: 1800,
+                durationSeconds: 1800,
+                completed: true
+            )
+        )
+        XCTAssertTrue(vm.episodes[0].watched)
+        XCTAssertNil(vm.episodes[0].progress)
+        XCTAssertEqual(vm.detail?.nextUp, TvNextUpPointer(season: 1, episode: 2))
+
+        // Reset to initial episode 1 unwatched and verify concurrent homeRefreshNonce does NOT double-fetch GET /items/series/*
+        vm.episodes[0].watched = false
+        let launched = PlaybackLaunchRequest(itemId: "episode:tmdb:95396:s1:e1", title: "E1", seriesTitle: "Severance", season: 1, episode: 1)
+        context.activePlaybackTarget = launched
+        vm.handlePlaybackTargetChange(oldTarget: nil, newTarget: launched)
+        context.activePlaybackTarget = nil
+        vm.handlePlaybackTargetChange(oldTarget: launched, newTarget: nil)
+
+        // Simulate coalesced receipt + notifyContentMutated in same @MainActor turn
+        context.receiptStore.record(
+            PlaybackStopReceipt(itemId: "episode:tmdb:95396:s1:e1", mediaType: "episode", seasonNumber: 1, episodeNumber: 1, positionSeconds: 1800, durationSeconds: 1800, completed: true)
+        )
+        context.notifyContentMutated()
+        vm.handleHomeRefreshNonceChange(context.homeRefreshNonce)
+
+        await vm.postPlaybackReloadFallbackTask?.value
+        XCTAssertEqual(fetches.withLock { $0 }, 2, "homeRefreshNonce during postPlaybackReloadFallbackTask must not trigger a 2nd GET /items/*")
+        XCTAssertEqual(vm.detail?.nextUp, TvNextUpPointer(season: 1, episode: 2))
+    }
+
+    @MainActor
+    func testCancelledPostPlaybackReloadFallbackTaskDoesNotNilNewerSessionTask() async throws {
+        let host = "detail-gen-race-\(UUID().uuidString.lowercased()).local"
+        defer {
+            DetailMockURLProtocol.unregister(host: host)
+            ItemDetailMemoryCache.shared.clear()
+        }
+        ItemDetailMemoryCache.shared.clear()
+
+        let fetches = Mutex(0)
+        let beforeJSON = #"""
+        {"ok":true,"item":{"itemId":"series:tmdb:95396","mediaType":"series","ids":{"tmdb":95396},"title":"Severance","inWatchlist":false,"watched":false,"selectedSeason":1,"nextUp":{"season":1,"episode":1},"seasons":[{"seasonNumber":1,"name":"Sesong 1","episodeCount":2}],"episodes":[{"itemId":"episode:tmdb:95396:s1:e1","seasonNumber":1,"episodeNumber":1,"title":"E1","watched":false},{"itemId":"episode:tmdb:95396:s1:e2","seasonNumber":1,"episodeNumber":2,"title":"E2","watched":false}]}}
+        """#
+        let afterJSON = #"""
+        {"ok":true,"item":{"itemId":"series:tmdb:95396","mediaType":"series","ids":{"tmdb":95396},"title":"Severance","inWatchlist":false,"watched":false,"selectedSeason":1,"nextUp":{"season":1,"episode":2},"seasons":[{"seasonNumber":1,"name":"Sesong 1","episodeCount":2}],"episodes":[{"itemId":"episode:tmdb:95396:s1:e1","seasonNumber":1,"episodeNumber":1,"title":"E1","watched":true},{"itemId":"episode:tmdb:95396:s1:e2","seasonNumber":1,"episodeNumber":2,"title":"E2","watched":false}]}}
+        """#
+
+        DetailMockURLProtocol.register(host: host) { request in
+            guard let url = request.url else { throw URLError(.badURL) }
+            let resp = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            if url.path.contains("/items/series/") {
+                let n = fetches.withLock { c -> Int in c += 1; return c }
+                return (resp, Data((n == 1 ? beforeJSON : afterJSON).utf8))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let context = LinuxDetailSessionContext()
+        context.client = DetailMockURLProtocol.makeClient(host: host)
+        let vm = MediaDetailViewModel(mediaType: "series", itemId: "series:tmdb:95396", initialTitle: "Severance")
+        vm.stopReceiptTimeout = .milliseconds(250)
+        await vm.handleTaskAppearance(scopeKey: "series#series:tmdb:95396#Kjellerstua#dv-fel-714", sessionContext: context)
+        XCTAssertEqual(fetches.withLock { $0 }, 1)
+
+        // Session 1 launch & dismiss — Task 1 suspends inside awaitPlaybackStopReceipt
+        let req1 = PlaybackLaunchRequest(itemId: "episode:tmdb:95396:s1:e1", title: "E1", seriesTitle: "Severance", season: 1, episode: 1)
+        context.activePlaybackTarget = req1
+        vm.handlePlaybackTargetChange(oldTarget: nil, newTarget: req1)
+        context.activePlaybackTarget = nil
+        vm.handlePlaybackTargetChange(oldTarget: req1, newTarget: nil)
+        await Task.yield()
+
+        // Immediately launch & dismiss Session 2 before Task 1 unwinds
+        let req2 = PlaybackLaunchRequest(itemId: "episode:tmdb:95396:s1:e2", title: "E2", seriesTitle: "Severance", season: 1, episode: 2)
+        context.activePlaybackTarget = req2
+        vm.handlePlaybackTargetChange(oldTarget: nil, newTarget: req2)
+        context.activePlaybackTarget = nil
+        vm.handlePlaybackTargetChange(oldTarget: req2, newTarget: nil)
+
+        // Drain @MainActor turns so cancelled Task 1 completes and executes its defer
+        for _ in 0..<8 {
+            await Task.yield()
+        }
+        XCTAssertNotNil(
+            vm.postPlaybackReloadFallbackTask,
+            "Cancelled Task 1 defer must not clear Session 2's active postPlaybackReloadFallbackTask"
+        )
+
+        context.notifyContentMutated()
+        vm.handleHomeRefreshNonceChange(context.homeRefreshNonce)
+        XCTAssertEqual(fetches.withLock { $0 }, 1)
+
+        context.receiptStore.record(
+            PlaybackStopReceipt(itemId: "episode:tmdb:95396:s1:e2", mediaType: "episode", seasonNumber: 1, episodeNumber: 2, positionSeconds: 2800, durationSeconds: 2800, completed: true)
+        )
+        await vm.postPlaybackReloadFallbackTask?.value
+        XCTAssertNil(vm.postPlaybackReloadFallbackTask)
+        XCTAssertEqual(fetches.withLock { $0 }, 2)
+        XCTAssertEqual(vm.detail?.nextUp, TvNextUpPointer(season: 1, episode: 2))
+    }
 }

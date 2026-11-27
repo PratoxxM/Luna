@@ -8,12 +8,13 @@ private final class MockSearchClient: SearchClientProviding, @unchecked Sendable
 
     struct State: Sendable {
         var queries: [String] = []
+        var kinds: [String] = []
         var startedQueries: [String] = []
         var searchDelayNanoseconds: UInt64 = 0
         var failWatchlist = false
     }
 
-    func searchFull(query: String, limit: Int) async throws -> TvSearchResponse {
+    func searchFull(query: String, limit: Int, kind: String) async throws -> TvSearchResponse {
         let delay = lock.withLock { s -> UInt64 in
             s.startedQueries.append(query)
             return s.searchDelayNanoseconds
@@ -21,10 +22,14 @@ private final class MockSearchClient: SearchClientProviding, @unchecked Sendable
         if delay > 0 {
             try await Task.sleep(nanoseconds: delay)
         }
-        lock.withLock { $0.queries.append(query) }
+        lock.withLock {
+            $0.queries.append(query)
+            $0.kinds.append(kind)
+        }
         return TvSearchResponse(
             ok: true,
             query: query,
+            kind: kind,
             localCount: 1,
             items: [
                 TvMediaCard(itemId: "movie:tmdb:693134", mediaType: "movie", ids: TvMediaIds(tmdb: 693134), title: "Dune: \(query)", inWatchlist: false)

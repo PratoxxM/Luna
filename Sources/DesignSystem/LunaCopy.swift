@@ -245,7 +245,7 @@ public enum LunaCopy: Sendable {
     }
 
     public nonisolated static func formatListEpisodeCode(season: Int?, episode: Int?) -> String? {
-        guard let season, let episode, season > 0, episode > 0 else { return nil }
+        guard let season, let episode, season >= 0, episode > 0 else { return nil }
         return "S\(season) · E\(episode)"
     }
 

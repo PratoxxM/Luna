@@ -279,6 +279,20 @@ public enum AudioEnhancementMode: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    public static func fromServerValue(_ raw: String?) -> AudioEnhancementMode? {
+        let clean = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch clean {
+        case "reference":
+            return .reference
+        case "dialoguelift", "dialogue_lift":
+            return .dialogueLift
+        case "nightmode", "night_mode":
+            return .nightMode
+        default:
+            return nil
+        }
+    }
+
     public func shapingParameters(effectiveSpeakerLayout: String) -> AudioShapingParameters {
         let isStereo = (effectiveSpeakerLayout.trimmingCharacters(in: .whitespacesAndNewlines) == "2.0")
         let maxCh: Int? = isStereo ? 2 : nil
@@ -330,12 +344,74 @@ public enum LowResUpscaleMode: String, CaseIterable, Identifiable, Sendable {
     public var shortDescription: String {
         switch self {
         case .off: return "Standard tvOS-skalering uten MetalFX."
-        case .auto: return "Kun < 1080p 8-bit SDR · 4K og HDR urørt."
+        case .auto: return "MetalFX for < 1080p SDR · 4K og HDR urørt."
         case .animeLineArt: return "Anime4K 2× linjekunst for ≤ 1080p SDR."
         }
     }
 
     public static func defaultMode(for tier: DeviceMemoryTier) -> LowResUpscaleMode {
         tier == .high2026 ? .auto : .off
+    }
+
+    public static func fromServerValue(_ raw: String?) -> LowResUpscaleMode? {
+        let clean = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch clean {
+        case "off":
+            return .off
+        case "auto":
+            return .auto
+        case "line_art", "animelineart", "line-art":
+            return .animeLineArt
+        default:
+            return nil
+        }
+    }
+}
+
+public enum UpscaleScalerPolicy: String, Equatable, Sendable {
+    case automatic
+    case lineArt
+    case lanczos
+}
+
+public struct UpscaleLoadPolicy: Equatable, Sendable {
+    public let upscalesLowResolutionVideo: Bool
+    public let scaler: UpscaleScalerPolicy
+    public let upscalesFullHDVideo: Bool
+
+    public init(
+        upscalesLowResolutionVideo: Bool,
+        scaler: UpscaleScalerPolicy,
+        upscalesFullHDVideo: Bool
+    ) {
+        self.upscalesLowResolutionVideo = upscalesLowResolutionVideo
+        self.scaler = scaler
+        self.upscalesFullHDVideo = upscalesFullHDVideo
+    }
+
+    public static func resolve(
+        lowResMode: LowResUpscaleMode,
+        upscalesFullHDVideo: Bool
+    ) -> UpscaleLoadPolicy {
+        switch lowResMode {
+        case .off:
+            return UpscaleLoadPolicy(
+                upscalesLowResolutionVideo: false,
+                scaler: upscalesFullHDVideo ? .lanczos : .automatic,
+                upscalesFullHDVideo: upscalesFullHDVideo
+            )
+        case .auto:
+            return UpscaleLoadPolicy(
+                upscalesLowResolutionVideo: true,
+                scaler: .automatic,
+                upscalesFullHDVideo: upscalesFullHDVideo
+            )
+        case .animeLineArt:
+            return UpscaleLoadPolicy(
+                upscalesLowResolutionVideo: true,
+                scaler: .lineArt,
+                upscalesFullHDVideo: false
+            )
+        }
     }
 }

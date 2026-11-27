@@ -6,7 +6,7 @@ final class EpisodeTitleFormattingTests: XCTestCase {
     func testEpisodeCodeAndItemIdParsing() {
         XCTAssertEqual(EpisodeTitleFormatter.formatEpisodeCode(season: 1, episode: 4), "S01E04")
         XCTAssertEqual(EpisodeTitleFormatter.formatEpisodeCode(season: 12, episode: 105), "S12E105")
-        XCTAssertNil(EpisodeTitleFormatter.formatEpisodeCode(season: 0, episode: 4))
+        XCTAssertEqual(EpisodeTitleFormatter.formatEpisodeCode(season: 0, episode: 4), "S00E04")
         XCTAssertNil(EpisodeTitleFormatter.formatEpisodeCode(season: 1, episode: 0))
         XCTAssertNil(EpisodeTitleFormatter.formatEpisodeCode(season: nil, episode: 4))
 

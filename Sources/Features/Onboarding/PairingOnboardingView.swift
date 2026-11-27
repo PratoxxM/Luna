@@ -2,7 +2,14 @@ import SwiftUI
 
 struct PairingOnboardingView: View {
     @Environment(AppSessionStore.self) private var sessionStore
-    @State private var viewModel = PairingViewModel(discovery: BonjourServerBrowser())
+    @State private var viewModel: PairingViewModel
+
+    init(isPreviewMode: Bool = false) {
+        let discovery: any ServerDiscoveryProviding = isPreviewMode
+            ? PreviewMockServerDiscovery()
+            : BonjourServerBrowser()
+        _viewModel = State(initialValue: PairingViewModel(discovery: discovery))
+    }
 
     var body: some View {
         @Bindable var viewModel = viewModel
@@ -42,6 +49,7 @@ struct PairingOnboardingView: View {
         }
         .onAppear {
             viewModel.startDiscovery()
+            viewModel.handleDiscoveredServers(viewModel.discoveredServers, session: sessionStore)
         }
         .onDisappear {
             viewModel.stopDiscovery()
@@ -162,4 +170,26 @@ struct PairingOnboardingView: View {
             }
         }
     }
+}
+
+@MainActor
+@Observable
+private final class PreviewMockServerDiscovery: ServerDiscoveryProviding {
+    var servers: [DiscoveredLunaCoreServer] = []
+    var isSearching: Bool = false
+
+    func start() {
+        isSearching = false
+        servers = [
+            DiscoveredLunaCoreServer(
+                id: "preview-lunacore",
+                name: "LunaCore (Stua)",
+                baseURL: PreviewMockFixtures.previewBaseURL,
+                apiPath: BonjourDiscoveryPolicy.defaultAPIPath,
+                localHostnameURL: nil
+            )
+        ]
+    }
+
+    func stop() {}
 }

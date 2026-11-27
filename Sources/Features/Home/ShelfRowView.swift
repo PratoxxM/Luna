@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ShelfRowView: View {
     let row: TvShelfRow
+    var tonightReasonLabel: String? = nil
     let isDefaultFocusRow: Bool
     let mountedTracker: MountedEntryCardTracker
     let entryCardKey: String?
@@ -53,10 +54,11 @@ struct ShelfRowView: View {
         let removeTitle = rowRemoveActionTitle
 
         VStack(alignment: .leading, spacing: LunaTokens.Layout.headerGap) {
-            Text(row.title)
-                .font(LunaTheme.Font.sectionTitle)
-                .foregroundStyle(LunaTheme.linen)
-                .padding(.horizontal, LunaTheme.horizontalGutter)
+            LunaSectionHeader(
+                title: row.title,
+                metaText: isContinue ? tonightReasonLabel : nil
+            )
+            .padding(.horizontal, LunaTheme.horizontalGutter)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: LunaTokens.Layout.cardGap) {

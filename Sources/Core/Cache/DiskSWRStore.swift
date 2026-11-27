@@ -41,13 +41,30 @@ private struct SWRCacheMetadata: Codable, Sendable {
     let etag: String?
 }
 
-private actor DiskSWRStorageActor {
+internal actor DiskSWRStorageActor {
     static let shared = DiskSWRStorageActor()
 
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
+    private let customDirectoryURL: URL?
+    private let maxBytes: Int64
+    private let touchTracker = DiskTouchTracker()
+    private var accessOrderByBaseName: [String: UInt64] = [:]
+    private var lastAccessDateByBaseName: [String: Date] = [:]
+    private var accessSequence: UInt64 = 0
+
+    init(
+        directoryURL: URL? = nil,
+        maxBytes: Int64 = DiskSWRStore.defaultMaxBytes
+    ) {
+        self.customDirectoryURL = directoryURL
+        self.maxBytes = max(0, maxBytes)
+    }
 
     private nonisolated var swrDirectoryURL: URL {
+        if let customDirectoryURL {
+            return customDirectoryURL
+        }
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         return base
@@ -72,10 +89,34 @@ private actor DiskSWRStorageActor {
         } else {
             meta = nil
         }
+
+        accessSequence &+= 1
+        accessOrderByBaseName[baseName] = accessSequence
+        let now = Date()
+        lastAccessDateByBaseName[baseName] = now
+        if touchTracker.shouldTouchAndRecord(baseName, now: now.timeIntervalSinceReferenceDate) {
+            let fm = FileManager.default
+            try? fm.setAttributes([.modificationDate: now], ofItemAtPath: payloadURL.path)
+            if fm.fileExists(atPath: metaURL.path) {
+                try? fm.setAttributes([.modificationDate: now], ofItemAtPath: metaURL.path)
+            }
+        }
+
         return (meta?.etag, decoded)
     }
 
-    func saveToDisk(rawPayloadData: Data, etag: String?, baseName: String) {
+    func saveToDisk(
+        rawPayloadData: Data,
+        etag: String?,
+        baseName: String,
+        maxBytesOverride: Int64? = nil
+    ) {
+        let effectiveMaxBytes = max(0, maxBytesOverride ?? maxBytes)
+        if effectiveMaxBytes <= 0 {
+            clearAllDiskFiles()
+            return
+        }
+
         let fm = FileManager.default
         let dir = swrDirectoryURL
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -88,6 +129,18 @@ private actor DiskSWRStorageActor {
         if let encodedMeta = try? encoder.encode(meta) {
             try? encodedMeta.write(to: metaURL, options: .atomic)
         }
+
+        let now = Date()
+        touchTracker.recordWrite(baseName, now: now.timeIntervalSinceReferenceDate)
+        accessSequence &+= 1
+        accessOrderByBaseName[baseName] = accessSequence
+        lastAccessDateByBaseName[baseName] = now
+
+        pruneIfNeededSynchronously(maxBytes: effectiveMaxBytes, excludingBaseName: baseName)
+    }
+
+    func trimDiskCache(maxBytes: Int64) {
+        pruneIfNeededSynchronously(maxBytes: max(0, maxBytes), excludingBaseName: nil)
     }
 
     func diskUsageBytes() -> Int64 {
@@ -95,7 +148,116 @@ private actor DiskSWRStorageActor {
     }
 
     func clearAllDiskFiles() {
+        touchTracker.removeAll()
+        accessOrderByBaseName.removeAll()
+        lastAccessDateByBaseName.removeAll()
+        accessSequence = 0
         try? FileManager.default.removeItem(at: swrDirectoryURL)
+    }
+
+    private func pruneIfNeededSynchronously(maxBytes: Int64, excludingBaseName: String?) {
+        let fm = FileManager.default
+        let dir = swrDirectoryURL
+        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]
+        guard let urls = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        struct EntryGroup {
+            let baseName: String
+            var urls: [URL] = []
+            var bytes: Int64 = 0
+            var modifiedAt: Date = .distantPast
+            let lastAccessDate: Date
+            var hasPayload: Bool = false
+            var sequence: UInt64 = 0
+
+            var effectiveModifiedAt: Date {
+                max(modifiedAt, lastAccessDate)
+            }
+        }
+
+        var groups: [String: EntryGroup] = [:]
+        var totalBytes: Int64 = 0
+
+        for fileURL in urls {
+            guard let vals = try? fileURL.resourceValues(forKeys: Set(keys)),
+                  vals.isRegularFile != false else {
+                continue
+            }
+            let size = Int64(vals.fileSize ?? 0)
+            let mod = vals.contentModificationDate ?? Date.distantPast
+            let fileName = fileURL.lastPathComponent
+            let baseName: String
+            let isPayload: Bool
+            if fileName.hasSuffix(".meta.json") {
+                baseName = String(fileName.dropLast(".meta.json".count))
+                isPayload = false
+            } else if fileName.hasSuffix(".json") {
+                baseName = String(fileName.dropLast(".json".count))
+                isPayload = true
+            } else {
+                baseName = fileName
+                isPayload = false
+            }
+
+            totalBytes += size
+            var group = groups[baseName] ?? EntryGroup(
+                baseName: baseName,
+                lastAccessDate: lastAccessDateByBaseName[baseName] ?? .distantPast,
+                sequence: accessOrderByBaseName[baseName] ?? 0
+            )
+            group.urls.append(fileURL)
+            group.bytes += size
+            if mod > group.modifiedAt {
+                group.modifiedAt = mod
+            }
+            if isPayload {
+                group.hasPayload = true
+            }
+            groups[baseName] = group
+        }
+
+        guard totalBytes > maxBytes else { return }
+        let targetBytes = maxBytes <= 0 ? 0 : Int64(Double(maxBytes) * 0.80)
+
+        var candidates = groups.values.filter { group in
+            guard let excludingBaseName else { return true }
+            return group.baseName != excludingBaseName
+        }
+
+        candidates.sort { lhs, rhs in
+            if lhs.hasPayload != rhs.hasPayload {
+                return !lhs.hasPayload
+            }
+            let timeDiff = lhs.effectiveModifiedAt.timeIntervalSince(rhs.effectiveModifiedAt)
+            if abs(timeDiff) > 0.001 {
+                return timeDiff < 0
+            }
+            if lhs.sequence != rhs.sequence {
+                return lhs.sequence < rhs.sequence
+            }
+            return lhs.baseName < rhs.baseName
+        }
+
+        for victim in candidates {
+            guard totalBytes > targetBytes else { break }
+            var removedAny = false
+            for url in victim.urls {
+                if (try? fm.removeItem(at: url)) != nil {
+                    removedAny = true
+                }
+            }
+            if removedAny {
+                totalBytes = max(0, totalBytes - victim.bytes)
+                accessOrderByBaseName.removeValue(forKey: victim.baseName)
+                lastAccessDateByBaseName.removeValue(forKey: victim.baseName)
+            }
+        }
     }
 }
 
@@ -113,6 +275,7 @@ private struct DiskSWRState: Sendable {
 /// so free Apple ID re-signing via ATVLoadly keeps cache paths stable across renewals.
 /// All disk I/O runs inside `DiskSWRStorageActor`; `@MainActor` reads only from the RAM cache.
 public enum DiskSWRStore {
+    public static let defaultMaxBytes: Int64 = 16 * 1024 * 1024
     private static let state = Mutex(DiskSWRState())
 
     private static func sanitize(_ raw: String) -> String {
@@ -218,7 +381,8 @@ public enum DiskSWRStore {
         roomName: String,
         hardwareProfile: String,
         decodedPayload: TvHomeResponse? = nil,
-        precomputedRows: [TvShelfRow]? = nil
+        precomputedRows: [TvShelfRow]? = nil,
+        maxDiskBytes: Int64? = nil
     ) {
         let primaryKey = homeBaseName(serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
         let taskID = UUID()
@@ -252,7 +416,8 @@ public enum DiskSWRStore {
                 await DiskSWRStorageActor.shared.saveToDisk(
                     rawPayloadData: rawPayloadData,
                     etag: etag,
-                    baseName: primaryKey
+                    baseName: primaryKey,
+                    maxBytesOverride: maxDiskBytes
                 )
             }
             s.activeTasks[taskID] = created
@@ -302,7 +467,8 @@ public enum DiskSWRStore {
         serverHost: String? = nil,
         roomName: String,
         hardwareProfile: String,
-        decodedPayload: TvCatalogResponse? = nil
+        decodedPayload: TvCatalogResponse? = nil,
+        maxDiskBytes: Int64? = nil
     ) {
         let primaryKey = catalogBaseName(kind: kind, serverHost: serverHost, roomName: roomName, hardwareProfile: hardwareProfile)
         let taskID = UUID()
@@ -329,7 +495,8 @@ public enum DiskSWRStore {
                 await DiskSWRStorageActor.shared.saveToDisk(
                     rawPayloadData: rawPayloadData,
                     etag: etag,
-                    baseName: primaryKey
+                    baseName: primaryKey,
+                    maxBytesOverride: maxDiskBytes
                 )
             }
             s.activeTasks[taskID] = created
@@ -394,7 +561,8 @@ public enum DiskSWRStore {
         serverHost: String? = nil,
         roomName: String,
         hardwareProfile: String,
-        decodedPayload: TvLibraryResponse? = nil
+        decodedPayload: TvLibraryResponse? = nil,
+        maxDiskBytes: Int64? = nil
     ) {
         let primaryKey = libraryBaseName(
             section: section,
@@ -427,7 +595,8 @@ public enum DiskSWRStore {
                 await DiskSWRStorageActor.shared.saveToDisk(
                     rawPayloadData: rawPayloadData,
                     etag: etag,
-                    baseName: primaryKey
+                    baseName: primaryKey,
+                    maxBytesOverride: maxDiskBytes
                 )
             }
             s.activeTasks[taskID] = created
@@ -438,6 +607,10 @@ public enum DiskSWRStore {
 
     public static func diskUsageBytesAsync() async -> Int64 {
         await DiskSWRStorageActor.shared.diskUsageBytes()
+    }
+
+    public static func trimDiskCacheAsync(maxBytes: Int64 = defaultMaxBytes) async {
+        await DiskSWRStorageActor.shared.trimDiskCache(maxBytes: maxBytes)
     }
 
     public static func clearMemory() {

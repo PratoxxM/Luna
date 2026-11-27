@@ -118,62 +118,12 @@ struct PlayerQuickPanelView: View {
                 .frame(height: LunaTokens.Layout.hairlineWidth)
 
             ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        panelListContent
-                    }
-                    .padding(.top, Self.topScrollFadeHeight)
-                    .padding(.bottom, Self.bottomScrollFadeHeight)
-                    .padding(.horizontal, 6)
-                    .onGeometryChange(for: CGFloat.self) { geo in
-                        geo.size.height
-                    } action: { newHeight in
-                        if newHeight > 10, abs(contentHeight - newHeight) > 1 {
-                            contentHeight = newHeight
-                        }
-                    }
-                }
-                .frame(height: min(max(contentHeight, 120), maxHeight))
-                .mask {
-                    if isScrollable {
-                        VStack(spacing: 0) {
-                            LinearGradient(
-                                colors: [.clear, LunaTheme.pureBlack],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .frame(height: Self.topScrollFadeHeight)
-
-                            LunaTheme.pureBlack
-
-                            LinearGradient(
-                                colors: [LunaTheme.pureBlack, .clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .frame(height: Self.bottomScrollFadeHeight)
-                        }
-                    } else {
-                        LunaTheme.pureBlack
-                    }
-                }
-                .task(id: "\(tab.rawValue)#\(tab == .source ? viewModel.alternatives.count : 0)#\(viewModel.activeSession?.sessionId ?? "")") {
-                    let snapshotSeconds = currentPlayheadSnapshotSeconds
-                    chapterSnapshotTime = snapshotSeconds
-                    let targetID = preferredActiveItemID(at: snapshotSeconds)
-                    proxy.scrollTo(targetID)
-                    focusedItemID = targetID
-                    for delayNs: UInt64 in [16_000_000, 48_000_000] {
-                        try? await Task.sleep(nanoseconds: delayNs)
-                        guard !Task.isCancelled else { return }
-                        proxy.scrollTo(targetID)
-                        if focusedItemID != targetID {
-                            focusedItemID = targetID
-                        } else {
-                            return
-                        }
-                    }
-                }
+                panelScrollView(proxy: proxy, maxHeight: maxHeight)
+                    .optionalTopBottomScrollMask(
+                        enabled: isScrollable,
+                        topHeight: Self.topScrollFadeHeight,
+                        bottomHeight: Self.bottomScrollFadeHeight
+                    )
             }
             .focusScope(panelFocusNamespace)
             .focusSection()
@@ -190,12 +140,48 @@ struct PlayerQuickPanelView: View {
         .padding(.bottom, 248)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         .animation(LunaFocusStyle.spring(reduceMotion: reduceMotion), value: tab)
-        .task(id: tab) {
+        .task(id: "\(tab.rawValue)#\(viewModel.activeSession?.sessionId ?? "")") {
             guard tab == .source,
-                  viewModel.alternativesSessionId != viewModel.activeSession?.sessionId || viewModel.alternatives.isEmpty else {
+                  viewModel.alternativesSessionId != viewModel.activeSession?.sessionId else {
                 return
             }
             await viewModel.loadAlternatives()
+        }
+    }
+
+    private func panelScrollView(proxy: ScrollViewProxy, maxHeight: CGFloat) -> some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 4) {
+                panelListContent
+            }
+            .padding(.top, Self.topScrollFadeHeight)
+            .padding(.bottom, Self.bottomScrollFadeHeight)
+            .padding(.horizontal, 6)
+            .onGeometryChange(for: CGFloat.self) { geo in
+                geo.size.height
+            } action: { newHeight in
+                if newHeight > 10, abs(contentHeight - newHeight) > 1 {
+                    contentHeight = newHeight
+                }
+            }
+        }
+        .frame(height: min(max(contentHeight, 120), maxHeight))
+        .task(id: "\(tab.rawValue)#\(tab == .source ? viewModel.alternatives.count : 0)#\(viewModel.activeSession?.sessionId ?? "")") {
+            let snapshotSeconds = currentPlayheadSnapshotSeconds
+            chapterSnapshotTime = snapshotSeconds
+            let targetID = preferredActiveItemID(at: snapshotSeconds)
+            proxy.scrollTo(targetID)
+            focusedItemID = targetID
+            for delayNs: UInt64 in [16_000_000, 48_000_000] {
+                try? await Task.sleep(nanoseconds: delayNs)
+                guard !Task.isCancelled else { return }
+                proxy.scrollTo(targetID)
+                if focusedItemID != targetID {
+                    focusedItemID = targetID
+                } else {
+                    return
+                }
+            }
         }
     }
 
@@ -219,6 +205,39 @@ struct PlayerQuickPanelView: View {
             pictureList
         case .chapters:
             chaptersList
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func optionalTopBottomScrollMask(
+        enabled: Bool,
+        topHeight: CGFloat,
+        bottomHeight: CGFloat
+    ) -> some View {
+        if enabled {
+            self.mask {
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [.clear, LunaTheme.pureBlack],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: topHeight)
+
+                    LunaTheme.pureBlack
+
+                    LinearGradient(
+                        colors: [LunaTheme.pureBlack, .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: bottomHeight)
+                }
+            }
+        } else {
+            self
         }
     }
 }

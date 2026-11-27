@@ -1,16 +1,28 @@
 import Foundation
 
 public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
+    case onboarding
     case home
     case homePoster = "home-poster"
     case catalog
     case catalogSeries = "catalog-series"
+    case customRow = "custom-row"
     case library
     case search
     case details
     case detailMovie = "detail-movie"
     case detailSourcePicker = "detail-source-picker"
+    case detailSeasons = "detail-seasons"
+    case detailMore = "detail-more"
+    case detailOverview = "detail-overview"
+    case detailDelete = "detail-delete"
     case settings
+    case settingsSubtitles = "settings-subtitles"
+    case settingsPlayback = "settings-playback"
+    case settingsAudio = "settings-audio"
+    case settingsDiagnostics = "settings-diagnostics"
+    case playerCurtain = "player-curtain"
+    case playerNerdHud = "player-nerd-hud"
     case playerOsd = "player-osd"
     case playerScrub = "player-scrub"
     case playerSubtitles = "player-subtitles"
@@ -24,6 +36,8 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
 
     public static func parse(_ raw: String) -> PreviewScreenTarget? {
         switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "onboarding", "pairing", "paring":
+            return .onboarding
         case "home", "hjem":
             return .home
         case "home-poster", "home_poster", "homeposter":
@@ -32,6 +46,8 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
             return .catalog
         case "catalog-series", "catalog_series", "series", "serier":
             return .catalogSeries
+        case "custom-row", "custom_row", "customrow":
+            return .customRow
         case "library", "bibliotek":
             return .library
         case "search", "sok", "søk":
@@ -42,8 +58,28 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
             return .detailMovie
         case "detail-source-picker", "detail_source_picker", "source-picker":
             return .detailSourcePicker
+        case "detail-seasons", "detail_seasons", "seasons-sheet":
+            return .detailSeasons
+        case "detail-more", "detail_more":
+            return .detailMore
+        case "detail-overview", "detail_overview":
+            return .detailOverview
+        case "detail-delete", "detail_delete":
+            return .detailDelete
         case "settings", "innstillinger":
             return .settings
+        case "settings-subtitles", "settings_subtitles":
+            return .settingsSubtitles
+        case "settings-playback", "settings_playback":
+            return .settingsPlayback
+        case "settings-audio", "settings_audio", "settings-advanced", "settings_advanced":
+            return .settingsAudio
+        case "settings-diagnostics", "settings_diagnostics", "settings-system", "settings_system":
+            return .settingsDiagnostics
+        case "player-curtain", "player_curtain", "curtain":
+            return .playerCurtain
+        case "player-nerd-hud", "player_nerd_hud", "nerd-hud", "nerdhud":
+            return .playerNerdHud
         case "player-osd", "player_osd", "osd":
             return .playerOsd
         case "player-scrub", "player_scrub", "scrub":
@@ -71,11 +107,14 @@ public enum PreviewScreenTarget: String, CaseIterable, Equatable, Sendable {
 
     public var isPlayerScreen: Bool {
         switch self {
-        case .playerOsd, .playerScrub, .playerSubtitles, .playerAudio, .playerSource,
-             .playerPicture, .playerChapters, .playerSkipIntro, .playerNextEpisode, .playerError:
+        case .playerCurtain, .playerNerdHud, .playerOsd, .playerScrub, .playerSubtitles,
+             .playerAudio, .playerSource, .playerPicture, .playerChapters,
+             .playerSkipIntro, .playerNextEpisode, .playerError:
             return true
-        case .home, .homePoster, .catalog, .catalogSeries, .library, .search,
-             .details, .detailMovie, .detailSourcePicker, .settings:
+        case .onboarding, .home, .homePoster, .catalog, .catalogSeries, .customRow,
+             .library, .search, .details, .detailMovie, .detailSourcePicker,
+             .detailSeasons, .detailMore, .detailOverview, .detailDelete,
+             .settings, .settingsSubtitles, .settingsPlayback, .settingsAudio, .settingsDiagnostics:
             return false
         }
     }

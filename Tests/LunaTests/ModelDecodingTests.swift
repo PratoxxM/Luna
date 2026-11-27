@@ -158,17 +158,24 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(comfort.subtitleBoxOpacity.alpha, 0.0, accuracy: 0.001)
         XCTAssertEqual(comfort.hdrSubtitlePreset, .warm75)
         XCTAssertEqual(comfort.lowResUpscaleMode, .off)
+        XCTAssertFalse(comfort.upscalesFullHDVideo)
         XCTAssertNil(defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey))
+        XCTAssertNil(defaults.object(forKey: SideloadSafeStorage.fullHDUpscaleEnabledKey))
 
         let highComfort = ComfortPreferences(defaults: defaults, memoryTier: .high2026)
         XCTAssertEqual(highComfort.lowResUpscaleMode, .auto)
+        XCTAssertTrue(highComfort.upscalesFullHDVideo)
         XCTAssertNil(defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey))
+        XCTAssertNil(defaults.object(forKey: SideloadSafeStorage.fullHDUpscaleEnabledKey))
         XCTAssertEqual(LowResUpscaleMode.allCases.map(\.displayTitle), ["Av", "Auto", "Animasjon"])
         XCTAssertEqual(LowResUpscaleMode.allCases.map(\.rawValue), ["off", "auto", "line_art"])
 
         highComfort.lowResUpscaleMode = .off
+        highComfort.upscalesFullHDVideo = false
         XCTAssertEqual(defaults.string(forKey: SideloadSafeStorage.lowResUpscaleModeKey), "off")
+        XCTAssertEqual(defaults.object(forKey: SideloadSafeStorage.fullHDUpscaleEnabledKey) as? Bool, false)
         XCTAssertEqual(ComfortPreferences(defaults: defaults, memoryTier: .high2026).lowResUpscaleMode, .off)
+        XCTAssertFalse(ComfortPreferences(defaults: defaults, memoryTier: .high2026).upscalesFullHDVideo)
 
         defaults.set("line_art", forKey: SideloadSafeStorage.lowResUpscaleModeKey)
         XCTAssertEqual(ComfortPreferences(defaults: defaults, memoryTier: .high2026).lowResUpscaleMode, .animeLineArt)
@@ -223,6 +230,11 @@ final class ModelDecodingTests: XCTestCase {
         let autoStereoRef = comfort.buildAudioShaping(enhancement: .reference)
         XCTAssertEqual(autoStereoRef.maxChannels, 2)
         XCTAssertEqual(autoStereoRef.lfeMixDB, -6.0)
+        XCTAssertFalse(autoStereoRef.binaural)
+
+        let binauralShaping = comfort.buildAudioShaping(enhancement: .dialogueLift, binaural: true)
+        XCTAssertTrue(binauralShaping.binaural)
+        XCTAssertEqual(binauralShaping.dialogueGainDB, 4.0)
     }
 
     func testFrontPageCardCleanSubtitlesAndUpcomingPills() {

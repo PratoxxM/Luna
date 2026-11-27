@@ -95,8 +95,10 @@ public extension TvMediaCard {
         if let epName = nonGenericEpisodeTitle {
             return code.map { "\($0) · \(epName)" } ?? epName
         }
-        if let nextUp, nextUp.season > 0, nextUp.episode > 0 {
-            return "Sesong \(nextUp.season) · Episode \(nextUp.episode)"
+        if let nextUp, nextUp.season >= 0, nextUp.episode > 0 {
+            return nextUp.season == 0
+                ? "Spesialer · Episode \(nextUp.episode)"
+                : "Sesong \(nextUp.season) · Episode \(nextUp.episode)"
         }
         if let code {
             return code

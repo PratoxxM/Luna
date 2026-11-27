@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SearchView: View {
     private enum SearchControlFocus: Hashable {
+        case kindFilter(TvSearchKindFilter)
         case recent(String)
         case retry
         case emptyReset
@@ -32,6 +33,7 @@ struct SearchView: View {
 
     @FocusState private var isQueryFieldFocused: Bool
     @FocusState private var controlFocus: SearchControlFocus?
+    @Namespace private var searchKindFocusNamespace
 
     private let columns = LunaTheme.posterGridColumns
 
@@ -83,11 +85,6 @@ struct SearchView: View {
                     )
                     .focused($isQueryFieldFocused)
                     .lunaRequestDirectFocus(nonce: queryFocusNonce, isFocused: $isQueryFieldFocused)
-                    .onMoveCommand { direction in
-                        if direction == .down {
-                            focusFirstResultOrHistory(trimmedQuery: trimmedQuery)
-                        }
-                    }
 
                     if !viewModel.query.isEmpty {
                         LunaIconButton(systemImage: "xmark", accessibilityLabel: "Tøm søk") {
@@ -97,6 +94,41 @@ struct SearchView: View {
                 }
                 .padding(.horizontal, LunaTheme.horizontalGutter)
                 .focusSection()
+                .onMoveCommand { direction in
+                    if direction == .down {
+                        controlFocus = .kindFilter(viewModel.selectedKind)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    ForEach(TvSearchKindFilter.allCases) { kind in
+                        let isSelected = viewModel.selectedKind == kind
+                        LunaPillButton(
+                            kind.label,
+                            isSelected: isSelected,
+                            prominence: .glassPill,
+                            size: .compact
+                        ) {
+                            guard viewModel.selectedKind != kind else { return }
+                            viewModel.selectedKind = kind
+                        }
+                        .focused($controlFocus, equals: .kindFilter(kind))
+                        .prefersDefaultFocus(isSelected, in: searchKindFocusNamespace)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, LunaTheme.horizontalGutter)
+                .padding(.vertical, 4)
+                .focusScope(searchKindFocusNamespace)
+                .focusSection()
+                .onMoveCommand { direction in
+                    if direction == .down {
+                        focusFirstResultOrHistory(trimmedQuery: trimmedQuery)
+                    } else if direction == .up {
+                        isQueryFieldFocused = true
+                        queryFocusNonce &+= 1
+                    }
+                }
 
                 if trimmedQuery.count < 2 {
                     if !viewModel.recentSearches.isEmpty {
@@ -247,7 +279,7 @@ struct SearchView: View {
                 }
             }
         }
-        .task(id: "\(trimmedQuery)#\(viewModel.searchRetryNonce)#\(sessionStore.homeRefreshNonce)#active:\(isActiveTab)") {
+        .task(id: "\(trimmedQuery)#\(viewModel.selectedKind.rawValue)#\(viewModel.searchRetryNonce)#\(sessionStore.homeRefreshNonce)#active:\(isActiveTab)") {
             await viewModel.handleSearchTrigger(session: sessionStore, isActiveTab: isActiveTab)
             if previewFocusFirstResult, !didApplyPreviewResultFocus, let firstID = viewModel.results.first?.id {
                 didApplyPreviewResultFocus = true

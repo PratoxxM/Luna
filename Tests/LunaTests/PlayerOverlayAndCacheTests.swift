@@ -509,5 +509,135 @@ final class PlayerOverlayAndCacheTests: XCTestCase {
         // 3. When a subtitle is already active -> never overwrites user's active track
         engine.systemCaptionRequest.send(SystemCaptionRequest(language: "en-US"))
         XCTAssertEqual(vm.activeSubtitleTrackIndex, 11)
+
+        // 4. Lanczos upscale badge & PlaybackErrorKind mapping
+        XCTAssertEqual(
+            PlayerQoSReporter.metalFXBadgeLabel(
+                sourceVideoHeight: 1080,
+                upscaleSourceHeight: 1080,
+                scaler: .lanczos,
+                lowResUpscaleMode: .off
+            ),
+            "1080p → 4K Lanczos"
+        )
+        XCTAssertEqual(PlayerEngineConfigurator.errorCategory(for: .sourceOpenFailed), .sourceOpenFailed)
+        XCTAssertEqual(PlayerEngineConfigurator.errorCategory(for: .sourceRefused), .sourceRefused)
+        XCTAssertEqual(PlayerEngineConfigurator.errorCategory(for: .sourceCertificateRejected), .sourceCertificateRejected)
+        XCTAssertEqual(PlayerEngineConfigurator.errorCategory(for: .sourceFabricatesRanges), .sourceFabricatesRanges)
+        XCTAssertEqual(PlayerEngineConfigurator.errorCategory(for: .noPlayableTrackWithinBudget), .noPlayableTrackWithinBudget)
+        XCTAssertEqual(PlayerEngineConfigurator.errorCategory(for: .vodSourceFailed), .vodSourceFailed)
+        XCTAssertEqual(PlayerEngineConfigurator.errorCategory(for: .sourceRateLimited), .sourceRateLimited)
+        XCTAssertEqual(PlayerEngineConfigurator.errorCategory(for: .audioBridgeProducedNoOutput), .audioBridgeProducedNoOutput)
+        XCTAssertEqual(PlayerEngineConfigurator.errorCategory(for: .storageExhausted), .storageExhausted)
+        XCTAssertTrue(
+            PlayerEngineConfigurator.friendlyEngineErrorMessage(rawMessage: "HTTP 401 unauthorized", errorInfo: nil)
+                .contains("HTTP 401")
+        )
+    }
+
+    @MainActor
+    func testBuildLoadOptionsForcesContainerAttachmentsAndHigh2026VisionOCROptIn() throws {
+        let suite = "luna.test.attachments.ocr.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let json = #"""
+        {
+          "sessionId": "sess-att-ocr-1",
+          "streamToken": "stream-placeholder-token",
+          "roomName": "Kino",
+          "hardwareProfile": "dv-fel-714",
+          "item": {
+            "itemId": "tmdb:movie:600",
+            "mediaType": "movie",
+            "ids": { "tmdb": 600 },
+            "title": "Eksempelfilm"
+          },
+          "selectedCandidate": {
+            "candidateId": "cand-1",
+            "displayHeadline": "4K HDR10",
+            "releaseTitle": "Eksempelfilm.2024.2160p",
+            "source": "nvme",
+            "tier": "nvme"
+          },
+          "stream": { "url": "/api/tv/v2/streams/sess-att-ocr-1/master" },
+          "aetherConfig": {
+            "preferDualLayerDolbyVision": false,
+            "dolbyVisionHandling": "automatic",
+            "matchContentEnabled": true,
+            "audioBridgeMode": "lossless",
+            "skipsContainerAttachments": true
+          }
+        }
+        """#
+        let session = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(json.utf8))
+        let client = LunaCoreClient(
+            baseURL: try XCTUnwrap(URL(string: "http://lunacore.local:8090")),
+            deviceID: "luna-test-device",
+            deviceToken: nil,
+            roomName: "Kino",
+            hardwareProfile: "dv-fel-714",
+            allowSelfSignedLanTLS: true
+        )
+
+        let high8GB = DeviceMemoryProfile(physicalMemoryBytes: 8 * 1_073_741_824, activeProcessorCount: 6)
+        let standard4GB = DeviceMemoryProfile(physicalMemoryBytes: 4 * 1_073_741_824, activeProcessorCount: 5)
+        let comfort = ComfortPreferences(defaults: defaults, memoryTier: .high2026)
+
+        let defaultHighOpts = PlayerEngineConfigurator.buildLoadOptions(
+            session: session,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0,
+            memoryProfile: high8GB,
+            availableMemoryBytes: 2_200 * 1_048_576
+        )
+        XCTAssertFalse(defaultHighOpts.skipsContainerAttachments)
+        XCTAssertFalse(defaultHighOpts.readsContainerAttachmentsAtOpen)
+        XCTAssertFalse(defaultHighOpts.recognizesBitmapSubtitleText)
+
+        comfort.recognizesBitmapSubtitleText = true
+        let optInHighOpts = PlayerEngineConfigurator.buildLoadOptions(
+            session: session,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0,
+            memoryProfile: high8GB,
+            availableMemoryBytes: 2_200 * 1_048_576
+        )
+        XCTAssertTrue(optInHighOpts.recognizesBitmapSubtitleText)
+
+        let standardOpts = PlayerEngineConfigurator.buildLoadOptions(
+            session: session,
+            client: client,
+            comfort: comfort,
+            audioEnhancement: .reference,
+            audioDelaySeconds: 0,
+            memoryProfile: standard4GB,
+            availableMemoryBytes: 1_000 * 1_048_576
+        )
+        XCTAssertFalse(standardOpts.skipsContainerAttachments)
+        XCTAssertFalse(standardOpts.readsContainerAttachmentsAtOpen)
+        XCTAssertFalse(standardOpts.recognizesBitmapSubtitleText)
+
+        var reloadOpts = LoadOptions()
+        reloadOpts.skipsContainerAttachments = true
+        reloadOpts.readsContainerAttachmentsAtOpen = true
+        let snapshot = PlayerEngineConfigurator.ReloadComfortSnapshot(
+            lowResUpscaleMode: .auto,
+            upscalesFullHDVideo: true,
+            speakerLayoutOverride: .auto,
+            effectiveSpeakerLayout: "7.1.4",
+            dualLayerOverride: .auto,
+            recognizesBitmapSubtitleText: true,
+            audioDelaySeconds: 0,
+            audioShaping: comfort.buildAudioShaping(enhancement: .reference)
+        )
+        PlayerEngineConfigurator.applyRestoreDisplayAndUpscaleOptions(snapshot, session: session, to: &reloadOpts)
+        XCTAssertFalse(reloadOpts.skipsContainerAttachments)
+        XCTAssertFalse(reloadOpts.readsContainerAttachmentsAtOpen)
+        XCTAssertTrue(reloadOpts.recognizesBitmapSubtitleText)
     }
 }

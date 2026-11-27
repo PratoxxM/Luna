@@ -51,6 +51,11 @@ final class PlayerAudioSessionCoordinator {
         .bluetoothHFP,
         .airPlay,
     ]
+    nonisolated static let binauralHeadphonePortTypes: Set<AVAudioSession.Port> = [
+        .bluetoothA2DP,
+        .bluetoothLE,
+        .bluetoothHFP,
+    ]
 
     private let activator = NativeAudioSessionActivator()
     private var activeEngineOwnerToken: UInt64 = 0
@@ -141,6 +146,15 @@ final class PlayerAudioSessionCoordinator {
         return isWirelessCompensatedRoute(portTypes: outputs.map(\.portType))
     }
 
+    nonisolated static func isBinauralAudioRoute(portTypes: [AVAudioSession.Port]) -> Bool {
+        portTypes.contains { binauralHeadphonePortTypes.contains($0) }
+    }
+
+    nonisolated static func currentOutputUsesBinauralAudio() -> Bool {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        return isBinauralAudioRoute(portTypes: outputs.map(\.portType))
+    }
+
     /// Snaps a measured VSync refresh rate strictly to valid tvOS HDMI menu rates
     /// (`50.0`, `59.94`, or `60.0 Hz`), rejecting cinema rates (`23.976` / `24` / `25` / `30`)
     /// and invalid/zero `CADisplayLink` readings before the first VSync tick.
@@ -184,8 +198,9 @@ final class PlayerAudioSessionCoordinator {
         return true
     }
 
-    func sampleMenuRefreshRateIfIdle(hasActivePlayback: Bool = false) {
-        guard menuRateDisplayLink == nil,
+    func sampleMenuRefreshRateIfIdle(hasActivePlayback: Bool = false, force: Bool = false) {
+        guard (force || cachedMenuRefreshRateHz == nil),
+              menuRateDisplayLink == nil,
               let window = Self.activeKeyWindow() else {
             return
         }

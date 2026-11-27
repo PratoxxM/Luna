@@ -34,6 +34,31 @@ struct HomeView: View {
         HomeViewModel.prepareVisibleRows(from: payload)
     }
 
+    nonisolated static func effectiveDisplayRows(
+        rows: [TvShelfRow],
+        tonight: TvTonightPayload?
+    ) -> [TvShelfRow] {
+        let hasContinue = rows.contains {
+            $0.rowId == "medialogg-continue"
+                || $0.sourceKind == "system_continue"
+                || $0.rowStyle == "continue_backdrop"
+        }
+        guard !hasContinue, let tonightItem = tonight?.item else {
+            return rows
+        }
+        let spotlight = TvShelfRow(
+            rowId: "tonight-spotlight",
+            title: "I kveld",
+            rowStyle: "continue_backdrop",
+            sourceKind: "system_continue",
+            listMode: "smart",
+            hasMore: false,
+            nextPath: nil,
+            items: [tonightItem]
+        )
+        return [spotlight] + rows
+    }
+
     init(
         viewModel: HomeViewModel? = nil,
         initialServerHost: String? = nil,
@@ -66,13 +91,17 @@ struct HomeView: View {
     var body: some View {
         @Bindable var viewModel = viewModel
         let client = sessionStore.makeClient()
-        let rows = viewModel.visibleRows
+        let rows = Self.effectiveDisplayRows(
+            rows: viewModel.visibleRows,
+            tonight: viewModel.homePayload?.tonight
+        )
+        let tonightReason = viewModel.tonightReasonLabel
         let defaultRow = resolveDefaultRow(in: rows)
         let focusRowId = defaultRow?.rowId
         let focusTargetKey = defaultRow.flatMap { row in
             row.items.first.map { "\(row.rowId)#\($0.itemId)" }
         }
-        let isPreviewMode = PreviewLaunchConfiguration.parse(arguments: ProcessInfo.processInfo.arguments) != nil
+        let isPreviewMode = PreviewLaunchConfiguration.current != nil
 
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: LunaTokens.Layout.sectionGap) {
@@ -90,8 +119,12 @@ struct HomeView: View {
                 }
 
                 ForEach(rows) { row in
+                    let isContinueRow = row.rowId == "medialogg-continue"
+                        || row.rowStyle == "continue_backdrop"
+                        || row.sourceKind == "system_continue"
                     ShelfRowView(
                         row: row,
+                        tonightReasonLabel: isContinueRow ? tonightReason : nil,
                         isDefaultFocusRow: row.rowId == focusRowId,
                         mountedTracker: mountedTracker,
                         entryCardKey: entryCardKey,

@@ -52,13 +52,15 @@ struct LunaApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if sessionStore.isPaired {
+                if sessionStore.isPaired && previewConfiguration?.screen != .onboarding {
                     MainNavigationShell(
                         engine: engine,
                         previewConfiguration: previewConfiguration
                     )
                 } else {
-                    PairingOnboardingView()
+                    PairingOnboardingView(
+                        isPreviewMode: previewConfiguration?.screen == .onboarding
+                    )
                 }
             }
             .environment(sessionStore)

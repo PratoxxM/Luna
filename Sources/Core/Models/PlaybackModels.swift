@@ -144,19 +144,121 @@ public struct TvExternalSubtitle: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+public struct TvSessionVideoTrack: Codable, Equatable, Sendable {
+    public let streamIndex: Int?
+    public let codec: String?
+    public let width: Int?
+    public let height: Int?
+    public let frameRate: Double?
+    public let videoRangeType: String?
+    public let dvProfile: Int?
+    public let dvEnhancementLayer: String?
+    public let hdr10Plus: Bool?
+
+    public init(
+        streamIndex: Int? = nil,
+        codec: String? = nil,
+        width: Int? = nil,
+        height: Int? = nil,
+        frameRate: Double? = nil,
+        videoRangeType: String? = nil,
+        dvProfile: Int? = nil,
+        dvEnhancementLayer: String? = nil,
+        hdr10Plus: Bool? = nil
+    ) {
+        self.streamIndex = streamIndex
+        self.codec = codec
+        self.width = width
+        self.height = height
+        self.frameRate = frameRate
+        self.videoRangeType = videoRangeType
+        self.dvProfile = dvProfile
+        self.dvEnhancementLayer = dvEnhancementLayer
+        self.hdr10Plus = hdr10Plus
+    }
+}
+
+public struct TvSessionAudioTrack: Codable, Equatable, Sendable {
+    public let streamIndex: Int
+    public let codec: String?
+    public let profile: String?
+    public let spatialFormat: String?
+    public let channels: Int?
+    public let channelLayout: String?
+    public let language: String?
+    public let displayTitle: String?
+    public let isDefault: Bool?
+
+    public init(
+        streamIndex: Int,
+        codec: String? = nil,
+        profile: String? = nil,
+        spatialFormat: String? = nil,
+        channels: Int? = nil,
+        channelLayout: String? = nil,
+        language: String? = nil,
+        displayTitle: String? = nil,
+        isDefault: Bool? = nil
+    ) {
+        self.streamIndex = streamIndex
+        self.codec = codec
+        self.profile = profile
+        self.spatialFormat = spatialFormat
+        self.channels = channels
+        self.channelLayout = channelLayout
+        self.language = language
+        self.displayTitle = displayTitle
+        self.isDefault = isDefault
+    }
+}
+
+public struct TvSessionEmbeddedSubtitleTrack: Codable, Equatable, Sendable {
+    public let streamIndex: Int
+    public let codec: String?
+    public let language: String?
+    public let displayTitle: String?
+    public let isForced: Bool?
+    public let isDefault: Bool?
+
+    public init(
+        streamIndex: Int,
+        codec: String? = nil,
+        language: String? = nil,
+        displayTitle: String? = nil,
+        isForced: Bool? = nil,
+        isDefault: Bool? = nil
+    ) {
+        self.streamIndex = streamIndex
+        self.codec = codec
+        self.language = language
+        self.displayTitle = displayTitle
+        self.isForced = isForced
+        self.isDefault = isDefault
+    }
+}
+
 public struct TvSessionTracks: Codable, Equatable, Sendable {
     public let probeConfidence: String?
+    public let video: TvSessionVideoTrack?
+    public let audio: [TvSessionAudioTrack]?
+    public let embeddedSubtitles: [TvSessionEmbeddedSubtitleTrack]?
     public let externalSubtitles: [TvExternalSubtitle]?
     public let chapters: [TvProbeChapter]?
     public let subtitleDelayMs: Int?
 
     public init(
         probeConfidence: String? = nil,
+        video: TvSessionVideoTrack? = nil,
+        audio: [TvSessionAudioTrack]? = nil,
+        embeddedSubtitles: [TvSessionEmbeddedSubtitleTrack]? = nil,
         externalSubtitles: [TvExternalSubtitle]? = nil,
         chapters: [TvProbeChapter]? = nil,
         subtitleDelayMs: Int? = nil
     ) {
         self.probeConfidence = probeConfidence
+        self.video = video
+        self.audio = audio
+        self.embeddedSubtitles = embeddedSubtitles
         self.externalSubtitles = externalSubtitles
         self.chapters = chapters
         self.subtitleDelayMs = subtitleDelayMs
@@ -244,9 +346,22 @@ public struct TvNextEpisodeSummary: Codable, Equatable, Sendable {
     public let episode: Int
     public let title: String?
     public let stillUrl: String?
+    public let runtimeSeconds: Double?
 
-    public init(itemId: String, season: Int, episode: Int, title: String? = nil, stillUrl: String? = nil) {
-        self.itemId = itemId; self.season = season; self.episode = episode; self.title = title; self.stillUrl = stillUrl
+    public init(
+        itemId: String,
+        season: Int,
+        episode: Int,
+        title: String? = nil,
+        stillUrl: String? = nil,
+        runtimeSeconds: Double? = nil
+    ) {
+        self.itemId = itemId
+        self.season = season
+        self.episode = episode
+        self.title = title
+        self.stillUrl = stillUrl
+        self.runtimeSeconds = runtimeSeconds
     }
 }
 

@@ -75,6 +75,11 @@ public struct PlaybackLaunchRequest: Identifiable, Equatable, Sendable {
     }
 }
 
+public enum TvScrubFrameResult: Equatable, Sendable {
+    case image(data: Data, cacheHit: Bool)
+    case unavailable(statusCode: Int, code: String?)
+}
+
 public struct TvDeviceOverrides: Codable, Equatable, Sendable {
     public var dualLayerOverride: String?
     public var speakerLayoutOverride: String?
@@ -83,6 +88,12 @@ public struct TvDeviceOverrides: Codable, Equatable, Sendable {
     public var subtitleBoxOpacity: Double?
     public var autoPlayNextEpisode: Bool?
     public var smartNordicSubtitleRule: Bool?
+    public var lowResUpscaleMode: String?
+    public var upscalesFullHDVideo: Bool?
+    public var menuDisplayMode: String?
+    public var audioEnhancement: String?
+    public var showNerdHUD: Bool?
+    public var recognizesBitmapSubtitleText: Bool?
 
     public init(
         dualLayerOverride: String? = nil,
@@ -91,7 +102,13 @@ public struct TvDeviceOverrides: Codable, Equatable, Sendable {
         subtitleFontScale: Double? = nil,
         subtitleBoxOpacity: Double? = nil,
         autoPlayNextEpisode: Bool? = nil,
-        smartNordicSubtitleRule: Bool? = nil
+        smartNordicSubtitleRule: Bool? = nil,
+        lowResUpscaleMode: String? = nil,
+        upscalesFullHDVideo: Bool? = nil,
+        menuDisplayMode: String? = nil,
+        audioEnhancement: String? = nil,
+        showNerdHUD: Bool? = nil,
+        recognizesBitmapSubtitleText: Bool? = nil
     ) {
         self.dualLayerOverride = dualLayerOverride
         self.speakerLayoutOverride = speakerLayoutOverride
@@ -100,6 +117,12 @@ public struct TvDeviceOverrides: Codable, Equatable, Sendable {
         self.subtitleBoxOpacity = subtitleBoxOpacity
         self.autoPlayNextEpisode = autoPlayNextEpisode
         self.smartNordicSubtitleRule = smartNordicSubtitleRule
+        self.lowResUpscaleMode = lowResUpscaleMode
+        self.upscalesFullHDVideo = upscalesFullHDVideo
+        self.menuDisplayMode = menuDisplayMode
+        self.audioEnhancement = audioEnhancement
+        self.showNerdHUD = showNerdHUD
+        self.recognizesBitmapSubtitleText = recognizesBitmapSubtitleText
     }
 }
 
@@ -136,9 +159,13 @@ public struct TvPairedDeviceInfo: Codable, Equatable, Sendable {
     public let roomName: String
     public let roomUnassigned: Bool?
     public let hardwareProfile: String
+    public let hardwareProfileExplicit: Bool?
     public let equipmentLabel: String?
     public let atmosphere: String?
     public let speakerLayout: String?
+    public let model: String?
+    public let osVersion: String?
+    public let appVersion: String?
     public let overrides: TvDeviceOverrides?
     public let capabilities: TvDeviceCapabilities?
 
@@ -152,16 +179,24 @@ public struct TvPairedDeviceInfo: Codable, Equatable, Sendable {
         atmosphere: String? = nil,
         speakerLayout: String? = nil,
         overrides: TvDeviceOverrides? = nil,
-        capabilities: TvDeviceCapabilities? = nil
+        capabilities: TvDeviceCapabilities? = nil,
+        hardwareProfileExplicit: Bool? = nil,
+        model: String? = nil,
+        osVersion: String? = nil,
+        appVersion: String? = nil
     ) {
         self.deviceId = deviceId
         self.deviceName = deviceName
         self.roomName = roomName
         self.roomUnassigned = roomUnassigned
         self.hardwareProfile = hardwareProfile
+        self.hardwareProfileExplicit = hardwareProfileExplicit
         self.equipmentLabel = equipmentLabel
         self.atmosphere = atmosphere
         self.speakerLayout = speakerLayout
+        self.model = model
+        self.osVersion = osVersion
+        self.appVersion = appVersion
         self.overrides = overrides
         self.capabilities = capabilities
     }
@@ -239,40 +274,87 @@ public struct TvSubtitleSearchAttachResponse: Codable, Equatable, Sendable {
     }
 }
 
+public struct TvEmbeddedSubtitleTrackInfo: Codable, Equatable, Sendable {
+    public let streamIndex: Int
+    public let codec: String?
+    public let language: String?
+
+    public init(streamIndex: Int, codec: String? = nil, language: String? = nil) {
+        self.streamIndex = streamIndex
+        self.codec = codec
+        self.language = language
+    }
+}
+
 public struct TvSubtitleAutoAlignResponse: Codable, Equatable, Sendable {
     public let ok: Bool
     public let requestId: String?
     public let sessionId: String
     public let applied: Bool
+    public let appliedToFile: Bool?
     public let mode: String?
+    public let method: String?
     public let reason: String?
+    public let confidence: Double?
     public let offsetMs: Double
     public let scale: Double?
     public let subtitleDelayMs: Int
     public let subtitle: TvExternalSubtitle?
+    public let embeddedTrack: TvEmbeddedSubtitleTrackInfo?
 
     public init(
         ok: Bool = true,
         requestId: String? = nil,
         sessionId: String,
         applied: Bool,
+        appliedToFile: Bool? = nil,
         mode: String? = nil,
+        method: String? = nil,
         reason: String? = nil,
-        offsetMs: Double,
+        confidence: Double? = nil,
+        offsetMs: Double = 0,
         scale: Double? = nil,
-        subtitleDelayMs: Int,
-        subtitle: TvExternalSubtitle? = nil
+        subtitleDelayMs: Int = 0,
+        subtitle: TvExternalSubtitle? = nil,
+        embeddedTrack: TvEmbeddedSubtitleTrackInfo? = nil
     ) {
         self.ok = ok
         self.requestId = requestId
         self.sessionId = sessionId
         self.applied = applied
+        self.appliedToFile = appliedToFile
         self.mode = mode
+        self.method = method
         self.reason = reason
+        self.confidence = confidence
         self.offsetMs = offsetMs
         self.scale = scale
         self.subtitleDelayMs = subtitleDelayMs
         self.subtitle = subtitle
+        self.embeddedTrack = embeddedTrack
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case ok, requestId, sessionId, applied, appliedToFile, mode, method
+        case reason, confidence, offsetMs, scale, subtitleDelayMs, subtitle, embeddedTrack
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.ok = (try? c.decodeIfPresent(Bool.self, forKey: .ok)) ?? true
+        self.requestId = try c.decodeIfPresent(String.self, forKey: .requestId)
+        self.sessionId = try c.decode(String.self, forKey: .sessionId)
+        self.applied = try c.decode(Bool.self, forKey: .applied)
+        self.appliedToFile = try c.decodeIfPresent(Bool.self, forKey: .appliedToFile)
+        self.mode = try c.decodeIfPresent(String.self, forKey: .mode)
+        self.method = try c.decodeIfPresent(String.self, forKey: .method)
+        self.reason = try c.decodeIfPresent(String.self, forKey: .reason)
+        self.confidence = try c.decodeIfPresent(Double.self, forKey: .confidence)
+        self.offsetMs = (try? c.decodeIfPresent(Double.self, forKey: .offsetMs)) ?? 0
+        self.scale = try c.decodeIfPresent(Double.self, forKey: .scale)
+        self.subtitleDelayMs = (try? c.decodeIfPresent(Int.self, forKey: .subtitleDelayMs)) ?? 0
+        self.subtitle = try c.decodeIfPresent(TvExternalSubtitle.self, forKey: .subtitle)
+        self.embeddedTrack = try c.decodeIfPresent(TvEmbeddedSubtitleTrackInfo.self, forKey: .embeddedTrack)
     }
 }
 

@@ -5,6 +5,8 @@ import Observation
 @Observable
 public final class LibraryViewModel {
     public var activeSection: LibraryFilterSection = .movies
+    public var selectedTier: LibraryTierFilter = .all
+    public var selectedSort: LibrarySortOption = .recent
     public var didApplyInitialSectionFallback: Bool = false
 
     public private(set) var libraryPayload: TvLibraryResponse?
@@ -33,6 +35,30 @@ public final class LibraryViewModel {
         libraryPayload?.resolvedCustomLists ?? []
     }
 
+    public var counts: TvLibraryCounts? {
+        libraryPayload?.counts
+    }
+
+    public func count(for tier: LibraryTierFilter) -> Int? {
+        tier.countValue(from: libraryPayload?.counts)
+    }
+
+    public var supportsTierAndSortFilters: Bool {
+        activeSection == .movies || activeSection == .series
+    }
+
+    private var effectiveTierRawValue: String {
+        supportsTierAndSortFilters ? selectedTier.rawValue : "all"
+    }
+
+    private var effectiveSortRawValue: String {
+        supportsTierAndSortFilters ? selectedSort.rawValue : "recent"
+    }
+
+    private var shouldUseDiskSWRStore: Bool {
+        effectiveTierRawValue == "all" && effectiveSortRawValue == "recent"
+    }
+
     public var activeMediaCards: [TvMediaCard] {
         switch activeSection {
         case .watchlist:
@@ -45,7 +71,7 @@ public final class LibraryViewModel {
     }
 
     public func queryKey(for session: any TabSessionContext) -> String {
-        "\(session.serverBaseURL?.absoluteString ?? "")#\(activeSection.rawValue)#\(activeSection.apiMediaType)#\(session.roomName)#\(session.hardwareProfile)"
+        "\(session.serverBaseURL?.absoluteString ?? "")#\(activeSection.rawValue)#\(activeSection.apiMediaType)#\(effectiveTierRawValue)#\(effectiveSortRawValue)#\(session.roomName)#\(session.hardwareProfile)"
     }
 
     public func handleActivation(session: any TabSessionContext, isActiveTab: Bool) async {
@@ -148,7 +174,7 @@ public final class LibraryViewModel {
                 errorMessage = nil
                 return
             }
-        } else {
+        } else if shouldUseDiskSWRStore {
             let host = session.serverBaseURL?.host
             let room = session.roomName
             let profile = session.hardwareProfile
@@ -205,6 +231,13 @@ public final class LibraryViewModel {
                 cachedEtag = nil
                 isLoading = true
             }
+        } else {
+            libraryPayload = nil
+            localItems = []
+            localOffset = 0
+            localHasMore = false
+            cachedEtag = nil
+            isLoading = true
         }
         errorMessage = nil
 
@@ -212,9 +245,9 @@ public final class LibraryViewModel {
             let effectiveIfNoneMatch = (forceNetwork || libraryPayload == nil) ? nil : cachedEtag
             let result = try await client.fetchLibrary(
                 section: activeSection.apiSection,
-                tier: "all",
+                tier: effectiveTierRawValue,
                 mediaType: activeSection.apiMediaType,
-                sort: "recent",
+                sort: effectiveSortRawValue,
                 offset: 0,
                 limit: pageSize,
                 ifNoneMatch: effectiveIfNoneMatch
@@ -252,16 +285,18 @@ public final class LibraryViewModel {
                     refreshNonce: session.homeRefreshNonce,
                     preserveExistingEtag: false
                 )
-                DiskSWRStore.saveLibraryInBackground(
-                    rawPayloadData: rawData,
-                    etag: newEtag,
-                    section: activeSection.apiSection,
-                    mediaType: activeSection.apiMediaType,
-                    serverHost: session.serverBaseURL?.host,
-                    roomName: session.roomName,
-                    hardwareProfile: session.hardwareProfile,
-                    decodedPayload: res
-                )
+                if shouldUseDiskSWRStore {
+                    DiskSWRStore.saveLibraryInBackground(
+                        rawPayloadData: rawData,
+                        etag: newEtag,
+                        section: activeSection.apiSection,
+                        mediaType: activeSection.apiMediaType,
+                        serverHost: session.serverBaseURL?.host,
+                        roomName: session.roomName,
+                        hardwareProfile: session.hardwareProfile,
+                        decodedPayload: res
+                    )
+                }
                 if applyInitialSectionResolutionIfNeeded(counts: res.counts) {
                     loadedQueryKey = nil
                     cachedEtag = nil
@@ -311,9 +346,9 @@ public final class LibraryViewModel {
         do {
             let result = try await client.fetchLibrary(
                 section: "local",
-                tier: "all",
+                tier: effectiveTierRawValue,
                 mediaType: activeSection.apiMediaType,
-                sort: "recent",
+                sort: effectiveSortRawValue,
                 offset: localOffset,
                 limit: pageSize,
                 ifNoneMatch: nil

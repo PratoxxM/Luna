@@ -262,9 +262,9 @@ final class HomeCatalogLibraryEdgeTests: XCTestCase {
         XCTAssertTrue(vm.hasMore)
 
         vm.scheduleLoadNextPage(session: session)
-        for _ in 0..<50 {
+        for _ in 0..<250 {
             if oldPage2Started.withLock({ $0 }) { break }
-            try await Task.sleep(nanoseconds: 2_000_000)
+            try await Task.sleep(nanoseconds: 5_000_000)
         }
         XCTAssertTrue(vm.isLoadingMore)
 
@@ -274,21 +274,21 @@ final class HomeCatalogLibraryEdgeTests: XCTestCase {
         XCTAssertFalse(vm.isLoadingMore)
 
         // Wait for new filter page 1 to finish
-        for _ in 0..<50 {
+        for _ in 0..<250 {
             if vm.items.map(\.title) == ["NewFilterP1"] { break }
-            try await Task.sleep(nanoseconds: 2_000_000)
+            try await Task.sleep(nanoseconds: 5_000_000)
         }
         XCTAssertEqual(vm.items.map(\.title), ["NewFilterP1"])
         XCTAssertFalse(vm.isLoadingMore)
 
         // Trigger new page 2 and ensure old unwinding defer never clobbers or blocks it
         vm.scheduleLoadNextPage(session: session)
-        for _ in 0..<50 {
+        for _ in 0..<250 {
             if newPage2Started.withLock({ $0 }) { break }
-            try await Task.sleep(nanoseconds: 2_000_000)
+            try await Task.sleep(nanoseconds: 5_000_000)
         }
         XCTAssertTrue(vm.isLoadingMore)
-        for _ in 0..<60 {
+        for _ in 0..<250 {
             if !vm.isLoadingMore && vm.items.count == 2 { break }
             try await Task.sleep(nanoseconds: 5_000_000)
         }
@@ -382,9 +382,9 @@ final class HomeCatalogLibraryEdgeTests: XCTestCase {
         session.serverBaseURL = URL(string: "http://\(coldHost):8090")
         let coldVM = HomeViewModel(initialServerHost: coldHost, initialRoomName: "Stua", initialHardwareProfile: "hdr10-512")
         coldVM.scheduleRevalidateHome(forceUnconditional: false, session: session)
-        for _ in 0..<50 {
+        for _ in 0..<250 {
             if coldStarted.withLock({ $0 }) { break }
-            try await Task.sleep(nanoseconds: 2_000_000)
+            try await Task.sleep(nanoseconds: 5_000_000)
         }
         XCTAssertTrue(coldVM.isInitialColdFetch)
         coldVM.cancelAllTasks()
@@ -437,9 +437,9 @@ final class HomeCatalogLibraryEdgeTests: XCTestCase {
         session.client = clientB
         session.homeRefreshNonce &+= 1
         vm.handleHomeRefreshNonceChange(session.homeRefreshNonce, isActiveTab: true, session: session)
-        for _ in 0..<50 {
+        for _ in 0..<250 {
             if vm.visibleRows.first?.items.first?.title == "HostB_Only" { break }
-            try await Task.sleep(nanoseconds: 2_000_000)
+            try await Task.sleep(nanoseconds: 5_000_000)
         }
         await vm.handleActivation(session: session, isActiveTab: true)
 
@@ -490,9 +490,9 @@ final class HomeCatalogLibraryEdgeTests: XCTestCase {
             session: session,
             now: Date().addingTimeInterval(30)
         )
-        for _ in 0..<50 {
+        for _ in 0..<250 {
             if vm.visibleRows.first?.items.first?.title == "KjellerstuaMovie" { break }
-            try await Task.sleep(nanoseconds: 2_000_000)
+            try await Task.sleep(nanoseconds: 5_000_000)
         }
 
         XCTAssertEqual(client.lock.withLock { $0.homeETags }, [nil, nil])

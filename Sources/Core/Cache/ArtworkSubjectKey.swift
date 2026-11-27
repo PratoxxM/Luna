@@ -31,7 +31,7 @@ public enum ArtworkSubjectKey: Sendable {
         return "\(scheme)://\(host)\(pathPart)"
     }
 
-    /// Size-agnostic subject identity bridging `/api/tv/v2/img/(card|still|backdrop)/<bucket>/<file>`,
+    /// Size-agnostic subject identity bridging `/api/tv/v2/img/(card|still|backdrop|backdrop4k)/<bucket>/<file>`,
     /// `/api/media/v2/img/...`, legacy `/api/tv/v1/img/...`, TMDB `/t/p/w1280/...` <-> `/t/p/original/...`,
     /// and query-width `/api/tv/v2/artwork?...&w=1280` for instant progressive upgrades.
     public static func canonicalSubjectIdentity(for url: URL) -> String {
@@ -44,7 +44,7 @@ public enum ArtworkSubjectKey: Sendable {
                 let variant = parts[0].lowercased()
                 let tail = parts[1]
                 switch variant {
-                case "card", "still", "backdrop":
+                case "card", "still", "backdrop", "backdrop4k":
                     return "tvimg-landscape:\(tail)"
                 case "poster":
                     return "tvimg-poster:\(tail)"

@@ -66,7 +66,7 @@ extension MediaDetailViewModel {
     }
 
     private func resolveInitialTargetSeason(for loaded: TvItemDetail, preserveSeason: Bool) -> Int {
-        if preserveSeason && selectedSeasonNumber > 0 {
+        if preserveSeason && selectedSeasonNumber >= 0 {
             return selectedSeasonNumber
         }
         if let nextSeason = loaded.nextUp?.season,
@@ -76,6 +76,7 @@ extension MediaDetailViewModel {
         }
         return loaded.selectedSeason
             ?? loaded.seasons?.first(where: { $0.seasonNumber > 0 })?.seasonNumber
+            ?? loaded.seasons?.first?.seasonNumber
             ?? 1
     }
 
@@ -251,7 +252,8 @@ extension MediaDetailViewModel {
                 if let previousSeason, previousSeason != seasonNumber {
                     selectedSeasonNumber = previousSeason
                 }
-                mutationErrorBanner = "Kunne ikke hente episoder for sesong \(seasonNumber): \(LunaCopy.friendlyErrorMessage(error))"
+                let seasonLabel = seasonNumber == 0 ? "Spesialer" : "sesong \(seasonNumber)"
+                mutationErrorBanner = "Kunne ikke hente episoder for \(seasonLabel): \(LunaCopy.friendlyErrorMessage(error))"
             }
             return false
         }

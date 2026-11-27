@@ -53,7 +53,7 @@ public struct TvDeleteRequestTarget: Identifiable, Equatable, Hashable, Sendable
         case .episode:
             return "Slett episode"
         case .season:
-            return "Slett sesong \(season ?? 1)"
+            return season == 0 ? "Slett Spesialer" : "Slett sesong \(season ?? 1)"
         case .series:
             return "Slett hele serien"
         case .title:

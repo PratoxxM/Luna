@@ -375,4 +375,312 @@ final class NetworkCacheAndMemoryProfileTests: XCTestCase {
         XCTAssertEqual(SmartTrackRuleEngine.normalizeLanguage("sv-SE"), "swe")
         XCTAssertEqual(SmartTrackRuleEngine.normalizeLanguage("da-DK"), "dan")
     }
+
+    func testThreadSafeLRUMemoryCacheConcurrentStressSafety() async {
+        let cache = ThreadSafeLRUMemoryCache<Int>(totalCostLimit: 256, countLimit: 24)
+        await withTaskGroup(of: Void.self) { group in
+            for worker in 0..<16 {
+                group.addTask {
+                    for iter in 0..<250 {
+                        let key = "item-\((worker * 7 + iter) % 40)"
+                        let subject = "subj-\((worker + iter) % 10)"
+                        cache.insert(
+                            worker * 1000 + iter,
+                            forKey: key,
+                            subjectKey: subject,
+                            cost: ((iter % 5) + 1) * 8,
+                            qualityRank: (iter % 4) * 320 + 320
+                        )
+                        _ = cache.image(forKey: key)
+                        _ = cache.bestImage(forSubjectKey: subject)
+                        if iter % 40 == 0 {
+                            cache.totalCostLimit = (iter % 80 == 0) ? 192 : 256
+                        }
+                        if iter % 125 == 124 && worker == 0 {
+                            cache.removeAll()
+                        }
+                        XCTAssertLessThanOrEqual(cache.count, 24)
+                        XCTAssertLessThanOrEqual(cache.totalCost, 256)
+                    }
+                }
+            }
+        }
+        XCTAssertLessThanOrEqual(cache.count, 24)
+        XCTAssertLessThanOrEqual(cache.totalCost, cache.totalCostLimit)
+        cache.totalCostLimit = 128
+        XCTAssertLessThanOrEqual(cache.totalCost, 128)
+        cache.removeAll()
+        XCTAssertEqual(cache.count, 0)
+        XCTAssertEqual(cache.totalCost, 0)
+    }
+
+    @MainActor
+    func testHomeViewModelWarmCatalogMetadataConditionalRawPayloadNotModifiedAndStandardSkip() async throws {
+        try await DiskSWRTestGate.shared.withLock { @MainActor in
+            try await self.runWarmCatalogMetadataChecks()
+        }
+    }
+
+    @MainActor
+    private func runWarmCatalogMetadataChecks() async throws {
+        await DiskSWRStore.clearAllAsync()
+        CatalogBrowseMemoryCache.shared.clear()
+        defer {
+            CatalogBrowseMemoryCache.shared.clear()
+        }
+
+        final class WarmupMockClient: HomeClientProviding, CatalogClientProviding, @unchecked Sendable {
+            struct State: Sendable {
+                var homeResponse: TvHomeResponse
+                var catalogResponses: [String: [ConditionalHTTPResult<TvCatalogResponse>]] = [:]
+                var requestedCatalogETags: [(kind: String, etag: String?)] = []
+            }
+            let lock: Mutex<State>
+            init(homeResponse: TvHomeResponse) {
+                self.lock = Mutex(State(homeResponse: homeResponse))
+            }
+            func fetchHomeConditional(ifNoneMatch: String?) async throws -> HomeConditionalResult {
+                .updated(payload: lock.withLock { $0.homeResponse }, etag: "\"home-1\"", rawPayloadData: Data())
+            }
+            func fetchCatalog(kind: String, genre: String?, sort: String, localOnly: Bool, unwatchedOnly: Bool, page: Int, limit: Int) async throws -> TvCatalogResponse {
+                XCTFail("warmCatalogMetadataAfterHomePaintIfEligible must use fetchCatalogConditional")
+                throw CancellationError()
+            }
+            func fetchCatalogConditional(
+                kind: String,
+                genre: String?,
+                sort: String,
+                localOnly: Bool,
+                unwatchedOnly: Bool,
+                page: Int,
+                limit: Int,
+                ifNoneMatch: String?
+            ) async throws -> ConditionalHTTPResult<TvCatalogResponse> {
+                lock.withLock { s in
+                    s.requestedCatalogETags.append((kind, ifNoneMatch))
+                    if var list = s.catalogResponses[kind], !list.isEmpty {
+                        let first = list.removeFirst()
+                        s.catalogResponses[kind] = list
+                        return first
+                    }
+                    return .notModified
+                }
+            }
+            func setWatchlist(listed: Bool, mediaType: String, ids: TvMediaIds, title: String, year: Int?) async throws {}
+            func setWatched(watched: Bool, mediaType: String, ids: TvMediaIds, title: String, year: Int?, season: Int?, episode: Int?) async throws {}
+            func removeFromOngoing(mediaType: String, itemId: String?, ids: TvMediaIds, title: String?) async throws {}
+            func removeFromList(rowId: String, mediaType: String, itemId: String?, ids: TvMediaIds, title: String?) async throws -> Bool { true }
+        }
+
+        @MainActor
+        final class WarmupSession: TabSessionContext {
+            var serverBaseURL: URL?
+            var roomName = "Stua"
+            var hardwareProfile = "hdr10-512"
+            var homeRefreshNonce = 1
+            var hasActivePlayback = false
+            let client: WarmupMockClient
+            init(host: String, client: WarmupMockClient) {
+                self.serverBaseURL = URL(string: "http://\(host):8090")
+                self.client = client
+            }
+            func makeHomeClient() -> (any HomeClientProviding)? { client }
+            func makeCatalogClient() -> (any CatalogClientProviding)? { client }
+            func makeLibraryClient() -> (any LibraryClientProviding)? { nil }
+            func makeSearchClient() -> (any SearchClientProviding)? { nil }
+            func notifyContentMutated() { homeRefreshNonce &+= 1 }
+            func unpairDevice() {}
+        }
+
+        let host = "warmup-\(UUID().uuidString.lowercased()).local"
+        let homeCard = TvMediaCard(itemId: "movie:tmdb:10", mediaType: "movie", ids: TvMediaIds(tmdb: 10), title: "Home Movie")
+        let homeResp = TvHomeResponse(
+            ok: true,
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512",
+            rows: [TvShelfRow(rowId: "popular-movies", title: "Filmer", rowStyle: "poster", items: [homeCard])]
+        )
+        let movieCard = TvMediaCard(itemId: "movie:tmdb:550", mediaType: "movie", ids: TvMediaIds(tmdb: 550), title: "Fight Club")
+        let seriesCard = TvMediaCard(itemId: "series:tmdb:95396", mediaType: "series", ids: TvMediaIds(tmdb: 95396), title: "Severance")
+        let movieResp = TvCatalogResponse(ok: true, mediaType: "movie", title: "Filmer", sort: "popular", localOnly: false, unwatchedOnly: false, page: 1, limit: 48, hasMore: false, items: [movieCard])
+        let seriesResp = TvCatalogResponse(ok: true, mediaType: "series", title: "Serier", sort: "popular", localOnly: false, unwatchedOnly: false, page: 1, limit: 48, hasMore: false, items: [seriesCard])
+
+        // Deliberately non-JSONEncoder formatting to prove verbatim rawPayloadData persistence on disk
+        let customMovieRaw = Data("  { \"rawMarker\": \"verbatim-movie\", \"ok\": true }  ".utf8)
+        let customSeriesRaw = Data("  { \"rawMarker\": \"verbatim-series\", \"ok\": true }  ".utf8)
+
+        let client = WarmupMockClient(homeResponse: homeResp)
+        client.lock.withLock { s in
+            s.catalogResponses["movie"] = [
+                .updated(payload: movieResp, etag: "\"w-mov-1\"", rawPayloadData: customMovieRaw),
+                .notModified,
+            ]
+            s.catalogResponses["series"] = [
+                .updated(payload: seriesResp, etag: "\"w-ser-1\"", rawPayloadData: customSeriesRaw),
+                .notModified,
+            ]
+        }
+        let session = WarmupSession(host: host, client: client)
+        let vm = HomeViewModel(initialServerHost: host, initialRoomName: "Stua", initialHardwareProfile: "hdr10-512")
+        await vm.handleActivation(session: session, isActiveTab: true)
+
+        let gib: UInt64 = 1_073_741_824
+        let standardProfile = DeviceMemoryProfile(physicalMemoryBytes: 4 * gib, activeProcessorCount: 6)
+        let high2026Profile = DeviceMemoryProfile(physicalMemoryBytes: 8 * gib, activeProcessorCount: 6)
+
+        // 1. Standard (4 GiB) profile must skip warmup completely
+        await vm.warmCatalogMetadataAfterHomePaintIfEligible(
+            session: session,
+            isPreviewMode: false,
+            delayNanoseconds: 0,
+            memoryProfile: standardProfile
+        )
+        XCTAssertTrue(client.lock.withLock { $0.requestedCatalogETags.isEmpty })
+
+        // 2. High2026 (8 GiB) profile warms both movie & series, stores ETag and rawPayloadData verbatim
+        await vm.warmCatalogMetadataAfterHomePaintIfEligible(
+            session: session,
+            isPreviewMode: false,
+            delayNanoseconds: 0,
+            memoryProfile: high2026Profile
+        )
+        await DiskSWRStore.drainPendingWrites()
+
+        let movieKey = CatalogBrowseViewModel.makeCacheKey(
+            serverBaseURL: session.serverBaseURL,
+            mediaType: "movie",
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512"
+        )
+        let seriesKey = CatalogBrowseViewModel.makeCacheKey(
+            serverBaseURL: session.serverBaseURL,
+            mediaType: "series",
+            roomName: "Stua",
+            hardwareProfile: "hdr10-512"
+        )
+        XCTAssertEqual(CatalogBrowseMemoryCache.shared.snapshot(for: movieKey)?.etag, "\"w-mov-1\"")
+        XCTAssertEqual(CatalogBrowseMemoryCache.shared.snapshot(for: seriesKey)?.etag, "\"w-ser-1\"")
+
+        let cachesBase = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let swrDir = cachesBase.appendingPathComponent("LunaV2", isDirectory: true).appendingPathComponent("swr", isDirectory: true)
+        let sanitizedHost = String(host.map { ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") ? $0 : "_" })
+        let diskMovieFile = swrDir.appendingPathComponent("catalog-movies-\(sanitizedHost)-stua-hdr10-512.json")
+        let diskMovieBytes = try Data(contentsOf: diskMovieFile)
+        XCTAssertEqual(diskMovieBytes, customMovieRaw, "Warmup must persist rawPayloadData verbatim without MainActor JSONEncoder re-encoding")
+
+        // 3. After nonce bump, subsequent warmup sends stored ETags and handles .notModified without losing items
+        session.homeRefreshNonce = 2
+        await vm.warmCatalogMetadataAfterHomePaintIfEligible(
+            session: session,
+            isPreviewMode: false,
+            delayNanoseconds: 0,
+            memoryProfile: high2026Profile
+        )
+        let requests = client.lock.withLock { $0.requestedCatalogETags }
+        XCTAssertEqual(requests.count, 4)
+        XCTAssertEqual(requests[0].etag, nil)
+        XCTAssertEqual(requests[1].etag, nil)
+        XCTAssertEqual(requests[2].etag, "\"w-mov-1\"")
+        XCTAssertEqual(requests[3].etag, "\"w-ser-1\"")
+
+        let refreshedMovie = CatalogBrowseMemoryCache.shared.snapshot(for: movieKey)
+        XCTAssertEqual(refreshedMovie?.items.map(\.title), ["Fight Club"])
+        XCTAssertEqual(refreshedMovie?.refreshNonce, 2)
+        XCTAssertEqual(refreshedMovie?.etag, "\"w-mov-1\"")
+        await DiskSWRStore.clearAllAsync()
+    }
+
+    func testUpgradeArtworkURLHero4KAndEdgeCases() throws {
+        let cardURL = try XCTUnwrap(URL(string: "https://media.example.invalid/api/tv/v2/img/card/tmdb/a.jpg"))
+        let stillURL = try XCTUnwrap(URL(string: "https://media.example.invalid/api/tv/v2/img/still/tmdb/a.jpg"))
+        let backdropURL = try XCTUnwrap(URL(string: "https://media.example.invalid/api/tv/v2/img/backdrop/tmdb/a.jpg"))
+        let mediaV2Backdrop = try XCTUnwrap(URL(string: "https://media.example.invalid/api/media/v2/img/backdrop/tmdb/a.jpg"))
+        let legacyV1Card = try XCTUnwrap(URL(string: "http://192.0.2.10:8090/api/tv/v1/img/card/tmdb/a.jpg"))
+
+        XCTAssertEqual(
+            LunaCoreClient.upgradeArtworkURL(cardURL, target: .hero4K).absoluteString,
+            "https://media.example.invalid/api/tv/v2/img/backdrop4k/tmdb/a.jpg"
+        )
+        XCTAssertEqual(
+            LunaCoreClient.upgradeArtworkURL(stillURL, target: .hero4K).absoluteString,
+            "https://media.example.invalid/api/tv/v2/img/backdrop4k/tmdb/a.jpg"
+        )
+        XCTAssertEqual(
+            LunaCoreClient.upgradeArtworkURL(backdropURL, target: .hero4K).absoluteString,
+            "https://media.example.invalid/api/tv/v2/img/backdrop4k/tmdb/a.jpg"
+        )
+        XCTAssertEqual(
+            LunaCoreClient.upgradeArtworkURL(mediaV2Backdrop, target: .hero4K).absoluteString,
+            "https://media.example.invalid/api/media/v2/img/backdrop4k/tmdb/a.jpg"
+        )
+        XCTAssertEqual(
+            LunaCoreClient.upgradeArtworkURL(legacyV1Card, target: .hero4K).absoluteString,
+            "http://192.0.2.10:8090/api/tv/v1/img/backdrop4k/tmdb/a.jpg"
+        )
+
+        // Already-4K URL must never be downgraded across any target
+        let backdrop4kURL = try XCTUnwrap(URL(string: "https://media.example.invalid/api/tv/v2/img/backdrop4k/tmdb/a.jpg"))
+        XCTAssertEqual(LunaCoreClient.upgradeArtworkURL(backdrop4kURL, target: .hero4K), backdrop4kURL)
+        XCTAssertEqual(LunaCoreClient.upgradeArtworkURL(backdrop4kURL, target: .landscape2x), backdrop4kURL)
+        XCTAssertEqual(LunaCoreClient.upgradeArtworkURL(backdrop4kURL, target: .poster2x), backdrop4kURL)
+        XCTAssertEqual(LunaCoreClient.upgradeArtworkURL(backdrop4kURL, target: .preserve), backdrop4kURL)
+
+        // Non-landscape variants remain untouched on .hero4K
+        let posterURL = try XCTUnwrap(URL(string: "https://media.example.invalid/api/tv/v2/img/poster/tmdb/a.jpg"))
+        let posterWebURL = try XCTUnwrap(URL(string: "https://media.example.invalid/api/tv/v2/img/posterWeb/tmdb/a.jpg"))
+        let logoURL = try XCTUnwrap(URL(string: "https://media.example.invalid/api/tv/v2/img/logo/tmdb/a.jpg"))
+        XCTAssertEqual(LunaCoreClient.upgradeArtworkURL(posterURL, target: .hero4K), posterURL)
+        XCTAssertEqual(LunaCoreClient.upgradeArtworkURL(posterWebURL, target: .hero4K), posterWebURL)
+        XCTAssertEqual(LunaCoreClient.upgradeArtworkURL(logoURL, target: .hero4K), logoURL)
+
+        // Query parameters are preserved via path-anchored matching
+        let queryBackdrop = try XCTUnwrap(URL(string: "https://media.example.invalid/api/tv/v2/img/backdrop/tmdb/a.jpg?v=2"))
+        XCTAssertEqual(
+            LunaCoreClient.upgradeArtworkURL(queryBackdrop, target: .hero4K).absoluteString,
+            "https://media.example.invalid/api/tv/v2/img/backdrop4k/tmdb/a.jpg?v=2"
+        )
+
+        // External URLs & proxy URLs with /api/tv/v2/img/ inside query remain unchanged
+        let extURL = try XCTUnwrap(URL(string: "https://cdn.example.net/card/a.jpg"))
+        let proxyURL = try XCTUnwrap(URL(string: "https://proxy.example.net/fetch?url=/api/tv/v2/img/card/tmdb/a.jpg"))
+        XCTAssertEqual(LunaCoreClient.upgradeArtworkURL(extURL, target: .hero4K), extURL)
+        XCTAssertEqual(LunaCoreClient.upgradeArtworkURL(proxyURL, target: .hero4K), proxyURL)
+    }
+
+    func testResolveArtworkURLAndBuildAbsoluteURLCaseInsensitiveSchemes() throws {
+        let client = LunaCoreClient(
+            baseURL: try XCTUnwrap(URL(string: "https://media.example.invalid:8920")),
+            deviceID: "dev-scheme",
+            deviceToken: "tok-scheme",
+            roomName: "Stua",
+            hardwareProfile: "dv-fel-714",
+            allowSelfSignedLanTLS: false
+        )
+
+        let upperHTTPS = try XCTUnwrap(client.resolveArtworkURL("HTTPS://image.tmdb.org/t/p/w342/poster.jpg", target: .poster2x))
+        XCTAssertEqual(upperHTTPS.scheme?.lowercased(), "https")
+        XCTAssertEqual(upperHTTPS.host, "image.tmdb.org")
+        XCTAssertEqual(upperHTTPS.path, "/t/p/w780/poster.jpg")
+        XCTAssertFalse(upperHTTPS.absoluteString.contains("media.example.invalid"))
+
+        let upperHTTP = try XCTUnwrap(client.resolveArtworkURL("HTTP://cdn.example.net/artwork?w=320", target: .landscape2x))
+        XCTAssertEqual(upperHTTP.scheme?.lowercased(), "http")
+        XCTAssertEqual(upperHTTP.host, "cdn.example.net")
+        XCTAssertTrue(upperHTTP.query?.contains("w=1280") == true)
+
+        let mixedScheme = try XCTUnwrap(
+            client.resolveArtworkURL("HtTpS://media.example.invalid:8920/api/tv/v2/img/card/tmdb/hero.jpg", target: .hero4K)
+        )
+        XCTAssertEqual(mixedScheme.host, "media.example.invalid")
+        XCTAssertEqual(mixedScheme.port, 8920)
+        XCTAssertEqual(mixedScheme.path, "/api/tv/v2/img/backdrop4k/tmdb/hero.jpg")
+
+        let directBuild = try XCTUnwrap(client.buildAbsoluteURL("HTTPS://cdn.example.net/stream.mkv"))
+        XCTAssertEqual(directBuild.scheme?.lowercased(), "https")
+        XCTAssertEqual(directBuild.host, "cdn.example.net")
+
+        let nestedRelative = try XCTUnwrap(client.buildAbsoluteURL("api/tv/v2/http://nested"))
+        XCTAssertEqual(nestedRelative.absoluteString, "https://media.example.invalid:8920/api/tv/v2/http://nested")
+    }
 }

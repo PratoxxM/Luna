@@ -29,14 +29,27 @@ struct DetailHeroHeaderView: View {
         let fallbackPosterURL = landscapeURL == nil ? client?.resolveArtworkURL(item.posterUrl, target: .poster2x) : nil
         let isMovie = (item.mediaType == "movie")
         let formatBadges = Array(displayedBadges.prefix(3))
+        let originalTitleLine = Self.distinctOriginalTitle(for: item)
+        let ratingsLine = Self.detailRatingsLine(for: item)
+        let taglineText = item.tagline?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextEpCue = Self.nextEpisodeCue(for: item)
 
         VStack(alignment: .leading, spacing: isMovie ? 18 : 12) {
             // Editorial New York serif hero title
-            Text(item.title)
-                .font(LunaTheme.Font.heroSerif)
-                .foregroundStyle(LunaTheme.linen)
-                .lineLimit(2)
-                .frame(maxWidth: 920, alignment: .leading)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.title)
+                    .font(LunaTheme.Font.heroSerif)
+                    .foregroundStyle(LunaTheme.linen)
+                    .lineLimit(2)
+                    .frame(maxWidth: 920, alignment: .leading)
+
+                if let originalTitleLine {
+                    Text(originalTitleLine)
+                        .font(LunaTheme.Font.subtitle)
+                        .foregroundStyle(LunaTheme.muted)
+                        .lineLimit(1)
+                }
+            }
 
             // Single calm metadata line + discrete inline watched status
             HStack(spacing: 8) {
@@ -65,6 +78,13 @@ struct DetailHeroHeaderView: View {
                 }
             }
 
+            if let ratingsLine {
+                Text(ratingsLine)
+                    .font(LunaTheme.Font.caption.monospacedDigit())
+                    .foregroundStyle(LunaTheme.muted)
+                    .lineLimit(1)
+            }
+
             // Single calm format summary line with subtle storage tier dot (only NVMe / archive)
             if !formatBadges.isEmpty {
                 HStack(spacing: 10) {
@@ -78,6 +98,15 @@ struct DetailHeroHeaderView: View {
                 }
             }
 
+            if let taglineText, !taglineText.isEmpty {
+                Text(taglineText)
+                    .font(LunaTheme.Font.subtitle)
+                    .foregroundStyle(LunaTheme.linen.opacity(0.88))
+                    .italic()
+                    .lineLimit(1)
+                    .frame(maxWidth: 920, alignment: .leading)
+            }
+
             // Overview preview (full overview is available under ⋯)
             if let overview = item.preferredOverview {
                 Text(overview)
@@ -86,6 +115,13 @@ struct DetailHeroHeaderView: View {
                     .lineSpacing(4)
                     .lineLimit(isMovie ? 3 : 2)
                     .frame(maxWidth: 920, alignment: .leading)
+            }
+
+            if let nextEpCue {
+                Text(nextEpCue)
+                    .font(LunaTheme.Font.caption.monospacedDigit())
+                    .foregroundStyle(LunaTheme.moonlight)
+                    .lineLimit(1)
             }
 
             // Action row: Play (primary) + Utgave + Huskeliste + ⋯
@@ -241,6 +277,55 @@ struct DetailHeroHeaderView: View {
         }
         if let upcomingBadge = item.nextAirDateBadge, !upcomingBadge.isEmpty {
             parts.append("Ny episode \(upcomingBadge)")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    nonisolated static func distinctOriginalTitle(for item: TvItemDetail) -> String? {
+        guard let raw = item.originalTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty,
+              raw.caseInsensitiveCompare(item.title.trimmingCharacters(in: .whitespacesAndNewlines)) != .orderedSame else {
+            return nil
+        }
+        return raw
+    }
+
+    nonisolated static func detailRatingsLine(for item: TvItemDetail) -> String? {
+        var parts: [String] = []
+        if let rt = item.rottenTomatoesScore, rt > 0 {
+            parts.append("RT \(rt) %")
+        }
+        if let mc = item.metacriticScore, mc > 0 {
+            parts.append("MC \(mc)")
+        }
+        if let votes = item.imdbVotes, votes > 0 {
+            if votes >= 1_000_000 {
+                parts.append("IMDb \(LunaCopy.formatDecimal(Double(votes) / 1_000_000.0, decimals: 1))M stemmer")
+            } else if votes >= 1_000 {
+                parts.append("IMDb \(votes / 1_000)k stemmer")
+            } else {
+                parts.append("IMDb \(votes) stemmer")
+            }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    nonisolated static func nextEpisodeCue(for item: TvItemDetail) -> String? {
+        guard item.mediaType == "series", let nextEp = item.nextEpisode else { return nil }
+        let code = "S\(nextEp.season) · E\(nextEp.episode)"
+        let nonGeneric = EpisodeTitleFormatter.nonGenericEpisodeTitle(
+            nextEp.title,
+            seriesTitle: item.title,
+            season: nextEp.season,
+            episode: nextEp.episode
+        )
+        var parts: [String] = ["Neste episode: \(code)"]
+        if let nonGeneric, !nonGeneric.isEmpty {
+            parts.append(nonGeneric)
+        }
+        if let secs = nextEp.runtimeSeconds, secs.isFinite, secs >= 60,
+           let mins = Int(exactly: (secs / 60.0).rounded()) {
+            parts.append("\(mins) min")
         }
         return parts.joined(separator: " · ")
     }

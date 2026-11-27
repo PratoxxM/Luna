@@ -1,6 +1,7 @@
 import AetherBridge
 import CoreGraphics
 import Foundation
+import ImageIO
 import MediaPlayer
 import XCTest
 @testable import Luna
@@ -268,5 +269,424 @@ final class PlayerArtworkMemoryTests: XCTestCase {
         vm.teardownAndStop()
         try? await Task.sleep(nanoseconds: 280_000_000)
         XCTAssertFalse(transport.events.contains("audioDelay(55ms)"))
+    }
+
+    @MainActor
+    func testFullHDLanczosUpscaleDeferredAttachmentsAndSingleWarmEnterPlaybackMemoryMode() async throws {
+        let host = "warm-memory-mode-\(UUID().uuidString.lowercased()).local"
+        let suite = "luna.test.lanczos.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer {
+            MockURLProtocol.unregister(host: host)
+            ArtworkPipeline.shared.exitPlaybackMemoryMode()
+            defaults.removePersistentDomain(forName: suite)
+        }
+
+        let high2026 = DeviceMemoryProfile(physicalMemoryBytes: 8 * 1_073_741_824, activeProcessorCount: 6)
+        let standard = DeviceMemoryProfile(physicalMemoryBytes: 4 * 1_073_741_824, activeProcessorCount: 6)
+
+        let sdr1080JSON = #"""
+        {
+          "sessionId": "sess-1080p-1",
+          "streamToken": "stream-1080p-token-1234",
+          "roomName": "Kjellerstua",
+          "hardwareProfile": "dv-fel-714",
+          "item": {
+            "itemId": "movie:tmdb:603",
+            "mediaType": "movie",
+            "ids": { "tmdb": 603 },
+            "title": "The Matrix"
+          },
+          "selectedCandidate": {
+            "candidateId": "cand-1080p",
+            "displayHeadline": "1080p BluRay",
+            "releaseTitle": "The.Matrix.1999.1080p.BluRay.x264",
+            "source": "nvme",
+            "tier": "nvme",
+            "resolution": "1080p",
+            "videoRangeType": "SDR",
+            "videoCodec": "h264"
+          },
+          "stream": { "url": "/api/tv/v2/streams/sess-1080p-1/master" },
+          "aetherConfig": {
+            "preferDualLayerDolbyVision": false,
+            "dolbyVisionHandling": "baseLayerOnly",
+            "matchContentEnabled": true,
+            "audioBridgeMode": "lossless"
+          }
+        }
+        """#
+        let session = try JSONDecoder().decode(TvPlaybackSession.self, from: Data(sdr1080JSON.utf8))
+        let client = try MockURLProtocol.makeClient(host: host)
+
+        // 1. Default high2026 enables upscalesFullHDVideo = true; standard disables it
+        let highComfort = ComfortPreferences(defaults: defaults, memoryTier: .high2026)
+        let optsHigh = PlayerViewModel.buildLoadOptions(
+            session: session, client: client, comfort: highComfort,
+            audioEnhancement: .reference, audioDelaySeconds: 0, memoryProfile: high2026
+        )
+        XCTAssertTrue(optsHigh.upscalesLowResolutionVideo)
+        XCTAssertEqual(optsHigh.upscaleScaler, .automatic)
+        XCTAssertTrue(optsHigh.upscalesFullHDVideo)
+        XCTAssertFalse(optsHigh.skipsContainerAttachments, "Nil server flag must defer ASS attachments instead of skipping")
+        XCTAssertFalse(optsHigh.readsContainerAttachmentsAtOpen)
+
+        highComfort.lowResUpscaleMode = .off
+        let optsLanczosOnly = PlayerViewModel.buildLoadOptions(
+            session: session, client: client, comfort: highComfort,
+            audioEnhancement: .reference, audioDelaySeconds: 0, memoryProfile: high2026
+        )
+        XCTAssertFalse(optsLanczosOnly.upscalesLowResolutionVideo)
+        XCTAssertEqual(optsLanczosOnly.upscaleScaler, .lanczos)
+        XCTAssertTrue(optsLanczosOnly.upscalesFullHDVideo)
+
+        highComfort.lowResUpscaleMode = .animeLineArt
+        let optsAnime = PlayerViewModel.buildLoadOptions(
+            session: session, client: client, comfort: highComfort,
+            audioEnhancement: .reference, audioDelaySeconds: 0, memoryProfile: high2026
+        )
+        XCTAssertTrue(optsAnime.upscalesLowResolutionVideo)
+        XCTAssertEqual(optsAnime.upscaleScaler, .lineArt)
+        XCTAssertFalse(optsAnime.upscalesFullHDVideo)
+
+        let stdSuite = "luna.test.lanczos.std.\(UUID().uuidString)"
+        let stdDefaults = try XCTUnwrap(UserDefaults(suiteName: stdSuite))
+        defer { stdDefaults.removePersistentDomain(forName: stdSuite) }
+        let stdComfort = ComfortPreferences(defaults: stdDefaults, memoryTier: .standard)
+        let optsStd = PlayerViewModel.buildLoadOptions(
+            session: session, client: client, comfort: stdComfort,
+            audioEnhancement: .reference, audioDelaySeconds: 0, memoryProfile: standard
+        )
+        XCTAssertFalse(optsStd.upscalesFullHDVideo)
+
+        // Heavy-session predicate for 1080p SDR reflects upscalesFullHDVideo
+        XCTAssertFalse(
+            PlayerViewModel.isLikelyHeavySoftwareSession(
+                session, dualLayerOverride: .auto, lowResUpscaleMode: .auto,
+                upscalesFullHDVideo: false, supportsHardwareAV1: true
+            )
+        )
+        XCTAssertTrue(
+            PlayerViewModel.isLikelyHeavySoftwareSession(
+                session, dualLayerOverride: .auto, lowResUpscaleMode: .auto,
+                upscalesFullHDVideo: true, supportsHardwareAV1: true
+            )
+        )
+
+        // 2. Pure memory-mode upgrade policy covers warm-prepared, cold-upgrade, already-heavy, and non-heavy cases
+        XCTAssertFalse(
+            PlayerEngineConfigurator.shouldUpgradePlaybackMemoryMode(
+                alreadyHadPreparedSession: true,
+                initialHeavyStream: false,
+                resolvedHeavyStream: true
+            )
+        )
+        XCTAssertFalse(
+            PlayerEngineConfigurator.shouldUpgradePlaybackMemoryMode(
+                alreadyHadPreparedSession: true,
+                initialHeavyStream: true,
+                resolvedHeavyStream: true
+            )
+        )
+        XCTAssertTrue(
+            PlayerEngineConfigurator.shouldUpgradePlaybackMemoryMode(
+                alreadyHadPreparedSession: false,
+                initialHeavyStream: false,
+                resolvedHeavyStream: true
+            )
+        )
+        XCTAssertFalse(
+            PlayerEngineConfigurator.shouldUpgradePlaybackMemoryMode(
+                alreadyHadPreparedSession: false,
+                initialHeavyStream: true,
+                resolvedHeavyStream: true
+            )
+        )
+        XCTAssertFalse(
+            PlayerEngineConfigurator.shouldUpgradePlaybackMemoryMode(
+                alreadyHadPreparedSession: false,
+                initialHeavyStream: false,
+                resolvedHeavyStream: false
+            )
+        )
+
+        // 3. Warm launch activates playback memory mode and triggers at most a single purge notification
+        MockURLProtocol.register(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            if url.path == "/api/tv/v2/playback/resolve" {
+                return (resp, Data(#"{"ok":true,"resolveId":"res-warm","playbackSession":\#(sdr1080JSON)}"#.utf8))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let purgeCount = TestLockedBox(0)
+        let observer = NotificationCenter.default.addObserver(
+            forName: ArtworkPipeline.didPurgeMemoryNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            purgeCount.withLock { $0 += 1 }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        let engine = try LunaApp.makeSharedEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+        let warmComfort = ComfortPreferences(defaults: defaults, memoryTier: .high2026)
+        warmComfort.lowResUpscaleMode = .off
+        warmComfort.upscalesFullHDVideo = true
+        let transport = MockPlayerTransport(state: .idle, playbackPhase: .idle)
+        let vm = PlayerViewModel(
+            engine: engine, comfort: warmComfort, transport: transport,
+            audioActivator: MockNativeAudioActivator { _ in }, bindOnInit: false
+        )
+        let req = PlaybackLaunchRequest(
+            itemId: "movie:tmdb:603",
+            title: "The Matrix",
+            startPositionSeconds: 0,
+            prepareToken: "sess-1080p-1",
+            preparedSession: session
+        )
+        vm.start(request: req, client: client)
+        await vm.sessionController.resolveTask?.value
+        XCTAssertTrue(ArtworkPipeline.shared.isPlaybackActive)
+        vm.teardownAndStop()
+        for _ in 0..<3 {
+            await Task.yield()
+        }
+        XCTAssertLessThanOrEqual(
+            purgeCount.withLock { $0 },
+            1,
+            "Warm launch must trigger enterPlaybackMemoryMode at most once"
+        )
+    }
+
+    private func makeValidPNGData(width: Int = 16, height: Int = 16) throws -> Data {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let ctx = try XCTUnwrap(
+            CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        )
+        ctx.setFillColor(CGColor(red: 0.85, green: 0.65, blue: 0.35, alpha: 1.0))
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let cgImage = try XCTUnwrap(ctx.makeImage())
+
+        let pngData = NSMutableData()
+        let dest = try XCTUnwrap(CGImageDestinationCreateWithData(pngData as CFMutableData, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(dest, cgImage, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(dest))
+        return pngData as Data
+    }
+
+    private func withCleanArtworkPipeline(host: String, _ body: () async throws -> Void) async throws {
+        await ArtworkPipeline.shared.clearAll()
+        do {
+            try await body()
+        } catch {
+            MockURLProtocol.unregister(host: host)
+            await ArtworkPipeline.shared.clearAll()
+            throw error
+        }
+        MockURLProtocol.unregister(host: host)
+        await ArtworkPipeline.shared.clearAll()
+    }
+
+    func testArtworkPipelineEvictsCorruptCachedDiskFileAndRecoversOnNextLoad() async throws {
+        let host = "artwork-corrupt-disk-\(UUID().uuidString.lowercased()).local"
+        try await withCleanArtworkPipeline(host: host) {
+            let validPNG = try makeValidPNGData(width: 16, height: 16)
+            let url = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/img/poster/tmdb/corrupt_disk.png"))
+            let diskFileURL = ArtworkPipeline.diskFileURL(for: url)
+            try FileManager.default.createDirectory(at: ArtworkPipeline.imageCacheDirectoryURL, withIntermediateDirectories: true)
+            try Data("corrupt-bytes-not-an-image".utf8).write(to: diskFileURL, options: .atomic)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: diskFileURL.path))
+
+            MockURLProtocol.register(host: host) { request in
+                let reqURL = try XCTUnwrap(request.url)
+                let resp = try XCTUnwrap(HTTPURLResponse(url: reqURL, statusCode: 200, httpVersion: nil, headerFields: nil))
+                return (resp, validPNG)
+            }
+            let client = try MockURLProtocol.makeClient(host: host)
+
+            // First load hits corrupt disk file, fails decode, and evicts corrupt file synchronously.
+            let firstLoad = await ArtworkPipeline.shared.loadImage(url: url, maxPixelSize: 480, client: client)
+            XCTAssertNil(firstLoad)
+            XCTAssertFalse(
+                FileManager.default.fileExists(atPath: diskFileURL.path),
+                "Corrupt disk cache file must be deleted synchronously when downsampleAndDecode fails"
+            )
+
+            // Second load fetches valid PNG from network, decodes, and persists valid bytes on disk.
+            let secondLoad = await ArtworkPipeline.shared.loadImage(url: url, maxPixelSize: 480, client: client)
+            XCTAssertNotNil(secondLoad)
+            XCTAssertEqual(secondLoad?.width, 16)
+            XCTAssertEqual(secondLoad?.height, 16)
+
+            for _ in 0..<100 where !FileManager.default.fileExists(atPath: diskFileURL.path) {
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+            XCTAssertTrue(FileManager.default.fileExists(atPath: diskFileURL.path))
+            let persistedBytes = try Data(contentsOf: diskFileURL)
+            XCTAssertEqual(persistedBytes, validPNG)
+        }
+    }
+
+    func testArtworkPipelineDoesNotPersistCorruptHTTP200PayloadAndRecovers() async throws {
+        let host = "artwork-corrupt-http-\(UUID().uuidString.lowercased()).local"
+        try await withCleanArtworkPipeline(host: host) {
+            let validPNG = try makeValidPNGData(width: 16, height: 16)
+            let requestCount = TestLockedBox(0)
+            MockURLProtocol.register(host: host) { request in
+                let reqURL = try XCTUnwrap(request.url)
+                let attempt = requestCount.withLock { count -> Int in
+                    count += 1
+                    return count
+                }
+                let resp = try XCTUnwrap(HTTPURLResponse(url: reqURL, statusCode: 200, httpVersion: nil, headerFields: nil))
+                if attempt == 1 {
+                    return (resp, Data("<html>502 Bad Gateway</html>".utf8))
+                }
+                return (resp, validPNG)
+            }
+
+            let client = try MockURLProtocol.makeClient(host: host)
+            let url = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/img/poster/tmdb/corrupt_http.png"))
+            let diskFileURL = ArtworkPipeline.diskFileURL(for: url)
+
+            let firstLoad = await ArtworkPipeline.shared.loadImage(url: url, maxPixelSize: 480, client: client)
+            XCTAssertNil(firstLoad)
+            try? await Task.sleep(nanoseconds: 40_000_000)
+            XCTAssertFalse(
+                FileManager.default.fileExists(atPath: diskFileURL.path),
+                "Corrupt HTTP 200 payload must never be persisted to disk"
+            )
+
+            let secondLoad = await ArtworkPipeline.shared.loadImage(url: url, maxPixelSize: 480, client: client)
+            XCTAssertNotNil(secondLoad)
+            XCTAssertEqual(secondLoad?.width, 16)
+
+            for _ in 0..<100 where !FileManager.default.fileExists(atPath: diskFileURL.path) {
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+            XCTAssertTrue(FileManager.default.fileExists(atPath: diskFileURL.path))
+        }
+    }
+
+    func testArtworkPipelineCancellationDoesNotDeleteValidDiskCacheFile() async throws {
+        let host = "artwork-cancel-disk-\(UUID().uuidString.lowercased()).local"
+        try await withCleanArtworkPipeline(host: host) {
+            let validPNG = try makeValidPNGData(width: 16, height: 16)
+            let url = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/img/poster/tmdb/valid_cancel.png"))
+            let diskFileURL = ArtworkPipeline.diskFileURL(for: url)
+            try FileManager.default.createDirectory(at: ArtworkPipeline.imageCacheDirectoryURL, withIntermediateDirectories: true)
+            try validPNG.write(to: diskFileURL, options: .atomic)
+
+            let client = try MockURLProtocol.makeClient(host: host)
+            let cancelledTask = Task { () -> CGImage? in
+                while !Task.isCancelled {
+                    await Task.yield()
+                }
+                return await ArtworkPipeline.shared.loadImage(url: url, maxPixelSize: 780, client: client)
+            }
+            cancelledTask.cancel()
+            let cancelledResult = await cancelledTask.value
+            XCTAssertNil(cancelledResult)
+            XCTAssertTrue(
+                FileManager.default.fileExists(atPath: diskFileURL.path),
+                "Cancelled loadImage must never delete a valid cached disk file"
+            )
+            XCTAssertEqual(try Data(contentsOf: diskFileURL), validPNG)
+        }
+    }
+
+    func testArtworkPipelineRejectsTruncatedPNGAndEvictAdvancesGenerationWhenFileMissing() async throws {
+        let host = "artwork-truncated-\(UUID().uuidString.lowercased()).local"
+        try await withCleanArtworkPipeline(host: host) {
+            let validPNG = try makeValidPNGData(width: 16, height: 16)
+            let truncatedPNG = Data(validPNG.prefix(40))
+            XCTAssertTrue(ArtworkPipeline.isDecodableImagePayload(validPNG))
+            XCTAssertFalse(ArtworkPipeline.isDecodableImagePayload(truncatedPNG), "Truncated PNG header without image data must fail pixel decode")
+
+            let url = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/img/poster/tmdb/truncated.png"))
+            let rawKey = ArtworkPipeline.rawIdentity(for: url)
+            let diskFileURL = ArtworkPipeline.diskFileURL(for: url)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: diskFileURL.path))
+
+            let pin = ArtworkPipeline.shared.diskMutation.pin(key: rawKey)
+            withExtendedLifetime(pin.lease) {
+                ArtworkPipeline.shared.evictCorruptDiskFile(
+                    at: diskFileURL,
+                    rawKey: rawKey,
+                    clearEpoch: pin.clearEpoch,
+                    expectedGeneration: pin.generation
+                )
+            }
+            XCTAssertNotEqual(
+                ArtworkPipeline.shared.diskMutation.generation(for: rawKey),
+                pin.generation,
+                "evictCorruptDiskFile must advance generation even when disk file does not exist yet"
+            )
+
+            ArtworkPipeline.shared.scheduleDiskWrite(
+                data: truncatedPNG,
+                to: diskFileURL,
+                rawKey: rawKey,
+                clearEpoch: pin.clearEpoch,
+                expectedGeneration: pin.generation,
+                lease: pin.lease
+            )
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            XCTAssertFalse(
+                FileManager.default.fileExists(atPath: diskFileURL.path),
+                "Queued scheduleDiskWrite with prior generation must abort after evictCorruptDiskFile"
+            )
+        }
+    }
+
+    func testDiskMutationCoordinator2048RolloverPinsActiveKey() {
+        let coordinator = ArtworkPipeline.DiskMutationCoordinator()
+        let pinnedGeneration: UInt64
+        var activeLease: ArtworkPipeline.DiskKeyLease?
+        do {
+            let pin = coordinator.pin(key: "active-key")
+            pinnedGeneration = pin.generation
+            activeLease = pin.lease
+        }
+        XCTAssertEqual(pinnedGeneration, 0)
+        XCTAssertEqual(coordinator.withLock { $0.activeCounts["active-key"] }, 1)
+
+        withExtendedLifetime(activeLease) {
+            for i in 0..<2_500 {
+                _ = coordinator.advanceGeneration(for: "idle-\(i)")
+            }
+            XCTAssertLessThanOrEqual(coordinator.trackedKeyCount, 2048)
+            XCTAssertEqual(
+                coordinator.generation(for: "active-key"),
+                pinnedGeneration,
+                "Pinned active key generation must never be bumped by 2048-key rollover"
+            )
+        }
+
+        let updatedGen = coordinator.advanceGeneration(for: "active-key")
+        XCTAssertGreaterThan(updatedGen, 2_500)
+
+        // After releasing lease, active-key becomes idle and future rollovers evict it while advancing minFloor past updatedGen.
+        activeLease = nil
+        XCTAssertNil(coordinator.withLock { $0.activeCounts["active-key"] })
+        for i in 2_500..<5_000 {
+            _ = coordinator.advanceGeneration(for: "idle-\(i)")
+        }
+        XCTAssertLessThanOrEqual(coordinator.trackedKeyCount, 2048)
+        XCTAssertGreaterThan(coordinator.generation(for: "active-key"), updatedGen)
     }
 }

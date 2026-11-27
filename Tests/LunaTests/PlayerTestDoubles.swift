@@ -26,11 +26,19 @@ final class MockPlayerTransport: PlayerTransportControlling {
     var lastLoadedOptions: LoadOptions?
     var lastReloadedOptions: LoadOptions?
     var reloadCallCount: Int = 0
+    var heldPictureFrameWaitSeconds: Double = 0
+    var attachedStillView: AetherStillView?
+    var isHoldingOutgoingPicture: Bool = false
+    var holdOutgoingPictureCallCount: Int = 0
+    var releaseOutgoingPictureCallCount: Int = 0
+    var holdOutgoingPictureResult: Bool = true
 
     var onPlay: (() -> Void)?
     var onPause: (() -> Void)?
     var onSeek: ((Double, Bool) async -> Void)?
     var onSetAudioDelay: ((Double) -> Void)?
+    var onHoldOutgoingPicture: (() async -> Bool)?
+    var onReleaseOutgoingPicture: (() -> Void)?
     var onLoadStream: ((URL, Double?, LoadOptions) async throws -> Void)?
     var onReloadAtCurrentPosition: ((inout LoadOptions) throws -> Void)?
     var onStop: ((Bool, Bool) -> Void)?
@@ -110,6 +118,32 @@ final class MockPlayerTransport: PlayerTransportControlling {
     func clearSubtitle() {
         activeSubtitleTrackIndex = nil
         events.append("clearSubtitle")
+    }
+
+    func attachStillView(_ view: AetherStillView?) {
+        attachedStillView = view
+        events.append(view == nil ? "detachStillView" : "attachStillView")
+    }
+
+    @discardableResult
+    func holdOutgoingPicture() async -> Bool {
+        holdOutgoingPictureCallCount += 1
+        events.append("holdOutgoingPicture")
+        let held: Bool
+        if let onHoldOutgoingPicture {
+            held = await onHoldOutgoingPicture()
+        } else {
+            held = holdOutgoingPictureResult
+        }
+        isHoldingOutgoingPicture = held
+        return held
+    }
+
+    func releaseOutgoingPicture() {
+        releaseOutgoingPictureCallCount += 1
+        isHoldingOutgoingPicture = false
+        events.append("releaseOutgoingPicture")
+        onReleaseOutgoingPicture?()
     }
 
     func prepareForItemReplacement() {

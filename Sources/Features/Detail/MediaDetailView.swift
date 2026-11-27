@@ -39,6 +39,14 @@ extension AppSessionStore: MediaDetailSessionContext {
     }
 }
 
+enum PreviewDetailAutoOpenSheet: Equatable, Sendable {
+    case sourcePicker
+    case seasons
+    case more
+    case overview
+    case delete
+}
+
 struct MediaDetailView: View {
     @Environment(AppSessionStore.self) private var sessionStore
     @Environment(\.lunaSubpageVisibility) private var subpageVisibility
@@ -48,6 +56,7 @@ struct MediaDetailView: View {
     let itemId: String
     let initialTitle: String
     var previewAutoOpenSourcePicker: Bool = false
+    var previewAutoOpenSheet: PreviewDetailAutoOpenSheet? = nil
 
     @State private var viewModel: MediaDetailViewModel
     @State private var subpageToken = UUID()
@@ -57,7 +66,8 @@ struct MediaDetailView: View {
     @State private var preserveEpisodeFocusAfterAction: Bool = false
     @State private var restoreFocusEpisodeID: String?
     @State private var restoreFocusNonce: Int = 0
-    @State private var didAutoOpenPreviewSourcePicker: Bool = false
+    @State private var didAutoOpenPreviewSheet: Bool = false
+    @State private var selectedCastMember: TvCastMember?
 
     private enum PendingMoreSheetAction {
         case readOverview
@@ -74,12 +84,14 @@ struct MediaDetailView: View {
         mediaType: String,
         itemId: String,
         initialTitle: String,
-        previewAutoOpenSourcePicker: Bool = false
+        previewAutoOpenSourcePicker: Bool = false,
+        previewAutoOpenSheet: PreviewDetailAutoOpenSheet? = nil
     ) {
         self.mediaType = mediaType
         self.itemId = itemId
         self.initialTitle = initialTitle
         self.previewAutoOpenSourcePicker = previewAutoOpenSourcePicker
+        self.previewAutoOpenSheet = previewAutoOpenSheet
         _viewModel = State(
             initialValue: MediaDetailViewModel(
                 mediaType: mediaType,
@@ -87,6 +99,10 @@ struct MediaDetailView: View {
                 initialTitle: initialTitle
             )
         )
+    }
+
+    private var effectivePreviewSheet: PreviewDetailAutoOpenSheet? {
+        previewAutoOpenSheet ?? (previewAutoOpenSourcePicker ? .sourcePicker : nil)
     }
 
     private var scopeKey: String {
@@ -137,6 +153,7 @@ struct MediaDetailView: View {
                                 detailGutter: detailGutter,
                                 restoreFocusEpisodeID: preserveEpisodeFocusAfterAction ? restoreFocusEpisodeID : nil,
                                 restoreFocusNonce: restoreFocusNonce,
+                                previewAutoOpenSeasonPicker: effectivePreviewSheet == .seasons,
                                 onSelectSeason: { seasonNumber in
                                     lastFocusedEpisodeID = nil
                                     restoreFocusEpisodeID = nil
@@ -169,6 +186,16 @@ struct MediaDetailView: View {
                                 }
                             )
                         }
+
+                        if let castMembers = detail.castMembers, !castMembers.isEmpty {
+                            DetailCastSectionView(
+                                castMembers: castMembers,
+                                client: viewModel.client,
+                                detailGutter: detailGutter
+                            ) { member in
+                                selectedCastMember = member
+                            }
+                        }
                     } else if viewModel.isLoading {
                         LunaLoadingRow(message: "Henter detaljer for \(initialTitle)…")
                             .padding(.horizontal, detailGutter)
@@ -181,7 +208,7 @@ struct MediaDetailView: View {
                         .padding(.top, 140)
                     }
                 }
-                .padding(.bottom, viewModel.detail?.mediaType == "series" ? 84 : 0)
+                .padding(.bottom, (viewModel.detail?.mediaType == "series" || !(viewModel.detail?.castMembers?.isEmpty ?? true)) ? 84 : 0)
             }
             .scrollBounceBehavior(.basedOnSize)
             .contentMargins(.zero, for: .scrollContent)
@@ -192,6 +219,9 @@ struct MediaDetailView: View {
         .lunaNavigationContainerBackdrop(mode: .probeOnly)
         .focusScope(detailFocusNamespace)
         .toolbar(.hidden, for: .tabBar)
+        .navigationDestination(item: $selectedCastMember) { member in
+            SearchView(initialQuery: member.name, isRootTab: false)
+        }
         .sheet(item: $viewModel.pendingDeleteTarget) { target in
             DetailDeleteSheetView(
                 target: target,
@@ -330,9 +360,20 @@ struct MediaDetailView: View {
         }
         .task(id: scopeKey) {
             await viewModel.handleTaskAppearance(scopeKey: scopeKey, sessionContext: sessionStore)
-            if previewAutoOpenSourcePicker, !didAutoOpenPreviewSourcePicker, viewModel.detail != nil {
-                didAutoOpenPreviewSourcePicker = true
-                viewModel.openPrimarySourcePicker()
+            if let sheet = effectivePreviewSheet, !didAutoOpenPreviewSheet, viewModel.detail != nil {
+                didAutoOpenPreviewSheet = true
+                switch sheet {
+                case .sourcePicker:
+                    viewModel.openPrimarySourcePicker()
+                case .seasons:
+                    break
+                case .more:
+                    viewModel.showMoreSheet = true
+                case .overview:
+                    viewModel.showFullOverviewSheet = true
+                case .delete:
+                    viewModel.requestDeleteTitle()
+                }
             }
         }
         .onChange(of: sessionStore.homeRefreshNonce) { _, newNonce in
@@ -357,7 +398,7 @@ struct MediaDetailView: View {
                 subpageVisibility.leaveModal(modalToken)
             }
             if SubpageVisibilityPolicy.shouldLeaveSubpageOnDisappear(
-                hasPushedChildDestination: false,
+                hasPushedChildDestination: selectedCastMember != nil,
                 hasActivePlayback: isLaunchingPlayback,
                 isShowingModalSheet: isShowingModal
             ) {

@@ -73,6 +73,7 @@ public final class ServerSessionCore {
     public var roomName: String
     public internal(set) var isRoomUnassigned: Bool = false
     public var hardwareProfile: String
+    public internal(set) var isHardwareProfileExplicit: Bool = true
     public var serverAtmosphere: String? = nil
     public internal(set) var serverEquipmentLabel: String? = nil
     public internal(set) var serverSpeakerLayout: String? = nil
@@ -107,6 +108,7 @@ public final class ServerSessionCore {
     @ObservationIgnored internal var overrideSyncDebounceNs: UInt64 = 350_000_000
     @ObservationIgnored internal var didSyncCapabilitiesThisLaunch: Bool = false
     @ObservationIgnored internal var pairingEpoch: UInt64 = 0
+    @ObservationIgnored private let isPreviewSession: Bool
     @ObservationIgnored public private(set) var appliedTLSConfiguredHost: String?
 
     public var isPaired: Bool {
@@ -166,6 +168,7 @@ public final class ServerSessionCore {
     ) {
         self.defaults = defaults
         self.platform = platform
+        self.isPreviewSession = false
         self.comfort = ComfortPreferences(defaults: defaults)
         self.deviceID = SideloadSafeStorage.ensurePersistentDeviceID(defaults: defaults)
         self.cachedAppVersion = platform.appVersionString()
@@ -220,8 +223,9 @@ public final class ServerSessionCore {
         ephemeralDefaults.removePersistentDomain(forName: suiteName)
         self.defaults = ephemeralDefaults
         self.platform = platform
+        self.isPreviewSession = true
         let previewComfort = ComfortPreferences(defaults: ephemeralDefaults)
-        if previewConfiguration.screen == .playerNextEpisode {
+        if previewConfiguration.screen == .playerNextEpisode || previewConfiguration.screen == .playerNerdHud {
             previewComfort.showNerdHUD = true
             previewComfort.autoPlayNextEpisode = true
         }
@@ -319,7 +323,10 @@ public final class ServerSessionCore {
     }
 
     public func makeClient(overrideBaseURL: URL) -> LunaCoreClient? {
-        platform.makeClient(
+        if isPreviewSession, overrideBaseURL.host?.lowercased() == PreviewMockFixtures.previewHost {
+            return cachedClient
+        }
+        return platform.makeClient(
             baseURL: overrideBaseURL,
             deviceID: deviceID,
             deviceToken: deviceToken,
@@ -380,6 +387,7 @@ public final class ServerSessionCore {
         self.roomName = pairedDevice.roomName
         self.isRoomUnassigned = pairedDevice.roomUnassigned ?? false
         self.hardwareProfile = pairedDevice.hardwareProfile
+        self.isHardwareProfileExplicit = pairedDevice.hardwareProfileExplicit ?? true
         self.serverAtmosphere = pairedDevice.atmosphere
         self.serverEquipmentLabel = pairedDevice.equipmentLabel
         self.serverSpeakerLayout = pairedDevice.speakerLayout
@@ -417,6 +425,7 @@ public final class ServerSessionCore {
         DiskSWRStore.clearMemory()
         Task { await DiskSWRStore.clearAllAsync() }
         deviceToken = nil
+        isHardwareProfileExplicit = true
         serverAtmosphere = nil
         serverEquipmentLabel = nil
         serverSpeakerLayout = nil

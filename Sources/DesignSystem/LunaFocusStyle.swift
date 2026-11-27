@@ -95,15 +95,14 @@ public struct LunaFocusSurfaceModifier: ViewModifier {
         )
         let markerColor = customAccent ? accentColor : LunaTheme.amber
 
-        let glowColor: Color = {
-            guard isFocused else { return .clear }
+        let showsGlow: Bool = {
             switch kind {
             case .listRow:
-                return .clear
+                return false
             case .control:
-                return isDestructive ? .clear : resolvedGlow.opacity(resolvedStrength)
+                return !isDestructive
             case .card:
-                return resolvedGlow.opacity(resolvedStrength)
+                return true
             }
         }()
 
@@ -140,14 +139,50 @@ public struct LunaFocusSurfaceModifier: ViewModifier {
                 .allowsHitTesting(false)
                 .transaction { $0.animation = nil }
             )
-            .shadow(
-                color: glowColor,
-                radius: glowColor == .clear ? 0 : LunaFocusStyle.glowBlur,
-                x: 0,
-                y: glowColor == .clear ? 0 : LunaFocusStyle.glowOffsetY
-            )
+            .background {
+                if showsGlow {
+                    glowBackdrop(
+                        color: resolvedGlow,
+                        strength: resolvedStrength,
+                        cornerRadius: cornerRadius,
+                        isFocused: isFocused
+                    )
+                }
+            }
             .scaleEffect(scale)
             .animation(LunaFocusStyle.spring(reduceMotion: reduceMotion), value: isFocused)
+    }
+
+    @ViewBuilder
+    private func glowBackdrop(
+        color: Color,
+        strength: Double,
+        cornerRadius: CGFloat,
+        isFocused: Bool
+    ) -> some View {
+        if cornerRadius >= LunaTokens.Radius.pill {
+            Capsule()
+                .fill(LunaTheme.surface)
+                .shadow(
+                    color: color.opacity(strength),
+                    radius: LunaFocusStyle.glowBlur,
+                    x: 0,
+                    y: LunaFocusStyle.glowOffsetY
+                )
+                .opacity(isFocused ? 1.0 : 0.0)
+                .allowsHitTesting(false)
+        } else {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(LunaTheme.surface)
+                .shadow(
+                    color: color.opacity(strength),
+                    radius: LunaFocusStyle.glowBlur,
+                    x: 0,
+                    y: LunaFocusStyle.glowOffsetY
+                )
+                .opacity(isFocused ? 1.0 : 0.0)
+                .allowsHitTesting(false)
+        }
     }
 }
 
@@ -190,16 +225,26 @@ private struct LunaCardLampGlowModifier: ViewModifier {
     @Environment(\.lunaRoomAtmosphere) private var roomAtmosphere
 
     let isFocused: Bool
+    let cornerRadius: CGFloat
 
     func body(content: Content) -> some View {
+        let scale = reduceMotion ? 1.0 : LunaFocusStyle.scaleEffect(for: .card, isFocused: isFocused)
+
         content
-            .shadow(
-                color: isFocused ? roomAtmosphere.lampColor.opacity(roomAtmosphere.lampStrength) : .clear,
-                radius: isFocused ? LunaFocusStyle.glowBlur : 0,
-                x: 0,
-                y: isFocused ? LunaFocusStyle.glowOffsetY : 0
-            )
-            .animation(LunaFocusStyle.spring(reduceMotion: reduceMotion), value: isFocused)
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(LunaTheme.surface)
+                    .shadow(
+                        color: roomAtmosphere.lampColor.opacity(roomAtmosphere.lampStrength),
+                        radius: LunaFocusStyle.glowBlur,
+                        x: 0,
+                        y: LunaFocusStyle.glowOffsetY
+                    )
+                    .scaleEffect(scale)
+                    .opacity(isFocused ? 1.0 : 0.0)
+                    .animation(LunaFocusStyle.spring(reduceMotion: reduceMotion), value: isFocused)
+                    .allowsHitTesting(false)
+            }
     }
 }
 
@@ -209,15 +254,65 @@ private struct LunaFocusCaptionRevealModifier: ViewModifier {
 
     let isVisible: Bool
     let isFocused: Bool
+    let animate: Bool
 
     func body(content: Content) -> some View {
         content
             .opacity(isVisible ? 1.0 : 0.0)
             .animation(
-                LunaFocusStyle.captionRevealAnimation(isFocused: isFocused, reduceMotion: reduceMotion),
+                animate
+                    ? LunaFocusStyle.captionRevealAnimation(isFocused: isFocused, reduceMotion: reduceMotion)
+                    : nil,
                 value: isFocused
             )
             .allowsHitTesting(false)
+    }
+}
+
+/// Lightweight per-card memoization box for `resolveArtworkURL` so focus transitions or parent
+/// re-renders with identical `(path, baseURL, target)` never re-run `URLComponents` parsing.
+@MainActor
+internal final class ArtworkURLMemoBox {
+    private var hasCachedResult: Bool = false
+    private var lastPath: String?
+    private var lastBaseURL: URL?
+    private var lastTarget: LunaCoreClient.ArtworkTargetWidth?
+    private var lastResolvedURL: URL?
+
+    nonisolated init() {}
+
+    func resolve(
+        path: String?,
+        client: LunaCoreClient?,
+        target: LunaCoreClient.ArtworkTargetWidth
+    ) -> URL? {
+        guard let client else {
+            return resolve(path: path, baseURL: nil, target: target) { nil }
+        }
+        return resolve(path: path, baseURL: client.baseURL, target: target) {
+            client.resolveArtworkURL(path, target: target)
+        }
+    }
+
+    func resolve(
+        path: String?,
+        baseURL: URL?,
+        target: LunaCoreClient.ArtworkTargetWidth,
+        resolver: () -> URL?
+    ) -> URL? {
+        if hasCachedResult,
+           lastPath == path,
+           lastBaseURL == baseURL,
+           lastTarget == target {
+            return lastResolvedURL
+        }
+        let resolved = resolver()
+        hasCachedResult = true
+        lastPath = path
+        lastBaseURL = baseURL
+        lastTarget = target
+        lastResolvedURL = resolved
+        return resolved
     }
 }
 
@@ -275,12 +370,25 @@ public extension View {
         modifier(LunaCardFocusFrameModifier(cornerRadius: cornerRadius, isFocused: isFocused))
     }
 
-    func lunaCardLampGlow(isFocused: Bool) -> some View {
-        modifier(LunaCardLampGlowModifier(isFocused: isFocused))
+    func lunaCardLampGlow(
+        isFocused: Bool,
+        cornerRadius: CGFloat = LunaTokens.Radius.card
+    ) -> some View {
+        modifier(LunaCardLampGlowModifier(isFocused: isFocused, cornerRadius: cornerRadius))
     }
 
-    func lunaFocusCaptionReveal(isVisible: Bool, isFocused: Bool) -> some View {
-        modifier(LunaFocusCaptionRevealModifier(isVisible: isVisible, isFocused: isFocused))
+    func lunaFocusCaptionReveal(
+        isVisible: Bool,
+        isFocused: Bool,
+        animate: Bool = true
+    ) -> some View {
+        modifier(
+            LunaFocusCaptionRevealModifier(
+                isVisible: isVisible,
+                isFocused: isFocused,
+                animate: animate
+            )
+        )
     }
 
     @MainActor

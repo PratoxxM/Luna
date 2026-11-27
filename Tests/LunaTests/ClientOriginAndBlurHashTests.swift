@@ -228,7 +228,19 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         )
         XCTAssertEqual(
             client.resolveArtworkURL("/api/tv/v2/img/card/tmdb/hero.jpg", target: .hero4K)?.absoluteString,
-            "https://media.example.invalid/api/tv/v2/img/backdrop/tmdb/hero.jpg"
+            "https://media.example.invalid/api/tv/v2/img/backdrop4k/tmdb/hero.jpg"
+        )
+        XCTAssertEqual(
+            client.resolveArtworkURL("/api/tv/v2/img/still/tmdb/ep.jpg", target: .hero4K)?.absoluteString,
+            "https://media.example.invalid/api/tv/v2/img/backdrop4k/tmdb/ep.jpg"
+        )
+        XCTAssertEqual(
+            client.resolveArtworkURL("/api/tv/v2/img/backdrop/tmdb/hero.jpg", target: .hero4K)?.absoluteString,
+            "https://media.example.invalid/api/tv/v2/img/backdrop4k/tmdb/hero.jpg"
+        )
+        XCTAssertEqual(
+            client.resolveArtworkURL("/api/tv/v2/img/backdrop4k/tmdb/hero.jpg", target: .hero4K)?.absoluteString,
+            "https://media.example.invalid/api/tv/v2/img/backdrop4k/tmdb/hero.jpg"
         )
         XCTAssertEqual(
             client.resolveArtworkURL("/api/tv/v2/img/card/tmdb/hero.jpg", target: .landscape2x)?.absoluteString,
@@ -237,74 +249,83 @@ final class ClientOriginAndBlurHashTests: XCTestCase {
         XCTAssertNil(client.resolveArtworkURL("   ", target: .poster2x))
     }
 
+    private func withCleanArtworkPipeline(host: String, _ body: () async throws -> Void) async throws {
+        await ArtworkPipeline.shared.clearAll()
+        do {
+            try await body()
+        } catch {
+            MockURLProtocol.unregister(host: host)
+            await ArtworkPipeline.shared.clearAll()
+            throw error
+        }
+        MockURLProtocol.unregister(host: host)
+        await ArtworkPipeline.shared.clearAll()
+    }
+
     func testCanonicalSubjectIdentityBridgesTMDBAndQueryWidthVariantsAndGrayscaleDecodeFallback() async throws {
         let host = "artwork-gray-\(UUID().uuidString.lowercased()).local"
-        defer {
-            MockURLProtocol.unregister(host: host)
-            Task { await ArtworkPipeline.shared.clearAll() }
-        }
-        await ArtworkPipeline.shared.clearAll()
-
-        let w1280URL = try XCTUnwrap(URL(string: "https://image.tmdb.org/t/p/w1280/severance_hero.jpg"))
-        let orig4KURL = try XCTUnwrap(URL(string: "https://image.tmdb.org/t/p/original/severance_hero.jpg"))
-        XCTAssertEqual(
-            ArtworkPipeline.canonicalSubjectIdentity(for: w1280URL),
-            ArtworkPipeline.canonicalSubjectIdentity(for: orig4KURL)
-        )
-
-        let lanCard = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/img/card/tmdb/severance_hero.jpg"))
-        let lanBackdrop = try XCTUnwrap(URL(string: "https://\(host):8920/api/tv/v2/img/backdrop/tmdb/severance_hero.jpg"))
-        XCTAssertEqual(
-            ArtworkPipeline.canonicalSubjectIdentity(for: lanCard),
-            ArtworkPipeline.canonicalSubjectIdentity(for: lanBackdrop)
-        )
-
-        let lan1280 = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/artwork/backdrop?id=550&w=1280"))
-        let lan3840 = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/artwork/backdrop?id=550&w=3840"))
-        XCTAssertEqual(
-            ArtworkPipeline.canonicalSubjectIdentity(for: lan1280),
-            ArtworkPipeline.canonicalSubjectIdentity(for: lan3840)
-        )
-
-        let sampleCG = try XCTUnwrap(BlurHashDecoder.decode("LEHV6nWB2yk8pyo0adR*.7kCMdnj", width: 64, height: 36))
-        ArtworkPipeline.shared.insertMemoryCachedImage(sampleCG, url: w1280URL, maxPixelSize: 1280)
-        let bridgedHit = ArtworkPipeline.shared.anyMemoryCachedImage(for: orig4KURL, preferredMaxPixelSize: 3840)
-        XCTAssertNotNil(bridgedHit, "4K original hero URL must immediately find cached w1280 shelf backdrop in 0 ms")
-        XCTAssertTrue(bridgedHit?.image === sampleCG)
-
-        // Verify 8-bit grayscale PNG decodes cleanly through `downsampleAndDecode` + native-dimension clamping (16px requested at 1920px stays 16x16)
-        let graySpace = CGColorSpaceCreateDeviceGray()
-        var grayPixels = [UInt8](repeating: 180, count: 16 * 16)
-        let grayCG: CGImage = try grayPixels.withUnsafeMutableBytes { rawBuf in
-            let ctx = try XCTUnwrap(
-                CGContext(
-                    data: rawBuf.baseAddress,
-                    width: 16,
-                    height: 16,
-                    bitsPerComponent: 8,
-                    bytesPerRow: 16,
-                    space: graySpace,
-                    bitmapInfo: CGImageAlphaInfo.none.rawValue
-                )
+        try await withCleanArtworkPipeline(host: host) {
+            let w1280URL = try XCTUnwrap(URL(string: "https://image.tmdb.org/t/p/w1280/severance_hero.jpg"))
+            let orig4KURL = try XCTUnwrap(URL(string: "https://image.tmdb.org/t/p/original/severance_hero.jpg"))
+            XCTAssertEqual(
+                ArtworkPipeline.canonicalSubjectIdentity(for: w1280URL),
+                ArtworkPipeline.canonicalSubjectIdentity(for: orig4KURL)
             )
-            return try XCTUnwrap(ctx.makeImage())
-        }
-        let pngData = NSMutableData()
-        let dest = try XCTUnwrap(CGImageDestinationCreateWithData(pngData as CFMutableData, "public.png" as CFString, 1, nil))
-        CGImageDestinationAddImage(dest, grayCG, nil)
-        XCTAssertTrue(CGImageDestinationFinalize(dest))
-        let pngBytes = pngData as Data
 
-        MockURLProtocol.register(host: host) { request in
-            let url = try XCTUnwrap(request.url)
-            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
-            return (resp, pngBytes)
+            let lanCard = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/img/card/tmdb/severance_hero.jpg"))
+            let lanBackdrop = try XCTUnwrap(URL(string: "https://\(host):8920/api/tv/v2/img/backdrop/tmdb/severance_hero.jpg"))
+            XCTAssertEqual(
+                ArtworkPipeline.canonicalSubjectIdentity(for: lanCard),
+                ArtworkPipeline.canonicalSubjectIdentity(for: lanBackdrop)
+            )
+
+            let lan1280 = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/artwork/backdrop?id=550&w=1280"))
+            let lan3840 = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/artwork/backdrop?id=550&w=3840"))
+            XCTAssertEqual(
+                ArtworkPipeline.canonicalSubjectIdentity(for: lan1280),
+                ArtworkPipeline.canonicalSubjectIdentity(for: lan3840)
+            )
+
+            let sampleCG = try XCTUnwrap(BlurHashDecoder.decode("LEHV6nWB2yk8pyo0adR*.7kCMdnj", width: 64, height: 36))
+            ArtworkPipeline.shared.insertMemoryCachedImage(sampleCG, url: w1280URL, maxPixelSize: 1280)
+            let bridgedHit = ArtworkPipeline.shared.anyMemoryCachedImage(for: orig4KURL, preferredMaxPixelSize: 3840)
+            XCTAssertNotNil(bridgedHit, "4K original hero URL must immediately find cached w1280 shelf backdrop in 0 ms")
+            XCTAssertTrue(bridgedHit?.image === sampleCG)
+
+            // Verify 8-bit grayscale PNG decodes cleanly through `downsampleAndDecode` + native-dimension clamping (16px requested at 1920px stays 16x16)
+            let graySpace = CGColorSpaceCreateDeviceGray()
+            var grayPixels = [UInt8](repeating: 180, count: 16 * 16)
+            let grayCG: CGImage = try grayPixels.withUnsafeMutableBytes { rawBuf in
+                let ctx = try XCTUnwrap(
+                    CGContext(
+                        data: rawBuf.baseAddress,
+                        width: 16,
+                        height: 16,
+                        bitsPerComponent: 8,
+                        bytesPerRow: 16,
+                        space: graySpace,
+                        bitmapInfo: CGImageAlphaInfo.none.rawValue
+                    )
+                )
+                return try XCTUnwrap(ctx.makeImage())
+            }
+            let pngData = NSMutableData()
+            let dest = try XCTUnwrap(CGImageDestinationCreateWithData(pngData as CFMutableData, "public.png" as CFString, 1, nil))
+            CGImageDestinationAddImage(dest, grayCG, nil)
+            XCTAssertTrue(CGImageDestinationFinalize(dest))
+            let pngBytes = pngData as Data
+
+            MockURLProtocol.register(host: host) { request in
+                let url = try XCTUnwrap(request.url)
+                let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+                return (resp, pngBytes)
+            }
+            let client = try MockURLProtocol.makeClient(host: host)
+            let grayURL = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/img/grayscale.png"))
+            let loadedGray = await ArtworkPipeline.shared.loadImage(url: grayURL, maxPixelSize: 1920, client: client)
+            XCTAssertNotNil(loadedGray, "Grayscale artwork must never be lost if byPreparingForDisplay() returns nil")
+            XCTAssertEqual(loadedGray?.width, 16, "downsampleAndDecode must clamp maxPixelSize to native pixel dimensions")
+            XCTAssertEqual(loadedGray?.height, 16)
         }
-        let client = try MockURLProtocol.makeClient(host: host)
-        let grayURL = try XCTUnwrap(URL(string: "http://\(host):8090/api/tv/v2/img/grayscale.png"))
-        let loadedGray = await ArtworkPipeline.shared.loadImage(url: grayURL, maxPixelSize: 1920, client: client)
-        XCTAssertNotNil(loadedGray, "Grayscale artwork must never be lost if byPreparingForDisplay() returns nil")
-        XCTAssertEqual(loadedGray?.width, 16, "downsampleAndDecode must clamp maxPixelSize to native pixel dimensions")
-        XCTAssertEqual(loadedGray?.height, 16)
     }
 }

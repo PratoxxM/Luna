@@ -30,23 +30,45 @@ extension PlayerTrackController {
     }
 
     func searchAndAttachSubtitles() {
-        subtitleActionTask?.cancel()
+        let priorHDRTask = takeAndCancelPendingHDRSwitchTask()
+        let priorUpscaleTask = takeAndCancelPendingUpscaleReloadTask()
+        let priorSubtitleTask = takeAndCancelPendingSubtitleActionTask(clearBusyFlags: false)
+        let expectedGeneration = subtitleActionGeneration
         subtitleActionTask = Task { @MainActor [weak self] in
-            _ = await self?.performSearchAndAttachSubtitles()
+            await priorHDRTask?.value
+            await priorUpscaleTask?.value
+            await priorSubtitleTask?.value
+            guard !Task.isCancelled, let self, self.subtitleActionGeneration == expectedGeneration else { return }
+            if priorSubtitleTask != nil {
+                self.isSearchingSubtitles = false
+                self.isAutoAligningSubtitles = false
+            }
+            _ = await self.performSearchAndAttachSubtitles(expectedGeneration: expectedGeneration)
+            if self.subtitleActionGeneration == expectedGeneration {
+                self.subtitleActionTask = nil
+            }
         }
     }
 
     @discardableResult
-    func performSearchAndAttachSubtitles() async -> Bool {
-        guard let host,
+    func performSearchAndAttachSubtitles(expectedGeneration: UInt64? = nil) async -> Bool {
+        guard !Task.isCancelled,
+              expectedGeneration == nil || subtitleActionGeneration == expectedGeneration,
+              let host,
               let client = host.sessionController.activeClient,
               let session = host.sessionController.activeSession,
-              !isSearchingSubtitles else {
+              !isSearchingSubtitles,
+              !isAutoAligningSubtitles else {
             return false
         }
         isSearchingSubtitles = true
         subtitleActionStatusMessage = LunaCopy.searchingSubtitlesTitle
-        defer { isSearchingSubtitles = false }
+        defer {
+            if expectedGeneration == nil || subtitleActionGeneration == expectedGeneration {
+                isSearchingSubtitles = false
+                subtitleActionTask = nil
+            }
+        }
 
         do {
             let langs = PlaybackSubtitleSyncActionPolicy.preferredSearchLanguages(
@@ -58,6 +80,10 @@ extension PlayerTrackController {
                 forced: false,
                 cleanSdh: true
             )
+            try Task.checkCancellation()
+            guard expectedGeneration == nil || subtitleActionGeneration == expectedGeneration else {
+                return false
+            }
             let mergedExternals = PlaybackSubtitleSyncActionPolicy.mergedExternalSubtitles(
                 existing: session.tracks?.externalSubtitles ?? [],
                 response: res
@@ -76,6 +102,10 @@ extension PlayerTrackController {
                 applyAndPersistSubtitleDelayMs(delayMs)
             }
             try await reloadExternalSubtitlesInPlace(session: updatedSession, client: client)
+            try Task.checkCancellation()
+            guard expectedGeneration == nil || subtitleActionGeneration == expectedGeneration else {
+                return false
+            }
             if !engine.subtitleTracks.isEmpty { subtitleTracks = engine.subtitleTracks }
             let descriptors = effectiveSubtitleDescriptors()
             let targetID = SmartTrackRuleEngine.selectBestSubtitleID(forLanguage: "nob", in: descriptors)
@@ -86,28 +116,49 @@ extension PlayerTrackController {
             }
             subtitleActionStatusMessage = LunaCopy.subtitleAttachedStatus
             return true
-        } catch where LunaCoreError.isCancellation(error) {
-            subtitleActionStatusMessage = nil
+        } catch where LunaCoreError.isCancellation(error) || Task.isCancelled {
+            if expectedGeneration == nil || subtitleActionGeneration == expectedGeneration {
+                subtitleActionStatusMessage = nil
+            }
             return false
         } catch {
-            subtitleActionStatusMessage = LunaCopy.friendlyErrorMessage(error, fallback: LunaCopy.noSubtitlesFoundStatus)
+            if expectedGeneration == nil || subtitleActionGeneration == expectedGeneration {
+                subtitleActionStatusMessage = LunaCopy.friendlyErrorMessage(error, fallback: LunaCopy.noSubtitlesFoundStatus)
+            }
             return false
         }
     }
 
     func autoAlignActiveSubtitle() {
-        subtitleActionTask?.cancel()
+        let priorHDRTask = takeAndCancelPendingHDRSwitchTask()
+        let priorUpscaleTask = takeAndCancelPendingUpscaleReloadTask()
+        let priorSubtitleTask = takeAndCancelPendingSubtitleActionTask(clearBusyFlags: false)
+        let expectedGeneration = subtitleActionGeneration
         subtitleActionTask = Task { @MainActor [weak self] in
-            _ = await self?.performAutoAlignActiveSubtitle()
+            await priorHDRTask?.value
+            await priorUpscaleTask?.value
+            await priorSubtitleTask?.value
+            guard !Task.isCancelled, let self, self.subtitleActionGeneration == expectedGeneration else { return }
+            if priorSubtitleTask != nil {
+                self.isSearchingSubtitles = false
+                self.isAutoAligningSubtitles = false
+            }
+            _ = await self.performAutoAlignActiveSubtitle(expectedGeneration: expectedGeneration)
+            if self.subtitleActionGeneration == expectedGeneration {
+                self.subtitleActionTask = nil
+            }
         }
     }
 
     @discardableResult
-    func performAutoAlignActiveSubtitle() async -> Bool {
-        guard let host,
+    func performAutoAlignActiveSubtitle(expectedGeneration: UInt64? = nil) async -> Bool {
+        guard !Task.isCancelled,
+              expectedGeneration == nil || subtitleActionGeneration == expectedGeneration,
+              let host,
               let client = host.sessionController.activeClient,
               let session = host.sessionController.activeSession,
-              !isAutoAligningSubtitles else {
+              !isAutoAligningSubtitles,
+              !isSearchingSubtitles else {
             return false
         }
         let descriptors = effectiveSubtitleDescriptors()
@@ -117,25 +168,41 @@ extension PlayerTrackController {
             for: activeSub,
             in: session.tracks?.externalSubtitles ?? []
         )
+        let resolvedTrackIndex: Int? = matchedExt != nil
+            ? activeSub?.id
+            : PlaybackSubtitleSyncActionPolicy.resolvedEmbeddedTrackIndex(
+                for: activeSub,
+                embeddedSubtitles: session.tracks?.embeddedSubtitles ?? [],
+                allDescriptors: descriptors
+            )
         isAutoAligningSubtitles = true
         subtitleActionStatusMessage = LunaCopy.autoAligningSubtitlesTitle
-        defer { isAutoAligningSubtitles = false }
+        defer {
+            if expectedGeneration == nil || subtitleActionGeneration == expectedGeneration {
+                isAutoAligningSubtitles = false
+                subtitleActionTask = nil
+            }
+        }
 
         do {
             let res = try await client.autoAlignSubtitles(
                 sessionId: session.sessionId,
                 subtitleId: matchedExt?.id,
-                trackIndex: activeSub?.id,
+                trackIndex: resolvedTrackIndex,
                 language: activeSub?.language,
                 subtitleDelayMs: nil,
                 applyToFile: matchedExt != nil
             )
+            try Task.checkCancellation()
+            guard expectedGeneration == nil || subtitleActionGeneration == expectedGeneration else {
+                return false
+            }
             guard res.applied else {
-                subtitleActionStatusMessage = res.reason ?? LunaCopy.subtitlesAlignFailedStatus
+                subtitleActionStatusMessage = PlaybackSubtitleSyncActionPolicy.friendlyAlignReasonMessage(res.reason)
                 return false
             }
             applyAndPersistSubtitleDelayMs(res.subtitleDelayMs)
-            if let updatedSub = res.subtitle {
+            if let updatedSub = res.subtitle, res.appliedToFile != false {
                 let merged = PlaybackSubtitleSyncActionPolicy.mergedAlignedSubtitle(
                     existing: session.tracks?.externalSubtitles ?? [],
                     updated: updatedSub
@@ -147,29 +214,59 @@ extension PlayerTrackController {
                 )
                 host.sessionController.activeSession = updatedSession
                 try await reloadExternalSubtitlesInPlace(session: updatedSession, client: client)
+                try Task.checkCancellation()
+                guard expectedGeneration == nil || subtitleActionGeneration == expectedGeneration else {
+                    return false
+                }
             }
             let formattedOffset = PlaybackSyncTimingPolicy.formatSignedDelayMs(subtitleDelayMs)
             subtitleActionStatusMessage = "\(LunaCopy.subtitlesAlignedStatus) · \(formattedOffset)"
             return true
-        } catch where LunaCoreError.isCancellation(error) {
-            subtitleActionStatusMessage = nil
+        } catch where LunaCoreError.isCancellation(error) || Task.isCancelled {
+            if expectedGeneration == nil || subtitleActionGeneration == expectedGeneration {
+                subtitleActionStatusMessage = nil
+            }
             return false
         } catch {
-            subtitleActionStatusMessage = LunaCopy.friendlyErrorMessage(error, fallback: LunaCopy.subtitlesAlignFailedStatus)
+            if expectedGeneration == nil || subtitleActionGeneration == expectedGeneration {
+                subtitleActionStatusMessage = LunaCopy.friendlyErrorMessage(error, fallback: LunaCopy.subtitlesAlignFailedStatus)
+            }
             return false
         }
     }
 
     func switchToHDR10BaseLayer() {
-        upscaleReloadTask?.cancel()
-        upscaleReloadTask = Task { @MainActor [weak self] in
-            await self?.performSwitchToHDR10BaseLayer()
+        if hdrBaseLayerPreSwitchOverride == nil {
+            hdrBaseLayerPreSwitchOverride = comfort.dualLayerOverride
+        }
+        if comfort.dualLayerOverride != .forceOff {
+            comfort.dualLayerOverride = .forceOff
+        }
+        let priorUpscaleTask = takeAndCancelPendingUpscaleReloadTask()
+        let priorSubtitleTask = takeAndCancelPendingSubtitleActionTask(clearBusyFlags: true)
+        let priorHDRTask = takeAndCancelPendingHDRSwitchTask(clearPreSwitchOverride: false)
+        let expectedGeneration = hdrBaseLayerSwitchGeneration
+        hdrBaseLayerSwitchTask = Task { @MainActor [weak self] in
+            await priorUpscaleTask?.value
+            await priorHDRTask?.value
+            await priorSubtitleTask?.value
+            guard !Task.isCancelled, let self, self.hdrBaseLayerSwitchGeneration == expectedGeneration else { return }
+            await self.performSwitchToHDR10BaseLayer(expectedGeneration: expectedGeneration)
         }
     }
 
-    func performSwitchToHDR10BaseLayer() async {
-        let previousOverride = comfort.dualLayerOverride
-        comfort.dualLayerOverride = .forceOff
+    func performSwitchToHDR10BaseLayer(expectedGeneration: UInt64? = nil) async {
+        let fallbackPrevious = comfort.dualLayerOverride
+        let previousOverride = hdrBaseLayerPreSwitchOverride ?? fallbackPrevious
+        if comfort.dualLayerOverride != .forceOff {
+            comfort.dualLayerOverride = .forceOff
+        }
+        defer {
+            if expectedGeneration == nil || hdrBaseLayerSwitchGeneration == expectedGeneration {
+                hdrBaseLayerPreSwitchOverride = nil
+                hdrBaseLayerSwitchTask = nil
+            }
+        }
         guard let host,
               !host.sessionController.isResolving,
               !host.sessionController.isSwitchingSource,
@@ -182,7 +279,9 @@ extension PlayerTrackController {
         let snapshot = PlayerEngineConfigurator.captureReloadComfortSnapshot(
             comfort: comfort,
             audioEnhancement: audioEnhancement,
-            audioDelaySeconds: effectiveAudioDelaySecondsForActiveRoute()
+            audioDelaySeconds: effectiveAudioDelaySecondsForActiveRoute(),
+            binauralAudioActive: isBinauralAudioRouteActive,
+            session: session
         )
         let extSubs: [ExternalSubtitleTrack]? = (session != nil && client != nil)
             ? PlayerEngineConfigurator.externalSubtitleTracks(for: session!, client: client!)
@@ -195,20 +294,34 @@ extension PlayerTrackController {
                 PlayerEngineConfigurator.applyRestoreDisplayAndUpscaleOptions(snapshot, session: session, to: &options)
                 if let extSubs { options.externalSubtitles = extSubs }
             }
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  expectedGeneration == nil || hdrBaseLayerSwitchGeneration == expectedGeneration else {
+                return
+            }
             host.qosReporter.resetDolbyVisionFallback()
             if subtitleDelayMs != 0 {
                 transport.setSoftwareSubtitleDelay(self.subtitleDelaySeconds)
             }
             host.qosReporter.showTransientBanner(LunaCopy.switchToHDR10BaseLayerTitle)
-        } catch where LunaCoreError.isCancellation(error) {
-            comfort.dualLayerOverride = previousOverride
+        } catch where LunaCoreError.isCancellation(error) || Task.isCancelled {
+            if expectedGeneration == nil || hdrBaseLayerSwitchGeneration == expectedGeneration {
+                comfort.dualLayerOverride = previousOverride
+            }
             return
         } catch {
-            comfort.dualLayerOverride = previousOverride
-            guard !Task.isCancelled else { return }
+            if expectedGeneration == nil || hdrBaseLayerSwitchGeneration == expectedGeneration {
+                comfort.dualLayerOverride = previousOverride
+            }
+            guard !Task.isCancelled,
+                  expectedGeneration == nil || hdrBaseLayerSwitchGeneration == expectedGeneration else {
+                return
+            }
             host.qosReporter.showTransientBanner(
-                LunaCopy.friendlyErrorMessage(error, fallback: "Kunne ikke bytte til HDR10-baselag.")
+                PlayerEngineConfigurator.friendlyEngineFailure(
+                    error,
+                    engineErrorInfo: engine.errorInfo,
+                    fallback: "Kunne ikke bytte til HDR10-baselag."
+                )
             )
         }
     }
@@ -218,7 +331,9 @@ extension PlayerTrackController {
         let snapshot = PlayerEngineConfigurator.captureReloadComfortSnapshot(
             comfort: comfort,
             audioEnhancement: audioEnhancement,
-            audioDelaySeconds: effectiveAudioDelaySecondsForActiveRoute()
+            audioDelaySeconds: effectiveAudioDelaySecondsForActiveRoute(),
+            binauralAudioActive: isBinauralAudioRouteActive,
+            session: session
         )
 
         engine.maximumSubtitleAdvanceSeconds = 0
@@ -227,6 +342,7 @@ extension PlayerTrackController {
             options.externalSubtitles = extTracks
             PlayerEngineConfigurator.applyRestoreDisplayAndUpscaleOptions(snapshot, session: session, to: &options)
         }
+        try Task.checkCancellation()
         if subtitleDelayMs != 0 {
             transport.setSoftwareSubtitleDelay(self.subtitleDelaySeconds)
         }
@@ -239,6 +355,9 @@ extension PlayerTrackController {
     ) -> TvPlaybackSession {
         let updatedTracks = TvSessionTracks(
             probeConfidence: session.tracks?.probeConfidence,
+            video: session.tracks?.video,
+            audio: session.tracks?.audio,
+            embeddedSubtitles: session.tracks?.embeddedSubtitles,
             externalSubtitles: externalSubtitles,
             chapters: session.tracks?.chapters,
             subtitleDelayMs: subtitleDelayMs ?? session.tracks?.subtitleDelayMs

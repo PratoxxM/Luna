@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import Observation
 import UIKit
 import AetherBridge
@@ -28,6 +29,10 @@ final class PlayerScrubController {
     @ObservationIgnored var scrubCommitTask: Task<Void, Never>?
     @ObservationIgnored var scrubCommitToken: UInt64 = 0
     @ObservationIgnored var ringHoldLoopTask: Task<Void, Never>?
+    @ObservationIgnored private var serverTrickplayCacheSessionId: String?
+    @ObservationIgnored private var serverTrickplayFrames: [Int: CGImage] = [:]
+    @ObservationIgnored private var serverTrickplayLRUOrder: [Int] = []
+    @ObservationIgnored private var isServerTrickplayDisabledForSession: Bool = false
 
     init(
         engine: AetherEngine,
@@ -241,6 +246,13 @@ final class PlayerScrubController {
         }
     }
 
+    func clearServerTrickplayCache() {
+        serverTrickplayCacheSessionId = nil
+        serverTrickplayFrames.removeAll(keepingCapacity: false)
+        serverTrickplayLRUOrder.removeAll(keepingCapacity: false)
+        isServerTrickplayDisabledForSession = false
+    }
+
     func resetScrubStateOnSessionChange() {
         ringHoldLoopTask?.cancel()
         ringHoldLoopTask = nil
@@ -263,23 +275,175 @@ final class PlayerScrubController {
             while let self, !Task.isCancelled, self.isScrubbing, let requested = self.pendingScrubPreviewTarget {
                 self.pendingScrubPreviewTarget = nil
 
+                var didObtainEnginePreview = false
                 if self.engine.scrubPreviewDrawsInView {
                     if let compView = self.compositorPreviewView {
-                        _ = await self.engine.showScrubPreview(atSeconds: requested, in: compView)
+                        let placement = await self.engine.showScrubPreview(atSeconds: requested, in: compView)
+                        guard !Task.isCancelled, self.isScrubbing else { return }
+                        if placement != nil {
+                            didObtainEnginePreview = true
+                            if self.scrubState.previewImage != nil {
+                                self.scrubState.previewImage = nil
+                            }
+                        }
                     }
                 } else if self.engine.supportsCacheBackedStills {
                     let still = await self.engine.scrubThumbnail(atSeconds: requested, maxWidth: 480)
                     guard !Task.isCancelled, self.isScrubbing else { return }
-                    if self.scrubState.previewImage !== still {
-                        self.scrubState.previewImage = still
+                    if let still {
+                        didObtainEnginePreview = true
+                        if self.scrubState.previewImage !== still {
+                            self.scrubState.previewImage = still
+                        }
                     }
-                } else if self.scrubState.previewImage != nil {
-                    self.scrubState.previewImage = nil
                 }
 
-                try? await Task.sleep(nanoseconds: 45_000_000)
+                if !didObtainEnginePreview {
+                    await self.fetchServerTrickplayFallback(for: requested)
+                    guard !Task.isCancelled, self.isScrubbing else { return }
+                }
+
+                if self.pendingScrubPreviewTarget == nil {
+                    try? await Task.sleep(nanoseconds: 45_000_000)
+                }
             }
         }
+    }
+
+    private func fetchServerTrickplayFallback(for requested: Double) async {
+        guard let session = host?.sessionController.activeSession,
+              let client = host?.sessionController.activeClient,
+              PlaybackTrickplayPolicy.shouldAttemptServerTrickplay(session: session) else {
+            if scrubState.previewImage != nil {
+                scrubState.previewImage = nil
+            }
+            return
+        }
+
+        if serverTrickplayCacheSessionId != session.sessionId {
+            clearServerTrickplayCache()
+            serverTrickplayCacheSessionId = session.sessionId
+        }
+        guard !isServerTrickplayDisabledForSession else {
+            if scrubState.previewImage != nil {
+                scrubState.previewImage = nil
+            }
+            return
+        }
+
+        let dur = host?.sessionController.effectiveDurationSeconds ?? 0
+        guard let bucket = PlaybackTrickplayPolicy.quantizedBucketSeconds(
+            for: requested,
+            durationSeconds: dur
+        ) else {
+            if scrubState.previewImage != nil {
+                scrubState.previewImage = nil
+            }
+            return
+        }
+
+        if let cached = cachedTrickplayFrame(for: bucket) {
+            if scrubState.previewImage !== cached {
+                scrubState.previewImage = cached
+            }
+            return
+        }
+
+        try? await Task.sleep(nanoseconds: PlaybackTrickplayPolicy.httpDebounceNanoseconds)
+        guard !Task.isCancelled, isScrubbing else { return }
+        if pendingScrubPreviewTarget != nil {
+            return
+        }
+
+        do {
+            let result = try await client.fetchScrubFrame(
+                sessionId: session.sessionId,
+                atSeconds: Double(bucket)
+            )
+            guard !Task.isCancelled,
+                  isScrubbing,
+                  host?.sessionController.activeSession?.sessionId == session.sessionId else {
+                return
+            }
+            switch result {
+            case .image(let data, _):
+                let decoded = await Task.detached(priority: .userInitiated) {
+                    Self.decodeTrickplayCGImage(from: data, maxPixelSize: 480)
+                }.value
+                guard !Task.isCancelled,
+                      isScrubbing,
+                      host?.sessionController.activeSession?.sessionId == session.sessionId else {
+                    return
+                }
+                if let decoded {
+                    storeTrickplayFrame(decoded, for: bucket)
+                    let latestTarget = pendingScrubPreviewTarget ?? scrubState.targetSeconds
+                    let latestBucket = PlaybackTrickplayPolicy.quantizedBucketSeconds(
+                        for: latestTarget,
+                        durationSeconds: host?.sessionController.effectiveDurationSeconds ?? 0
+                    )
+                    if latestBucket == bucket || pendingScrubPreviewTarget == nil {
+                        if scrubState.previewImage !== decoded {
+                            scrubState.previewImage = decoded
+                        }
+                    }
+                } else if scrubState.previewImage != nil {
+                    scrubState.previewImage = nil
+                }
+            case .unavailable(let statusCode, let errorCode):
+                if PlaybackTrickplayPolicy.shouldDisableTrickplayForSession(
+                    statusCode: statusCode,
+                    errorCode: errorCode
+                ) {
+                    isServerTrickplayDisabledForSession = true
+                }
+                if scrubState.previewImage != nil {
+                    scrubState.previewImage = nil
+                }
+            }
+        } catch where LunaCoreError.isCancellation(error) || Task.isCancelled {
+            return
+        } catch LunaCoreError.unauthorized {
+            isServerTrickplayDisabledForSession = true
+            if scrubState.previewImage != nil {
+                scrubState.previewImage = nil
+            }
+        } catch {
+            if scrubState.previewImage != nil {
+                scrubState.previewImage = nil
+            }
+        }
+    }
+
+    private func cachedTrickplayFrame(for bucket: Int) -> CGImage? {
+        guard let frame = serverTrickplayFrames[bucket] else { return nil }
+        serverTrickplayLRUOrder.removeAll { $0 == bucket }
+        serverTrickplayLRUOrder.append(bucket)
+        return frame
+    }
+
+    private func storeTrickplayFrame(_ frame: CGImage, for bucket: Int) {
+        serverTrickplayFrames[bucket] = frame
+        serverTrickplayLRUOrder.removeAll { $0 == bucket }
+        serverTrickplayLRUOrder.append(bucket)
+        while serverTrickplayLRUOrder.count > PlaybackTrickplayPolicy.maxSessionCacheFrames {
+            let evicted = serverTrickplayLRUOrder.removeFirst()
+            serverTrickplayFrames.removeValue(forKey: evicted)
+        }
+    }
+
+    nonisolated static func decodeTrickplayCGImage(from data: Data, maxPixelSize: Int = 480) -> CGImage? {
+        guard !data.isEmpty,
+              let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return nil
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(64, maxPixelSize),
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 
     func coalesceRelativeSeek(delta: Double) {

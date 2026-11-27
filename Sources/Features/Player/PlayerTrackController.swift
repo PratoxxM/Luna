@@ -7,6 +7,8 @@ import AetherBridge
 @MainActor
 @Observable
 final class PlayerTrackController {
+    nonisolated static let liveOptionsReloadDebounceNs: UInt64 = 150_000_000
+
     var durationSeconds: Double = 0
     var audioTracks: [TrackInfo] = []
     var activeAudioTrackIndex: Int?
@@ -45,8 +47,14 @@ final class PlayerTrackController {
     @ObservationIgnored var audioDelayCommitTask: Task<Void, Never>?
     @ObservationIgnored var hasPendingAudioDelayCommit: Bool = false
     @ObservationIgnored var isWirelessAudioRouteActive: Bool = false
+    var isBinauralAudioRouteActive: Bool = false
     @ObservationIgnored var upscaleReloadTask: Task<Void, Never>?
+    @ObservationIgnored var upscaleReloadGeneration: UInt64 = 0
+    @ObservationIgnored var hdrBaseLayerSwitchTask: Task<Void, Never>?
+    @ObservationIgnored var hdrBaseLayerSwitchGeneration: UInt64 = 0
+    @ObservationIgnored var hdrBaseLayerPreSwitchOverride: DualLayerOverrideMode?
     @ObservationIgnored var subtitleActionTask: Task<Void, Never>?
+    @ObservationIgnored var subtitleActionGeneration: UInt64 = 0
 
     init(
         engine: AetherEngine,
@@ -60,6 +68,7 @@ final class PlayerTrackController {
         self.transport = transport
         self.preferenceStore = preferenceStore
         self.isWirelessAudioRouteActive = PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
+        self.isBinauralAudioRouteActive = PlayerAudioSessionCoordinator.currentOutputUsesBinauralAudio()
     }
 
     func bindHost(_ host: PlayerViewModel) { self.host = host }
@@ -86,12 +95,52 @@ final class PlayerTrackController {
         subtitleActionStatusMessage = nil
     }
 
+    @discardableResult
+    func takeAndCancelPendingUpscaleReloadTask() -> Task<Void, Never>? {
+        upscaleReloadGeneration &+= 1
+        let prior = upscaleReloadTask
+        prior?.cancel()
+        upscaleReloadTask = nil
+        return prior
+    }
+
+    @discardableResult
+    func takeAndCancelPendingHDRSwitchTask(clearPreSwitchOverride: Bool = true) -> Task<Void, Never>? {
+        hdrBaseLayerSwitchGeneration &+= 1
+        if clearPreSwitchOverride {
+            hdrBaseLayerPreSwitchOverride = nil
+        }
+        let prior = hdrBaseLayerSwitchTask
+        prior?.cancel()
+        hdrBaseLayerSwitchTask = nil
+        return prior
+    }
+
+    @discardableResult
+    func takeAndCancelPendingSubtitleActionTask(clearBusyFlags: Bool = true) -> Task<Void, Never>? {
+        subtitleActionGeneration &+= 1
+        let prior = subtitleActionTask
+        prior?.cancel()
+        subtitleActionTask = nil
+        if clearBusyFlags {
+            isSearchingSubtitles = false
+            isAutoAligningSubtitles = false
+            if subtitleActionStatusMessage == LunaCopy.searchingSubtitlesTitle
+                || subtitleActionStatusMessage == LunaCopy.autoAligningSubtitlesTitle {
+                subtitleActionStatusMessage = nil
+            }
+        }
+        return prior
+    }
+
     func prepareForEngineMount() -> Int {
         audioDelayCommitTask?.cancel(); audioDelayCommitTask = nil
         hasPendingAudioDelayCommit = false
-        upscaleReloadTask?.cancel(); upscaleReloadTask = nil
-        subtitleActionTask?.cancel(); subtitleActionTask = nil
+        _ = takeAndCancelPendingUpscaleReloadTask()
+        _ = takeAndCancelPendingHDRSwitchTask()
+        _ = takeAndCancelPendingSubtitleActionTask(clearBusyFlags: true)
         isWirelessAudioRouteActive = PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
+        isBinauralAudioRouteActive = PlayerAudioSessionCoordinator.currentOutputUsesBinauralAudio()
         let initialAudioDelayMs = comfort.audioDelayMs
         audioDelayMs = initialAudioDelayMs
         audioEnhancement = comfort.audioEnhancement
@@ -107,11 +156,28 @@ final class PlayerTrackController {
         engineChapters = []
         let currentWirelessRoute = PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
         isWirelessAudioRouteActive = currentWirelessRoute
+        let currentBinauralRoute = PlayerAudioSessionCoordinator.currentOutputUsesBinauralAudio()
+        let binauralChanged = currentBinauralRoute != isBinauralAudioRouteActive
+        isBinauralAudioRouteActive = currentBinauralRoute
         if comfort.audioDelayMs != initialAudioDelayMs || currentWirelessRoute != initialWirelessRoute {
             audioDelayMs = comfort.audioDelayMs
             transport.setAudioDelay(effectiveAudioDelaySecondsForActiveRoute())
         } else {
             audioDelayMs = initialAudioDelayMs
+        }
+        if binauralChanged {
+            let effectiveLayout = resolvedEffectiveSpeakerLayout
+            let effectiveBinaural = AudioBinauralPolicy.effectiveBinauralFlag(
+                isBinauralRouteActive: currentBinauralRoute,
+                effectiveSpeakerLayout: effectiveLayout
+            )
+            transport.setAudioShaping(
+                comfort.buildAudioShaping(
+                    enhancement: audioEnhancement,
+                    binaural: effectiveBinaural,
+                    effectiveSpeakerLayoutOverride: effectiveLayout
+                )
+            )
         }
 
         if !engine.audioTracks.isEmpty || transport.audioTrackDescriptors.isEmpty {
@@ -214,17 +280,37 @@ final class PlayerTrackController {
         transport.setAudioDelay(effectiveAudioDelaySecondsForActiveRoute())
     }
 
-    func handleAudioRouteChange(isWirelessOverride: Bool? = nil) {
+    func handleAudioRouteChange(isWirelessOverride: Bool? = nil, isBinauralOverride: Bool? = nil) {
         let nextWireless = isWirelessOverride ?? PlayerAudioSessionCoordinator.currentOutputUsesWirelessCompensation()
-        guard nextWireless != isWirelessAudioRouteActive else { return }
+        let nextBinaural = isBinauralOverride ?? PlayerAudioSessionCoordinator.currentOutputUsesBinauralAudio()
+        let wirelessChanged = nextWireless != isWirelessAudioRouteActive
+        let binauralChanged = nextBinaural != isBinauralAudioRouteActive
+        guard wirelessChanged || binauralChanged else { return }
         isWirelessAudioRouteActive = nextWireless
+        isBinauralAudioRouteActive = nextBinaural
         guard let host, !host.sessionController.isResolving, !host.sessionController.isSwitchingSource,
               !host.sessionController.isDismissing, !host.sessionController.isTeardownCompleted else {
             return
         }
-        audioDelayCommitTask?.cancel(); audioDelayCommitTask = nil
-        hasPendingAudioDelayCommit = false
-        transport.setAudioDelay(effectiveAudioDelaySecondsForActiveRoute())
+        if wirelessChanged {
+            audioDelayCommitTask?.cancel(); audioDelayCommitTask = nil
+            hasPendingAudioDelayCommit = false
+            transport.setAudioDelay(effectiveAudioDelaySecondsForActiveRoute())
+        }
+        if binauralChanged {
+            let effectiveLayout = resolvedEffectiveSpeakerLayout
+            let effectiveBinaural = AudioBinauralPolicy.effectiveBinauralFlag(
+                isBinauralRouteActive: nextBinaural,
+                effectiveSpeakerLayout: effectiveLayout
+            )
+            transport.setAudioShaping(
+                comfort.buildAudioShaping(
+                    enhancement: audioEnhancement,
+                    binaural: effectiveBinaural,
+                    effectiveSpeakerLayoutOverride: effectiveLayout
+                )
+            )
+        }
     }
 
     func handleSystemCaptionRequest(_ request: SystemCaptionRequest) {
@@ -248,7 +334,18 @@ final class PlayerTrackController {
     func setAudioEnhancement(_ mode: AudioEnhancementMode) {
         audioEnhancement = mode
         if comfort.audioEnhancement != mode { comfort.audioEnhancement = mode }
-        transport.setAudioShaping(comfort.buildAudioShaping(enhancement: mode))
+        let effectiveLayout = resolvedEffectiveSpeakerLayout
+        let effectiveBinaural = AudioBinauralPolicy.effectiveBinauralFlag(
+            isBinauralRouteActive: isBinauralAudioRouteActive,
+            effectiveSpeakerLayout: effectiveLayout
+        )
+        transport.setAudioShaping(
+            comfort.buildAudioShaping(
+                enhancement: mode,
+                binaural: effectiveBinaural,
+                effectiveSpeakerLayoutOverride: effectiveLayout
+            )
+        )
     }
 
     func selectSubtitleManually(_ index: Int) {
@@ -333,18 +430,56 @@ final class PlayerTrackController {
         comfort.speakerLayoutOverride.headerSummary(forAutoLayout: host?.qosReporter.sessionRoomAutoLayout ?? "7.1.4")
     }
 
+    private var resolvedEffectiveSpeakerLayout: String {
+        PlayerEngineConfigurator.resolvedEffectiveSpeakerLayout(
+            comfortSpeakerLayoutOverride: comfort.speakerLayoutOverride,
+            comfortEffectiveSpeakerLayout: comfort.effectiveSpeakerLayout,
+            session: host?.sessionController.activeSession
+        )
+    }
+
+    var binauralStatus: AudioBinauralStatus {
+        AudioBinauralPolicy.resolveStatus(
+            isBinauralRouteActive: isBinauralAudioRouteActive,
+            effectiveSpeakerLayout: resolvedEffectiveSpeakerLayout
+        )
+    }
+
+    var binauralAudioStatusNotice: String? {
+        AudioBinauralPolicy.quickPanelNotice(for: binauralStatus)
+    }
+
     var wirelessAudioDelayNotice: String? {
         isWirelessAudioRouteActive ? "Automatisk trådløs synk aktiv (AirPlay / Bluetooth)" : nil
     }
 
     func setSpeakerLayoutLive(_ targetMode: SpeakerLayoutOverrideMode) {
+        guard comfort.speakerLayoutOverride != targetMode else { return }
         comfort.speakerLayoutOverride = targetMode
-        transport.setAudioShaping(comfort.buildAudioShaping(enhancement: audioEnhancement))
+        let effectiveLayout = resolvedEffectiveSpeakerLayout
+        let effectiveBinaural = AudioBinauralPolicy.effectiveBinauralFlag(
+            isBinauralRouteActive: isBinauralAudioRouteActive,
+            effectiveSpeakerLayout: effectiveLayout
+        )
+        transport.setAudioShaping(
+            comfort.buildAudioShaping(
+                enhancement: audioEnhancement,
+                binaural: effectiveBinaural,
+                effectiveSpeakerLayoutOverride: effectiveLayout
+            )
+        )
         scheduleLiveEngineOptionsReload()
     }
 
     func setMetalFXModeLive(_ targetMode: LowResUpscaleMode) {
+        guard comfort.lowResUpscaleMode != targetMode else { return }
         comfort.lowResUpscaleMode = targetMode
+        scheduleLiveEngineOptionsReload()
+    }
+
+    func setFullHDUpscaleLive(_ enabled: Bool) {
+        guard comfort.upscalesFullHDVideo != enabled else { return }
+        comfort.upscalesFullHDVideo = enabled
         scheduleLiveEngineOptionsReload()
     }
 
@@ -352,40 +487,63 @@ final class PlayerTrackController {
         guard let host, !host.sessionController.isResolving, !host.sessionController.isSwitchingSource,
               !host.sessionController.isDismissing, !host.sessionController.isTeardownCompleted,
               previewAudioOptions.isEmpty else { return }
-        upscaleReloadTask?.cancel()
+        let priorHDRTask = takeAndCancelPendingHDRSwitchTask()
+        let priorSubtitleTask = takeAndCancelPendingSubtitleActionTask(clearBusyFlags: true)
+        let priorUpscaleTask = takeAndCancelPendingUpscaleReloadTask()
+        let expectedGeneration = upscaleReloadGeneration
         upscaleReloadTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.performLiveEngineOptionsReload()
-            if !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: Self.liveOptionsReloadDebounceNs)
+            await priorHDRTask?.value
+            await priorUpscaleTask?.value
+            await priorSubtitleTask?.value
+            guard !Task.isCancelled, let self, self.upscaleReloadGeneration == expectedGeneration else { return }
+            await self.performLiveEngineOptionsReload(expectedGeneration: expectedGeneration)
+            if self.upscaleReloadGeneration == expectedGeneration {
                 self.upscaleReloadTask = nil
             }
         }
     }
 
-    internal func performLiveEngineOptionsReload() async {
-        guard let host, !host.sessionController.isResolving, !host.sessionController.isSwitchingSource,
+    internal func performLiveEngineOptionsReload(expectedGeneration: UInt64? = nil) async {
+        guard !Task.isCancelled,
+              expectedGeneration == nil || upscaleReloadGeneration == expectedGeneration,
+              let host, !host.sessionController.isResolving, !host.sessionController.isSwitchingSource,
+              !host.restoreController.isRestoringFromBackground,
               !host.sessionController.isDismissing, !host.sessionController.isTeardownCompleted,
               previewAudioOptions.isEmpty else { return }
+        let session = host.sessionController.activeSession
         let snapshot = PlayerEngineConfigurator.captureReloadComfortSnapshot(
             comfort: comfort,
             audioEnhancement: audioEnhancement,
-            audioDelaySeconds: effectiveAudioDelaySecondsForActiveRoute()
+            audioDelaySeconds: effectiveAudioDelaySecondsForActiveRoute(),
+            binauralAudioActive: isBinauralAudioRouteActive,
+            session: session
         )
-        let session = host.sessionController.activeSession
+        let client = host.sessionController.activeClient
+        let extSubs: [ExternalSubtitleTrack]? = (session != nil && client != nil)
+            ? PlayerEngineConfigurator.externalSubtitleTracks(for: session!, client: client!)
+            : nil
         engine.maximumSubtitleAdvanceSeconds = 0
         engine.maximumSubtitleDelaySeconds = 10
         do {
             try await transport.reloadAtCurrentPosition { options in
                 PlayerEngineConfigurator.applyRestoreDisplayAndUpscaleOptions(snapshot, session: session, to: &options)
+                if let extSubs { options.externalSubtitles = extSubs }
             }
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  expectedGeneration == nil || upscaleReloadGeneration == expectedGeneration else { return }
             if subtitleDelayMs != 0 { transport.setSoftwareSubtitleDelay(subtitleDelaySeconds) }
-        } catch where LunaCoreError.isCancellation(error) {
+        } catch where LunaCoreError.isCancellation(error) || Task.isCancelled {
             return
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  expectedGeneration == nil || upscaleReloadGeneration == expectedGeneration else { return }
             host.qosReporter.showTransientBanner(
-                LunaCopy.friendlyErrorMessage(error, fallback: "Kunne ikke oppdatere avspillingsinnstillinger.")
+                PlayerEngineConfigurator.friendlyEngineFailure(
+                    error,
+                    engineErrorInfo: engine.errorInfo,
+                    fallback: "Kunne ikke oppdatere avspillingsinnstillinger."
+                )
             )
         }
     }
@@ -429,7 +587,8 @@ final class PlayerTrackController {
         smartRuleTask?.cancel(); smartRuleTask = nil
         audioDelayCommitTask?.cancel(); audioDelayCommitTask = nil
         hasPendingAudioDelayCommit = false
-        upscaleReloadTask?.cancel(); upscaleReloadTask = nil
-        subtitleActionTask?.cancel(); subtitleActionTask = nil
+        _ = takeAndCancelPendingUpscaleReloadTask()
+        _ = takeAndCancelPendingHDRSwitchTask()
+        _ = takeAndCancelPendingSubtitleActionTask(clearBusyFlags: true)
     }
 }

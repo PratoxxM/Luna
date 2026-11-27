@@ -24,9 +24,27 @@ struct CustomRowBrowseView: View {
     @State private var suppressNextRefreshReload: Bool = false
     @State private var reloadGeneration: UInt64 = 0
     @State private var loadMoreTask: Task<Void, Never>?
+    @State private var scrollPosition = ScrollPosition(idType: String.self)
+    @State private var mountedTracker = MountedEntryCardTracker()
+    @State private var entryCardID: String?
+    @State private var cardFocusNonce: Int = 0
+    @FocusState private var isRetryButtonFocused: Bool
+    @Namespace private var customRowGridNamespace
 
     private let pageSize = 36
     private let columns = LunaTheme.posterGridColumns
+
+    nonisolated static func resolveInitialFocusTarget(
+        currentEntryCardID: String?,
+        oldFirstID: String?,
+        newFirstID: String?
+    ) -> String? {
+        guard let newFirstID else { return nil }
+        if oldFirstID == nil || currentEntryCardID == nil {
+            return newFirstID
+        }
+        return nil
+    }
 
     var body: some View {
         let client = sessionStore.makeClient()
@@ -50,6 +68,7 @@ struct CustomRowBrowseView: View {
                     LunaInlineError(message: errorMessage) {
                         retryNonce &+= 1
                     }
+                    .focused($isRetryButtonFocused)
                     .padding(.horizontal, LunaTheme.horizontalGutter)
                 } else if items.isEmpty {
                     LunaEmptyState(headline: "Ingen titler i denne listen")
@@ -64,6 +83,7 @@ struct CustomRowBrowseView: View {
                                 width: LunaTokens.Layout.gridPosterW,
                                 showStorageBadge: true,
                                 showRestingTitle: true,
+                                focusRequestNonce: card.id == entryCardID ? cardFocusNonce : 0,
                                 onSelect: {
                                     selectedCard = card
                                 },
@@ -71,6 +91,9 @@ struct CustomRowBrowseView: View {
                                     MediaCardMutator.launchPlayback(for: card, sessionStore: sessionStore)
                                 }
                             )
+                            .id(card.id)
+                            .lunaTrackMountedCard(id: card.id, in: mountedTracker)
+                            .prefersDefaultFocus(idx == 0, in: customRowGridNamespace)
                             .contextMenu {
                                 StandardPosterContextMenuItems(
                                     card: card,
@@ -102,7 +125,9 @@ struct CustomRowBrowseView: View {
                             }
                         }
                     }
+                    .scrollTargetLayout()
                     .padding(.horizontal, LunaTheme.horizontalGutter)
+                    .focusSection()
 
                     if isLoadingMore {
                         HStack {
@@ -117,10 +142,13 @@ struct CustomRowBrowseView: View {
             .padding(.top, LunaTokens.Layout.subpageTop)
             .padding(.bottom, 72)
         }
+        .scrollPosition($scrollPosition)
         .contentMargins(.zero, for: .scrollContent)
         .scrollClipDisabled()
         .ignoresSafeArea()
+        .focusScope(customRowGridNamespace)
         .lunaBottomToast(message: $mutationErrorBanner, tone: .danger)
+        .focusSection()
         .lunaNavigationContainerBackdrop(mode: .ambient(isPaused: sessionStore.activePlaybackTarget != nil))
         .toolbar(.hidden, for: .tabBar)
         .navigationDestination(item: $selectedCard) { card in
@@ -128,6 +156,32 @@ struct CustomRowBrowseView: View {
         }
         .onAppear {
             subpageVisibility.enterSubpage(subpageToken)
+            if entryCardID == nil,
+               let target = Self.resolveInitialFocusTarget(
+                   currentEntryCardID: entryCardID,
+                   oldFirstID: nil,
+                   newFirstID: items.first?.id
+               ) {
+                entryCardID = target
+                cardFocusNonce &+= 1
+            } else if errorMessage != nil && items.isEmpty {
+                isRetryButtonFocused = true
+            }
+        }
+        .onChange(of: items.first?.id) { oldFirst, newFirst in
+            if let target = Self.resolveInitialFocusTarget(
+                currentEntryCardID: entryCardID,
+                oldFirstID: oldFirst,
+                newFirstID: newFirst
+            ) {
+                entryCardID = target
+                cardFocusNonce &+= 1
+            }
+        }
+        .onChange(of: errorMessage != nil && items.isEmpty) { _, hasError in
+            if hasError {
+                isRetryButtonFocused = true
+            }
         }
         .task(id: "\(pathOrRowId)#\(sessionStore.homeRefreshNonce)#\(retryNonce)") {
             if suppressNextRefreshReload {

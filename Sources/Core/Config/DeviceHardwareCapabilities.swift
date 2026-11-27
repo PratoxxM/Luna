@@ -35,6 +35,7 @@ public struct DeviceMemoryProfile: Sendable, Equatable {
     public let sessionCacheByteBudget: Int
     public let sessionCacheFreeReserveBytes: Int
     public let defaultLowResUpscaleEnabled: Bool
+    public let defaultFullHDUpscaleEnabled: Bool
 
     public init(
         physicalMemoryBytes: UInt64,
@@ -63,6 +64,7 @@ public struct DeviceMemoryProfile: Sendable, Equatable {
             self.sessionCacheByteBudget = 3 * 1_073_741_824
             self.sessionCacheFreeReserveBytes = 4 * 1_073_741_824
             self.defaultLowResUpscaleEnabled = true
+            self.defaultFullHDUpscaleEnabled = true
         } else {
             self.tier = .standard
             self.artworkMemoryBytes = 112 * 1024 * 1024
@@ -84,7 +86,12 @@ public struct DeviceMemoryProfile: Sendable, Equatable {
             self.sessionCacheByteBudget = 1_073_741_824
             self.sessionCacheFreeReserveBytes = 1_536 * 1_048_576
             self.defaultLowResUpscaleEnabled = false
+            self.defaultFullHDUpscaleEnabled = false
         }
+    }
+
+    public static func defaultFullHDUpscaleEnabled(for tier: DeviceMemoryTier) -> Bool {
+        tier == .high2026
     }
 
     public func prewarmByteBudget(
@@ -275,6 +282,22 @@ extension TvCandidateInfo {
     }
 
     public var isLikelyLowResolutionSDRForUpscale: Bool {
+        isLikelyFullHDSDRForUpscale || isLikelySub1080pSDRForUpscale
+    }
+
+    public var isLikelyFullHDSDRForUpscale: Bool {
+        guard isLikelySDRForUpscale else { return false }
+        let res = (resolution ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return res == "1080p"
+    }
+
+    public var isLikelySub1080pSDRForUpscale: Bool {
+        guard isLikelySDRForUpscale else { return false }
+        let res = (resolution ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return ["720p", "576p", "480p", "sd", "hd"].contains(res)
+    }
+
+    private var isLikelySDRForUpscale: Bool {
         if dvProfile != nil {
             return false
         }
@@ -284,8 +307,7 @@ extension TvCandidateInfo {
            range != "unknown" {
             return false
         }
-        let res = (resolution ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return ["1080p", "720p", "576p", "480p", "sd", "hd"].contains(res)
+        return true
     }
 }
 

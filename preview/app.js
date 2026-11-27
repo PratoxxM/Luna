@@ -16,8 +16,28 @@
 
   let currentScreen = params.get('screen') || 'home';
   let currentLibraryFilter = 'movies';
+  let currentLibraryTier = 'all';
+  let currentLibrarySort = 'recent';
+  let currentSearchKind = 'all';
   let activeQuickPanel = null;
   let focusedEl = null;
+
+  const LIBRARY_SORT_LABELS = {
+    recent: '⇅ Nylig lagt til',
+    rating: '⇅ Høyest vurdert',
+    title: '⇅ Alfabetisk'
+  };
+
+  const METALFX_DESCRIPTIONS = {
+    off: 'Standard tvOS-skalering uten MetalFX.',
+    auto: 'MetalFX for < 1080p SDR · 4K og HDR urørt.',
+    line_art: 'Anime4K 2× linjekunst for ≤ 1080p SDR.'
+  };
+  const comfortState = {
+    lowResUpscaleMode: 'auto',
+    upscalesFullHDVideo: true,
+    showNerdHUD: false
+  };
 
   const LIBRARY_ITEMS = {
     movies: [
@@ -64,18 +84,9 @@
     source: {
       title: 'Utgave', wide: true,
       rows: [
-        { id: 's1', title: 'Anbefalt · 4K HDR10+ TrueHD Atmos', sub: 'Norsk · På NVMe · HEVC · Bluray-2160p · 58,4 GB · Spilles nå', active: true },
-        { id: 's2', title: '4K Dolby Vision Dolby Atmos', sub: 'Strømmes ved start · HEVC · WEB-DL · 21,6 GB', active: false },
-        { id: 's3', title: '1080p Dolby Digital+ 5.1', sub: 'I Arkiv · HEVC · WEB-DL · 6,2 GB', active: false }
-      ]
-    },
-    picture: {
-      title: 'Bilde', wide: false,
-      rows: [
-        { id: 'off', title: 'MetalFX: Av', sub: 'Standard tvOS-skalering uten MetalFX', active: false, keepOpen: true },
-        { id: 'auto', title: 'MetalFX: Auto', sub: 'Kun < 1080p 8-bit SDR · 4K og HDR urørt', active: true, keepOpen: true },
-        { id: 'line_art', title: 'MetalFX: Animasjon', sub: 'Anime4K 2× linjekunst for ≤ 1080p SDR', active: false, keepOpen: true },
-        { id: 'hud', title: 'Teknisk oversikt', sub: '', active: false, keepOpen: true }
+        { id: 's1', title: 'Anbefalt · 4K HDR10+ TrueHD Atmos', sub: 'Norsk · På NVMe · HEVC · 58,4 GB · Spilles nå · FraMeSToR · DV P7 FEL', active: true },
+        { id: 's2', title: '4K Dolby Vision Dolby Atmos', sub: 'Strømmes ved start · HEVC · 21,6 GB · FLUX · DDP Atmos', active: false },
+        { id: 's3', title: '1080p Dolby Digital+ 5.1', sub: 'I Arkiv · HEVC · 6,2 GB · CtrlHD · Tapsfri lyd', active: false }
       ]
     },
     chapters: {
@@ -88,10 +99,96 @@
     }
   };
 
+  function getQuickPanelSpec(panelKey) {
+    if (panelKey === 'picture') {
+      return {
+        title: 'Bilde',
+        wide: false,
+        rows: [
+          {
+            id: 'off',
+            title: 'MetalFX: Av',
+            sub: METALFX_DESCRIPTIONS.off,
+            active: comfortState.lowResUpscaleMode === 'off',
+            keepOpen: true
+          },
+          {
+            id: 'auto',
+            title: 'MetalFX: Auto',
+            sub: METALFX_DESCRIPTIONS.auto,
+            active: comfortState.lowResUpscaleMode === 'auto',
+            keepOpen: true
+          },
+          {
+            id: 'line_art',
+            title: 'MetalFX: Animasjon',
+            sub: METALFX_DESCRIPTIONS.line_art,
+            active: comfortState.lowResUpscaleMode === 'line_art',
+            keepOpen: true
+          },
+          {
+            id: 'lanczos',
+            title: '1080p SDR → 4K (Lanczos)',
+            sub: comfortState.lowResUpscaleMode === 'line_art'
+              ? 'Overstyres av Animasjon (Anime4K 2×)'
+              : '',
+            toggle: true,
+            on: comfortState.upscalesFullHDVideo,
+            keepOpen: true,
+            dividerAfter: true
+          },
+          {
+            id: 'hud',
+            title: 'Teknisk oversikt',
+            sub: '',
+            toggle: true,
+            on: comfortState.showNerdHUD,
+            keepOpen: true
+          }
+        ]
+      };
+    }
+    return QUICK_PANELS[panelKey] || null;
+  }
+
+  function syncSettingsComfortUI() {
+    const metalfxSub = document.getElementById('settings-metalfx-sub');
+    if (metalfxSub) {
+      metalfxSub.textContent = METALFX_DESCRIPTIONS[comfortState.lowResUpscaleMode] || METALFX_DESCRIPTIONS.auto;
+    }
+    document.querySelectorAll('[data-metalfx-mode]').forEach((btn) => {
+      btn.classList.toggle('is-selected', btn.dataset.metalfxMode === comfortState.lowResUpscaleMode);
+    });
+    const lanczosRow = document.getElementById('settings-lanczos-row');
+    if (lanczosRow) {
+      lanczosRow.setAttribute('aria-pressed', comfortState.upscalesFullHDVideo ? 'true' : 'false');
+    }
+    const lanczosSub = document.getElementById('settings-lanczos-sub');
+    if (lanczosSub) {
+      lanczosSub.textContent = comfortState.lowResUpscaleMode === 'line_art'
+        ? 'Overstyres av Animasjon (Anime4K 2×)'
+        : 'Skalerer 1080p SDR til 4K · 4K og HDR urørt';
+    }
+    const lanczosVal = document.getElementById('settings-lanczos-value');
+    if (lanczosVal) {
+      lanczosVal.textContent = comfortState.upscalesFullHDVideo ? 'På' : 'Av';
+      lanczosVal.classList.toggle('is-on', comfortState.upscalesFullHDVideo);
+    }
+  }
+
   function renderLibraryGrid() {
     const container = document.getElementById('library-grid-container');
     if (!container) return;
-    const items = LIBRARY_ITEMS[currentLibraryFilter] || [];
+    let items = (LIBRARY_ITEMS[currentLibraryFilter] || []).slice();
+    const supportsTierSort = currentLibraryFilter === 'movies' || currentLibraryFilter === 'series';
+    if (supportsTierSort && currentLibraryTier !== 'all') {
+      items = items.filter((item) => item.cls === `tier-${currentLibraryTier}`);
+    }
+    if (supportsTierSort && currentLibrarySort === 'title') {
+      items.sort((a, b) => a.title.localeCompare(b.title, 'nb'));
+    } else if (supportsTierSort && currentLibrarySort === 'rating') {
+      items.reverse();
+    }
     if (currentLibraryFilter === 'lists') {
       container.className = 'library-lists-wrap';
       container.innerHTML = `
@@ -127,10 +224,21 @@
       const active = btn.dataset.libFilter === currentLibraryFilter;
       btn.classList.toggle('is-selected', active);
     });
+    document.querySelectorAll('[data-lib-tier]').forEach((btn) => {
+      btn.style.display = supportsTierSort ? '' : 'none';
+      btn.classList.toggle('is-selected', btn.dataset.libTier === currentLibraryTier);
+    });
+    document.querySelectorAll('[data-lib-sort]').forEach((btn) => {
+      btn.style.display = supportsTierSort ? '' : 'none';
+      btn.textContent = LIBRARY_SORT_LABELS[currentLibrarySort] || LIBRARY_SORT_LABELS.recent;
+      btn.classList.toggle('is-selected', currentLibrarySort !== 'recent');
+    });
+    const libDiv = document.querySelector('#screen-library .filter-divider');
+    if (libDiv) libDiv.style.display = supportsTierSort ? '' : 'none';
   }
 
-  function openQuickPanel(panelKey) {
-    const spec = QUICK_PANELS[panelKey];
+  function openQuickPanel(panelKey, preferredFocusRowId = null) {
+    const spec = getQuickPanelSpec(panelKey);
     const panelEl = document.getElementById('player-quick-panel');
     const cueEl = document.getElementById('player-subtitle-cue');
     if (!spec || !panelEl) return;
@@ -148,19 +256,24 @@
         <span class="quick-row-title" style="color: var(--text-secondary);">${spec.title}</span>
       </div>
       ${spec.rows.map((r) => `
-        <button class="quick-row${r.active ? ' is-active' : ''}" data-focusable="true" data-quick-row="${r.id}" data-keep-open="${r.keepOpen ? '1' : '0'}">
+        <button class="quick-row${r.active ? ' is-active' : ''}" data-focusable="true" data-quick-row="${r.id}" data-keep-open="${r.keepOpen ? '1' : '0'}"${r.toggle ? ` aria-pressed="${r.on ? 'true' : 'false'}"` : ''}>
           <div>
             <div class="quick-row-title">${r.title}</div>
             ${r.sub ? `<div class="quick-row-sub">${r.sub}</div>` : ''}
           </div>
           <div style="display:flex;align-items:center;gap:12px;">
-            ${r.trailing ? `<span class="section-sub">${r.trailing}</span>` : ''}
-            ${r.active ? '<span class="quick-row-check">✓</span>' : ''}
+            ${r.toggle
+              ? `<span class="quick-row-value${r.on ? ' is-on' : ''}">${r.on ? 'På' : 'Av'}</span>`
+              : `${r.trailing ? `<span class="section-sub">${r.trailing}</span>` : ''}${r.active ? '<span class="quick-row-check">✓</span>' : ''}`}
           </div>
         </button>
+        ${r.dividerAfter ? '<div class="quick-panel-divider"></div>' : ''}
       `).join('')}
     `;
-    const activeBtn = panelEl.querySelector('.quick-row.is-active') || panelEl.querySelector('.quick-row');
+    const preferredBtn = preferredFocusRowId
+      ? panelEl.querySelector(`[data-quick-row="${preferredFocusRowId}"]`)
+      : null;
+    const activeBtn = preferredBtn || panelEl.querySelector('.quick-row.is-active') || panelEl.querySelector('.quick-row');
     if (activeBtn) setFocus(activeBtn);
   }
 
@@ -210,7 +323,19 @@
     focusedEl = el;
     focusedEl.classList.add('is-focused');
     const topBar = document.querySelector('.top-bar');
-    if (topBar) topBar.classList.toggle('has-focus', !!focusedEl.closest('.top-bar'));
+    const inTopBar = !!focusedEl.closest('.top-bar');
+    if (topBar) topBar.classList.toggle('has-focus', inTopBar);
+    const activeScreenEl = document.getElementById(`screen-${currentScreen}`);
+    if (activeScreenEl) {
+      if (inTopBar) {
+        activeScreenEl.scrollLeft = 0;
+      } else {
+        const shelfRow = focusedEl.closest('.shelf-row');
+        if (shelfRow && shelfRow.offsetLeft + shelfRow.offsetWidth <= activeScreenEl.clientWidth) {
+          activeScreenEl.scrollLeft = 0;
+        }
+      }
+    }
     const slot = focusedEl.closest('.poster-slot') || focusedEl;
     slot.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     const label = focusedEl.dataset.label || focusedEl.textContent.trim().slice(0, 38);
@@ -278,11 +403,20 @@
       if (entryTarget) setFocus(entryTarget);
       return;
     }
+    const inSettingsSidebar = !!focusedEl.closest('.settings-sidebar');
     if (!inTopBar && direction === 'ArrowUp') {
       const screenCandidates = candidates.filter((el) => !el.closest('.top-bar'));
       const curRect = focusedEl.getBoundingClientRect();
-      const hasContentAbove = screenCandidates.some((el) => el !== focusedEl && el.getBoundingClientRect().bottom < curRect.top - 12);
-      if (!hasContentAbove && currentScreen !== 'player' && currentScreen !== 'details') {
+      const hasContentAbove = screenCandidates.some((el) => {
+        if (el === focusedEl) return false;
+        if (inSettingsSidebar && !el.closest('.settings-sidebar')) return false;
+        if (!inSettingsSidebar && el.closest('.settings-sidebar')) return false;
+        return el.getBoundingClientRect().bottom <= curRect.top + 2;
+      });
+      if (!hasContentAbove) {
+        if (currentScreen === 'player' || currentScreen === 'details') {
+          return;
+        }
         const activeTab = document.querySelector(`.top-bar [data-target-screen="${currentScreen}"]`) || document.querySelector('.top-bar .is-active');
         if (activeTab) {
           setFocus(activeTab);
@@ -294,12 +428,11 @@
     const curRect = focusedEl.getBoundingClientRect();
     const cx = curRect.left + curRect.width / 2;
     const cy = curRect.top + curRect.height / 2;
+    const isVertical = direction === 'ArrowUp' || direction === 'ArrowDown';
 
-    let best = null;
-    let bestScore = Infinity;
-
+    const directional = [];
     for (const el of candidates) {
-      if (el === focusedEl) continue;
+      if (el === focusedEl || (!inTopBar && el.closest('.top-bar'))) continue;
       const r = el.getBoundingClientRect();
       const ex = r.left + r.width / 2;
       const ey = r.top + r.height / 2;
@@ -311,12 +444,65 @@
       if (direction === 'ArrowDown' && dy <= 18) continue;
       if (direction === 'ArrowUp' && dy >= -18) continue;
 
-      const primary = (direction === 'ArrowLeft' || direction === 'ArrowRight') ? Math.abs(dx) : Math.abs(dy);
-      const ortho = (direction === 'ArrowLeft' || direction === 'ArrowRight') ? Math.abs(dy) : Math.abs(dx);
-      const score = primary + ortho * 2.6;
+      const primary = isVertical ? Math.abs(dy) : Math.abs(dx);
+      const ortho = isVertical ? Math.abs(dx) : Math.abs(dy);
+      directional.push({ el, rect: r, cy: ey, primary, ortho, inSidebar: !!el.closest('.settings-sidebar') });
+    }
+
+    if (!directional.length) return;
+
+    const sameRow = (c) =>
+      Math.min(curRect.bottom, c.rect.bottom) > Math.max(curRect.top, c.rect.top);
+
+    let pool = directional;
+    if (isVertical) {
+      pool = pool.filter((c) => (inSettingsSidebar ? c.inSidebar : !c.inSidebar));
+      if (!pool.length) return;
+      const minPrimary = Math.min(...pool.map((c) => c.primary));
+      pool = pool.filter((c) => c.primary <= minPrimary + 48);
+    } else if (currentScreen === 'settings') {
+      if (inSettingsSidebar) {
+        if (direction === 'ArrowLeft') return;
+        pool = pool.filter((c) => !c.inSidebar);
+        if (!pool.length) return;
+        const rowMatches = pool.filter(sameRow);
+        if (rowMatches.length) {
+          pool = rowMatches;
+        } else {
+          const minDy = Math.min(...pool.map((c) => Math.abs(c.cy - cy)));
+          pool = pool.filter((c) => Math.abs(c.cy - cy) <= minDy + 8);
+        }
+      } else if (direction === 'ArrowLeft') {
+        const detailRowMatches = pool.filter((c) => !c.inSidebar && sameRow(c));
+        if (detailRowMatches.length) {
+          pool = detailRowMatches;
+        } else {
+          pool = pool.filter((c) => c.inSidebar);
+          if (!pool.length) return;
+          const sidebarRowMatches = pool.filter(sameRow);
+          if (sidebarRowMatches.length) {
+            pool = sidebarRowMatches;
+          } else {
+            const minDy = Math.min(...pool.map((c) => Math.abs(c.cy - cy)));
+            pool = pool.filter((c) => Math.abs(c.cy - cy) <= minDy + 8);
+          }
+        }
+      } else {
+        pool = pool.filter((c) => !c.inSidebar && sameRow(c));
+        if (!pool.length) return;
+      }
+    } else {
+      pool = pool.filter(sameRow);
+      if (!pool.length) return;
+    }
+
+    let best = null;
+    let bestScore = Infinity;
+    for (const c of pool) {
+      const score = c.primary + c.ortho * 2.6;
       if (score < bestScore) {
         bestScore = score;
-        best = el;
+        best = c.el;
       }
     }
     if (best) setFocus(best);
@@ -324,9 +510,42 @@
 
   function activateFocused() {
     if (!focusedEl) return;
+    if (focusedEl.dataset.metalfxMode) {
+      comfortState.lowResUpscaleMode = focusedEl.dataset.metalfxMode;
+      syncSettingsComfortUI();
+      setFocus(focusedEl);
+      return;
+    }
+    if (focusedEl.dataset.settingToggle === 'lanczos') {
+      comfortState.upscalesFullHDVideo = !comfortState.upscalesFullHDVideo;
+      syncSettingsComfortUI();
+      setFocus(focusedEl);
+      return;
+    }
     if (focusedEl.dataset.libFilter) {
       currentLibraryFilter = focusedEl.dataset.libFilter;
       renderLibraryGrid();
+      setFocus(focusedEl);
+      return;
+    }
+    if (focusedEl.dataset.libTier) {
+      currentLibraryTier = focusedEl.dataset.libTier;
+      renderLibraryGrid();
+      setFocus(focusedEl);
+      return;
+    }
+    if (focusedEl.dataset.libSort) {
+      const order = ['recent', 'rating', 'title'];
+      currentLibrarySort = order[(order.indexOf(currentLibrarySort) + 1) % order.length];
+      renderLibraryGrid();
+      setFocus(focusedEl);
+      return;
+    }
+    if (focusedEl.dataset.searchKind) {
+      currentSearchKind = focusedEl.dataset.searchKind;
+      document.querySelectorAll('[data-search-kind]').forEach((btn) => {
+        btn.classList.toggle('is-selected', btn.dataset.searchKind === currentSearchKind);
+      });
       setFocus(focusedEl);
       return;
     }
@@ -335,6 +554,19 @@
       return;
     }
     if (focusedEl.dataset.quickRow) {
+      const rowId = focusedEl.dataset.quickRow;
+      if (activeQuickPanel === 'picture') {
+        if (rowId === 'off' || rowId === 'auto' || rowId === 'line_art') {
+          comfortState.lowResUpscaleMode = rowId;
+        } else if (rowId === 'lanczos') {
+          comfortState.upscalesFullHDVideo = !comfortState.upscalesFullHDVideo;
+        } else if (rowId === 'hud') {
+          comfortState.showNerdHUD = !comfortState.showNerdHUD;
+        }
+        syncSettingsComfortUI();
+        openQuickPanel('picture', rowId);
+        return;
+      }
       if (focusedEl.dataset.keepOpen !== '1') {
         closeQuickPanel(true);
       }
@@ -390,8 +622,9 @@
   });
 
   document.body.classList.add('is-bootstrapping');
+  syncSettingsComfortUI();
   const initialPanel = params.get('panel');
-  const shouldOpenInitialPanel = currentScreen === 'player' && !!initialPanel && !!QUICK_PANELS[initialPanel];
+  const shouldOpenInitialPanel = currentScreen === 'player' && !!initialPanel && !!getQuickPanelSpec(initialPanel);
   switchScreen(currentScreen, !shouldOpenInitialPanel);
   if (shouldOpenInitialPanel) {
     openQuickPanel(initialPanel);

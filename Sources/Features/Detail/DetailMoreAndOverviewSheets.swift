@@ -71,6 +71,10 @@ struct DetailMoreSheetView: View {
         mediaType == "series" ? "Slett fra samlingen" : "Slett filmen fra samlingen"
     }
 
+    nonisolated static func deleteSeasonTitle(seasonNumber: Int) -> String {
+        seasonNumber == 0 ? "Slett Spesialer" : "Slett sesong \(seasonNumber)"
+    }
+
     var body: some View {
         LunaSheetContainer(
             title: item.title,
@@ -119,7 +123,7 @@ struct DetailMoreSheetView: View {
                     LunaListDivider()
 
                     LunaListRow(
-                        title: "Slett sesong \(seasonNum)",
+                        title: Self.deleteSeasonTitle(seasonNumber: seasonNum),
                         leadingSystemImage: "trash",
                         showsChevron: true,
                         isDestructive: true
@@ -232,7 +236,6 @@ struct DetailOverviewSheetView: View {
                 }
                 .padding(.vertical, 6)
             }
-            .scrollClipDisabled()
             .defaultFocus($focusedChunkIndex, 0, priority: .userInitiated)
             .focusScope(overviewFocusNamespace)
         }

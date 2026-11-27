@@ -20,14 +20,19 @@ final class SideloadSafeStorageTests: XCTestCase {
             SideloadSafeStorage.speakerLayoutOverrideKey,
             SideloadSafeStorage.autoPlayNextEpisodeKey,
             SideloadSafeStorage.smartNordicSubtitleRuleKey,
+            SideloadSafeStorage.recognizesBitmapSubtitleTextKey,
             SideloadSafeStorage.showNerdHUDKey,
             SideloadSafeStorage.lowResUpscaleModeKey,
+            SideloadSafeStorage.fullHDUpscaleEnabledKey,
             SideloadSafeStorage.audioDelayMsKey,
             SideloadSafeStorage.audioEnhancementModeKey,
             SideloadSafeStorage.menuDisplayModeKey,
             SideloadSafeStorage.recentSearchesKey,
+            SideloadSafeStorage.preferNorwegianAudioPrefix,
+            SideloadSafeStorage.candidateSubtitleDelayPrefix,
         ]
 
+        XCTAssertEqual(allKeys.count, 25)
         XCTAssertEqual(Set(allKeys).count, allKeys.count, "All persistence keys must be unique")
         for key in allKeys {
             XCTAssertTrue(key.hasPrefix("luna.v1."), "Key \(key) must keep luna.v1. namespace")
@@ -50,12 +55,16 @@ final class SideloadSafeStorageTests: XCTestCase {
         XCTAssertEqual(SideloadSafeStorage.speakerLayoutOverrideKey, "luna.v1.comfort.speaker_layout_override")
         XCTAssertEqual(SideloadSafeStorage.autoPlayNextEpisodeKey, "luna.v1.comfort.auto_play_next_episode")
         XCTAssertEqual(SideloadSafeStorage.smartNordicSubtitleRuleKey, "luna.v1.comfort.smart_nordic_subtitle_rule")
+        XCTAssertEqual(SideloadSafeStorage.recognizesBitmapSubtitleTextKey, "luna.v1.comfort.recognizes_bitmap_subtitle_text")
         XCTAssertEqual(SideloadSafeStorage.showNerdHUDKey, "luna.v1.comfort.show_nerd_hud")
         XCTAssertEqual(SideloadSafeStorage.lowResUpscaleModeKey, "luna.v1.comfort.low_res_upscale_mode")
+        XCTAssertEqual(SideloadSafeStorage.fullHDUpscaleEnabledKey, "luna.v1.comfort.upscale_full_hd_video")
         XCTAssertEqual(SideloadSafeStorage.audioDelayMsKey, "luna.v1.comfort.audio_delay_ms")
         XCTAssertEqual(SideloadSafeStorage.audioEnhancementModeKey, "luna.v1.comfort.audio_enhancement_mode")
         XCTAssertEqual(SideloadSafeStorage.menuDisplayModeKey, "luna.v1.comfort.menu_display_mode")
         XCTAssertEqual(SideloadSafeStorage.recentSearchesKey, "luna.v1.recent_searches")
+        XCTAssertEqual(SideloadSafeStorage.preferNorwegianAudioPrefix, "luna.v1.playback.norwegian_audio.")
+        XCTAssertEqual(SideloadSafeStorage.candidateSubtitleDelayPrefix, "luna.v1.playback.subtitle_delay.")
         XCTAssertEqual(SideloadSafeStorage.keychainService, "luna.v1.credentials")
         XCTAssertEqual(SideloadSafeStorage.tokenAccount, "device_bearer_token")
         XCTAssertEqual(SideloadSafeStorage.fallbackPrefix, "luna.v1.keychain_fallback.")

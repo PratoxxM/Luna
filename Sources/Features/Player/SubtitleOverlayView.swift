@@ -8,6 +8,7 @@ struct SubtitleOverlayView: View {
 
     let engine: AetherEngine
     let comfort: ComfortPreferences
+    var fontRegistry: EmbeddedFontRegistry? = nil
     var subtitleDelaySeconds: Double = 0
     var isBottomBarVisible: Bool = false
     var isQuickPanelOpen: Bool = false
@@ -33,30 +34,27 @@ struct SubtitleOverlayView: View {
         GeometryReader { geo in
             if !isNativeSubtitleActive {
                 let isHDR = (videoFormat != .sdr)
-                let topCues = visibleCues.filter {
-                    isTextCue($0) && (resolveVerticalSlot(for: $0.placement) == .top || (placement.relocateToTop && resolveVerticalSlot(for: $0.placement) == .bottom))
-                }
-                let centerCues = visibleCues.filter { isTextCue($0) && resolveVerticalSlot(for: $0.placement) == .center }
-                let bottomCues = visibleCues.filter {
-                    isTextCue($0) && !placement.relocateToTop && resolveVerticalSlot(for: $0.placement) == .bottom
-                }
-                let bitmapCues = visibleCues.filter { !isTextCue($0) }
+                let partitioned = Self.partitionVisibleCues(
+                    visibleCues,
+                    relocateToTop: placement.relocateToTop,
+                    useBitmapOCR: usesBitmapSubtitleOCR
+                )
 
                 ZStack {
                     Color.clear
 
-                    ForEach(bitmapCues) { cue in
+                    ForEach(partitioned.bitmap) { cue in
                         renderBitmapCue(cue, containerSize: geo.size, isHDR: isHDR, placement: placement)
                     }
 
-                    if !topCues.isEmpty {
-                        stackedTextSlot(topCues, verticalSlot: .top, isHDR: isHDR, placement: placement)
+                    if !partitioned.top.isEmpty {
+                        stackedTextSlot(partitioned.top, verticalSlot: .top, isHDR: isHDR, placement: placement)
                     }
-                    if !centerCues.isEmpty {
-                        stackedTextSlot(centerCues, verticalSlot: .center, isHDR: isHDR, placement: placement)
+                    if !partitioned.center.isEmpty {
+                        stackedTextSlot(partitioned.center, verticalSlot: .center, isHDR: isHDR, placement: placement)
                     }
-                    if !bottomCues.isEmpty {
-                        stackedTextSlot(bottomCues, verticalSlot: .bottom, isHDR: isHDR, placement: placement)
+                    if !partitioned.bottom.isEmpty {
+                        stackedTextSlot(partitioned.bottom, verticalSlot: .bottom, isHDR: isHDR, placement: placement)
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
@@ -69,6 +67,8 @@ struct SubtitleOverlayView: View {
         }
         .onReceive(engine.$subtitleCues) { nextCues in
             clockBox.cues = nextCues
+            clockBox.index = SubtitleCueIndex(nextCues, startTime: \.startTime, endTime: \.endTime)
+            clockBox.lastActiveIndices = []
             recomputeVisibleCues(at: clockBox.lastSourceTime, cueSource: nextCues)
         }
         .onReceive(engine.$subtitleTracks) { nextTracks in
@@ -95,8 +95,13 @@ struct SubtitleOverlayView: View {
         let activeCues = cueSource ?? clockBox.cues
         let delay = subtitleDelaySeconds != 0 ? subtitleDelaySeconds : engine.softwareSubtitleDelaySeconds
         let effectiveTime = sourceTime - delay
-        let next = activeCues.filter { $0.startTime <= effectiveTime && effectiveTime < $0.endTime }
-        let changed = next.count != visibleCues.count || zip(next, visibleCues).contains(where: { $0.id != $1.id })
+        let matchedIndices = clockBox.index.activeOriginalIndices(at: effectiveTime)
+        if cueSource == nil && matchedIndices == clockBox.lastActiveIndices {
+            return
+        }
+        clockBox.lastActiveIndices = matchedIndices
+        let next = matchedIndices.map { activeCues[$0] }
+        let changed = next.count != visibleCues.count || zip(next, visibleCues).contains(where: { $0 != $1 })
         if changed {
             visibleCues = next
         }
@@ -110,13 +115,116 @@ struct SubtitleOverlayView: View {
         return track.isNativelyRenderedSubtitle
     }
 
-    private func isTextCue(_ cue: SubtitleCue) -> Bool {
+    private var usesBitmapSubtitleOCR: Bool {
+        comfort.effectiveRecognizesBitmapSubtitleText()
+    }
+
+    nonisolated static func isTextCue(_ cue: SubtitleCue) -> Bool {
         switch cue.body {
         case .text, .richText:
             return true
         case .image:
             return false
         }
+    }
+
+    nonisolated static func resolveOCRCuePlacement(
+        recognizedText: String?,
+        lines: [SubtitleOCRLineInput],
+        imagePosition: CGRect,
+        placementAlignment: Int?,
+        relocateToTop: Bool,
+        useBitmapOCR: Bool
+    ) -> (text: String, slot: VerticalSlot)? {
+        let pos = SubtitleOCRRectInput(
+            minX: Double(imagePosition.minX),
+            minY: Double(imagePosition.minY),
+            width: Double(imagePosition.width),
+            height: Double(imagePosition.height)
+        )
+        guard let text = SubtitleOCRPolicy.resolveTextCue(
+            recognizedText: recognizedText,
+            lines: lines,
+            imagePosition: pos,
+            isOCRPrompted: useBitmapOCR
+        ) else {
+            return nil
+        }
+        let midY = (imagePosition.height > 0) ? Double(imagePosition.midY) : nil
+        let rawSlot = resolveVerticalSlot(alignment: placementAlignment, positionY: midY)
+        let effectiveSlot: VerticalSlot = (rawSlot == .bottom && relocateToTop) ? .top : rawSlot
+        return (text, effectiveSlot)
+    }
+
+    nonisolated static func resolvedOCRText(
+        for cue: SubtitleCue,
+        bitmap: SubtitleImage,
+        useBitmapOCR: Bool
+    ) -> String? {
+        guard useBitmapOCR,
+              let recognized = bitmap.recognizedText ?? cue.recognizedText else {
+            return nil
+        }
+        let lines = recognized.lines.map { line in
+            SubtitleOCRLineInput(
+                text: line.text,
+                confidence: Double(line.confidence),
+                minX: Double(line.boundingBox.minX),
+                minY: Double(line.boundingBox.minY),
+                width: Double(line.boundingBox.width),
+                height: Double(line.boundingBox.height)
+            )
+        }
+        return resolveOCRCuePlacement(
+            recognizedText: recognized.text,
+            lines: lines,
+            imagePosition: bitmap.position,
+            placementAlignment: cue.placement?.alignment,
+            relocateToTop: false,
+            useBitmapOCR: useBitmapOCR
+        )?.text
+    }
+
+    nonisolated static func partitionVisibleCues(
+        _ cues: [SubtitleCue],
+        relocateToTop: Bool,
+        useBitmapOCR: Bool = false
+    ) -> (top: [SubtitleCue], center: [SubtitleCue], bottom: [SubtitleCue], bitmap: [SubtitleCue]) {
+        var top: [SubtitleCue] = []
+        var center: [SubtitleCue] = []
+        var bottom: [SubtitleCue] = []
+        var bitmap: [SubtitleCue] = []
+        for cue in cues {
+            let slot: VerticalSlot? = {
+                switch cue.body {
+                case .text, .richText:
+                    return resolveVerticalSlot(for: cue.placement)
+                case .image(let bitmapImage):
+                    guard resolvedOCRText(for: cue, bitmap: bitmapImage, useBitmapOCR: useBitmapOCR) != nil else {
+                        return nil
+                    }
+                    let midY = (bitmapImage.position.height > 0) ? Double(bitmapImage.position.midY) : nil
+                    return resolveVerticalSlot(alignment: cue.placement?.alignment, positionY: midY)
+                }
+            }()
+            guard let slot else {
+                bitmap.append(cue)
+                continue
+            }
+            switch slot {
+            case .top:
+                top.append(cue)
+            case .center:
+                center.append(cue)
+            case .bottom:
+                if relocateToTop {
+                    top.append(cue)
+                } else {
+                    bottom.append(cue)
+                }
+            }
+        }
+        return (top, center, bottom, bitmap)
     }
 
     private func stackedTextSlot(
@@ -166,8 +274,21 @@ struct SubtitleOverlayView: View {
                 boxAlpha: boxAlpha
             )
 
-        case .image:
-            EmptyView()
+        case .image(let bitmap):
+            if let ocrText = Self.resolvedOCRText(
+                for: cue,
+                bitmap: bitmap,
+                useBitmapOCR: usesBitmapSubtitleOCR
+            ) {
+                styledTextBox(
+                    content: Text(ocrText)
+                        .font(LunaTheme.Font.subtitleCue(size: pointSize))
+                        .foregroundStyle(comfort.hdrSubtitlePreset.foregroundColor(isHDR: isHDR)),
+                    boxAlpha: boxAlpha
+                )
+            } else {
+                EmptyView()
+            }
         }
     }
 
@@ -201,18 +322,22 @@ struct SubtitleOverlayView: View {
         }
     }
 
-    private enum VerticalSlot: Equatable {
+    enum VerticalSlot: Equatable {
         case top
         case center
         case bottom
     }
 
-    private func resolveVerticalSlot(for placement: SubtitleTextPlacement?) -> VerticalSlot {
-        if let align = placement?.alignment {
+    nonisolated static func resolveVerticalSlot(for placement: SubtitleTextPlacement?) -> VerticalSlot {
+        resolveVerticalSlot(alignment: placement?.alignment, positionY: placement?.position.map { Double($0.y) })
+    }
+
+    nonisolated static func resolveVerticalSlot(alignment: Int?, positionY: Double?) -> VerticalSlot {
+        if let align = alignment {
             if (7...9).contains(align) { return .top }
             if (4...6).contains(align) { return .center }
         }
-        if let pos = placement?.position, pos.y >= 0, pos.y <= 0.30 {
+        if let y = positionY, y >= 0, y <= 0.30 {
             return .top
         }
         return .bottom
@@ -250,16 +375,19 @@ struct SubtitleOverlayView: View {
         pointSize: CGFloat,
         isHDR: Bool
     ) -> AttributedString {
+        _ = fontRegistry?.registrationRevision
         var result = AttributedString()
         let mult = comfort.hdrSubtitlePreset.rgbComponents
 
         for run in runs {
             var part = AttributedString(run.text)
-            let baseFont = LunaTheme.Font.subtitleCue(
+            let descriptor = run.fontName.flatMap { fontRegistry?.descriptor(forFontName: $0) }
+            part.font = LunaTheme.Font.subtitleCue(
+                descriptor: descriptor,
                 size: pointSize,
-                weight: run.isBold ? .bold : .semibold
+                isBold: run.isBold,
+                isItalic: run.isItalic
             )
-            part.font = run.isItalic ? baseFont.italic() : baseFont
 
             if let c = run.color {
                 part.foregroundColor = Color(
@@ -372,4 +500,6 @@ struct SubtitleOverlayView: View {
 private final class SubtitleClockBox {
     var lastSourceTime: Double = 0
     var cues: [SubtitleCue] = []
+    var index = SubtitleCueIndex([SubtitleCue](), startTime: \.startTime, endTime: \.endTime)
+    var lastActiveIndices: [Int] = []
 }

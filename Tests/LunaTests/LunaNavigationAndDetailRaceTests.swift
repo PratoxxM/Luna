@@ -1,4 +1,6 @@
 import Foundation
+import SwiftUI
+import UIKit
 import XCTest
 @testable import Luna
 
@@ -529,5 +531,221 @@ final class LunaNavigationAndDetailRaceTests: XCTestCase {
 
         tracker.markAppeared(ids[6])
         XCTAssertEqual(tracker.resolveEntryID(orderedIDs: ids), ids[6])
+    }
+
+    @MainActor
+    func testUpNavigationRevealsTopBarSafelyWithoutBypassingMenuAndRespectsGuards() {
+        let visibility = LunaNavigationBarVisibility()
+        visibility.syncActiveTab(.settings)
+
+        let s420 = ScrollTopSample.capture(scrolledOffsetY: 420)
+        let s490 = ScrollTopSample.capture(scrolledOffsetY: 490)
+        let s0 = ScrollTopSample.capture(scrolledOffsetY: 0)
+        visibility.reportScrollSample(nil, s420, for: .settings)
+        XCTAssertTrue(visibility.isCollapsedByScroll)
+        XCTAssertTrue(visibility.isTopBarHidden)
+
+        // Subpage guard prevents reveal
+        let subToken = UUID()
+        visibility.enterSubpage(subToken)
+        visibility.handleUpNavigationToRevealTopBar()
+        XCTAssertTrue(visibility.isCollapsedByScroll)
+        XCTAssertEqual(visibility.focusRequestNonce, 0)
+        XCTAssertEqual(visibility.scrollToTopNonce, 0)
+        visibility.leaveSubpage(subToken)
+
+        // Modal guard prevents reveal
+        let modalToken = UUID()
+        visibility.enterModal(modalToken)
+        visibility.handleUpNavigationToRevealTopBar()
+        XCTAssertTrue(visibility.isCollapsedByScroll)
+        XCTAssertEqual(visibility.focusRequestNonce, 0)
+        XCTAssertEqual(visibility.scrollToTopNonce, 0)
+        visibility.leaveModal(modalToken)
+
+        // Up navigation reveals top bar, bumps both nonces, and keeps pendingMenuBypassExit false
+        let pressAt = Date(timeIntervalSinceReferenceDate: 3_000)
+        visibility.handleUpNavigationToRevealTopBar(now: pressAt)
+        XCTAssertFalse(visibility.isCollapsedByScroll)
+        XCTAssertFalse(visibility.isTopBarHidden)
+        XCTAssertFalse(visibility.pendingMenuBypassExit)
+        XCTAssertEqual(visibility.focusRequestNonce, 1)
+        XCTAssertEqual(visibility.scrollToTopNonce, 1)
+        XCTAssertTrue(visibility.shouldInterceptMenuPress(hasActivePlayback: false))
+
+        // Grace window prevents immediate scroll jitter from re-collapsing TopBar
+        visibility.reportScrollSample(s420, s490, for: .settings, now: pressAt.addingTimeInterval(0.05))
+        XCTAssertFalse(visibility.isCollapsedByScroll)
+
+        // Already-focused TopBar is a no-op
+        visibility.updateTopBarFocused(true, now: pressAt.addingTimeInterval(0.08))
+        visibility.handleUpNavigationToRevealTopBar(now: pressAt.addingTimeInterval(0.09))
+        XCTAssertEqual(visibility.focusRequestNonce, 1)
+        XCTAssertEqual(visibility.scrollToTopNonce, 1)
+
+        // Reset scroll to top & return focus downward into Settings keeps TopBar visible
+        visibility.reportScrollSample(s490, s0, for: .settings, now: pressAt.addingTimeInterval(0.20))
+        visibility.requestContentEntryFocus(for: .settings)
+        XCTAssertFalse(visibility.isCollapsedByScroll)
+        XCTAssertFalse(visibility.isTopBarHidden)
+
+        // Sink revealTopBar wires cleanly, and .noop is a safe no-op
+        visibility.reportScrollSample(s0, s420, for: .settings, now: pressAt.addingTimeInterval(0.30))
+        XCTAssertTrue(visibility.isCollapsedByScroll)
+        visibility.sink.revealTopBar()
+        XCTAssertFalse(visibility.isCollapsedByScroll)
+        XCTAssertEqual(visibility.focusRequestNonce, 2)
+        XCTAssertEqual(visibility.scrollToTopNonce, 2)
+        LunaSubpageVisibilitySink.noop.revealTopBar()
+    }
+
+    func testSettingsUpNavigationRevealPolicyAndCustomRowInitialFocusTarget() {
+        // Inactive tab or non-up direction never reveals TopBar
+        XCTAssertFalse(
+            SettingsView.shouldRevealTopBarOnUpMove(
+                isActiveTab: false,
+                directionIsUp: true,
+                focusedCategory: .roomAndDisplay,
+                isRightPanel: false
+            )
+        )
+        XCTAssertFalse(
+            SettingsView.shouldRevealTopBarOnUpMove(
+                isActiveTab: true,
+                directionIsUp: false,
+                focusedCategory: .roomAndDisplay,
+                isRightPanel: false
+            )
+        )
+        XCTAssertFalse(
+            SettingsView.shouldRevealTopBarOnUpMove(
+                isActiveTab: true,
+                directionIsUp: false,
+                focusedCategory: nil,
+                isRightPanel: true
+            )
+        )
+
+        // Left sidebar only triggers on top-most category (.roomAndDisplay)
+        XCTAssertTrue(
+            SettingsView.shouldRevealTopBarOnUpMove(
+                isActiveTab: true,
+                directionIsUp: true,
+                focusedCategory: .roomAndDisplay,
+                isRightPanel: false
+            )
+        )
+        for lowerCategory in SettingsCategory.allCases.dropFirst() {
+            XCTAssertFalse(
+                SettingsView.shouldRevealTopBarOnUpMove(
+                    isActiveTab: true,
+                    directionIsUp: true,
+                    focusedCategory: lowerCategory,
+                    isRightPanel: false
+                )
+            )
+        }
+        XCTAssertFalse(
+            SettingsView.shouldRevealTopBarOnUpMove(
+                isActiveTab: true,
+                directionIsUp: true,
+                focusedCategory: nil,
+                isRightPanel: false
+            )
+        )
+
+        // Right panel never hijacks upward row-by-row navigation (even when focusedCategory == nil)
+        XCTAssertFalse(
+            SettingsView.shouldRevealTopBarOnUpMove(
+                isActiveTab: true,
+                directionIsUp: true,
+                focusedCategory: nil,
+                isRightPanel: true
+            )
+        )
+        for category in SettingsCategory.allCases {
+            XCTAssertFalse(
+                SettingsView.shouldRevealTopBarOnUpMove(
+                    isActiveTab: true,
+                    directionIsUp: true,
+                    focusedCategory: category,
+                    isRightPanel: true
+                )
+            )
+        }
+
+        // CustomRowBrowseView initial/async focus target resolution
+        XCTAssertEqual(
+            CustomRowBrowseView.resolveInitialFocusTarget(
+                currentEntryCardID: nil,
+                oldFirstID: nil,
+                newFirstID: "movie:tmdb:100"
+            ),
+            "movie:tmdb:100"
+        )
+        XCTAssertNil(
+            CustomRowBrowseView.resolveInitialFocusTarget(
+                currentEntryCardID: "movie:tmdb:100",
+                oldFirstID: "movie:tmdb:100",
+                newFirstID: "movie:tmdb:100"
+            )
+        )
+        XCTAssertNil(
+            CustomRowBrowseView.resolveInitialFocusTarget(
+                currentEntryCardID: "movie:tmdb:100",
+                oldFirstID: "movie:tmdb:100",
+                newFirstID: "movie:tmdb:101"
+            )
+        )
+        XCTAssertEqual(
+            CustomRowBrowseView.resolveInitialFocusTarget(
+                currentEntryCardID: nil,
+                oldFirstID: "movie:tmdb:100",
+                newFirstID: "movie:tmdb:101"
+            ),
+            "movie:tmdb:101"
+        )
+        XCTAssertNil(
+            CustomRowBrowseView.resolveInitialFocusTarget(
+                currentEntryCardID: nil,
+                oldFirstID: nil,
+                newFirstID: nil
+            )
+        )
+    }
+
+    @MainActor
+    func testCustomRowBrowseViewRendersInHostingWindow() async {
+        let suite = "luna.test.customrowhost.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Expected isolated UserDefaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = AppSessionStore(defaults: defaults)
+        let windowScene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first
+        let window = windowScene.map { UIWindow(windowScene: $0) }
+            ?? UIWindow(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        window.frame = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        let host = UIHostingController(
+            rootView: CustomRowBrowseView(
+                title: "Nordic Noir",
+                pathOrRowId: "/api/tv/v2/rows/custom:nordic-noir"
+            )
+            .environment(store)
+        )
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        window.layoutIfNeeded()
+        try? await Task.sleep(nanoseconds: 25_000_000)
+        XCTAssertEqual(host.view.bounds.size, CGSize(width: 1920, height: 1080))
     }
 }

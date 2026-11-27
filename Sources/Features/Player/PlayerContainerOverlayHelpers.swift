@@ -326,6 +326,15 @@ extension PlayerContainerView {
             viewModel.fatalError = previewFatalError
             viewModel.hasFirstFrameReadyForDisplay = false
             viewModel.isResolving = false
+        } else if targetScreen == .playerCurtain {
+            viewModel.sessionController.isResolving = true
+            viewModel.sessionController.hasFirstFrameReadyForDisplay = false
+            viewModel.sessionController.isAwaitingDisplaySwitch = false
+            viewModel.sessionController.firstFrameFallbackUnlocked = false
+            viewModel.sessionController.startupState.resolveStageLabel = "Klargjør Dolby Vision P7 FEL…"
+            viewModel.sessionController.startupState.resolvePercent = 68
+            viewModel.sessionController.startupState.resolveHeadline = "FraMeSToR · 4K Remux · På NVMe"
+            osd.showBottomBar = false
         } else if targetScreen == .playerScrub {
             osd.beginInteractiveScrub()
             viewModel.configurePreviewScrub(
@@ -357,10 +366,13 @@ extension PlayerContainerView {
         let store = sessionStore
         let invalidatedItemId = viewModel.activeSession?.item.itemId ?? initialRequest.itemId
         let invalidatedTmdbId = viewModel.activeSession?.item.ids.tmdb ?? initialRequest.preparedSession?.item.ids.tmdb
+        let hadActiveSession = viewModel.activeSession != nil
         ItemDetailMemoryCache.invalidate(itemId: invalidatedItemId, tmdbId: invalidatedTmdbId)
         viewModel.teardownAndStop(
             onComplete: {
-                ItemDetailMemoryCache.invalidate(itemId: invalidatedItemId, tmdbId: invalidatedTmdbId)
+                if hadActiveSession {
+                    ItemDetailMemoryCache.invalidate(itemId: invalidatedItemId, tmdbId: invalidatedTmdbId)
+                }
                 store.notifyContentMutated()
             },
             onStopReceipt: { receipt in

@@ -458,4 +458,342 @@ final class PlayerQuickPanelAndSwitchTests: XCTestCase {
         XCTAssertEqual(transport.lastReloadedOptions?.preferDualLayerDolbyVision, false)
         XCTAssertFalse(vm.suggestsHDR10BaseLayer)
     }
+
+    @MainActor
+    func testLoadAlternativesCoalescesConcurrentRequestsAndDiscardsStaleSession() async throws {
+        let host = "alt-coalesce-\(UUID().uuidString.lowercased()).local"
+        defer { MockURLProtocol.unregister(host: host) }
+
+        let altFetchCount = TestLockedBox(0)
+        let altGate = TestStepGate()
+        let altLog = TestLockedBox<[String]>([])
+        MockURLProtocol.registerAsync(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            if url.path.hasSuffix("/alternatives") {
+                altFetchCount.withLock { $0 += 1 }
+                await altGate.wait(label: "alt", log: altLog)
+                let body = #"""
+                {"ok":true,"sessionId":"sess-alt-1","roomName":"Kjellerstua","hardwareProfile":"dv-fel-714","activeCandidateId":"cand-1","alternatives":[{"candidateId":"cand-1","displayHeadline":"4K HDR10","releaseTitle":"Dune.2160p","source":"nvme"}]}
+                """#
+                return (resp, Data(body.utf8))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let suite = "luna.test.altcoalesce.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let engine = try LunaApp.makeSharedEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+        let comfort = ComfortPreferences(defaults: defaults)
+        let vm = PlayerViewModel(engine: engine, comfort: comfort, transport: FakePlayerTransport(), bindOnInit: false)
+        vm.activeClient = try MockURLProtocol.makeClient(host: host)
+        vm.activeSession = try JSONDecoder().decode(
+            TvPlaybackSession.self,
+            from: Self.makePlaybackSessionJSON(sessionId: "sess-alt-1", candidateId: "cand-1", headline: "4K")
+        )
+
+        // Two concurrent loadAlternatives() calls coalesce into 1 HTTP request
+        async let callA: Void = vm.loadAlternatives()
+        await altGate.waitUntilStarted()
+        async let callB: Void = vm.loadAlternatives()
+        await altGate.finish()
+        _ = await (callA, callB)
+
+        XCTAssertEqual(altFetchCount.withLock { $0 }, 1)
+        XCTAssertEqual(vm.alternativesSessionId, "sess-alt-1")
+        XCTAssertEqual(vm.alternatives.count, 1)
+
+        // Idempotent repeat call for the same session skips HTTP fetch
+        await vm.loadAlternatives()
+        XCTAssertEqual(altFetchCount.withLock { $0 }, 1)
+
+        // Stale session change while request is in flight discards result
+        await altGate.reset()
+        vm.activeSession = try JSONDecoder().decode(
+            TvPlaybackSession.self,
+            from: Self.makePlaybackSessionJSON(sessionId: "sess-alt-2", candidateId: "cand-2", headline: "4K")
+        )
+        let staleTask = Task { @MainActor in
+            await vm.loadAlternatives()
+        }
+        await altGate.waitUntilStarted()
+        vm.activeSession = try JSONDecoder().decode(
+            TvPlaybackSession.self,
+            from: Self.makePlaybackSessionJSON(sessionId: "sess-alt-3", candidateId: "cand-3", headline: "4K")
+        )
+        await altGate.finish()
+        await staleTask.value
+        XCTAssertNotEqual(vm.alternativesSessionId, "sess-alt-2")
+    }
+
+    private static func makeSeriesEpisodeSessionJSON(
+        sessionId: String,
+        itemId: String,
+        episode: Int,
+        nextEpisodeItemId: String? = nil
+    ) -> Data {
+        let nextField = nextEpisodeItemId.map {
+            ", \"nextEpisode\": { \"itemId\": \"\($0)\", \"season\": 1, \"episode\": \(episode + 1), \"title\": \"Episode \(episode + 1)\" }"
+        } ?? ""
+        let raw = """
+        {
+          "sessionId": "\(sessionId)",
+          "streamToken": "tok-ep-secret-\(episode)-998877",
+          "roomName": "Kjellerstua",
+          "hardwareProfile": "dv-fel-714",
+          "item": { "itemId": "\(itemId)", "mediaType": "episode", "ids": { "tmdb": 95396 }, "title": "Episode \(episode)", "seriesTitle": "Severance", "season": 1, "episode": \(episode), "runtimeSeconds": 2800 },
+          "selectedCandidate": { "candidateId": "cand-ep-\(episode)", "displayHeadline": "4K DV", "releaseTitle": "Severance.S01E0\(episode).2160p", "source": "nvme", "tier": "nvme" },
+          "stream": { "url": "/api/tv/v2/stream/\(sessionId)/tok-ep-secret-\(episode)-998877/video.mkv" },
+          "aetherConfig": { "preferDualLayerDolbyVision": true, "dolbyVisionHandling": "automatic", "matchContentEnabled": true, "audioBridgeMode": "lossless" }\(nextField)
+        }
+        """
+        return Data(raw.utf8)
+    }
+
+    @MainActor
+    func testSeamlessSourceSwitchHoldsOutgoingPictureBeforeReplacementAndWaitsForFirstFrameAndDisplaySwitch() async throws {
+        let host = "switch-hold-\(UUID().uuidString.lowercased()).invalid"
+        defer { MockURLProtocol.unregister(host: host) }
+        MockURLProtocol.register(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            if url.path.hasSuffix("/switch") {
+                let switched = try JSONSerialization.jsonObject(with: Self.makePlaybackSessionJSON(
+                    sessionId: "sess-hold-1", candidateId: "cand-remux-2", headline: "4K DV FEL"
+                ))
+                return (resp, try JSONSerialization.data(withJSONObject: ["ok": true, "playbackSession": switched]))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let suite = "luna.test.switch.hold.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let engine = try LunaApp.makeSharedEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+
+        let transport = FakePlayerTransport(state: .playing, playbackPhase: .playing, videoRoute: .software, currentTime: 500)
+        let vm = PlayerViewModel(engine: engine, comfort: ComfortPreferences(defaults: defaults), transport: transport, audioActivator: MockNativeAudioActivator { _ in }, bindOnInit: false)
+        vm.activeClient = try MockURLProtocol.makeClient(host: host)
+        vm.activeSession = try JSONDecoder().decode(TvPlaybackSession.self, from: Self.makePlaybackSessionJSON(sessionId: "sess-hold-1", candidateId: "cand-1", headline: "4K WEB-DL"))
+        vm.isResolving = false
+        vm.hasFirstFrameReadyForDisplay = true
+
+        let stillView = AetherStillView()
+        vm.sessionController.attachStillView(stillView)
+        XCTAssertTrue(transport.attachedStillView === stillView)
+
+        var sawHoldDuringLoad = false
+        transport.onLoadStream = { _, _, _ in
+            sawHoldDuringLoad = vm.sessionController.isHoldingOutgoingPicture && vm.sessionController.isReplacingSourceItem && vm.isPictureReadyForReveal
+        }
+        vm.isAwaitingDisplaySwitch = true
+        await vm.switchSource(to: "cand-remux-2")
+
+        XCTAssertTrue(sawHoldDuringLoad)
+        XCTAssertEqual(transport.holdOutgoingPictureCallCount, 1)
+        let holdIdx = try XCTUnwrap(transport.events.firstIndex(of: "holdOutgoingPicture"))
+        let prepIdx = try XCTUnwrap(transport.events.firstIndex(of: "prepareForItemReplacement"))
+        XCTAssertLessThan(holdIdx, prepIdx)
+
+        // Remains held and curtain stays hidden while awaiting first frame & HDMI display switch
+        XCTAssertTrue(vm.sessionController.isHoldingOutgoingPicture)
+        XCTAssertTrue(vm.isPictureReadyForReveal)
+        XCTAssertEqual(transport.releaseOutgoingPictureCallCount, 0)
+
+        vm.hasFirstFrameReadyForDisplay = true
+        XCTAssertTrue(vm.sessionController.isHoldingOutgoingPicture)
+        vm.isAwaitingDisplaySwitch = false
+        XCTAssertFalse(vm.sessionController.isHoldingOutgoingPicture)
+        XCTAssertFalse(transport.isHoldingOutgoingPicture)
+        XCTAssertEqual(transport.releaseOutgoingPictureCallCount, 1)
+    }
+
+    @MainActor
+    func testSwitchSourceCurtainFallbackErrorReleaseAndWatchdogTimeoutOnServerSwitch() async throws {
+        let host = "switch-fallback-\(UUID().uuidString.lowercased()).invalid"
+        defer { MockURLProtocol.unregister(host: host) }
+        MockURLProtocol.register(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            if url.path.hasSuffix("/switch") {
+                let switched = try JSONSerialization.jsonObject(with: Self.makePlaybackSessionJSON(
+                    sessionId: "sess-fb-1", candidateId: "cand-2", headline: "4K"
+                ))
+                return (resp, try JSONSerialization.data(withJSONObject: ["ok": true, "playbackSession": switched]))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let suite = "luna.test.switch.fb.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let engine = try LunaApp.makeSharedEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+
+        let transport = FakePlayerTransport(state: .playing, playbackPhase: .playing, videoRoute: .software, currentTime: 250)
+        transport.holdOutgoingPictureResult = false
+        let vm = PlayerViewModel(engine: engine, comfort: ComfortPreferences(defaults: defaults), transport: transport, audioActivator: MockNativeAudioActivator { _ in }, bindOnInit: false)
+        let client = try MockURLProtocol.makeClient(host: host)
+        vm.activeClient = client
+        let s1 = try JSONDecoder().decode(TvPlaybackSession.self, from: Self.makePlaybackSessionJSON(sessionId: "sess-fb-1", candidateId: "cand-1", headline: "4K"))
+        let s2 = try JSONDecoder().decode(TvPlaybackSession.self, from: Self.makePlaybackSessionJSON(sessionId: "sess-fb-1", candidateId: "cand-2", headline: "4K Remux"))
+        vm.activeSession = s1
+        vm.isResolving = false
+        vm.hasFirstFrameReadyForDisplay = true
+
+        // 1. holdOutgoingPicture == false falls back to ResolvingCurtainView until first frame ready
+        var curtainShownDuringLoad = false
+        transport.onLoadStream = { _, _, _ in
+            curtainShownDuringLoad = !vm.isPictureReadyForReveal
+        }
+        await vm.switchSource(to: "cand-2")
+        XCTAssertTrue(curtainShownDuringLoad)
+        XCTAssertFalse(vm.isPictureReadyForReveal)
+        vm.hasFirstFrameReadyForDisplay = true
+        XCTAssertTrue(vm.isPictureReadyForReveal)
+
+        // 2. Error during applyServerSwitchedSession releases hold cleanly
+        transport.holdOutgoingPictureResult = true
+        transport.onLoadStream = { _, _, _ in throw URLError(.cannotConnectToHost) }
+        await vm.sessionController.applyServerSwitchedSession(s2, client: client, fallbackPosition: 250)
+        XCTAssertFalse(vm.sessionController.isHoldingOutgoingPicture)
+        XCTAssertFalse(vm.isSwitchingSource)
+        XCTAssertEqual(transport.releaseOutgoingPictureCallCount, 1)
+
+        // 3. Watchdog timeout unlocks and releases stuck hold when first frame never arrives
+        transport.onLoadStream = nil
+        transport.heldPictureFrameWaitSeconds = 0.05
+        await vm.sessionController.applyServerSwitchedSession(s2, client: client, fallbackPosition: 250)
+        XCTAssertTrue(vm.sessionController.isHoldingOutgoingPicture)
+        try await Task.sleep(nanoseconds: 160_000_000)
+        XCTAssertTrue(vm.firstFrameFallbackUnlocked)
+        XCTAssertFalse(vm.sessionController.isHoldingOutgoingPicture)
+        XCTAssertEqual(transport.releaseOutgoingPictureCallCount, 2)
+    }
+
+    @MainActor
+    func testWarmPlayNextEpisodeHoldsPictureAndReleasesOnCancelOrFallbackResolve() async throws {
+        let host = "playnext-warm-\(UUID().uuidString.lowercased()).invalid"
+        defer { MockURLProtocol.unregister(host: host) }
+
+        let resolveGate = TestStepGate()
+        let gateLog = TestLockedBox<[String]>([])
+        let fallbackMode = TestLockedBox(false)
+        MockURLProtocol.registerAsync(host: host) { request in
+            let url = try XCTUnwrap(request.url)
+            let resp = try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+            if url.path == "/api/tv/v2/playback/resolve" {
+                if fallbackMode.withLock({ $0 }) {
+                    let body = #"{"ok":true,"status":"resolving","resolveId":"res-next-fb","wsPath":"/api/tv/v2/ws/playback/res-next-fb"}"#
+                    return (resp, Data(body.utf8))
+                }
+                await resolveGate.wait(label: "next", log: gateLog)
+                let ep2 = try JSONSerialization.jsonObject(with: Self.makeSeriesEpisodeSessionJSON(sessionId: "sess-ep2", itemId: "ep-2", episode: 2))
+                return (resp, try JSONSerialization.data(withJSONObject: ["ok": true, "status": "ready", "resolveId": "res-next-ep2", "playbackSession": ep2]))
+            }
+            if url.path == "/api/tv/v2/playback/resolve/res-next-fb" {
+                let ep2 = try JSONSerialization.jsonObject(with: Self.makeSeriesEpisodeSessionJSON(sessionId: "sess-ep2", itemId: "ep-2", episode: 2))
+                return (resp, try JSONSerialization.data(withJSONObject: ["type": "resolve.ready", "resolveId": "res-next-fb", "playbackSession": ep2]))
+            }
+            return (resp, Data(#"{"ok":true}"#.utf8))
+        }
+
+        let suite = "luna.test.playnext.warm.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let engine = try LunaApp.makeSharedEngine()
+        defer {
+            PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset()
+            engine.stop(resetDisplayCriteria: true)
+        }
+
+        let transport = FakePlayerTransport(state: .playing, playbackPhase: .playing, videoRoute: .software, currentTime: 2650)
+        let holdGate = TestStepGate()
+        let holdLog = TestLockedBox<[String]>([])
+        transport.onHoldOutgoingPicture = {
+            await holdGate.wait(label: "hold", log: holdLog)
+            return true
+        }
+        let vm = PlayerViewModel(engine: engine, comfort: ComfortPreferences(defaults: defaults), transport: transport, audioActivator: MockNativeAudioActivator { _ in }, bindOnInit: false)
+        vm.activeClient = try MockURLProtocol.makeClient(host: host)
+        vm.activeSession = try JSONDecoder().decode(
+            TvPlaybackSession.self,
+            from: Self.makeSeriesEpisodeSessionJSON(sessionId: "sess-ep1", itemId: "ep-1", episode: 1, nextEpisodeItemId: "ep-2")
+        )
+        vm.isResolving = false
+        vm.hasFirstFrameReadyForDisplay = true
+
+        // 1. Cancellation while holdOutgoingPicture() is suspended never leaves orphaned held still
+        vm.qosReporter.prewarmedNextEpisodeItemId = "ep-2"
+        vm.qosReporter.prewarmedNextEpisodeSessionId = "prep-ep2"
+        let nextEp = TvNextEpisodeSummary(itemId: "ep-2", season: 1, episode: 2, title: "Episode 2")
+        vm.playNextEpisode(nextEp)
+        XCTAssertEqual(transport.state, .paused)
+        await holdGate.waitUntilStarted()
+        vm.sessionController.resolveTask?.cancel()
+        await holdGate.finish()
+        await vm.sessionController.resolveTask?.value
+        XCTAssertFalse(vm.sessionController.isHoldingOutgoingPicture)
+        XCTAssertFalse(transport.isHoldingOutgoingPicture)
+        XCTAssertEqual(transport.releaseOutgoingPictureCallCount, 1)
+
+        // 2. Fallback to slow resolveId releases held picture so ResolvingCurtainView is shown
+        transport.onHoldOutgoingPicture = nil
+        fallbackMode.withLock { $0 = true }
+        vm.activeSession = try JSONDecoder().decode(
+            TvPlaybackSession.self,
+            from: Self.makeSeriesEpisodeSessionJSON(sessionId: "sess-ep1", itemId: "ep-1", episode: 1, nextEpisodeItemId: "ep-2")
+        )
+        vm.isResolving = false
+        vm.hasFirstFrameReadyForDisplay = true
+        vm.qosReporter.prewarmedNextEpisodeItemId = "ep-2"
+        vm.qosReporter.prewarmedNextEpisodeSessionId = "prep-ep2"
+        let releaseExp = expectation(description: "Fallback resolveId releases outgoing hold")
+        transport.onReleaseOutgoingPicture = { releaseExp.fulfill() }
+        vm.playNextEpisode(nextEp)
+        await fulfillment(of: [releaseExp], timeout: 3.0)
+        XCTAssertFalse(vm.sessionController.isHoldingOutgoingPicture)
+        vm.sessionController.resolveTask?.cancel()
+    }
+
+    @MainActor
+    func testOverlappingHoldATrueThenHoldBFalseReleasesOrphanedHold() async throws {
+        let suite = "luna.test.holdoverlap.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let engine = try AetherEngine()
+        defer { PlayerAudioSessionCoordinator.shared.cancelDeferredDisplayCriteriaReset(); engine.stop(resetDisplayCriteria: true) }
+        let transport = MockPlayerTransport(state: .playing, playbackPhase: .playing)
+        let gateA = TestStepGate(), gateB = TestStepGate(), log = TestLockedBox<[String]>([])
+        let calls = TestLockedBox(0)
+        transport.onHoldOutgoingPicture = {
+            let n = calls.withLock { $0 += 1; return $0 }
+            if n == 1 { await gateA.wait(label: "A", log: log); return true }
+            await gateB.wait(label: "B", log: log); return false
+        }
+        let vm = PlayerViewModel(engine: engine, comfort: ComfortPreferences(defaults: defaults), transport: transport, bindOnInit: false)
+        let taskA = Task { @MainActor in await vm.sessionController.beginOutgoingPictureHold() }
+        await gateA.waitUntilStarted()
+        let taskB = Task { @MainActor in await vm.sessionController.beginOutgoingPictureHold() }
+        await gateB.waitUntilStarted()
+        await gateA.finish(); let tokA = await taskA.value
+        await gateB.finish(); let tokB = await taskB.value
+        XCTAssertNil(tokA); XCTAssertNil(tokB)
+        XCTAssertFalse(vm.sessionController.isHoldingOutgoingPicture)
+        XCTAssertFalse(transport.isHoldingOutgoingPicture)
+        XCTAssertEqual(transport.releaseOutgoingPictureCallCount, 1)
+    }
 }

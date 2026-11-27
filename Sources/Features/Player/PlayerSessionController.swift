@@ -10,30 +10,55 @@ import AetherBridge
 final class PlayerSessionController {
     var isResolving: Bool = true
     let startupState = PlayerStartupState()
-    var fatalError: String?
+    var fatalError: String? {
+        didSet {
+            if fatalError != nil {
+                cancelFirstFrameFallbackWatchdog()
+                releaseOutgoingPictureIfHeld()
+            }
+        }
+    }
     var currentRequest: PlaybackLaunchRequest?
     var activeSession: TvPlaybackSession?
     var alternatives: [TvCandidateInfo] = []
     private(set) var alternativesSessionId: String?
     var isLoadingAlternatives: Bool = false
     var isSwitchingSource: Bool = false
-    var hasFirstFrameReadyForDisplay: Bool = false
-    var isAwaitingDisplaySwitch: Bool = false
-    var firstFrameFallbackUnlocked: Bool = false
+    var isReplacingSourceItem: Bool = false
+    var isHoldingOutgoingPicture: Bool = false
+    var hasFirstFrameReadyForDisplay: Bool = false {
+        didSet {
+            evaluateOutgoingPictureRelease()
+        }
+    }
+    var isAwaitingDisplaySwitch: Bool = false {
+        didSet {
+            evaluateOutgoingPictureRelease()
+        }
+    }
+    var firstFrameFallbackUnlocked: Bool = false {
+        didSet {
+            evaluateOutgoingPictureRelease()
+        }
+    }
 
     @ObservationIgnored weak var host: PlayerViewModel?
     @ObservationIgnored let engine: AetherEngine
     @ObservationIgnored let comfort: ComfortPreferences
     @ObservationIgnored let transport: any PlayerTransportControlling
     @ObservationIgnored let audioActivator: any NativeAudioActivating
+    @ObservationIgnored let embeddedFontRegistry = EmbeddedFontRegistry()
 
     @ObservationIgnored var resolveTask: Task<Void, Never>?
     @ObservationIgnored var firstFrameFallbackTask: Task<Void, Never>?
     @ObservationIgnored var nowPlayingArtworkTask: Task<Void, Never>?
     @ObservationIgnored var switchSourceTask: Task<Void, Never>?
+    @ObservationIgnored var alternativesLoadTask: Task<Void, Never>?
+    @ObservationIgnored var alternativesLoadingSessionId: String?
+    @ObservationIgnored var alternativesPrefetchTask: Task<Void, Never>?
     @ObservationIgnored var registeredStreamToken: String?
     @ObservationIgnored var activeClient: LunaCoreClient?
-    @ObservationIgnored private var didTeardown: Bool = false
+    @ObservationIgnored var didTeardown: Bool = false
     @ObservationIgnored var engineOwnerToken: UInt64 = 0
     @ObservationIgnored var isDismissing: Bool = false
     @ObservationIgnored var isSpeculativeWarmMountInFlight: Bool = false
@@ -42,6 +67,10 @@ final class PlayerSessionController {
     @ObservationIgnored var pendingInflightPrepareTask: Task<TvPrepareResponse?, Never>?
     @ObservationIgnored var pendingInflightPrepareToken: String?
     @ObservationIgnored var activeResolveId: String?
+    @ObservationIgnored private var outgoingPictureHoldGeneration: UInt64 = 0
+    @ObservationIgnored private var inFlightOutgoingPictureHoldCount: Int = 0
+    @ObservationIgnored private var hasUnclaimedTransportHold: Bool = false
+    @ObservationIgnored var activeSwitchGeneration: UInt64 = 0
     @ObservationIgnored var onUnauthorized: (() -> Void)?
 
     init(
@@ -69,8 +98,84 @@ final class PlayerSessionController {
             needsForegroundVideoRestore: transport.needsForegroundVideoRestore,
             firstFrameFallbackUnlocked: firstFrameFallbackUnlocked,
             hasFirstFrameReadyForDisplay: hasFirstFrameReadyForDisplay,
-            isAwaitingDisplaySwitch: isAwaitingDisplaySwitch
+            isAwaitingDisplaySwitch: isAwaitingDisplaySwitch,
+            isReplacingSourceItem: isReplacingSourceItem,
+            isHoldingOutgoingPicture: isHoldingOutgoingPicture
         )
+    }
+
+    func attachStillView(_ view: AetherStillView?) {
+        transport.attachStillView(view)
+    }
+
+    func detachStillView() {
+        releaseOutgoingPictureIfHeld()
+        transport.attachStillView(nil)
+    }
+
+    func cancelFirstFrameFallbackWatchdog() {
+        firstFrameFallbackTask?.cancel()
+        firstFrameFallbackTask = nil
+    }
+
+    func beginOutgoingPictureHold() async -> UInt64? {
+        releaseOutgoingPictureIfHeld()
+        outgoingPictureHoldGeneration &+= 1
+        let token = outgoingPictureHoldGeneration
+        inFlightOutgoingPictureHoldCount += 1
+        let held: Bool
+        do {
+            defer { inFlightOutgoingPictureHoldCount -= 1 }
+            held = await transport.holdOutgoingPicture()
+        }
+        guard held else {
+            if hasUnclaimedTransportHold && !isHoldingOutgoingPicture && inFlightOutgoingPictureHoldCount == 0 {
+                hasUnclaimedTransportHold = false
+                transport.releaseOutgoingPicture()
+            }
+            return nil
+        }
+        guard !Task.isCancelled, !isDismissing, !didTeardown, token == outgoingPictureHoldGeneration else {
+            hasUnclaimedTransportHold = true
+            if !isHoldingOutgoingPicture && inFlightOutgoingPictureHoldCount == 0 {
+                hasUnclaimedTransportHold = false
+                transport.releaseOutgoingPicture()
+            }
+            return nil
+        }
+        isHoldingOutgoingPicture = true
+        hasUnclaimedTransportHold = false
+        return token
+    }
+
+    func releaseOutgoingPicture(ifMatching token: UInt64?) {
+        guard let token, token == outgoingPictureHoldGeneration else { return }
+        releaseOutgoingPictureIfHeld()
+    }
+
+    func releaseOutgoingPictureIfHeld() {
+        outgoingPictureHoldGeneration &+= 1
+        let shouldRelease = isHoldingOutgoingPicture || (hasUnclaimedTransportHold && inFlightOutgoingPictureHoldCount == 0)
+        isHoldingOutgoingPicture = false
+        if shouldRelease {
+            hasUnclaimedTransportHold = false
+            transport.releaseOutgoingPicture()
+        }
+    }
+
+    func evaluateOutgoingPictureRelease() {
+        if hasFirstFrameReadyForDisplay && !isAwaitingDisplaySwitch && !isReplacingSourceItem {
+            cancelFirstFrameFallbackWatchdog()
+        }
+        guard isHoldingOutgoingPicture else { return }
+        if fatalError != nil {
+            releaseOutgoingPictureIfHeld()
+            return
+        }
+        guard !isReplacingSourceItem else { return }
+        if firstFrameFallbackUnlocked || (hasFirstFrameReadyForDisplay && !isAwaitingDisplaySwitch) {
+            releaseOutgoingPictureIfHeld()
+        }
     }
 
     var effectiveDurationSeconds: Double {
@@ -123,6 +228,13 @@ final class PlayerSessionController {
         host.restoreController.resetTransientTransitionState()
         host.trackController.resetForNewLaunch(itemId: request.itemId)
         host.restoreController.lastForegroundPlaybackWasPlaying = false
+        activeSwitchGeneration &+= 1
+        cancelFirstFrameFallbackWatchdog()
+        isSwitchingSource = false
+        isReplacingSourceItem = false
+        releaseOutgoingPictureIfHeld()
+        embeddedFontRegistry.clearAndUnregisterAll()
+        host.scrubController.clearServerTrickplayCache()
         isDismissing = false
         pendingStopSnapshot = nil
         activeResolveId = nil
@@ -154,6 +266,10 @@ final class PlayerSessionController {
             return
         }
         activeClient = client
+        alternativesLoadTask?.cancel(); alternativesLoadTask = nil
+        alternativesLoadingSessionId = nil
+        alternativesPrefetchTask?.cancel(); alternativesPrefetchTask = nil
+        isLoadingAlternatives = false
         alternatives = []
         alternativesSessionId = nil
         resolveTask?.cancel()
@@ -184,7 +300,15 @@ final class PlayerSessionController {
         }
         switchSourceTask?.cancel()
         switchSourceTask = nil
+        activeSwitchGeneration &+= 1
+        let switchGeneration = activeSwitchGeneration
+        cancelFirstFrameFallbackWatchdog()
+        isSwitchingSource = false
+        isReplacingSourceItem = false
         host.qosReporter.cancelHeartbeatOnly()
+        host.qosReporter.resetTelemetryForSession()
+        embeddedFontRegistry.clearAndUnregisterAll()
+        host.scrubController.clearServerTrickplayCache()
 
         let seriesName = current.item.seriesTitle
         let cleanNextTitle = EpisodeTitleFormatter.nonGenericEpisodeTitle(
@@ -197,15 +321,16 @@ final class PlayerSessionController {
             backdropUrl: next.stillUrl ?? current.item.backdropUrl, logoUrl: current.item.logoUrl
         )
         currentRequest = req
+        alternativesLoadTask?.cancel(); alternativesLoadTask = nil
+        alternativesLoadingSessionId = nil
+        alternativesPrefetchTask?.cancel(); alternativesPrefetchTask = nil
+        isLoadingAlternatives = false
         alternatives = []
         alternativesSessionId = nil
         host.trackController.resetForNewLaunch(itemId: next.itemId)
         startupState.resolveHeadline = nil
         startupState.resolvePercent = 12
         startupState.resolveStageLabel = "Starter neste episode…"
-        isResolving = true
-        hasFirstFrameReadyForDisplay = false
-        firstFrameFallbackUnlocked = false
 
         let prevSessionId = current.sessionId
         let finalPos = max(0, transport.currentTime)
@@ -216,7 +341,6 @@ final class PlayerSessionController {
             chapters: host.trackController.chapters
         )
         activeSession = nil
-        transport.prepareForItemReplacement()
 
         Task.detached(priority: .utility) {
             _ = try? await client.sendHeartbeat(
@@ -225,8 +349,49 @@ final class PlayerSessionController {
                 completed: isCompleted ? true : nil
             )
         }
-        resolveTask = Task { @MainActor [weak self] in
-            await self?.runResolveAndLoad(request: req, client: client)
+
+        if handoff.matchedSessionId != nil {
+            transport.pause()
+            resolveTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                var holdToken: UInt64?
+                var handoffHoldToFirstFrameGate = false
+                defer {
+                    if !handoffHoldToFirstFrameGate {
+                        self.releaseOutgoingPicture(ifMatching: holdToken)
+                        if self.activeSwitchGeneration == switchGeneration {
+                            self.isReplacingSourceItem = false
+                        }
+                    }
+                }
+                holdToken = await self.beginOutgoingPictureHold()
+                guard !Task.isCancelled, !self.isDismissing, !self.didTeardown else { return }
+                self.cancelFirstFrameFallbackWatchdog()
+                self.isReplacingSourceItem = true
+                self.isResolving = true
+                self.hasFirstFrameReadyForDisplay = false
+                self.firstFrameFallbackUnlocked = false
+                self.transport.prepareForItemReplacement()
+                await self.runResolveAndLoad(request: req, client: client)
+                if !Task.isCancelled, !self.isDismissing, !self.didTeardown,
+                   self.fatalError == nil, self.activeSession != nil {
+                    handoffHoldToFirstFrameGate = true
+                    self.isReplacingSourceItem = false
+                    if self.isHoldingOutgoingPicture || !self.isPictureReadyForReveal {
+                        self.armFirstFrameFallbackWatchdog()
+                    }
+                    self.evaluateOutgoingPictureRelease()
+                }
+            }
+        } else {
+            releaseOutgoingPictureIfHeld()
+            isResolving = true
+            hasFirstFrameReadyForDisplay = false
+            firstFrameFallbackUnlocked = false
+            transport.prepareForItemReplacement()
+            resolveTask = Task { @MainActor [weak self] in
+                await self?.runResolveAndLoad(request: req, client: client)
+            }
         }
     }
 
@@ -265,7 +430,8 @@ final class PlayerSessionController {
             audioEnhancement: host.trackController.audioEnhancement,
             audioDelaySeconds: host.trackController.effectiveAudioDelaySecondsForActiveRoute(),
             autoplay: autoplay, suppressInitialSubtitleSelection: trackIntent != nil,
-            preferNorwegianAudio: preferNorwegian
+            preferNorwegianAudio: preferNorwegian,
+            binauralAudioActive: host.trackController.isBinauralAudioRouteActive
         )
         let startPos = overrideStartPosition ?? session.stream.startPositionSeconds ?? 0
         do {
@@ -289,8 +455,11 @@ final class PlayerSessionController {
         activeSession = session
         pendingHandedOverSessionId = nil
         pendingInflightPrepareTask = nil
+        host.qosReporter.resetTelemetryForSession(
+            currentPhase: transport.playbackPhase,
+            preserveLastReportedServerState: true
+        )
         host.qosReporter.lastReportedServerState = autoplay ? "playing" : "paused"
-        host.qosReporter.resetDolbyVisionFallback()
         registeredStreamToken = session.streamToken.count >= 8 ? session.streamToken : previousToken
         startupState.resolveHeadline = session.selectedCandidate.displayHeadline
         if let prev = previousToken, prev.count >= 8, prev != session.streamToken {
@@ -303,19 +472,38 @@ final class PlayerSessionController {
         PlayerNowPlayingCoordinator.publish(session: session, client: client, viewModel: host)
     }
 
-    func armFirstFrameFallbackWatchdog() {
-        firstFrameFallbackTask?.cancel()
+    func armFirstFrameFallbackWatchdog(timeoutNanoseconds: UInt64? = nil) {
+        cancelFirstFrameFallbackWatchdog()
+        guard !isReplacingSourceItem, !isDismissing, !didTeardown else { return }
+        let effectiveSeconds = PlaybackCurtainWatchdog.effectiveFallbackTimeoutSeconds(
+            isHoldingOutgoingPicture: isHoldingOutgoingPicture,
+            heldPictureFrameWaitSeconds: transport.heldPictureFrameWaitSeconds
+        )
+        let sleepNs = timeoutNanoseconds ?? UInt64((effectiveSeconds * 1_000_000_000).rounded())
         firstFrameFallbackTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-            guard !Task.isCancelled, let self else { return }
-            if !self.isPictureReadyForReveal { self.firstFrameFallbackUnlocked = true }
+            try? await Task.sleep(nanoseconds: sleepNs)
+            guard !Task.isCancelled,
+                  let self,
+                  !self.isReplacingSourceItem,
+                  !self.isDismissing,
+                  !self.didTeardown else {
+                return
+            }
+            if !self.isPictureReadyForReveal || self.isHoldingOutgoingPicture {
+                self.firstFrameFallbackUnlocked = true
+                self.releaseOutgoingPictureIfHeld()
+            }
         }
     }
 
     func cancelSessionTasks() {
         resolveTask?.cancel(); resolveTask = nil
         switchSourceTask?.cancel(); switchSourceTask = nil
-        firstFrameFallbackTask?.cancel(); firstFrameFallbackTask = nil
+        alternativesLoadTask?.cancel(); alternativesLoadTask = nil
+        alternativesLoadingSessionId = nil
+        alternativesPrefetchTask?.cancel(); alternativesPrefetchTask = nil
+        isLoadingAlternatives = false
+        cancelFirstFrameFallbackWatchdog()
         nowPlayingArtworkTask?.cancel(); nowPlayingArtworkTask = nil
     }
 
@@ -350,8 +538,15 @@ final class PlayerSessionController {
     func prepareForDismissal() {
         guard let host, !didTeardown, !isDismissing else { return }
         isDismissing = true
+        activeSwitchGeneration &+= 1
+        cancelFirstFrameFallbackWatchdog()
+        isSwitchingSource = false
+        isReplacingSourceItem = false
+        releaseOutgoingPictureIfHeld()
+        embeddedFontRegistry.clearAndUnregisterAll()
         host.cancelAllSessionTasks()
         host.scrubController.resetScrubStateOnSessionChange()
+        host.scrubController.clearServerTrickplayCache()
         UIApplication.shared.isIdleTimerDisabled = false
         pendingStopSnapshot = captureStopSnapshot()
         activeResolveId = nil
@@ -374,8 +569,15 @@ final class PlayerSessionController {
     ) {
         guard let host, !didTeardown else { return }
         didTeardown = true
+        activeSwitchGeneration &+= 1
+        cancelFirstFrameFallbackWatchdog()
+        isSwitchingSource = false
+        isReplacingSourceItem = false
+        releaseOutgoingPictureIfHeld()
+        embeddedFontRegistry.clearAndUnregisterAll()
         host.cancelAllSessionTasks()
         host.scrubController.resetScrubStateOnSessionChange()
+        host.scrubController.clearServerTrickplayCache()
         UIApplication.shared.isIdleTimerDisabled = false
 
         let snapshot = pendingStopSnapshot ?? captureStopSnapshot()

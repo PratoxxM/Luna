@@ -19,16 +19,36 @@ extension PlayerQoSReporter {
 
     var activeMetalFXBadge: String? {
         guard isMetalFXActive else { return nil }
+        return Self.metalFXBadgeLabel(
+            sourceVideoHeight: sourceVideoHeight,
+            upscaleSourceHeight: activeUpscale.map { Double($0.sourceSize.height) },
+            scaler: activeUpscale?.scaler,
+            lowResUpscaleMode: comfort.lowResUpscaleMode
+        )
+    }
+
+    nonisolated static func metalFXBadgeLabel(
+        sourceVideoHeight: Int32,
+        upscaleSourceHeight: Double?,
+        scaler: UpscaleScaler?,
+        lowResUpscaleMode: LowResUpscaleMode
+    ) -> String {
         let rawH: Int = {
             if sourceVideoHeight > 0 {
                 return Int(sourceVideoHeight)
             }
-            let upscaleHeight = Double(activeUpscale?.sourceSize.height ?? 1080)
+            let upscaleHeight = upscaleSourceHeight ?? 1080
             guard upscaleHeight.isFinite else { return 0 }
             return Int(exactly: upscaleHeight.rounded()) ?? 0
         }()
         let sourceLabel = rawH > 0 ? "\(rawH)p" : "SD/HD"
-        if activeUpscale?.scaler == .lineArt || comfort.lowResUpscaleMode == .animeLineArt {
+        if scaler == .lineArt {
+            return "\(sourceLabel) → 4K MetalFX (Animasjon)"
+        }
+        if scaler == .lanczos {
+            return "\(sourceLabel) → 4K Lanczos"
+        }
+        if lowResUpscaleMode == .animeLineArt {
             return "\(sourceLabel) → 4K MetalFX (Animasjon)"
         }
         return "\(sourceLabel) → 4K MetalFX"

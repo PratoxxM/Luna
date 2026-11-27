@@ -52,7 +52,7 @@ public struct LunaSheetContainer<Content: View>: View {
         ZStack {
             LunaTheme.canvas.ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: LunaTokens.Layout.blockGap) {
+            VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: 16) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(title)
@@ -78,12 +78,18 @@ public struct LunaSheetContainer<Content: View>: View {
                             .lineLimit(1)
                     }
                 }
+                .padding(.horizontal, LunaTokens.Layout.sheetPadding)
+                .padding(.top, LunaTokens.Layout.sheetPadding)
+                .padding(.bottom, LunaTokens.Layout.blockGap * 0.5)
 
                 content()
+                    .padding(.top, LunaTokens.Layout.blockGap * 0.5)
+                    .padding(.horizontal, LunaTokens.Layout.sheetPadding)
+                    .padding(.bottom, LunaTokens.Layout.sheetPadding)
+                    .clipped()
             }
-            .padding(LunaTokens.Layout.sheetPadding)
             .frame(maxWidth: width.maxWidth, maxHeight: maxHeight, alignment: .topLeading)
-            .lunaCinemaGlassSurface(fill: LunaTokens.Surface.sheet)
+            .lunaCinemaGlassSurface(fill: LunaTokens.Surface.sheet, clipsContent: true)
             .padding(.horizontal, LunaTheme.horizontalGutter)
             .padding(.vertical, LunaTokens.Layout.safeBottom)
         }
@@ -101,13 +107,11 @@ private struct LunaCinemaGlassSurfaceModifier: ViewModifier {
     let shadowColor: Color?
     let shadowRadius: CGFloat
     let shadowY: CGFloat
+    let clipsContent: Bool
 
     func body(content: Content) -> some View {
-        let base = content
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(fill)
-            )
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let base = clippedContent(content.background(shape.fill(fill)), shape: shape)
             .lunaTopLightEdge(
                 cornerRadius: cornerRadius,
                 topColor: topEdgeColor,
@@ -120,6 +124,15 @@ private struct LunaCinemaGlassSurfaceModifier: ViewModifier {
             base
         }
     }
+
+    @ViewBuilder
+    private func clippedContent<V: View>(_ view: V, shape: RoundedRectangle) -> some View {
+        if clipsContent {
+            view.clipShape(shape)
+        } else {
+            view
+        }
+    }
 }
 
 public extension View {
@@ -130,7 +143,8 @@ public extension View {
         sideEdgeColor: Color = LunaTokens.Edge.top1,
         shadowColor: Color? = nil,
         shadowRadius: CGFloat = 0,
-        shadowY: CGFloat = 0
+        shadowY: CGFloat = 0,
+        clipsContent: Bool = false
     ) -> some View {
         modifier(
             LunaCinemaGlassSurfaceModifier(
@@ -140,7 +154,8 @@ public extension View {
                 sideEdgeColor: sideEdgeColor,
                 shadowColor: shadowColor,
                 shadowRadius: shadowRadius,
-                shadowY: shadowY
+                shadowY: shadowY,
+                clipsContent: clipsContent
             )
         )
     }
